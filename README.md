@@ -1,0 +1,101 @@
+# Treefold for macOS
+
+**Run agents in parallel. Fold the work back cleanly.**
+
+Treefold is a local-first macOS workspace for running Codex and Shell sessions
+in managed Git worktrees, with resume, rebase, recovery, merge, and cleanup.
+The UI is React + Vite inside Tauri's system WebView; projects, workstreams,
+SQLite data, and Git worktrees are managed by the Rust backend. Persistent PTY
+processes are managed by the local Rust `amux` runtime.
+
+## Requirements
+
+- macOS
+- Rust stable
+- Node.js 24+
+- `git` on `PATH`
+- `codex` on `PATH` to create Codex sessions
+- `just` (optional)
+
+## Development
+
+```bash
+npm install
+npm run dev:desktop
+```
+
+Or from the repository root:
+
+```bash
+just install
+just dev
+```
+
+`tauri dev` starts Vite with hot reload, compiles the Rust backend, and opens
+the native macOS window. The internal API and terminal WebSocket listen only
+on `127.0.0.1:7331`.
+
+Useful checks:
+
+```bash
+just check
+just build
+```
+
+Treefold stores its files under `~/.treefold` by default:
+
+```text
+~/.treefold/
+├── config/settings.toml
+├── data/
+│   ├── treefold.db
+│   └── amux/
+└── worktrees/
+```
+
+Set `TREEFOLD_HOME` before starting the app to relocate this complete tree. The
+settings file owns durable user preferences (`language`, `worktree_root`, and
+agent launch defaults); SQLite owns Projects, Workstreams, Sessions, Todos, and
+operation records. Treefold creates `settings.toml` with `schema_version = 1` on
+first launch. Configuration changes made outside the app are picked up on the
+next settings read; invalid or unsupported schemas are reported instead of
+being rewritten. `extra_args` defaults to an empty list; to make new Codex
+Sessions default to bypassing approvals and sandboxing, configure:
+
+```toml
+schema_version = 1
+language = "system"
+worktree_root = "~/.treefold/worktrees"
+
+[agents.codex]
+extra_args = ["--dangerously-bypass-approvals-and-sandbox"]
+```
+
+Clients update selected fields with `PATCH /api/settings`; fields omitted from
+the request and unknown keys already present in the file are preserved.
+
+## Architecture
+
+```text
+Tauri macOS process
+├── WKWebView: React + Vite + xterm.js
+├── Rust/Axum: loopback REST + terminal WebSocket
+├── Rust/rusqlite: local project and session metadata
+├── Rust/amux: persistent shell and Codex terminal processes
+└── Git CLI: isolated Workstream worktrees
+```
+
+The amux control plane runs inside Treefold, while detached amux shims own the PTY
+process groups. The Treefold executable exposes the shim as a hidden entry point,
+so no separately installed sidecar is required. Frontend routes use hash history
+so deep links work from both Vite and packaged assets.
+
+## Product documentation
+
+- [Product direction](docs/product-strategy.md)
+- [Project and Workstream model](docs/project-workstream-model.md)
+- [Git worktree lifecycle](docs/git-worktree-lifecycle.md)
+- [Keymap configuration plan](docs/keymap-configuration-plan.md)
+- [Agent Skill, CLI, and App API architecture](docs/agent-skill-cli-api-architecture.md)
+- [Frontend and backend communication](docs/frontend-backend-communication.md)
+- [Positioning and messaging](docs/positioning-and-messaging.md)

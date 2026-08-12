@@ -1,0 +1,460 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
+
+use anyhow::{bail, Context};
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use toml_edit::{value, Array, DocumentMut, Item, Table, Value};
+use uuid::Uuid;
+
+pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct AgentsSettings {
+    #[serde(default)]
+    pub codex: CodexAgentSettings,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct CodexAgentSettings {
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Settings {
+    pub schema_version: u32,
+    pub language: String,
+    pub worktree_root: String,
+    #[serde(default)]
+    pub agents: AgentsSettings,
+}
+
+impl Settings {
+    fn defaults(treefold_home: &Path, user_home: &Path) -> Self {
+        let default_home = user_home.join(".treefold");
+        let worktree_root = if treefold_home == default_home {
+            "~/.treefold/worktrees".into()
+        } else {
+            treefold_home
+                .join("worktrees")
+                .to_string_lossy()
+                .into_owned()
+        };
+        Self {
+            schema_version: SETTINGS_SCHEMA_VERSION,
+            language: "system".into(),
+            worktree_root,
+            agents: AgentsSettings {
+                codex: CodexAgentSettings { extra_args: vec![] },
+            },
+        }
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        if self.schema_version != SETTINGS_SCHEMA_VERSION {
+            bail!(
+                "unsupported settings schema_version {}; this Treefold supports only {}",
+                self.schema_version,
+                SETTINGS_SCHEMA_VERSION
+            );
+        }
+        validate_language(&self.language)?;
+        validate_worktree_root(&self.worktree_root)?;
+        validate_extra_args(&self.agents.codex.extra_args)?;
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+struct SettingsHeader {
+    schema_version: u32,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SettingsPatch {
+    pub language: Option<String>,
+    pub worktree_root: Option<String>,
+    pub agents: Option<AgentsSettingsPatch>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgentsSettingsPatch {
+    pub codex: Option<CodexAgentSettingsPatch>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CodexAgentSettingsPatch {
+    pub extra_args: Option<Vec<String>>,
+}
+
+impl SettingsPatch {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(language) = &self.language {
+            validate_language(language)?;
+        }
+        if let Some(worktree_root) = &self.worktree_root {
+            validate_worktree_root(worktree_root)?;
+        }
+        if let Some(extra_args) = self
+            .agents
+            .as_ref()
+            .and_then(|agents| agents.codex.as_ref())
+            .and_then(|codex| codex.extra_args.as_ref())
+        {
+            validate_extra_args(extra_args)?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_language(language: &str) -> anyhow::Result<()> {
+    if !["system", "zh-CN", "en-US"].contains(&language) {
+        bail!("unsupported language '{language}'; expected system, zh-CN, or en-US");
+    }
+    Ok(())
+}
+
+fn validate_worktree_root(worktree_root: &str) -> anyhow::Result<()> {
+    if worktree_root.trim().is_empty() {
+        bail!("worktree_root must not be empty");
+    }
+    Ok(())
+}
+
+fn validate_extra_args(extra_args: &[String]) -> anyhow::Result<()> {
+    for (index, argument) in extra_args.iter().enumerate() {
+        if argument.is_empty() {
+            bail!("agents.codex.extra_args[{index}] must not be empty");
+        }
+        if argument.contains('\0') {
+            bail!("agents.codex.extra_args[{index}] must not contain NUL");
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone)]
+pub struct SettingsStore {
+    path: PathBuf,
+    treefold_home: PathBuf,
+    user_home: PathBuf,
+    write_lock: Arc<Mutex<()>>,
+}
+
+impl SettingsStore {
+    pub fn open(treefold_home: &Path, user_home: &Path) -> anyhow::Result<Self> {
+        let config_dir = treefold_home.join("config");
+        fs::create_dir_all(&config_dir).with_context(|| {
+            format!("create Treefold config directory {}", config_dir.display())
+        })?;
+        let store = Self {
+            path: config_dir.join("settings.toml"),
+            treefold_home: treefold_home.to_path_buf(),
+            user_home: user_home.to_path_buf(),
+            write_lock: Arc::new(Mutex::new(())),
+        };
+        if !store.path.exists() {
+            let settings = Settings::defaults(treefold_home, user_home);
+            store.write_new(&settings)?;
+        }
+        store.load()?;
+        Ok(store)
+    }
+
+    pub fn load(&self) -> anyhow::Result<Settings> {
+        let contents = fs::read_to_string(&self.path)
+            .with_context(|| format!("read Treefold settings from {}", self.path.display()))?;
+        self.parse(&contents)
+    }
+
+    pub fn update(&self, patch: SettingsPatch) -> anyhow::Result<Settings> {
+        patch.validate()?;
+        let _guard = self.write_lock.lock();
+        let contents = fs::read_to_string(&self.path)
+            .with_context(|| format!("read Treefold settings from {}", self.path.display()))?;
+        let mut document = contents
+            .parse::<DocumentMut>()
+            .with_context(|| format!("parse Treefold settings from {}", self.path.display()))?;
+        let mut settings = self.parse(&contents)?;
+
+        if let Some(language) = patch.language {
+            settings.language = language;
+            document["language"] = value(settings.language.clone());
+        }
+        if let Some(worktree_root) = patch.worktree_root {
+            settings.worktree_root = worktree_root;
+            document["worktree_root"] = value(settings.worktree_root.clone());
+        }
+        if let Some(extra_args) = patch
+            .agents
+            .and_then(|agents| agents.codex)
+            .and_then(|codex| codex.extra_args)
+        {
+            settings.agents.codex.extra_args = extra_args;
+            set_codex_extra_args(&mut document, &settings.agents.codex.extra_args)?;
+        }
+        settings.validate()?;
+        self.atomic_write(&document.to_string())?;
+        Ok(settings)
+    }
+
+    pub fn worktree_root(&self) -> anyhow::Result<PathBuf> {
+        let settings = self.load()?;
+        let configured = settings.worktree_root.trim();
+        if configured == "~" {
+            return Ok(self.user_home.clone());
+        }
+        if let Some(relative) = configured.strip_prefix("~/") {
+            return Ok(self.user_home.join(relative));
+        }
+        let path = PathBuf::from(configured);
+        if path.is_absolute() {
+            Ok(path)
+        } else {
+            Ok(self.treefold_home.join(path))
+        }
+    }
+
+    fn write_new(&self, settings: &Settings) -> anyhow::Result<()> {
+        let mut document = DocumentMut::new();
+        document["schema_version"] = value(i64::from(settings.schema_version));
+        document["language"] = value(settings.language.clone());
+        document["worktree_root"] = value(settings.worktree_root.clone());
+        let mut agents = Table::new();
+        agents.set_implicit(true);
+        agents.insert("codex", Item::Table(Table::new()));
+        document["agents"] = Item::Table(agents);
+        set_codex_extra_args(&mut document, &settings.agents.codex.extra_args)?;
+        self.atomic_write(&document.to_string())
+    }
+
+    fn parse(&self, contents: &str) -> anyhow::Result<Settings> {
+        let context = || format!("parse Treefold settings from {}", self.path.display());
+        let header = toml_edit::de::from_str::<SettingsHeader>(contents).with_context(context)?;
+        if header.schema_version != SETTINGS_SCHEMA_VERSION {
+            bail!(
+                "unsupported settings schema_version {}; this Treefold supports only {}",
+                header.schema_version,
+                SETTINGS_SCHEMA_VERSION
+            );
+        }
+        let settings = toml_edit::de::from_str::<Settings>(contents).with_context(context)?;
+        settings.validate()?;
+        Ok(settings)
+    }
+
+    fn atomic_write(&self, contents: &str) -> anyhow::Result<()> {
+        let temporary = self
+            .path
+            .with_extension(format!("toml.tmp-{}", Uuid::new_v4().simple()));
+        fs::write(&temporary, contents).with_context(|| {
+            format!("write temporary Treefold settings {}", temporary.display())
+        })?;
+        if let Err(error) = fs::rename(&temporary, &self.path) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error)
+                .with_context(|| format!("replace Treefold settings {}", self.path.display()));
+        }
+        Ok(())
+    }
+}
+
+fn string_array(values: &[String]) -> Item {
+    let mut array = Array::new();
+    for value in values {
+        array.push(value.as_str());
+    }
+    Item::Value(Value::Array(array))
+}
+
+fn set_codex_extra_args(document: &mut DocumentMut, values: &[String]) -> anyhow::Result<()> {
+    if document.get("agents").is_none() {
+        let mut agents = Table::new();
+        agents.set_implicit(true);
+        document["agents"] = Item::Table(agents);
+    }
+    let agents = document["agents"]
+        .as_table_like_mut()
+        .context("agents must be a table")?;
+    if !agents.contains_key("codex") {
+        agents.insert("codex", Item::Table(Table::new()));
+    }
+    let codex = agents
+        .get_mut("codex")
+        .and_then(Item::as_table_like_mut)
+        .context("agents.codex must be a table")?;
+    codex.insert("extra_args", string_array(values));
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        AgentsSettings, AgentsSettingsPatch, CodexAgentSettings, CodexAgentSettingsPatch,
+        SettingsPatch, SettingsStore, SETTINGS_SCHEMA_VERSION,
+    };
+
+    fn fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-settings-{label}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let user_home = root.join("user");
+        std::fs::create_dir_all(&user_home).expect("create test user home");
+        (root, user_home)
+    }
+
+    #[test]
+    fn creates_versioned_defaults_and_resolves_the_default_worktree_root() {
+        let (root, user_home) = fixture("defaults");
+        let treefold_home = user_home.join(".treefold");
+        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+
+        assert_eq!(
+            store.load().expect("load settings"),
+            super::Settings {
+                schema_version: SETTINGS_SCHEMA_VERSION,
+                language: "system".into(),
+                worktree_root: "~/.treefold/worktrees".into(),
+                agents: AgentsSettings {
+                    codex: CodexAgentSettings { extra_args: vec![] },
+                },
+            }
+        );
+        assert_eq!(
+            store.worktree_root().expect("resolve worktree root"),
+            treefold_home.join("worktrees")
+        );
+        let settings_file = treefold_home.join("config/settings.toml");
+        assert!(settings_file.is_file());
+        assert!(std::fs::read_to_string(settings_file)
+            .expect("read generated settings")
+            .contains("[agents.codex]\nextra_args = []"));
+
+        std::fs::remove_dir_all(root).expect("remove settings fixture");
+    }
+
+    #[test]
+    fn updates_settings_without_removing_comments_or_unknown_keys() {
+        let (root, user_home) = fixture("update");
+        let treefold_home = root.join("custom-treefold-home");
+        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let path = treefold_home.join("config/settings.toml");
+        std::fs::write(
+            &path,
+            format!(
+                "# user comment\nschema_version = 1\nlanguage = \"system\"\nworktree_root = \"{}\"\nfuture_setting = \"preserve-me\"\n",
+                treefold_home.join("worktrees").display()
+            ),
+        )
+        .expect("customize settings");
+
+        let updated = store
+            .update(SettingsPatch {
+                language: Some("zh-CN".into()),
+                worktree_root: None,
+                agents: Some(AgentsSettingsPatch {
+                    codex: Some(CodexAgentSettingsPatch {
+                        extra_args: Some(vec![
+                            "--dangerously-bypass-approvals-and-sandbox".into(),
+                            "--search".into(),
+                        ]),
+                    }),
+                }),
+            })
+            .expect("update settings");
+        assert_eq!(updated.language, "zh-CN");
+        assert_eq!(
+            updated.agents.codex.extra_args,
+            ["--dangerously-bypass-approvals-and-sandbox", "--search"]
+        );
+        let contents = std::fs::read_to_string(path).expect("read updated settings");
+        assert!(contents.contains("# user comment"));
+        assert!(contents.contains("future_setting = \"preserve-me\""));
+        assert!(contents.contains("[agents.codex]"));
+        assert!(contents.contains("--dangerously-bypass-approvals-and-sandbox"));
+
+        std::fs::remove_dir_all(root).expect("remove settings fixture");
+    }
+
+    #[test]
+    fn rejects_an_unsupported_schema_version() {
+        let (root, user_home) = fixture("schema");
+        let treefold_home = root.join("home");
+        let config_dir = treefold_home.join("config");
+        std::fs::create_dir_all(&config_dir).expect("create config directory");
+        std::fs::write(
+            config_dir.join("settings.toml"),
+            "schema_version = 2\nlanguage = \"system\"\nworktree_root = \"worktrees\"\n",
+        )
+        .expect("write unsupported settings");
+
+        let error = SettingsStore::open(&treefold_home, &user_home)
+            .err()
+            .expect("reject unsupported schema");
+        assert!(error
+            .to_string()
+            .contains("unsupported settings schema_version 2"));
+
+        std::fs::remove_dir_all(root).expect("remove settings fixture");
+    }
+
+    #[test]
+    fn rejects_invalid_partial_updates_without_rewriting_the_file() {
+        let (root, user_home) = fixture("invalid-update");
+        let treefold_home = root.join("home");
+        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let path = treefold_home.join("config/settings.toml");
+        let before = std::fs::read_to_string(&path).expect("read settings before update");
+
+        let error = store
+            .update(SettingsPatch {
+                language: Some("unsupported".into()),
+                ..SettingsPatch::default()
+            })
+            .expect_err("reject unsupported language");
+        assert!(error.to_string().contains("unsupported language"));
+        assert_eq!(
+            std::fs::read_to_string(path).expect("read settings after update"),
+            before
+        );
+
+        std::fs::remove_dir_all(root).expect("remove settings fixture");
+    }
+
+    #[test]
+    fn rejects_empty_codex_arguments_without_rewriting_the_file() {
+        let (root, user_home) = fixture("invalid-args");
+        let treefold_home = root.join("home");
+        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let path = treefold_home.join("config/settings.toml");
+        let before = std::fs::read_to_string(&path).expect("read settings before update");
+
+        let error = store
+            .update(SettingsPatch {
+                agents: Some(AgentsSettingsPatch {
+                    codex: Some(CodexAgentSettingsPatch {
+                        extra_args: Some(vec!["".into()]),
+                    }),
+                }),
+                ..SettingsPatch::default()
+            })
+            .expect_err("reject empty argument");
+        assert!(error
+            .to_string()
+            .contains("extra_args[0] must not be empty"));
+        assert_eq!(
+            std::fs::read_to_string(path).expect("read settings after update"),
+            before
+        );
+
+        std::fs::remove_dir_all(root).expect("remove settings fixture");
+    }
+}

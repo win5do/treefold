@@ -1,0 +1,399 @@
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
+
+use amux::{
+    client::Client,
+    config::Config,
+    daemon::Daemon,
+    model::{CreateWorkspaceRequest, IoMode, Process, ProcessState, RunRequest, StopRequest},
+    protocol::Response,
+};
+use anyhow::{anyhow, bail, Context};
+use http::Method;
+use tokio::sync::Mutex;
+use tokio_tungstenite::WebSocketStream;
+
+use crate::model::Session;
+
+pub const CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG: &str =
+    "--dangerously-bypass-approvals-and-sandbox";
+const WORKSPACE: &str = "treefold";
+const REPLAY_BYTES: usize = 64 * 1024;
+
+#[derive(Clone)]
+pub struct TerminalManager {
+    client: Client,
+    daemon_start: Arc<Mutex<()>>,
+    embedded_shims: bool,
+}
+
+impl TerminalManager {
+    pub fn new(config: Config) -> Self {
+        Self {
+            client: Client::new(config),
+            daemon_start: Arc::new(Mutex::new(())),
+            embedded_shims: false,
+        }
+    }
+
+    async fn ensure_runtime(&self) -> anyhow::Result<()> {
+        if self.client.ready().await {
+            return Ok(());
+        }
+        let _guard = self.daemon_start.lock().await;
+        if self.client.ready().await {
+            return Ok(());
+        }
+        let daemon = if self.embedded_shims {
+            Daemon::with_embedded_shims(self.client.config.clone())?
+        } else {
+            Daemon::with_shim_command(
+                self.client.config.clone(),
+                std::env::current_exe()?,
+                vec!["--amux-shim".into()],
+            )?
+        };
+        tokio::spawn(async move {
+            if let Err(error) = daemon.serve(None).await {
+                log::error!("embedded amux daemon stopped: {error:#}");
+            }
+        });
+        for _ in 0..100 {
+            if self.client.ready().await {
+                self.ensure_workspace().await?;
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        bail!("amux daemon did not become ready")
+    }
+
+    async fn ensure_workspace(&self) -> anyhow::Result<()> {
+        if self
+            .client
+            .do_empty(Method::GET, &format!("/v1/workspaces/{WORKSPACE}"))
+            .await
+            .is_ok()
+        {
+            return Ok(());
+        }
+        self.client
+            .do_json(
+                Method::POST,
+                "/v1/workspaces",
+                Some(&CreateWorkspaceRequest {
+                    name: WORKSPACE.into(),
+                    runtime: "host".into(),
+                    ..Default::default()
+                }),
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn spawn(
+        &self,
+        session: &Session,
+        project_id: &str,
+        developer_instructions: Option<&str>,
+        codex_extra_args: &[String],
+    ) -> anyhow::Result<Process> {
+        self.ensure_runtime().await?;
+        self.ensure_workspace().await?;
+        let command = if session.kind == "shell" {
+            vec![
+                std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into()),
+                "-l".into(),
+            ]
+        } else {
+            let mut command = vec!["codex".into()];
+            command.extend(codex_arguments(
+                session,
+                developer_instructions,
+                codex_extra_args,
+            ));
+            command
+        };
+        let env = BTreeMap::from([
+            ("TERM".into(), "xterm-256color".into()),
+            ("COLORTERM".into(), "truecolor".into()),
+            ("TREEFOLD_SESSION_ID".into(), session.id.clone()),
+            (
+                "TREEFOLD_WORKSTREAM_ID".into(),
+                session.workstream_id.clone(),
+            ),
+            ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
+        ]);
+        let bytes = self
+            .client
+            .do_json(
+                Method::POST,
+                &format!("/v1/workspaces/{WORKSPACE}/processes"),
+                Some(&RunRequest {
+                    name: session.id.clone(),
+                    command,
+                    cwd: session.cwd.clone(),
+                    env,
+                    io_mode: IoMode::Tty,
+                    runtime: "host".into(),
+                    initial_rows: 40,
+                    initial_cols: 120,
+                }),
+            )
+            .await?;
+        response_process(&bytes)
+    }
+
+    pub async fn inspect(&self, id: &str) -> anyhow::Result<Process> {
+        self.ensure_runtime().await?;
+        let bytes = self
+            .client
+            .do_empty(Method::GET, &process_path(id, ""))
+            .await?;
+        response_process(&bytes)
+    }
+
+    pub async fn is_running(&self, id: &str) -> bool {
+        self.inspect(id)
+            .await
+            .map(|process| {
+                matches!(
+                    process.state,
+                    ProcessState::Created | ProcessState::Starting | ProcessState::Running
+                )
+            })
+            .unwrap_or(false)
+    }
+
+    pub async fn stop(&self, id: &str) -> anyhow::Result<()> {
+        self.ensure_runtime().await?;
+        self.client
+            .do_json(
+                Method::POST,
+                &process_path(id, "stop"),
+                Some(&StopRequest { grace_millis: 500 }),
+            )
+            .await?;
+        Ok(())
+    }
+
+    pub async fn remove(&self, id: &str) -> anyhow::Result<()> {
+        self.ensure_runtime().await?;
+        let process = match self.inspect(id).await {
+            Ok(process) => process,
+            Err(error) if error.to_string().contains("process_not_found") => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        if matches!(
+            process.state,
+            ProcessState::Created
+                | ProcessState::Starting
+                | ProcessState::Running
+                | ProcessState::Stopping
+        ) {
+            if process.state != ProcessState::Stopping {
+                self.stop(id).await?;
+            }
+            self.client
+                .do_empty(Method::GET, &process_path(id, "wait"))
+                .await?;
+        }
+        self.client
+            .do_empty(Method::DELETE, &process_path(id, ""))
+            .await?;
+        Ok(())
+    }
+
+    pub async fn attach(
+        &self,
+        id: &str,
+    ) -> anyhow::Result<WebSocketStream<tokio::net::UnixStream>> {
+        self.ensure_runtime().await?;
+        self.client
+            .attach(&format!(
+                "{}?takeover=true&replay_bytes={REPLAY_BYTES}",
+                process_path(id, "attach")
+            ))
+            .await
+    }
+}
+
+#[cfg(test)]
+impl Default for TerminalManager {
+    fn default() -> Self {
+        let root = std::path::PathBuf::from("/tmp").join(format!(
+            "treefold-amux-test-{}",
+            &uuid::Uuid::new_v4().simple().to_string()[..10]
+        ));
+        Self {
+            client: Client::new(Config {
+                state_dir: root.join("state"),
+                socket: root.join("amuxd.sock"),
+            }),
+            daemon_start: Arc::new(Mutex::new(())),
+            embedded_shims: true,
+        }
+    }
+}
+
+fn process_path(target: &str, action: &str) -> String {
+    format!(
+        "/v1/processes/{WORKSPACE}/{target}{}",
+        if action.is_empty() {
+            String::new()
+        } else {
+            format!("/{action}")
+        }
+    )
+}
+
+fn response_process(bytes: &[u8]) -> anyhow::Result<Process> {
+    serde_json::from_slice::<Response>(bytes)?
+        .process
+        .map(|view| view.process)
+        .ok_or_else(|| anyhow!("amux response did not include a process"))
+        .context("decode amux process response")
+}
+
+fn codex_arguments(
+    session: &Session,
+    developer_instructions: Option<&str>,
+    extra_args: &[String],
+) -> Vec<String> {
+    let mut arguments = extra_args
+        .iter()
+        .filter(|argument| argument.as_str() != CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG)
+        .cloned()
+        .collect::<Vec<_>>();
+    if session.yolo {
+        arguments.push(CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG.into());
+    }
+    arguments.extend(["-C".into(), session.cwd.clone()]);
+    for path in &session.additional_directories {
+        arguments.extend(["--add-dir".into(), path.clone()]);
+    }
+    if let Some(instructions) = developer_instructions {
+        let encoded = serde_json::to_string(instructions)
+            .expect("serializing developer instructions cannot fail");
+        arguments.extend(["-c".into(), format!("developer_instructions={encoded}")]);
+    }
+    if let Some(codex_id) = &session.codex_session_id {
+        arguments.extend(["resume".into(), codex_id.clone()]);
+    } else if !session.initial_prompt.is_empty() {
+        arguments.push(session.initial_prompt.clone());
+    }
+    arguments
+}
+
+#[cfg(test)]
+mod tests {
+    use super::codex_arguments;
+    use crate::model::Session;
+
+    fn session() -> Session {
+        Session {
+            id: "session-1".into(),
+            workstream_id: "workstream-1".into(),
+            name: "Codex".into(),
+            kind: "codex".into(),
+            cwd: "/tmp/primary worktree".into(),
+            original_cwd: "/tmp/primary worktree".into(),
+            initial_prompt: "Implement the feature".into(),
+            codex_session_id: None,
+            yolo: false,
+            sidebar_visible: true,
+            hidden_at: None,
+            evicted_at: None,
+            process_id: String::new(),
+            process_name: String::new(),
+            status: "starting".into(),
+            pid: 0,
+            process_group_id: 0,
+            exit_code: None,
+            exit_signal: String::new(),
+            command: Vec::new(),
+            launch_started_at: String::new(),
+            last_attached_at: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+            additional_directories: vec!["/tmp/attached repo".into()],
+        }
+    }
+
+    #[test]
+    fn injects_developer_instructions_without_merging_them_into_the_user_prompt() {
+        let session = session();
+        let instructions = "Treefold snapshot\npath = \"/tmp/a b\"";
+        let arguments = codex_arguments(
+            &session,
+            Some(instructions),
+            &["--model".into(), "gpt-5.4".into()],
+        );
+
+        assert_eq!(
+            arguments[0..6],
+            [
+                "--model",
+                "gpt-5.4",
+                "-C",
+                &session.cwd,
+                "--add-dir",
+                "/tmp/attached repo"
+            ]
+        );
+        let config_index = arguments.iter().position(|value| value == "-c").unwrap();
+        let encoded = arguments[config_index + 1]
+            .strip_prefix("developer_instructions=")
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<String>(encoded).unwrap(),
+            instructions
+        );
+        assert_eq!(arguments.last().unwrap(), &session.initial_prompt);
+    }
+
+    #[test]
+    fn refreshes_developer_instructions_when_resuming() {
+        let mut session = session();
+        session.codex_session_id = Some("codex-session-1".into());
+        let arguments = codex_arguments(&session, Some("current Treefold snapshot"), &[]);
+
+        assert!(arguments
+            .iter()
+            .any(|value| value == "developer_instructions=\"current Treefold snapshot\""));
+        assert_eq!(
+            &arguments[arguments.len() - 2..],
+            ["resume", "codex-session-1"]
+        );
+        assert!(!arguments
+            .iter()
+            .any(|value| value == &session.initial_prompt));
+    }
+
+    #[test]
+    fn session_yolo_overrides_the_global_bypass_argument_without_duplicates() {
+        let mut session = session();
+        let configured = vec![
+            "--search".into(),
+            super::CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG.into(),
+            super::CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG.into(),
+        ];
+
+        let safe_arguments = codex_arguments(&session, None, &configured);
+        assert!(!safe_arguments
+            .iter()
+            .any(|argument| argument == super::CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG));
+        assert_eq!(safe_arguments[0], "--search");
+
+        session.yolo = true;
+        let yolo_arguments = codex_arguments(&session, None, &configured);
+        assert_eq!(
+            yolo_arguments
+                .iter()
+                .filter(|argument| {
+                    argument.as_str() == super::CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG
+                })
+                .count(),
+            1
+        );
+    }
+}

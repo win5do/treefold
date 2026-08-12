@@ -1,0 +1,10 @@
+.DS_Store
+bin/
+node_modules/
+.next/
+out/
+dist/
+tsconfig.tsbuildinfo
+*.db
+*.db-shm
+*.db-wal
