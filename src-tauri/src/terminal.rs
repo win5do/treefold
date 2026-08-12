@@ -16,7 +16,6 @@ use crate::model::Session;
 
 pub const CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG: &str =
     "--dangerously-bypass-approvals-and-sandbox";
-const WORKSPACE: &str = "treefold";
 const REPLAY_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
@@ -59,7 +58,6 @@ impl TerminalManager {
         });
         for _ in 0..100 {
             if self.client.ready().await {
-                self.ensure_workspace().await?;
                 return Ok(());
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -67,10 +65,10 @@ impl TerminalManager {
         bail!("amux daemon did not become ready")
     }
 
-    async fn ensure_workspace(&self) -> anyhow::Result<()> {
+    async fn ensure_workspace(&self, workspace: &str, root_dir: &str) -> anyhow::Result<()> {
         if self
             .client
-            .do_empty(Method::GET, &format!("/v1/workspaces/{WORKSPACE}"))
+            .do_empty(Method::GET, &format!("/v1/workspaces/{workspace}"))
             .await
             .is_ok()
         {
@@ -81,8 +79,9 @@ impl TerminalManager {
                 Method::POST,
                 "/v1/workspaces",
                 Some(&CreateWorkspaceRequest {
-                    name: WORKSPACE.into(),
+                    name: workspace.into(),
                     runtime: "host".into(),
+                    root_dir: root_dir.into(),
                     ..Default::default()
                 }),
             )
@@ -98,7 +97,8 @@ impl TerminalManager {
         codex_extra_args: &[String],
     ) -> anyhow::Result<Process> {
         self.ensure_runtime().await?;
-        self.ensure_workspace().await?;
+        let workspace = Self::workspace_name(&session.cwd);
+        self.ensure_workspace(&workspace, &session.cwd).await?;
         let command = if session.kind == "shell" {
             vec![
                 std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into()),
@@ -117,17 +117,27 @@ impl TerminalManager {
             ("TERM".into(), "xterm-256color".into()),
             ("COLORTERM".into(), "truecolor".into()),
             ("TREEFOLD_SESSION_ID".into(), session.id.clone()),
+            ("TREEFOLD_API_TOKEN".into(), session.id.clone()),
+            ("TREEFOLD_API_URL".into(), "http://127.0.0.1:7331".into()),
             (
                 "TREEFOLD_WORKSTREAM_ID".into(),
                 session.workstream_id.clone(),
             ),
             ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
+            (
+                "AMUX_STATE_DIR".into(),
+                self.client.config.state_dir.to_string_lossy().into_owned(),
+            ),
+            (
+                "AMUX_SOCKET".into(),
+                self.client.config.socket.to_string_lossy().into_owned(),
+            ),
         ]);
         let bytes = self
             .client
             .do_json(
                 Method::POST,
-                &format!("/v1/workspaces/{WORKSPACE}/processes"),
+                &format!("/v1/workspaces/{workspace}/processes"),
                 Some(&RunRequest {
                     name: session.id.clone(),
                     command,
@@ -141,6 +151,17 @@ impl TerminalManager {
             )
             .await?;
         response_process(&bytes)
+    }
+
+    pub fn workspace_name(root_dir: &str) -> String {
+        let normalized =
+            std::fs::canonicalize(root_dir).unwrap_or_else(|_| std::path::PathBuf::from(root_dir));
+        let mut hash = 0xcbf29ce484222325u64;
+        for byte in normalized.to_string_lossy().as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        format!("treefold-ws-{hash:016x}")
     }
 
     pub async fn inspect(&self, id: &str) -> anyhow::Result<Process> {
@@ -237,7 +258,7 @@ impl Default for TerminalManager {
 
 fn process_path(target: &str, action: &str) -> String {
     format!(
-        "/v1/processes/{WORKSPACE}/{target}{}",
+        "/v1/processes/{target}{}",
         if action.is_empty() {
             String::new()
         } else {
@@ -286,7 +307,7 @@ fn codex_arguments(
 
 #[cfg(test)]
 mod tests {
-    use super::codex_arguments;
+    use super::{codex_arguments, TerminalManager};
     use crate::model::Session;
 
     fn session() -> Session {
@@ -395,5 +416,16 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn assigns_one_stable_amux_workspace_per_root_directory() {
+        let first = TerminalManager::workspace_name("/tmp/worktree-a");
+        let again = TerminalManager::workspace_name("/tmp/worktree-a");
+        let other = TerminalManager::workspace_name("/tmp/worktree-b");
+
+        assert_eq!(first, again);
+        assert_ne!(first, other);
+        assert!(first.starts_with("treefold-ws-"));
     }
 }

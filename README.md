@@ -42,6 +42,29 @@ just check
 just build
 ```
 
+## CLI and Agent Skill
+
+The packaged `treefold` executable is both the desktop entry point and a thin
+CLI for Treefold-managed Sessions:
+
+```bash
+treefold
+treefold current --json
+treefold todo list --json
+treefold todo claim <todo-id>
+treefold todo done <todo-id>
+treefold doctor
+```
+
+Treefold manages workspace identity and Todos. It intentionally does not store
+per-turn Agent reports or wrap process commands. Persistent processes, TTYs,
+logs, and restarts use the independent `amux` CLI and Skill.
+
+The distributable Codex Skill lives at [`skills/treefold`](skills/treefold).
+Install or link that directory as `treefold` in the active Codex skills home.
+The Skill expects managed Sessions to provide the `TREEFOLD_*` and `AMUX_*`
+environment variables injected by the App.
+
 Treefold stores its files under `~/.treefold` by default:
 
 ```text

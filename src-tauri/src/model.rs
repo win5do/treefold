@@ -117,6 +117,8 @@ pub struct Todo {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

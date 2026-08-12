@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS todos (
  workstream_id TEXT REFERENCES workstreams(id) ON DELETE CASCADE,
  origin_workstream_id TEXT REFERENCES workstreams(id) ON DELETE SET NULL,
  title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
- session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL, blocked_reason TEXT,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  CHECK ((project_id IS NULL) != (workstream_id IS NULL))
 );
 CREATE TABLE IF NOT EXISTS settlement_operations (
@@ -679,7 +680,7 @@ impl Store {
 
     pub fn create_todo(&self, t: &Todo) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO todos(id,project_id,workstream_id,origin_workstream_id,title,description,status,session_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO todos(id,project_id,workstream_id,origin_workstream_id,title,description,status,session_id,blocked_reason,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 t.id,
                 t.project_id,
@@ -689,6 +690,7 @@ impl Store {
                 t.description,
                 t.status,
                 t.session_id,
+                t.blocked_reason,
                 t.created_at,
                 t.updated_at
             ],
@@ -706,9 +708,46 @@ impl Store {
 
     pub fn update_todo(&self, id: &str, status: &str, session_id: Option<&str>) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE todos SET status=?,session_id=?,updated_at=? WHERE id=?",
+            "UPDATE todos SET status=?,session_id=?,blocked_reason=NULL,updated_at=? WHERE id=?",
             params![status, session_id, now(), id],
         )?;
+        Ok(())
+    }
+
+    pub fn edit_todo(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        description: Option<&str>,
+    ) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE todos SET title=COALESCE(?,title),description=COALESCE(?,description),updated_at=? WHERE id=?",
+            params![title, description, now(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn claim_todo(&self, id: &str, session_id: &str) -> Result<bool> {
+        let changed = self.0.lock().execute(
+            "UPDATE todos SET status='assigned',session_id=?,blocked_reason=NULL,updated_at=?
+             WHERE id=? AND (status='pending' OR (status='assigned' AND session_id=?))",
+            params![session_id, now(), id, session_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn block_todo(&self, id: &str, session_id: &str, reason: &str) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE todos SET status='blocked',session_id=?,blocked_reason=?,updated_at=? WHERE id=?",
+            params![session_id, reason, now(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_todo(&self, id: &str) -> Result<()> {
+        self.0
+            .lock()
+            .execute("DELETE FROM todos WHERE id=?", [id])?;
         Ok(())
     }
 
@@ -879,12 +918,13 @@ fn todo_row(r: &Row<'_>) -> rusqlite::Result<Todo> {
         description: r.get(5)?,
         status: r.get(6)?,
         session_id: r.get(7)?,
-        created_at: r.get(8)?,
-        updated_at: r.get(9)?,
+        blocked_reason: r.get(8)?,
+        created_at: r.get(9)?,
+        updated_at: r.get(10)?,
     })
 }
 
-const TODO_COLUMNS: &str = "id,project_id,workstream_id,origin_workstream_id,title,description,status,session_id,created_at,updated_at";
+const TODO_COLUMNS: &str = "id,project_id,workstream_id,origin_workstream_id,title,description,status,session_id,blocked_reason,created_at,updated_at";
 
 const SETTLEMENT_OPERATION_COLUMNS: &str = "workstream_id,phase,code_action,todo_action,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
 
@@ -1071,6 +1111,7 @@ fn migrate_development_schema(connection: &Connection) -> Result<()> {
                origin_workstream_id TEXT REFERENCES workstreams(id) ON DELETE SET NULL,
                title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
                session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+               blocked_reason TEXT,
                created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
                CHECK ((project_id IS NULL) != (workstream_id IS NULL))
              );
@@ -1079,6 +1120,11 @@ fn migrate_development_schema(connection: &Connection) -> Result<()> {
              DROP TABLE todos_legacy;",
         )?;
     }
+    add(
+        "todos",
+        "blocked_reason",
+        "ALTER TABLE todos ADD COLUMN blocked_reason TEXT;",
+    )?;
     let settlement_exists: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='settlement_operations')",
         [],

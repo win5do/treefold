@@ -10,7 +10,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Path as AxumPath, Query, State,
     },
-    http::{Method, StatusCode},
+    http::{HeaderMap, Method, StatusCode},
     response::IntoResponse,
     routing::{get, patch, post},
     Json, Router,
@@ -37,6 +37,14 @@ pub struct AppState {
 }
 
 pub async fn serve(state: AppState) -> anyhow::Result<()> {
+    let app = app(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:7331").await?;
+    log::info!("Rust API listening on http://127.0.0.1:7331");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+fn app(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
         .allow_methods([
@@ -47,8 +55,23 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
             Method::DELETE,
         ])
         .allow_headers(tower_http::cors::Any);
-    let app = Router::new()
+    Router::new()
         .route("/api/health", get(health))
+        .route("/api/v1/agent/current", get(agent_current))
+        .route(
+            "/api/v1/agent/todos",
+            get(agent_list_todos).post(agent_create_todo),
+        )
+        .route(
+            "/api/v1/agent/todos/{id}",
+            get(agent_get_todo)
+                .patch(agent_edit_todo)
+                .delete(agent_delete_todo),
+        )
+        .route("/api/v1/agent/todos/{id}/claim", post(agent_claim_todo))
+        .route("/api/v1/agent/todos/{id}/release", post(agent_release_todo))
+        .route("/api/v1/agent/todos/{id}/done", post(agent_done_todo))
+        .route("/api/v1/agent/todos/{id}/block", post(agent_block_todo))
         .route("/api/system", get(system_status))
         .route("/api/projects", get(list_projects).post(create_project))
         .route(
@@ -129,11 +152,7 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
         .fallback(route_not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(cors)
-        .with_state(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:7331").await?;
-    log::info!("Rust API listening on http://127.0.0.1:7331");
-    axum::serve(listener, app).await?;
-    Ok(())
+        .with_state(state)
 }
 
 async fn route_not_found() -> AppError {
@@ -158,6 +177,257 @@ async fn system_status() -> Result<Json<Value>> {
         "platform":"darwin", "codex_available":codex.is_some(), "codex_version":codex,
         "backend":"rust", "terminal_runtime":"portable-pty"
     })))
+}
+
+struct AgentContext {
+    session: Session,
+    workstream: Workstream,
+}
+
+fn agent_context(state: &AppState, headers: &HeaderMap) -> Result<AgentContext> {
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::api(
+                StatusCode::UNAUTHORIZED,
+                "AGENT_AUTH_REQUIRED",
+                "missing Treefold Session capability",
+            )
+        })?;
+    // The pre-release local API uses the random Session ID as its loopback-only
+    // capability. A future authenticated UI API can replace this with a keychain-
+    // backed token without changing the CLI contract.
+    let session = state.store.session(token).map_err(|_| {
+        AppError::api(
+            StatusCode::UNAUTHORIZED,
+            "AGENT_AUTH_INVALID",
+            "invalid or expired Treefold Session capability",
+        )
+    })?;
+    let workstream = state.store.workstream(&session.workstream_id)?;
+    if workstream.status != "active" {
+        return Err(AppError::api(
+            StatusCode::FORBIDDEN,
+            "WORKSTREAM_ARCHIVED",
+            "the Session Workstream is archived",
+        ));
+    }
+    Ok(AgentContext {
+        session,
+        workstream,
+    })
+}
+
+fn agent_owned_todos(state: &AppState, workstream_id: &str) -> Result<Vec<Todo>> {
+    Ok(state
+        .store
+        .todos(workstream_id)?
+        .into_iter()
+        .filter(|todo| todo.workstream_id.as_deref() == Some(workstream_id))
+        .collect())
+}
+
+fn agent_todo(state: &AppState, context: &AgentContext, id: &str) -> Result<Todo> {
+    let todo = state.store.todo(id)?;
+    if todo.workstream_id.as_deref() != Some(context.workstream.id.as_str()) {
+        return Err(AppError::api(
+            StatusCode::NOT_FOUND,
+            "TODO_NOT_FOUND",
+            "Todo does not belong to the current Workstream",
+        ));
+    }
+    Ok(todo)
+}
+
+fn ensure_todo_not_owned_by_another_session(context: &AgentContext, todo: &Todo) -> Result<()> {
+    if todo
+        .session_id
+        .as_deref()
+        .is_some_and(|session_id| session_id != context.session.id)
+    {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_ASSIGNED_TO_ANOTHER_SESSION",
+            "Todo is assigned to another Session",
+        ));
+    }
+    Ok(())
+}
+
+async fn agent_current(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>> {
+    let context = agent_context(&state, &headers)?;
+    Ok(Json(treefold_runtime_snapshot(
+        &state,
+        &context.session,
+        &context.workstream,
+    )?))
+}
+
+async fn agent_list_todos(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<Todo>>> {
+    let context = agent_context(&state, &headers)?;
+    Ok(Json(agent_owned_todos(&state, &context.workstream.id)?))
+}
+
+async fn agent_get_todo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Todo>> {
+    let context = agent_context(&state, &headers)?;
+    Ok(Json(agent_todo(&state, &context, &id)?))
+}
+
+#[derive(Deserialize)]
+struct AgentCreateTodo {
+    title: String,
+    description: Option<String>,
+}
+
+async fn agent_create_todo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    ApiJson(input): ApiJson<AgentCreateTodo>,
+) -> Result<(StatusCode, Json<Todo>)> {
+    let context = agent_context(&state, &headers)?;
+    if input.title.trim().is_empty() {
+        return Err(AppError::BadRequest("title is required".into()));
+    }
+    let timestamp = now();
+    let todo = Todo {
+        id: id(),
+        project_id: None,
+        workstream_id: Some(context.workstream.id),
+        origin_workstream_id: None,
+        title: input.title.trim().into(),
+        description: trimmed(input.description).unwrap_or_default(),
+        status: "pending".into(),
+        session_id: None,
+        blocked_reason: None,
+        created_at: timestamp.clone(),
+        updated_at: timestamp,
+    };
+    state.store.create_todo(&todo)?;
+    Ok((StatusCode::CREATED, Json(todo)))
+}
+
+#[derive(Deserialize)]
+struct AgentEditTodo {
+    title: Option<String>,
+    description: Option<String>,
+}
+
+async fn agent_edit_todo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<AgentEditTodo>,
+) -> Result<Json<Todo>> {
+    let context = agent_context(&state, &headers)?;
+    agent_todo(&state, &context, &id)?;
+    let title = trimmed(input.title);
+    let description = trimmed(input.description);
+    if title.as_deref().is_some_and(str::is_empty) {
+        return Err(AppError::BadRequest("title must not be empty".into()));
+    }
+    if title.is_none() && description.is_none() {
+        return Err(AppError::BadRequest(
+            "title or description is required".into(),
+        ));
+    }
+    state
+        .store
+        .edit_todo(&id, title.as_deref(), description.as_deref())?;
+    Ok(Json(state.store.todo(&id)?))
+}
+
+async fn agent_delete_todo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Value>> {
+    let context = agent_context(&state, &headers)?;
+    agent_todo(&state, &context, &id)?;
+    state.store.delete_todo(&id)?;
+    Ok(Json(json!({"removed":true, "id":id})))
+}
+
+async fn agent_claim_todo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Todo>> {
+    let context = agent_context(&state, &headers)?;
+    let todo = agent_todo(&state, &context, &id)?;
+    ensure_todo_not_owned_by_another_session(&context, &todo)?;
+    if !state.store.claim_todo(&id, &context.session.id)? {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_ALREADY_CLAIMED",
+            "Todo is not pending or is assigned to another Session",
+        ));
+    }
+    Ok(Json(state.store.todo(&id)?))
+}
+
+async fn agent_release_todo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Todo>> {
+    let context = agent_context(&state, &headers)?;
+    let todo = agent_todo(&state, &context, &id)?;
+    if todo.session_id.as_deref() != Some(context.session.id.as_str()) {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_NOT_ASSIGNED_TO_SESSION",
+            "Todo is not assigned to the current Session",
+        ));
+    }
+    state.store.update_todo(&id, "pending", None)?;
+    Ok(Json(state.store.todo(&id)?))
+}
+
+async fn agent_done_todo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<Todo>> {
+    let context = agent_context(&state, &headers)?;
+    let todo = agent_todo(&state, &context, &id)?;
+    ensure_todo_not_owned_by_another_session(&context, &todo)?;
+    state
+        .store
+        .update_todo(&id, "done", Some(&context.session.id))?;
+    Ok(Json(state.store.todo(&id)?))
+}
+
+#[derive(Deserialize)]
+struct AgentBlockTodo {
+    reason: String,
+}
+
+async fn agent_block_todo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<AgentBlockTodo>,
+) -> Result<Json<Todo>> {
+    let context = agent_context(&state, &headers)?;
+    let todo = agent_todo(&state, &context, &id)?;
+    ensure_todo_not_owned_by_another_session(&context, &todo)?;
+    if input.reason.trim().is_empty() {
+        return Err(AppError::BadRequest("reason is required".into()));
+    }
+    state
+        .store
+        .block_todo(&id, &context.session.id, input.reason.trim())?;
+    Ok(Json(state.store.todo(&id)?))
 }
 
 async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project>>> {
@@ -2907,6 +3177,7 @@ async fn create_todo(
             "pending".into()
         },
         session_id: input.session_id,
+        blocked_reason: None,
         created_at: timestamp.clone(),
         updated_at: timestamp,
     };
@@ -3128,15 +3399,11 @@ fn run_worktree_setup_command(directory: &Directory, workspace_path: &str) -> Re
     )))
 }
 
-fn treefold_developer_instructions(
+fn treefold_runtime_snapshot(
     state: &AppState,
     session: &Session,
     workstream: &Workstream,
-) -> Result<Option<String>> {
-    if session.kind != "codex" {
-        return Ok(None);
-    }
-
+) -> Result<Value> {
     let project = state.store.project(&workstream.project_id)?;
     let directories = state.store.directories(&workstream.project_id)?;
     let directory_snapshots = directories
@@ -3183,7 +3450,8 @@ fn treefold_developer_instructions(
         None
     };
 
-    let snapshot = json!({
+    let todos = agent_owned_todos(state, &workstream.id)?;
+    Ok(json!({
         "schema_version": 1,
         "observed_at": now(),
         "project": {
@@ -3212,9 +3480,32 @@ fn treefold_developer_instructions(
             "workspace_changed": normalized_path(&session.cwd) != normalized_path(&session.original_cwd),
             "git": git_runtime_snapshot(&session.cwd),
         },
+        "workspace": {
+            "path": session.cwd,
+            "original_path": session.original_cwd,
+            "mode": workstream.workspace_mode,
+            "git": git_runtime_snapshot(&session.cwd),
+        },
         "directories": directory_snapshots,
         "integration_target": integration_target,
-    });
+        "todos": todos,
+        "runtime": {
+            "type": "amux",
+            "workspace": TerminalManager::workspace_name(&session.cwd),
+        },
+    }))
+}
+
+fn treefold_developer_instructions(
+    state: &AppState,
+    session: &Session,
+    workstream: &Workstream,
+) -> Result<Option<String>> {
+    if session.kind != "codex" {
+        return Ok(None);
+    }
+
+    let snapshot = treefold_runtime_snapshot(state, session, workstream)?;
     let snapshot = serde_json::to_string_pretty(&snapshot)
         .map_err(|error| AppError::Internal(error.into()))?;
     Ok(Some(format!(
@@ -3684,10 +3975,16 @@ fn cleanup_worktree(repository: &str, workstream: &Workstream) {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use axum::{extract::State, Json};
+    use axum::{
+        body::{to_bytes, Body},
+        extract::State,
+        http::{Request, StatusCode},
+        Json,
+    };
+    use tower::ServiceExt;
 
     use super::{
-        abort_rebase, command_output, continue_rebase, create_fork, create_project,
+        abort_rebase, app, command_output, continue_rebase, create_fork, create_project,
         create_project_session, create_session, create_settlement_preflight_impl, create_todo,
         create_workstream, delete_project, git_head, git_is_ancestor, git_operation_history,
         git_worktrees, id_for_operation, normalized_path, parse_git_history, parse_git_worktrees,
@@ -3708,6 +4005,310 @@ mod tests {
 
     fn test_settings(home: &Path) -> SettingsStore {
         SettingsStore::open(home, home.parent().unwrap_or(home)).expect("open test settings")
+    }
+
+    async fn agent_api_fixture() -> (PathBuf, AppState, Session, Session) {
+        let root =
+            std::env::temp_dir().join(format!("treefold-agent-api-test-{}", uuid::Uuid::new_v4()));
+        let repository = root.join("repository");
+        let home = root.join("home");
+        std::fs::create_dir_all(&repository).expect("create agent API repository");
+        let state = AppState {
+            store: Store::open(&home.join("data/treefold.db")).expect("open agent API store"),
+            settings: test_settings(&home),
+            terminals: TerminalManager::default(),
+        };
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Agent API".into()),
+                description: None,
+                path: repository.to_string_lossy().into_owned(),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create agent API Project");
+        let (_, Json(workstream)) = create_workstream(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateWorkstream {
+                name: "Managed work".into(),
+                description: None,
+                workspace_mode: Some("in_place".into()),
+                base_ref: None,
+            }),
+        )
+        .await
+        .expect("create agent API Workstream");
+        let make_session = |name: &str| {
+            let timestamp = now();
+            Session {
+                id: uuid::Uuid::new_v4().simple().to_string(),
+                workstream_id: workstream.id.clone(),
+                name: name.into(),
+                kind: "codex".into(),
+                cwd: workstream.workspace_path.clone(),
+                original_cwd: workstream.workspace_path.clone(),
+                initial_prompt: String::new(),
+                codex_session_id: None,
+                yolo: false,
+                sidebar_visible: true,
+                hidden_at: None,
+                evicted_at: None,
+                process_id: String::new(),
+                process_name: String::new(),
+                status: "running".into(),
+                pid: 0,
+                process_group_id: 0,
+                exit_code: None,
+                exit_signal: String::new(),
+                command: vec![],
+                launch_started_at: timestamp.clone(),
+                last_attached_at: None,
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+                additional_directories: vec![],
+            }
+        };
+        let first = make_session("first");
+        let second = make_session("second");
+        state
+            .store
+            .create_session(&first)
+            .expect("create first Session");
+        state
+            .store
+            .create_session(&second)
+            .expect("create second Session");
+        (root, state, first, second)
+    }
+
+    fn agent_request(
+        method: &str,
+        path: &str,
+        session: Option<&Session>,
+        body: Option<serde_json::Value>,
+    ) -> Request<Body> {
+        let mut request = Request::builder().method(method).uri(path);
+        if let Some(session) = session {
+            request = request.header("authorization", format!("Bearer {}", session.id));
+        }
+        if body.is_some() {
+            request = request.header("content-type", "application/json");
+        }
+        request
+            .body(Body::from(
+                body.map_or_else(String::new, |value| value.to_string()),
+            ))
+            .expect("build agent API request")
+    }
+
+    #[tokio::test]
+    async fn agent_api_requires_session_capability_and_returns_current_context() {
+        let (root, state, first, _) = agent_api_fixture().await;
+        let router = app(state.clone());
+        let unauthorized = router
+            .clone()
+            .oneshot(agent_request("GET", "/api/v1/agent/current", None, None))
+            .await
+            .expect("request unauthorized context");
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let response = router
+            .oneshot(agent_request(
+                "GET",
+                "/api/v1/agent/current",
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("request current context");
+        assert_eq!(response.status(), StatusCode::OK);
+        let value: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("read current context"),
+        )
+        .expect("decode current context");
+        assert_eq!(value["session"]["id"], first.id);
+        assert_eq!(value["workspace"]["path"], first.cwd);
+        assert_eq!(value["runtime"]["type"], "amux");
+        assert!(value["runtime"]["workspace"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("treefold-ws-")));
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove agent API fixture");
+    }
+
+    #[tokio::test]
+    async fn agent_todo_api_supports_crud_and_atomic_claims() {
+        let (root, state, first, second) = agent_api_fixture().await;
+        let router = app(state.clone());
+        let created = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                "/api/v1/agent/todos",
+                Some(&first),
+                Some(serde_json::json!({"title":"Implement CLI","description":"MVP"})),
+            ))
+            .await
+            .expect("create Todo");
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let created: serde_json::Value = serde_json::from_slice(
+            &to_bytes(created.into_body(), usize::MAX)
+                .await
+                .expect("read created Todo"),
+        )
+        .expect("decode created Todo");
+        let todo_id = created["id"].as_str().expect("created Todo ID");
+
+        let listed = router
+            .clone()
+            .oneshot(agent_request(
+                "GET",
+                "/api/v1/agent/todos",
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("list Todos");
+        let listed: serde_json::Value = serde_json::from_slice(
+            &to_bytes(listed.into_body(), usize::MAX)
+                .await
+                .expect("read Todo list"),
+        )
+        .expect("decode Todo list");
+        assert_eq!(listed.as_array().expect("Todo list").len(), 1);
+
+        let edited = router
+            .clone()
+            .oneshot(agent_request(
+                "PATCH",
+                &format!("/api/v1/agent/todos/{todo_id}"),
+                Some(&first),
+                Some(serde_json::json!({"title":"Implement Treefold CLI"})),
+            ))
+            .await
+            .expect("edit Todo");
+        assert_eq!(edited.status(), StatusCode::OK);
+
+        let claimed = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/claim"),
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("claim Todo");
+        assert_eq!(claimed.status(), StatusCode::OK);
+
+        let conflict = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/claim"),
+                Some(&second),
+                None,
+            ))
+            .await
+            .expect("conflicting Todo claim");
+        assert_eq!(conflict.status(), StatusCode::CONFLICT);
+
+        let released = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/release"),
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("release Todo");
+        assert_eq!(released.status(), StatusCode::OK);
+
+        let claimed_by_second = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/claim"),
+                Some(&second),
+                None,
+            ))
+            .await
+            .expect("claim released Todo");
+        assert_eq!(claimed_by_second.status(), StatusCode::OK);
+
+        let blocked = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/block"),
+                Some(&second),
+                Some(serde_json::json!({"reason":"missing fixture"})),
+            ))
+            .await
+            .expect("block Todo");
+        assert_eq!(blocked.status(), StatusCode::OK);
+        let blocked: serde_json::Value = serde_json::from_slice(
+            &to_bytes(blocked.into_body(), usize::MAX)
+                .await
+                .expect("read blocked Todo"),
+        )
+        .expect("decode blocked Todo");
+        assert_eq!(blocked["blocked_reason"], "missing fixture");
+
+        let done = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/done"),
+                Some(&second),
+                None,
+            ))
+            .await
+            .expect("complete Todo");
+        assert_eq!(done.status(), StatusCode::OK);
+        let shown = router
+            .clone()
+            .oneshot(agent_request(
+                "GET",
+                &format!("/api/v1/agent/todos/{todo_id}"),
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("show completed Todo");
+        let shown: serde_json::Value = serde_json::from_slice(
+            &to_bytes(shown.into_body(), usize::MAX)
+                .await
+                .expect("read completed Todo"),
+        )
+        .expect("decode completed Todo");
+        assert_eq!(shown["title"], "Implement Treefold CLI");
+        assert_eq!(shown["status"], "done");
+        assert!(shown.get("blocked_reason").is_none());
+
+        let removed = router
+            .oneshot(agent_request(
+                "DELETE",
+                &format!("/api/v1/agent/todos/{todo_id}"),
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("remove Todo");
+        assert_eq!(removed.status(), StatusCode::OK);
+        assert!(matches!(
+            state.store.todo(todo_id),
+            Err(crate::error::AppError::NotFound)
+        ));
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove agent Todo fixture");
     }
 
     #[test]
