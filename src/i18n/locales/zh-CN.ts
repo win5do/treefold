@@ -56,6 +56,10 @@ export const zhCN = {
   settings: {
     title: "设置",
     description: "应用偏好与智能体运行时默认配置。",
+    saving: "保存中…",
+    saved: "设置已保存",
+    saveFailed: "保存失败：{{message}}",
+    saveFailedFallback: "设置无法保存",
     language: {
       title: "语言",
       description: "保存后立即生效。",

@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronUp,
   CircleAlert,
+  CircleCheck,
   Folder,
   FolderGit2,
   FolderOpen,
@@ -374,6 +375,25 @@ function Workspace() {
     }
   }
 
+  async function saveSettings(update: { language: LanguagePreference; extraArgs: string[] }) {
+    setBusy(true);
+    try {
+      await api("/api/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ language: update.language, agents: { codex: { extra_args: update.extraArgs } } }),
+      });
+      await refresh(true);
+      setError("");
+      return { ok: true as const };
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : t("settings.saveFailedFallback");
+      setError(message);
+      return { ok: false as const, error: message };
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createShell(stream: WorkstreamDetail | Workstream, directory?: Directory) {
     setSessionMenu(null);
     let created: Session | null = null;
@@ -609,7 +629,7 @@ function Workspace() {
         const ok = await act(() => api(`/api/workstreams/${owner.id}/settle`, { method: "POST", body: JSON.stringify(payload) }));
         if (ok) { setSettleWorkstreamDialog(null); navigate(owner.parent_workstream_id ? `/workstreams/${owner.parent_workstream_id}` : `/projects/${owner.project.id}`); }
       }} />
-      <SettingsDialog open={settingsOpen} system={system} settings={settings} busy={busy} onOpenChange={setSettingsOpen} onSave={({ language, extraArgs }) => void act(() => api("/api/settings", { method: "PATCH", body: JSON.stringify({ language, agents: { codex: { extra_args: extraArgs } } }) }))} />
+      <SettingsDialog open={settingsOpen} system={system} settings={settings} busy={busy} onOpenChange={setSettingsOpen} onSave={saveSettings} />
     </div>
   );
 }
@@ -1207,26 +1227,55 @@ function SettleWorkstreamDialog({ workstream, busy, onOpenChange, onSubmit }: { 
     {codeAction === "discard" && <p className="rounded-lg bg-red-50 px-3 py-2 text-[11px] leading-5 text-red-700">Discard 会永久删除未合并代码；Session 历史只有在上方保持勾选时保留。</p>}
   </div><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy || preflightLoading || preflightBlocked} onClick={() => onSubmit({ code_action: codeAction, todo_action: todoAction, keep_session_history: keepSessions, delete_worktree: managed && deleteWorktree, delete_branch: managed && deleteBranch, commit_message: commitMessage || undefined, preflight_id: preflight?.id })}>{busy ? "Settling…" : "Close and settle"}</Button></div></DialogContent></Dialog>;
 }
-function SettingsDialog({ open, system, settings, busy, onOpenChange, onSave }: { open: boolean; system: SystemStatus | null; settings: AppSettings | null; busy: boolean; onOpenChange: (open: boolean) => void; onSave: (update: { language: LanguagePreference; extraArgs: string[] }) => void }) {
+type SettingsSaveFeedback =
+  | { kind: "idle" | "saving" | "success" }
+  | { kind: "error"; message: string };
+
+function SettingsDialog({ open, system, settings, busy, onOpenChange, onSave }: { open: boolean; system: SystemStatus | null; settings: AppSettings | null; busy: boolean; onOpenChange: (open: boolean) => void; onSave: (update: { language: LanguagePreference; extraArgs: string[] }) => Promise<{ ok: true } | { ok: false; error: string }> }) {
   const { t } = useTranslation();
   const [extraArgs, setExtraArgs] = useState<string[]>([]);
   const [language, setLanguage] = useState<LanguagePreference>("system");
+  const [saveFeedback, setSaveFeedback] = useState<SettingsSaveFeedback>({ kind: "idle" });
   const configuredArgsKey = JSON.stringify(settings?.agents.codex.extra_args ?? []);
   useEffect(() => {
     if (!open) return;
     setExtraArgs([...(settings?.agents.codex.extra_args ?? [])]);
     setLanguage(settings?.language ?? "system");
   }, [open, configuredArgsKey, settings?.language]);
-  const updateArgument = (index: number, value: string) => setExtraArgs((current) => current.map((argument, itemIndex) => itemIndex === index ? value : argument));
-  const removeArgument = (index: number) => setExtraArgs((current) => current.filter((_, itemIndex) => itemIndex !== index));
-  const moveArgument = (index: number, offset: number) => setExtraArgs((current) => {
-    const target = index + offset;
-    if (target < 0 || target >= current.length) return current;
-    const next = [...current];
-    [next[index], next[target]] = [next[target], next[index]];
-    return next;
-  });
+  useEffect(() => {
+    if (open) setSaveFeedback({ kind: "idle" });
+  }, [open]);
+  useEffect(() => {
+    if (saveFeedback.kind !== "success") return;
+    const timer = window.setTimeout(() => setSaveFeedback({ kind: "idle" }), 2400);
+    return () => window.clearTimeout(timer);
+  }, [saveFeedback.kind]);
+  const clearSaveFeedback = () => setSaveFeedback({ kind: "idle" });
+  const updateArgument = (index: number, value: string) => {
+    clearSaveFeedback();
+    setExtraArgs((current) => current.map((argument, itemIndex) => itemIndex === index ? value : argument));
+  };
+  const removeArgument = (index: number) => {
+    clearSaveFeedback();
+    setExtraArgs((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  };
+  const moveArgument = (index: number, offset: number) => {
+    clearSaveFeedback();
+    setExtraArgs((current) => {
+      const target = index + offset;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  };
   const hasEmptyArgument = extraArgs.some((argument) => argument.length === 0);
+  const saving = saveFeedback.kind === "saving";
+  const handleSave = async () => {
+    setSaveFeedback({ kind: "saving" });
+    const result = await onSave({ language, extraArgs });
+    setSaveFeedback(result.ok ? { kind: "success" } : { kind: "error", message: result.error });
+  };
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden">
       <DialogTitle className="shrink-0 text-lg font-semibold">{t("settings.title")}</DialogTitle>
@@ -1239,7 +1288,7 @@ function SettingsDialog({ open, system, settings, busy, onOpenChange, onSave }: 
         <section className="rounded-xl border border-neutral-200 p-4">
           <label className="block text-sm font-medium" htmlFor="settings-language">{t("settings.language.title")}</label>
           <p className="mt-1 text-xs leading-5 text-neutral-400">{t("settings.language.description")}</p>
-          <Select data-testid="settings-language" id="settings-language" className="mt-3" value={language} onChange={(event) => setLanguage(event.target.value as LanguagePreference)}>
+          <Select data-testid="settings-language" id="settings-language" className="mt-3" value={language} onChange={(event) => { clearSaveFeedback(); setLanguage(event.target.value as LanguagePreference); }}>
             <option value="system">{t("settings.language.system")}</option>
             <option value="en-US">{t("settings.language.english")}</option>
             <option value="zh-CN">{t("settings.language.simplifiedChinese")}</option>
@@ -1248,7 +1297,7 @@ function SettingsDialog({ open, system, settings, busy, onOpenChange, onSave }: 
         <section className="rounded-xl border border-neutral-200 p-4">
           <div className="flex items-start justify-between gap-3">
             <div><h3 className="text-sm font-medium">{t("settings.codexArguments.title")}</h3><p className="mt-1 text-xs leading-5 text-neutral-400">{t("settings.codexArguments.description")}</p></div>
-            <Button size="sm" variant="secondary" onClick={() => setExtraArgs((current) => [...current, ""])}><Plus className="size-3.5" />{t("settings.codexArguments.add")}</Button>
+            <Button size="sm" variant="secondary" onClick={() => { clearSaveFeedback(); setExtraArgs((current) => [...current, ""]); }}><Plus className="size-3.5" />{t("settings.codexArguments.add")}</Button>
           </div>
           <div data-testid="codex-extra-args" className="mt-4 space-y-2">
             {extraArgs.length === 0 ? <p className="rounded-lg bg-neutral-50 px-3 py-4 text-center text-xs text-neutral-400">{t("settings.codexArguments.empty")}</p> : extraArgs.map((argument, index) => <div key={index} className="flex items-center gap-2">
@@ -1262,7 +1311,11 @@ function SettingsDialog({ open, system, settings, busy, onOpenChange, onSave }: 
           {hasEmptyArgument && <p className="mt-2 text-xs text-red-600">{t("settings.codexArguments.validation")}</p>}
         </section>
       </div>
-      <div className="mt-5 flex shrink-0 justify-end"><Button disabled={busy || hasEmptyArgument} onClick={() => onSave({ language, extraArgs })}>{t("common.save")}</Button></div>
+      <div className="mt-5 flex min-h-9 shrink-0 items-center justify-end gap-3">
+        {saveFeedback.kind === "success" && <p data-testid="settings-save-status" role="status" aria-live="polite" className="flex items-center gap-1.5 text-xs text-emerald-700"><CircleCheck className="size-4" />{t("settings.saved")}</p>}
+        {saveFeedback.kind === "error" && <p data-testid="settings-save-status" role="alert" className="max-w-sm truncate text-xs text-red-600" title={saveFeedback.message}>{t("settings.saveFailed", { message: saveFeedback.message })}</p>}
+        <Button data-testid="settings-save" aria-busy={saving} disabled={busy || hasEmptyArgument} onClick={() => void handleSave()}>{saving && <RefreshCw data-testid="settings-save-spinner" className="size-3.5 animate-spin" />}{t(saving ? "settings.saving" : "common.save")}</Button>
+      </div>
     </DialogContent>
   </Dialog>;
 }

@@ -72,6 +72,13 @@ try {
   await codexArguments[3].setValue("--search");
   await (await settingsDialog.$('button[aria-label="Move Codex argument 4 up"]')).click();
   await (await settingsDialog.$("button=Save")).click();
+  const settingsSaveButton = await settingsDialog.$('[data-testid="settings-save"]');
+  assert.equal(await settingsSaveButton.getAttribute("aria-busy"), "true", "Settings save must expose its in-progress state");
+  assert.equal(await settingsSaveButton.getText(), "Saving…", "Settings save button must describe the in-progress action");
+  assert.equal(await (await settingsDialog.$('[data-testid="settings-save-spinner"]')).isDisplayed(), true, "Settings save must show a spinner while the request is pending");
+  const settingsSaveStatus = await settingsDialog.$('[data-testid="settings-save-status"]');
+  await settingsSaveStatus.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await settingsSaveStatus.getText(), "Settings saved", "Settings save must confirm success next to the action");
   await browser.keys(Key.Escape);
   await settingsDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await (await browser.$('[data-testid="open-settings"]')).click();

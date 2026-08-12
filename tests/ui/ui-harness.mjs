@@ -42,6 +42,7 @@ async function startFixtureApi() {
     }
     if (request.method === "PATCH" && pathname === "/api/settings") {
       const input = await readJson(request);
+      await new Promise((resolve) => setTimeout(resolve, 150));
       const allowed = new Set(["language", "worktree_root", "agents"]);
       if (Object.keys(input).some((key) => !allowed.has(key))) {
         sendJson(response, 400, { error: "Unknown settings field" });

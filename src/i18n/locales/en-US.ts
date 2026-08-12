@@ -54,6 +54,10 @@ export const enUS = {
   settings: {
     title: "Settings",
     description: "Application preferences and agent runtime defaults.",
+    saving: "Saving…",
+    saved: "Settings saved",
+    saveFailed: "Save failed: {{message}}",
+    saveFailedFallback: "Settings could not be saved",
     language: {
       title: "Language",
       description: "Changes apply immediately after saving.",
