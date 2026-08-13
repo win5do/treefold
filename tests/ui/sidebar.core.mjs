@@ -202,8 +202,26 @@ try {
   }
   assert.equal((await sidebar.getText()).includes(FIXTURE_NAMES.archivedFork), false, "archived Fork must stay out of the active sidebar tree");
 
+  const projectCreateButton = await browser.$('[data-testid="sidebar-project-action"]');
+  await projectCreateButton.click();
+  let sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
+  await sessionMenu.waitForDisplayed({ timeout: 3_000 });
+  const createWorkstreamAction = await sessionMenu.$('[data-testid="create-workstream-action"]');
+  assert.equal(await createWorkstreamAction.getText(), "New Workstream", "Project plus menu must offer Workstream creation first");
+  assert.equal(await browser.execute(() => {
+    const action = document.querySelector('[data-testid="create-workstream-action"]');
+    const sessionHeading = document.querySelector('[data-testid="sidebar-session-menu"] p');
+    return Boolean(action && sessionHeading && (action.compareDocumentPosition(sessionHeading) & Node.DOCUMENT_POSITION_FOLLOWING));
+  }), true, "New Workstream must appear above the Session directory section");
+  await createWorkstreamAction.click();
+  const createWorkstreamDialog = await browser.$('[role="dialog"]');
+  await createWorkstreamDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await createWorkstreamDialog.getText(), /New Workstream/, "Project plus menu must open Workstream creation");
+  await browser.keys(Key.Escape);
+  await createWorkstreamDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+
   const actionButtons = await browser.$$('[data-testid="sidebar-node-action"]');
-  assert.equal(actionButtons.length, 2, "expected Session actions for the active Workstream and Fork");
+  assert.equal(actionButtons.length, 2, "expected creation actions for the active Workstream and Fork");
   const sidebarX = await sidebar.getLocation("x");
   for (const action of actionButtons) {
     const actionRight = (await action.getLocation("x")) + (await action.getSize("width"));
@@ -212,7 +230,7 @@ try {
   const forkNodes = await browser.$$('[data-testid="sidebar-fork-node"]');
   assert.equal(forkNodes.length, 1, "expected exactly one active fixture Fork");
   for (const fork of forkNodes) {
-    assert.ok(await (await fork.$('[data-testid="sidebar-node-action"]')).isExisting(), "a visible Fork must expose its Session action");
+    assert.ok(await (await fork.$('[data-testid="sidebar-node-action"]')).isExisting(), "a visible Fork must expose its Session creation action");
   }
   const alignedActions = await browser.$$('[data-sidebar-row-action="true"]');
   const actionRights = await alignedActions.map(async (action) => (await action.getLocation("x")) + (await action.getSize("width")));
@@ -221,12 +239,28 @@ try {
   const plusAnchorLeft = await actionButtons[0].getLocation("x");
   const plusAnchorBottom = (await actionButtons[0].getLocation("y")) + (await actionButtons[0].getSize("height"));
   await actionButtons[0].click();
-  let sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
+  sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
   assert.ok(Math.abs((await sessionMenu.getLocation("x")) - plusAnchorLeft) <= 1, "plus menu left edge must align with the plus button left edge");
   assert.ok(Math.abs((await sessionMenu.getLocation("y")) - (plusAnchorBottom + 4)) <= 1, "plus menu must open immediately below its plus button anchor");
   assert.match(await sessionMenu.getText(), /NEW SESSION IN/);
   assert.match(await sessionMenu.getText(), /fixture-repository/);
+  const createForkAction = await sessionMenu.$('[data-testid="create-fork-action"]');
+  assert.equal(await createForkAction.getText(), "New Fork", "Workstream plus menu must offer Fork creation first");
+  assert.equal(await browser.execute(() => {
+    const action = document.querySelector('[data-testid="create-fork-action"]');
+    const sessionHeading = document.querySelector('[data-testid="sidebar-session-menu"] p');
+    return Boolean(action && sessionHeading && (action.compareDocumentPosition(sessionHeading) & Node.DOCUMENT_POSITION_FOLLOWING));
+  }), true, "New Fork must appear above the Session directory section");
+  await createForkAction.click();
+  const createForkDialog = await browser.$('[role="dialog"]');
+  await createForkDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await createForkDialog.getText(), /Fork work/, "Workstream plus menu must open Fork creation");
+  await browser.keys(Key.Escape);
+  await createForkDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await actionButtons[0].click();
+  sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
+  await sessionMenu.waitForDisplayed({ timeout: 3_000 });
   await (await sessionMenu.$(`[data-testid="session-directory-${FIXTURE_IDS.primaryDirectory}"]`)).moveTo();
   assert.match(await sessionMenu.getText(), /Shell/);
   assert.match(await sessionMenu.getText(), /Codex/);
@@ -237,6 +271,13 @@ try {
   await actionButtons[0].click();
   sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
+  await browser.keys(Key.Escape);
+  await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await actionButtons[1].click();
+  sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
+  await sessionMenu.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await (await sessionMenu.$('[data-testid="create-fork-action"]')).isExisting(), false, "Fork plus menu must not offer a nested Fork");
+  assert.match(await sessionMenu.getText(), /NEW SESSION IN/, "Fork plus menu must retain Session creation");
   await browser.keys(Key.Escape);
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
