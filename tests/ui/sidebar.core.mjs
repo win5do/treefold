@@ -17,16 +17,18 @@ try {
   const projectToggle = await browser.$(`button[aria-label="Expand Project ${FIXTURE_NAMES.project}"]`); await projectToggle.click();
   const workspaceToggle = await browser.$(`button[aria-label="Expand Workspace ${FIXTURE_NAMES.workspace}"]`); await workspaceToggle.waitForDisplayed({ timeout: 3_000 });
   assert.equal((await browser.$$('[data-testid="sidebar-workspace-node"]')).length, 1, "Project must contain its root Workspace node");
-  assert.equal((await browser.$$('[data-testid="sidebar-project-session-node"]')).length, 1, "Project must expose formal Sessions");
+  assert.equal((await browser.$$('[data-testid="sidebar-project-session-node"]')).length, 0, "Project must not own formal Sessions");
 
   await (await browser.$(`button*=${FIXTURE_NAMES.project}`)).click();
   const projectPage = await browser.$('[data-testid="workspace-main"]'); await projectPage.waitForDisplayed();
   assert.match(await projectPage.getText(), /Project · repository metadata/i);
   assert.match(await projectPage.getText(), /Git common dir/i);
   assert.match(await projectPage.getText(), /Default target/i);
-  assert.match(await projectPage.getText(), /Project Sessions/);
-  assert.equal(await (await browser.$("button=New Shell")).isDisplayed(), true);
-  assert.equal(await (await browser.$("button=New Codex")).isDisplayed(), true);
+  assert.equal((await projectPage.getText()).includes("Project Sessions"), false);
+  assert.equal(await (await browser.$("button=Open Shell")).isDisplayed(), true);
+  assert.equal(await (await browser.$("button=Open Codex")).isDisplayed(), true);
+  await (await browser.$("button=Open Shell")).click();
+  await browser.$("*=unmanaged external tool").waitForDisplayed({ timeout: 3_000 });
   await (await browser.$("button=Pull")).click();
   await browser.$("*=Project target pull: up_to_date").waitForDisplayed({ timeout: 3_000 });
   await (await browser.$("button=Push")).click();
@@ -78,6 +80,9 @@ try {
   dialog = await browser.$('[role="dialog"]'); await dialog.waitForDisplayed({ timeout: 3_000 });
   await browser.waitUntil(async () => (await dialog.getText()).includes("2 ahead"), { timeout: 3_000 });
   assert.match(await dialog.getText(), /Merge into parent Workspace/);
+  assert.match(await dialog.getText(), /Carry into parent Workspace/);
+  assert.equal(await (await dialog.$('select')).getValue(), "local_merge");
+  assert.equal(await (await dialog.$$('select'))[1].getValue(), "carry");
   assert.equal((await dialog.getText()).includes("Already merged through remote review"), false);
   assert.equal((await dialog.getText()).includes("Push target branch"), false);
   assert.equal(await (await dialog.$("button=Finish Fork")).isEnabled(), true);
@@ -91,7 +96,7 @@ try {
   assert.equal(await (await dialog.$('input[name="remote_branch"]')).isExisting(), true);
   assert.match(await dialog.getText(), /Remote review \/ CR-CI/i);
   harness.assertNoUnexpectedRequests();
-  console.log("✓ Project, Workspace, and Fork Sessions plus scoped Git synchronization and finish flows passed");
+  console.log("✓ Project unmanaged tools, Workspace/Fork Sessions, scoped Git synchronization, and finish flows passed");
 } catch (error) {
   await browser?.saveScreenshot("/tmp/treefold-ui-failure.png").catch(() => {}); throw error;
 } finally { await browser?.deleteSession(); await harness.close(); }

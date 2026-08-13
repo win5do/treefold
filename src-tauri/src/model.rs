@@ -135,7 +135,6 @@ pub struct ProjectDetail {
     pub directories: Vec<Directory>,
     pub workspaces: Vec<Workspace>,
     pub worktrees: Vec<GitWorktree>,
-    pub sessions: Vec<Session>,
 }
 
 #[derive(Clone, Debug, Serialize)]

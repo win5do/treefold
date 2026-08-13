@@ -3,7 +3,6 @@ export const FIXTURE_IDS = Object.freeze({
   directory: "directory-ui-fixture",
   workspace: "workspace-ui-fixture",
   fork: "fork-ui-fixture",
-  projectShell: "session-project-shell-ui-fixture",
   shell: "session-shell-ui-fixture",
   forkShell: "session-fork-shell-ui-fixture",
 });
@@ -105,7 +104,6 @@ const shell = {
   status: "running",
 };
 
-const projectShell = { ...shell, id: FIXTURE_IDS.projectShell, workspace_id: "project-base-ui-fixture", name: "Project Shell", cwd: sourcePath, original_cwd: sourcePath };
 const forkShell = { ...shell, id: FIXTURE_IDS.forkShell, workspace_id: FIXTURE_IDS.fork, name: "Fork Shell", cwd: forkPath, original_cwd: forkPath };
 
 const projectDetail = {
@@ -113,7 +111,6 @@ const projectDetail = {
   directories: [directory],
   workspaces: [workspace],
   worktrees: [{ directory_id: directory.id, directory_name: directory.name, path: sourcePath, branch: "main", head_commit: "0123456789", is_main: true }],
-  sessions: [projectShell],
 };
 
 const workspaceDetail = {

@@ -4,7 +4,6 @@ Treefold uses a shallow development hierarchy:
 
 ```text
 Project
-├── Session
 └── Workspace
     ├── Session
     ├── Todo
@@ -13,8 +12,8 @@ Project
         └── Todo
 ```
 
-Every level can create formal Shell or Codex Sessions. The levels differ in
-their Git ownership, not in whether they can host a terminal.
+Workspace and Fork can create formal Shell or Codex Sessions. Project exposes
+unmanaged external tools instead of owning development Sessions.
 
 ## Project
 
@@ -22,9 +21,9 @@ A Project is a registered Git repository, not a development branch. It owns the
 source checkout, Git common directory, remotes, default target branch, default
 delivery mode, and the inventory of Workspaces and worktrees.
 
-Project Sessions run in the source checkout and are recorded, resumed, stopped,
-and archived like other Sessions. They are an explicit escape hatch for
-repository-level work: the user owns the effects of commands run there.
+`Open Shell` and `Open Codex` launch unrestricted external tools in the source
+checkout. Treefold does not record, resume, stop, archive, or attach those
+processes to delivery. The user owns the effects of commands run there.
 
 Project Pull fetches the preferred remote target and fast-forwards only when the
 source checkout is clean and currently on that target. Project Push pushes that
@@ -52,10 +51,7 @@ synchronization and final delivery.
 
 ## Session
 
-A Session belongs directly to a Project, Workspace, or Fork. Internally,
-Project Sessions use a hidden in-place runtime owner so the persistence and PTY
-lifecycle stay uniform; this is an implementation detail, not a visible
-development Workspace.
+A Session belongs directly to a Workspace or Fork.
 
 Shell Sessions run the login shell. Codex Sessions run Codex with their owner's
 checkout as primary context. Treefold records lifecycle state and can stop,
@@ -68,6 +64,8 @@ fixed target with an optional push, preserve its work, or discard it. Active
 Forks must be finished first.
 
 A Fork can merge locally into its parent Workspace, preserve its work, or
-discard it. It cannot claim a remote merge or push after merge. All delivery
-paths use preflight validation and delay cleanup until the selected outcome is
-proven.
+discard it. By default its Todos are carried into the parent Workspace;
+assigned, in-progress, or blocked work returns to pending while completed work
+stays completed. A Fork cannot claim a remote merge or push after merge. All
+delivery paths use preflight validation and delay cleanup until the selected
+outcome is proven.

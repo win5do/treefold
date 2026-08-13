@@ -86,7 +86,7 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/projects/{id}/git/pull", post(pull_project))
         .route("/api/projects/{id}/git/push", post(push_project))
-        .route("/api/projects/{id}/sessions", post(create_project_session))
+        .route("/api/projects/{id}/open-tool", post(open_project_tool))
         .route("/api/projects/{id}/reveal", post(reveal_project))
         .route(
             "/api/projects/{id}/reconciliation",
@@ -181,6 +181,95 @@ async fn system_status() -> Result<Json<Value>> {
         "platform":"darwin", "codex_available":codex.is_some(), "codex_version":codex,
         "backend":"rust", "terminal_runtime":"portable-pty"
     })))
+}
+
+#[derive(Deserialize)]
+struct OpenProjectTool {
+    kind: String,
+    project_directory_id: Option<String>,
+}
+
+async fn open_project_tool(
+    State(state): State<AppState>,
+    AxumPath(project_id): AxumPath<String>,
+    ApiJson(input): ApiJson<OpenProjectTool>,
+) -> Result<Json<Value>> {
+    let project = state.store.project(&project_id)?;
+    let directory_id = input
+        .project_directory_id
+        .as_deref()
+        .unwrap_or(&project.primary_directory_id);
+    let directory = state.store.directory(directory_id)?;
+    if directory.project_id != project.id {
+        return Err(AppError::BadRequest(
+            "project directory does not belong to Project".into(),
+        ));
+    }
+    if input.kind != "shell" && input.kind != "codex" {
+        return Err(AppError::BadRequest("kind must be shell or codex".into()));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let suffix = if input.kind == "codex" {
+            let settings = state.settings.load()?;
+            let args = settings
+                .agents
+                .codex
+                .extra_args
+                .iter()
+                .map(|value| shell_quote(value))
+                .collect::<Vec<_>>()
+                .join(" ");
+            if args.is_empty() {
+                " && codex".to_string()
+            } else {
+                format!(" && codex {args}")
+            }
+        } else {
+            String::new()
+        };
+        let script = format!(
+            "tell application \"Terminal\"\nactivate\ndo script \"cd \" & quoted form of (item 1 of argv) & {}\nend tell",
+            apple_script_string(&suffix)
+        );
+        let status = Command::new("/usr/bin/osascript")
+            .arg("-e")
+            .arg(script)
+            .arg("--")
+            .arg(&directory.path)
+            .status()
+            .map_err(anyhow::Error::from)?;
+        if !status.success() {
+            return Err(AppError::BadRequest(format!(
+                "could not open {} in Terminal",
+                input.kind
+            )));
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = state;
+        return Err(AppError::BadRequest(
+            "unmanaged Project tools are currently available on macOS only".into(),
+        ));
+    }
+
+    Ok(Json(json!({
+        "opened": true,
+        "kind": input.kind,
+        "path": directory.path,
+        "managed_session": false
+    })))
+}
+
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+fn apple_script_string(value: &str) -> String {
+    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 struct AgentContext {
@@ -2819,6 +2908,11 @@ async fn finish_workspace_steps(
                 .into(),
         ));
     }
+    if input.todo_action == "carry" && workspace.kind != "fork" {
+        return Err(AppError::BadRequest(
+            "only a Fork can carry Todos into a parent Workspace".into(),
+        ));
+    }
     let existing_operation = state.store.delivery_operation(id)?;
     if workspace.status == "archived" {
         let operation = existing_operation
@@ -2997,7 +3091,12 @@ async fn finish_workspace_steps(
     fail_delivery_after(fail_after_phase, "target_pushed")?;
 
     if !delivery_phase_at_least(&operation.phase, "records_carried")? {
-        if input.todo_action == "discard" {
+        if input.todo_action == "carry" {
+            let parent_id = workspace.parent_workspace_id.as_deref().ok_or_else(|| {
+                AppError::BadRequest("only a Fork can carry Todos into a parent Workspace".into())
+            })?;
+            state.store.carry_todos(id, parent_id)?;
+        } else if input.todo_action == "discard" {
             state.store.delete_todos(id)?;
         }
         state
@@ -3150,8 +3249,13 @@ fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
     if !["local_merge", "remote_merged", "keep", "discard"].contains(&input.code_action.as_str()) {
         return Err(AppError::BadRequest("invalid code action".into()));
     }
-    if !["keep", "discard"].contains(&input.todo_action.as_str()) {
+    if !["carry", "keep", "discard"].contains(&input.todo_action.as_str()) {
         return Err(AppError::BadRequest("invalid Todo action".into()));
+    }
+    if input.todo_action == "carry" && input.code_action != "local_merge" {
+        return Err(AppError::BadRequest(
+            "Todos can be carried only when a Fork is merged into its parent Workspace".into(),
+        ));
     }
     if input.code_action == "keep" && input.delete_branch {
         return Err(AppError::BadRequest(
@@ -3312,58 +3416,6 @@ async fn create_session(
     ApiJson(input): ApiJson<CreateSession>,
 ) -> Result<(StatusCode, Json<Session>)> {
     let workspace = state.store.workspace(&workspace_id)?;
-    create_session_for_workspace(&state, workspace, input).await
-}
-
-async fn create_project_session(
-    State(state): State<AppState>,
-    AxumPath(project_id): AxumPath<String>,
-    ApiJson(input): ApiJson<CreateSession>,
-) -> Result<(StatusCode, Json<Session>)> {
-    let project = state.store.project(&project_id)?;
-    if project.status != "active" {
-        return Err(AppError::BadRequest(
-            "cannot create a Session in an archived Project".into(),
-        ));
-    }
-    let workspace = match state.store.base_workspace(&project_id)? {
-        Some(value) => value,
-        None => {
-            let directory = state.store.directory(&project.primary_directory_id)?;
-            let timestamp = now();
-            let value = Workspace {
-                id: id(),
-                project_id: project.id.clone(),
-                name: "Project Base".into(),
-                description: "Direct sessions in the project base directories".into(),
-                status: "active".into(),
-                kind: "base".into(),
-                parent_workspace_id: None,
-                checkout_mode: "in_place".into(),
-                project_directory_id: directory.id,
-                worktree_id: None,
-                checkout_path: directory.path,
-                target_branch: project.default_target_branch.clone(),
-                start_commit: String::new(),
-                branch: project.default_target_branch,
-                forked_from_commit: None,
-                remote_name: project.preferred_remote,
-                remote_branch: None,
-                branch_ownership: "external".into(),
-                delivery_mode: project.default_delivery_mode,
-                delivery_status: "none".into(),
-                close_outcome: None,
-                integrated_commit: None,
-                closed_at: None,
-                runtime_id: String::new(),
-                runtime_name: String::new(),
-                created_at: timestamp.clone(),
-                updated_at: timestamp,
-            };
-            state.store.create_workspace(&value)?;
-            value
-        }
-    };
     create_session_for_workspace(&state, workspace, input).await
 }
 
@@ -4435,6 +4487,237 @@ fn cleanup_worktree(repository: &str, workspace: &Workspace) {
             &workspace.checkout_path,
         ])
         .status();
+}
+
+#[cfg(test)]
+mod current_workspace_tests {
+    use std::path::Path;
+
+    use axum::{
+        body::Body,
+        extract::State,
+        http::{Request, StatusCode},
+        Json,
+    };
+    use tower::ServiceExt;
+
+    use super::{
+        app, apple_script_string, command_output, create_delivery_preflight_impl, create_fork,
+        create_project, create_workspace, finish_workspace_impl, pull_workspace, push_workspace,
+        shell_quote, update_workspace, ApiJson, AppState, CreateDeliveryPreflight, CreateFork,
+        CreateProject, CreateWorkspace, FinishWorkspace, UpdateWorkspace,
+    };
+    use crate::{
+        model::Todo,
+        settings::SettingsStore,
+        store::{now, Store},
+        terminal::TerminalManager,
+    };
+
+    fn test_state(root: &Path) -> AppState {
+        let home = root.join("home");
+        AppState {
+            store: Store::open(&home.join("data/treefold.db")).expect("open test Store"),
+            settings: SettingsStore::open(&home, root).expect("open test Settings"),
+            terminals: TerminalManager::default(),
+        }
+    }
+
+    fn initialize_repository(repository: &Path) {
+        std::fs::create_dir_all(repository).expect("create repository");
+        command_output(repository, "git", &["init", "-b", "main"]).expect("initialize Git");
+        command_output(
+            repository,
+            "git",
+            &["config", "user.email", "treefold@example.test"],
+        )
+        .expect("configure Git email");
+        command_output(repository, "git", &["config", "user.name", "Treefold Test"])
+            .expect("configure Git name");
+        std::fs::write(repository.join("README.md"), "# fixture\n").expect("write fixture");
+        command_output(repository, "git", &["add", "."]).expect("stage fixture");
+        command_output(repository, "git", &["commit", "-m", "initial"]).expect("commit fixture");
+    }
+
+    #[test]
+    fn unmanaged_project_tool_arguments_are_quoted() {
+        assert_eq!(shell_quote("hello world"), "'hello world'");
+        assert_eq!(shell_quote("it's safe"), "'it'\\''s safe'");
+        assert_eq!(
+            apple_script_string(" && codex \"now\""),
+            "\" && codex \\\"now\\\"\""
+        );
+    }
+
+    #[tokio::test]
+    async fn fork_lifecycle_is_local_and_carries_todos_to_parent() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-current-fork-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        initialize_repository(&repository);
+        let state = test_state(&root);
+
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Fork lifecycle".into()),
+                description: None,
+                path: repository.to_string_lossy().into_owned(),
+                preferred_remote: None,
+                default_target_branch: Some("main".into()),
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create Project");
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Feature".into(),
+                description: None,
+                target_branch: Some("main".into()),
+                branch: Some("feature/current-fork-test".into()),
+                remote_name: None,
+                remote_branch: None,
+                delivery_mode: Some("local_merge".into()),
+            }),
+        )
+        .await
+        .expect("create Workspace");
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateFork {
+                name: "Parallel work".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect("create Fork");
+
+        assert!(create_fork(
+            State(state.clone()),
+            axum::extract::Path(fork.id.clone()),
+            ApiJson(CreateFork {
+                name: "Nested".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect_err("Forks cannot nest")
+        .to_string()
+        .contains("cannot create another Fork"));
+        assert!(
+            pull_workspace(State(state.clone()), axum::extract::Path(fork.id.clone()))
+                .await
+                .expect_err("Fork has no Pull")
+                .to_string()
+                .contains("root Workspace")
+        );
+        assert!(
+            push_workspace(State(state.clone()), axum::extract::Path(fork.id.clone()))
+                .await
+                .expect_err("Fork has no Push")
+                .to_string()
+                .contains("no remote branch")
+        );
+        assert!(update_workspace(
+            State(state.clone()),
+            axum::extract::Path(fork.id.clone()),
+            ApiJson(UpdateWorkspace {
+                remote_name: Some("origin".into()),
+                remote_branch: Some("feature/fork".into()),
+                delivery_mode: Some("remote_review".into()),
+            }),
+        )
+        .await
+        .expect_err("Fork has no remote settings")
+        .to_string()
+        .contains("root Workspace"));
+
+        let timestamp = now();
+        state
+            .store
+            .create_todo(&Todo {
+                id: "fork-todo".into(),
+                workspace_id: fork.id.clone(),
+                title: "Finish parallel work".into(),
+                description: String::new(),
+                status: "blocked".into(),
+                session_id: None,
+                blocked_reason: Some("waiting".into()),
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+            })
+            .expect("create Fork Todo");
+        std::fs::write(
+            Path::new(&fork.checkout_path).join("fork.txt"),
+            "fork work\n",
+        )
+        .expect("write Fork change");
+        let preflight = create_delivery_preflight_impl(
+            &state,
+            &fork.id,
+            &CreateDeliveryPreflight {
+                code_action: "local_merge".into(),
+            },
+        )
+        .expect("create Fork preflight");
+        assert!(preflight.blockers.is_empty());
+        let finished = finish_workspace_impl(
+            &state,
+            &fork.id,
+            &FinishWorkspace {
+                code_action: "local_merge".into(),
+                todo_action: "carry".into(),
+                push_after_merge: false,
+                keep_session_history: true,
+                delete_worktree: true,
+                delete_branch: true,
+                commit_message: Some("finish parallel work".into()),
+                preflight_id: Some(preflight.id),
+            },
+            None,
+        )
+        .await
+        .expect("finish Fork");
+
+        assert_eq!(finished.status, "archived");
+        assert!(Path::new(&workspace.checkout_path)
+            .join("fork.txt")
+            .exists());
+        assert!(!Path::new(&fork.checkout_path).exists());
+        assert!(state.store.todos(&fork.id).expect("Fork Todos").is_empty());
+        let carried = state.store.todos(&workspace.id).expect("parent Todos");
+        assert_eq!(carried.len(), 1);
+        assert_eq!(carried[0].status, "pending");
+        assert!(carried[0].session_id.is_none());
+        assert!(carried[0].blocked_reason.is_none());
+        assert!(
+            command_output(&repository, "git", &["branch", "--list", &fork.branch])
+                .expect("list Fork branch")
+                .is_empty()
+        );
+
+        let response = app(state.clone())
+            .oneshot(
+                Request::post(format!("/api/projects/{}/sessions", project.id))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"kind":"shell"}"#))
+                    .expect("build request"),
+            )
+            .await
+            .expect("request removed Project Session route");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove test fixture");
+    }
 }
 
 #[cfg(any())]

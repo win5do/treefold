@@ -19,6 +19,8 @@ async function startFixtureApi() {
     if (request.method === "GET" && pathname === "/api/projects") return sendJson(response, 200, fixture.projects);
     const project = pathname.match(/^\/api\/projects\/([^/]+)$/);
     if (request.method === "GET" && project && fixture.projectDetails[project[1]]) return sendJson(response, 200, fixture.projectDetails[project[1]]);
+    const projectTool = pathname.match(/^\/api\/projects\/([^/]+)\/open-tool$/);
+    if (request.method === "POST" && projectTool && fixture.projectDetails[projectTool[1]]) { const input = await readJson(request); return sendJson(response, 200, { opened: true, kind: input.kind, path: fixture.projectDetails[projectTool[1]].directories[0].path, managed_session: false }); }
     const workspace = pathname.match(/^\/api\/workspaces\/([^/]+)$/);
     if (request.method === "GET" && workspace && fixture.workspaceDetails[workspace[1]]) return sendJson(response, 200, fixture.workspaceDetails[workspace[1]]);
     if (request.method === "PATCH" && workspace && fixture.workspaceDetails[workspace[1]]) {

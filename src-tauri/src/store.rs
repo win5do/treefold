@@ -224,17 +224,6 @@ impl Store {
         Ok(values)
     }
 
-    pub(crate) fn base_workspace(&self, project_id: &str) -> Result<Option<Workspace>> {
-        let db = self.0.lock();
-        Ok(db
-            .query_row(
-                &format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE project_id=? AND kind='base' LIMIT 1"),
-                [project_id],
-                workspace_row,
-            )
-            .optional()?)
-    }
-
     pub fn workspace(&self, id: &str) -> Result<Workspace> {
         let db = self.0.lock();
         Ok(db.query_row(
@@ -781,13 +770,19 @@ impl Store {
         Ok(())
     }
 
+    pub fn carry_todos(&self, from_workspace_id: &str, to_workspace_id: &str) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE todos
+             SET workspace_id=?,session_id=NULL,blocked_reason=NULL,
+                 status=CASE WHEN status IN ('assigned','in_progress','blocked') THEN 'pending' ELSE status END,
+                 updated_at=?
+             WHERE workspace_id=?",
+            params![to_workspace_id, now(), from_workspace_id],
+        )?;
+        Ok(())
+    }
+
     pub fn project_detail(&self, id: &str) -> Result<ProjectDetail> {
-        let base = self.base_workspace(id)?;
-        let sessions = if let Some(base) = base.as_ref() {
-            self.sessions(&base.id)?
-        } else {
-            Vec::new()
-        };
         Ok(ProjectDetail {
             project: self.project(id)?,
             directories: self.directories(id)?,
@@ -797,7 +792,6 @@ impl Store {
                 .filter(|workspace| workspace.kind == "workspace")
                 .collect(),
             worktrees: Vec::new(),
-            sessions,
         })
     }
 

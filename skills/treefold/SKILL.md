@@ -1,11 +1,11 @@
 ---
 name: treefold
-description: Read context and manage eligible Todos in a Treefold-managed Project, Workspace, or Fork Session through the `treefold` CLI. Use when `TREEFOLD_SESSION_ID` is present, when a user asks about the current Treefold scope or target, or when Workspace/Fork work should be claimed, released, completed, blocked, created, edited, or removed in Treefold.
+description: Read context and manage eligible Todos in a Treefold-managed Workspace or Fork Session through the `treefold` CLI. Use when `TREEFOLD_SESSION_ID` is present, when a user asks about the current Treefold scope or target, or when Workspace/Fork work should be claimed, released, completed, blocked, created, edited, or removed in Treefold.
 ---
 
 # Treefold
 
-Use Treefold as the management layer for Project, Workspace, and Fork identity and for development Todos. Keep reasoning, work summaries, verification details, and conversational memory in the Agent Session; do not copy them into Treefold.
+Use Treefold as the management layer for Project, Workspace, and Fork identity and for development Todos. Managed Agent Sessions belong to Workspace or Fork. Keep reasoning, work summaries, verification details, and conversational memory in the Agent Session; do not copy them into Treefold.
 
 ## Read current context
 
@@ -21,9 +21,9 @@ If `TREEFOLD_SESSION_ID` is absent, do not assume the current directory belongs 
 
 ## Manage Todos
 
-Todos are available in Workspace and Fork Sessions. A Project Session runs in
-the source checkout but intentionally has no development Todos; do not attempt
-Todo mutations when `workspace.kind` is `base`.
+Todos are available in Workspace and Fork Sessions. Project Open Shell/Open
+Codex processes are unmanaged external tools and do not receive Treefold Session
+context.
 
 List and inspect work assigned to the current Workspace:
 
