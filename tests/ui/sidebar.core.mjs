@@ -346,6 +346,30 @@ try {
   assert.ok((await baseSection.getLocation("y")) < (await forksSection.getLocation("y")), "Locations section must appear above Forks");
   assert.ok((await forksSection.getLocation("y")) < (await todosSection.getLocation("y")), "Forks must remain above Todos");
 
+  await (await browser.$("button=New Codex")).click();
+  await browser.waitUntil(async () => (await browser.getUrl()).includes(`#/workspaces/${FIXTURE_IDS.workspace}/sessions/session-created-codex-ui-fixture`), {
+    timeout: 1_000,
+    timeoutMsg: "Codex creation did not navigate directly to the created Session",
+  });
+  assert.equal(await (await browser.$('[role="dialog"]')).isExisting(), false, "Codex creation must not open a setup dialog");
+  assert.match(await main.getText(), /codex[\s\S]*running/i, "the created Codex Session must render from the POST response");
+  await (await browser.$('button[aria-label="Show right sidebar"]')).click();
+  const codexInspector = await browser.$('[data-testid="right-sidebar"]');
+  await browser.waitUntil(async () => (await codexInspector.getAttribute("aria-hidden")) === "false", {
+    timeout: 3_000,
+    timeoutMsg: "Codex Session inspector did not open",
+  });
+  await browser.waitUntil(async () => (await codexInspector.getText()).includes("YOLO"), {
+    timeout: 3_000,
+    timeoutMsg: "Codex Session inspector did not finish opening with the global autonomy state",
+  });
+  assert.match(await codexInspector.getText(), /YOLO/, "Codex creation must reflect the global extra-args setting");
+  assert.match(await codexInspector.getText(), /Bypass approvals & sandbox/, "Codex autonomy must come from the global extra-args setting");
+  await (await browser.$('button[aria-label="Hide right sidebar"]')).click();
+  await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+  baseSection = await browser.$('[data-testid="workspace-locations-section"]');
+  await baseSection.waitForDisplayed({ timeout: 3_000 });
+
   await (await browser.$("button=New Shell")).click();
   await browser.waitUntil(async () => (await browser.getUrl()).includes(`#/workspaces/${FIXTURE_IDS.workspace}/sessions/session-created-shell-ui-fixture`), {
     timeout: 1_000,
@@ -471,11 +495,15 @@ try {
     timeoutMsg: "closed Project Shell remained beside saved Codex history",
   });
   await (await browser.$("button=New Codex")).click();
-  const projectCodexDialog = await browser.$('[role="dialog"]');
-  await projectCodexDialog.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await projectCodexDialog.getText(), /modifies the original repository directly/, "Project Codex must warn that it operates without Workspace isolation");
-  await browser.keys(Key.Escape);
-  await projectCodexDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await browser.waitUntil(async () => (await browser.getUrl()).includes(`#/projects/${FIXTURE_IDS.project}/sessions/session-created-project-codex-ui-fixture`), {
+    timeout: 1_000,
+    timeoutMsg: "Project Codex creation did not navigate directly to the managed Session",
+  });
+  assert.equal(await (await browser.$('[role="dialog"]')).isExisting(), false, "Project Codex creation must not open a setup dialog");
+  assert.match(await main.getText(), /codex[\s\S]*running/i, "the created Project Codex must render from the POST response");
+  await browser.url(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+  const restoredProjectSessionsSection = await browser.$('[data-testid="project-sessions-section"]');
+  await restoredProjectSessionsSection.waitForDisplayed({ timeout: 3_000 });
   const orderedLocationNames = await browser.$$('[data-testid^="project-location-"] h3');
   assert.equal(await orderedLocationNames[0].getText(), "fixture-repository", "primary location must render before attached locations");
   const primaryLocation = await browser.$(`[data-testid="project-location-${FIXTURE_IDS.primaryDirectory}"]`);

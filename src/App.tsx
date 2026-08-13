@@ -273,8 +273,6 @@ type AppSettings = {
   };
 };
 
-const CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG = "--dangerously-bypass-approvals-and-sandbox";
-
 function normalizeProject(value: ProjectDetail): ProjectDetail {
   const locations = value.locations ?? value.directories ?? [];
   const directories = locations.map((location) => ({ ...location, git_status: location.git_status ?? (location.is_git ? "ready" : "not_git"), role: (value.default_location_id ?? value.primary_directory_id) === location.id ? "primary" as const : "attached" as const, is_git: location.git_status ? location.git_status === "ready" : location.is_git, remote_url: location.repository_url ?? location.remote_url }));
@@ -358,7 +356,6 @@ function Workspace() {
   const [addDirectoryProject, setAddDirectoryProject] = useState<ProjectDetail | null>(null);
   const [editDirectory, setEditDirectory] = useState<Directory | null>(null);
   const [createWorkspaceProject, setCreateWorkspaceProject] = useState<ProjectDetail | null>(null);
-  const [createCodexTarget, setCreateCodexTarget] = useState<{ project: ProjectDetail; workspace?: WorkspaceDetail | Workspace; directory?: Directory } | null>(null);
   const [createForkWorkspace, setCreateForkWorkspace] = useState<Workspace | null>(null);
   const [configureWorkspace, setConfigureWorkspace] = useState<WorkspaceDetail | null>(null);
   const [finishWorkspaceDialog, setFinishWorkspaceDialog] = useState<WorkspaceDetail | null>(null);
@@ -532,6 +529,25 @@ function Workspace() {
     }
   }
 
+  async function createCodex(stream: WorkspaceDetail | Workspace, directory?: Directory) {
+    setSessionMenu(null);
+    setBusy(true);
+    try {
+      const created = await api<Session>(`/api/workspaces/${stream.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "codex", project_directory_id: directory?.id }) });
+      setProjects((current) => {
+        const owner = current.flatMap((project) => project.workspaces).find((item) => item.id === stream.id) as SidebarStream | undefined;
+        return updateProjectWorkspaceSessions(current, stream.id, upsertSession(owner?.sessions ?? [], created));
+      });
+      setWorkspace((current) => current?.id === stream.id ? { ...current, sessions: upsertSession(current.sessions, created) } : current);
+      setError("");
+      navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Codex 创建失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createProjectShell(project: ProjectDetail, directory?: Directory) {
     setSessionMenu(null);
     setBusy(true);
@@ -542,6 +558,21 @@ function Workspace() {
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Shell 创建失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createProjectCodex(project: ProjectDetail, directory?: Directory) {
+    setSessionMenu(null);
+    setBusy(true);
+    try {
+      const created = await api<Session>(`/api/projects/${project.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "codex", project_directory_id: directory?.id }) });
+      setProjects((current) => current.map((item) => item.id === project.id ? { ...item, sessions: upsertSession(item.sessions, created) } : item));
+      setError("");
+      navigate(`/projects/${project.id}/sessions/${created.id}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Codex 创建失败");
     } finally {
       setBusy(false);
     }
@@ -702,9 +733,9 @@ function Workspace() {
           onCreateWorkspace={setCreateWorkspaceProject}
           onCreateFork={setCreateForkWorkspace}
           onCreateShell={(stream, directory) => void createShell(stream, directory)}
-          onCreateCodex={(stream, directory) => { setSessionMenu(null); const project = projects.find((item) => item.id === stream.project_id); if (project) setCreateCodexTarget({ project, workspace: stream, directory }); }}
+          onCreateCodex={(stream, directory) => void createCodex(stream, directory)}
           onCreateBaseShell={(project, directory) => void createProjectShell(project, directory)}
-          onCreateBaseCodex={(project, directory) => { setSessionMenu(null); setCreateCodexTarget({ project, directory }); }}
+          onCreateBaseCodex={(project, directory) => void createProjectCodex(project, directory)}
           onOpenInFinder={(project, stream) => void openInFinder(project, stream)}
           onArchiveProject={(project) => void updateProjectStatus(project, "archived")}
           onCloseSession={(stream, session) => void closeSidebarSession(stream, session)}
@@ -735,9 +766,9 @@ function Workspace() {
                 }}
               />
             ) : workspace ? (
-              <WorkspaceHome detail={workspace} busy={busy} onOpen={(session) => void openHistorySession(workspace, session)} onOpenFork={(fork) => navigate(`/workspaces/${fork.id}`)} onShell={(directory) => void createShell(workspace, directory)} onCodex={() => setCreateCodexTarget({ project: selectedProject!, workspace })} onFork={() => setCreateForkWorkspace(workspace)} onConfigure={() => setConfigureWorkspace(workspace)} onPull={() => void gitSync("workspaces", workspace.id, "pull")} onPush={() => void gitSync("workspaces", workspace.id, "push")} onReveal={() => void openInFinder(selectedProject!, workspace)} onFinish={() => setFinishWorkspaceDialog(workspace)} />
+              <WorkspaceHome detail={workspace} busy={busy} onOpen={(session) => void openHistorySession(workspace, session)} onOpenFork={(fork) => navigate(`/workspaces/${fork.id}`)} onShell={(directory) => void createShell(workspace, directory)} onCodex={() => void createCodex(workspace)} onFork={() => setCreateForkWorkspace(workspace)} onConfigure={() => setConfigureWorkspace(workspace)} onPull={() => void gitSync("workspaces", workspace.id, "pull")} onPush={() => void gitSync("workspaces", workspace.id, "push")} onReveal={() => void openInFinder(selectedProject!, workspace)} onFinish={() => setFinishWorkspaceDialog(workspace)} />
             ) : selectedProject ? (
-              <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onOpenSession={(session) => void openProjectHistorySession(selectedProject, session)} onCreate={() => setCreateWorkspaceProject(selectedProject)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onDeleteWorktree={(item) => void removeWorktree(item)} onShell={(directory) => void createProjectShell(selectedProject, directory)} onCodex={(directory) => setCreateCodexTarget({ project: selectedProject, directory })} onPull={() => void gitSync("projects", selectedProject.id, "pull")} onPush={() => void gitSync("projects", selectedProject.id, "push")} />
+              <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onOpenSession={(session) => void openProjectHistorySession(selectedProject, session)} onCreate={() => setCreateWorkspaceProject(selectedProject)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onDeleteWorktree={(item) => void removeWorktree(item)} onShell={(directory) => void createProjectShell(selectedProject, directory)} onCodex={(directory) => void createProjectCodex(selectedProject, directory)} onPull={() => void gitSync("projects", selectedProject.id, "pull")} onPush={() => void gitSync("projects", selectedProject.id, "push")} />
             ) : (
               <Overview projects={projects} busy={busy} onOpen={(id) => navigate(`/projects/${id}`)} onCreate={() => setCreateProjectOpen(true)} onRestore={(project) => void updateProjectStatus(project, "active")} onDelete={(project) => void permanentlyDeleteProject(project)} />
             )}
@@ -787,17 +818,6 @@ function Workspace() {
         let created: Workspace | null = null;
         const ok = await act(async () => { created = await api<Workspace>(`/api/projects/${createWorkspaceProject.id}/workspaces`, { method: "POST", body: JSON.stringify({ name: form.get("name"), description: form.get("description"), branch: form.get("branch"), remote_name: form.get("remote_name"), remote_branch: form.get("remote_branch") }) }); });
         if (ok && created) { setCreateWorkspaceProject(null); navigate(`/workspaces/${(created as Workspace).id}`); }
-      }} />
-      <CreateCodexDialog target={createCodexTarget} busy={busy} yoloDefault={Boolean(settings?.agents.codex.extra_args.includes(CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG))} onOpenChange={(open) => { if (!open) setCreateCodexTarget(null); }} onSubmit={async (event) => {
-        event.preventDefault();
-        if (!createCodexTarget) return;
-        const form = new FormData(event.currentTarget);
-        let created: Session | null = null;
-        const endpoint = createCodexTarget.workspace
-          ? `/api/workspaces/${createCodexTarget.workspace.id}/sessions`
-          : `/api/projects/${createCodexTarget.project.id}/sessions`;
-        const ok = await act(async () => { created = await api<Session>(endpoint, { method: "POST", body: JSON.stringify({ kind: "codex", name: form.get("name"), initial_prompt: form.get("initial_prompt"), yolo: form.get("yolo") === "on", project_directory_id: createCodexTarget.directory?.id }) }); });
-        if (ok && created) { const target = createCodexTarget; setCreateCodexTarget(null); navigate(target.workspace ? `/workspaces/${target.workspace.id}/sessions/${(created as Session).id}` : `/projects/${target.project.id}/sessions/${(created as Session).id}`); }
       }} />
       <CreateForkDialog workspace={createForkWorkspace} busy={busy} onOpenChange={(open) => { if (!open) setCreateForkWorkspace(null); }} onSubmit={async (event) => {
         event.preventDefault();
@@ -1386,7 +1406,6 @@ function AddDirectoryDialog({ project, busy, onOpenChange, onSubmit }: { project
 function EditDirectoryDialog({ directory, busy, onOpenChange, onSubmit }: { directory: Directory | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { const isGit = directory?.git_common_dir != null; return <Dialog open={Boolean(directory)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="text-lg font-semibold">{directory?.name}</DialogTitle><DialogDescription className="mt-1 truncate font-mono text-[11px] text-neutral-500">{directory?.path}</DialogDescription>{directory && <form key={directory.id} className="mt-6 space-y-3" onSubmit={onSubmit}><Textarea name="description" defaultValue={directory.description} placeholder="What is this location used for?" />{isGit && <WorktreeSetupField defaultValue={directory.worktree_setup_command} />}{isGit && <div className="grid grid-cols-2 gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3"><label className="text-[11px] text-neutral-500">Base branch<Input className="mt-1 font-mono text-xs" name="base_branch" defaultValue={directory.base_branch} required /></label><label className="text-[11px] text-neutral-500">Delivery mode<Select className="mt-1" name="delivery_mode" defaultValue={directory.delivery_mode ?? "remote_review"}><option value="remote_review">Remote review / CR-CI</option><option value="local_merge">Local merge</option></Select></label></div>}<div className="flex justify-end"><Button disabled={busy}>Save</Button></div></form>}</DialogContent></Dialog>; }
 function CreateWorkspaceDialog({ project, busy, onOpenChange, onSubmit }: { project: ProjectDetail | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <Dialog open={Boolean(project)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="text-lg font-semibold">New Workspace</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">Each Git location uses its own base branch and delivery mode.</DialogDescription><form className="mt-6 space-y-3" onSubmit={onSubmit}><Input name="name" placeholder="Feature or fix name" required /><Textarea name="description" placeholder="Scope and expected outcome" /><label className="block text-[11px] text-neutral-500">Shared local branch<Input className="mt-1 font-mono text-xs" name="branch" placeholder="Leave empty to generate treefold/name-random" /></label><div className="grid grid-cols-2 gap-3"><label className="block text-[11px] text-neutral-500">Default repo remote<Input className="mt-1 font-mono text-xs" name="remote_name" defaultValue={project?.preferred_remote ?? ""} placeholder="origin" /></label><label className="block text-[11px] text-neutral-500">Default repo feature branch<Input className="mt-1 font-mono text-xs" name="remote_branch" placeholder="feature/my-change (optional)" /></label></div><p className="rounded-lg bg-neutral-50 px-3 py-2 text-[11px] leading-5 text-neutral-500">Base branches and Finish behavior come from repository locations. The shared branch name is used across all Git worktrees.</p><div className="flex justify-end"><Button disabled={busy}>Create Workspace</Button></div></form></DialogContent></Dialog>; }
 function ConfigureWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit }: { workspace: WorkspaceDetail | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="text-lg font-semibold">Workspace delivery settings</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">Target branch 固定为 {workspace?.target_branch}；这里只修改 feature branch 的 upstream 与交付方式。</DialogDescription>{workspace && <form key={workspace.id} className="mt-6 space-y-3" onSubmit={onSubmit}><div className="grid grid-cols-2 gap-3"><label className="block text-[11px] text-neutral-500">Remote<Input className="mt-1 font-mono text-xs" name="remote_name" defaultValue={workspace.remote_name ?? ""} placeholder="origin" /></label><label className="block text-[11px] text-neutral-500">Remote feature branch<Input className="mt-1 font-mono text-xs" name="remote_branch" defaultValue={workspace.remote_branch ?? ""} placeholder="feature/my-change" /></label></div><Select name="delivery_mode" defaultValue={workspace.delivery_mode}><option value="remote_review">Remote review / CR-CI</option><option value="local_merge">Local merge + optional push</option></Select><p className="rounded-lg bg-neutral-50 px-3 py-2 text-[11px] text-neutral-500">两项都留空会清除 upstream。Treefold 不会替你 force push。</p><div className="flex justify-end"><Button disabled={busy}>Save</Button></div></form>}</DialogContent></Dialog>; }
-function CreateCodexDialog({ target, busy, yoloDefault, onOpenChange, onSubmit }: { target: { project: ProjectDetail; workspace?: WorkspaceDetail | Workspace; directory?: Directory } | null; busy: boolean; yoloDefault: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { const label = target?.directory?.name ?? target?.workspace?.name ?? target?.project.name; const direct = Boolean(target && !target.workspace); return <Dialog open={Boolean(target)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="flex items-center gap-2 text-lg font-semibold"><Bot className="size-5" />New Codex Session</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">在 {label} 中启动正式的 Treefold Session。</DialogDescription>{direct && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-700">This Project Session modifies the original repository directly. It does not have Workspace worktree or delivery protection.</p>}<form className="mt-6 space-y-3" onSubmit={onSubmit}><Input name="name" placeholder="Session name" /><Textarea name="initial_prompt" placeholder="What should Codex work on?" /><label className="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50/60 p-4"><input className="mt-0.5" type="checkbox" name="yolo" defaultChecked={yoloDefault} /><span><span className="block text-sm font-medium text-red-800">YOLO mode</span><span className="mt-1 block text-xs leading-5 text-red-600">跳过 approvals 和 sandbox，仅在你信任的目录中使用。</span></span></label><div className="flex justify-end"><Button disabled={busy}>Start Codex</Button></div></form></DialogContent></Dialog>; }
 function CreateForkDialog({ workspace, busy, onOpenChange, onSubmit }: { workspace: Workspace | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="flex items-center gap-2 text-lg font-semibold"><GitBranch className="size-5" />Fork work</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">从 {workspace?.name} 当前 HEAD 创建一个独立 worktree。Fork 不能继续嵌套。</DialogDescription><form className="mt-6 space-y-3" onSubmit={onSubmit}><Input name="name" placeholder="Fork name" required /><Textarea name="description" placeholder="Independent feature or experiment" /><div className="rounded-lg bg-neutral-50 px-3 py-2 text-[11px] text-neutral-500">父 workspace 必须 clean；完成后可以通过 Close and settle 合回父 Workspace。</div><div className="flex justify-end"><Button disabled={busy}>Create Fork</Button></div></form></DialogContent></Dialog>; }
 
 type FinishPayload = { code_action: string; todo_action: string; push_after_merge: boolean; keep_session_history: boolean; delete_worktree: boolean; delete_branch: boolean; commit_message?: string; preflight_id?: string };
