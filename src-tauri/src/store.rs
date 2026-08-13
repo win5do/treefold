@@ -17,34 +17,49 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS projects (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  status TEXT NOT NULL DEFAULT 'active',
- primary_directory_id TEXT NOT NULL, git_common_dir TEXT NOT NULL,
- preferred_remote TEXT, default_target_branch TEXT NOT NULL DEFAULT 'main',
+ default_location_id TEXT,
+ default_base_branch TEXT NOT NULL DEFAULT 'main',
  default_delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS project_directories (
+CREATE TABLE IF NOT EXISTS project_locations (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  worktree_setup_command TEXT NOT NULL DEFAULT '', path TEXT NOT NULL,
- role TEXT NOT NULL, is_git INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+ repository_url TEXT, preferred_remote_name TEXT, base_branch TEXT, git_common_dir TEXT,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  UNIQUE(project_id,path)
 );
 CREATE TABLE IF NOT EXISTS workspaces (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
  kind TEXT NOT NULL DEFAULT 'workspace', parent_workspace_id TEXT REFERENCES workspaces(id),
- checkout_mode TEXT NOT NULL DEFAULT 'worktree',
- project_directory_id TEXT NOT NULL REFERENCES project_directories(id),
- worktree_id TEXT, checkout_path TEXT NOT NULL, target_branch TEXT NOT NULL DEFAULT '',
- start_commit TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '',
- forked_from_commit TEXT,
- remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL DEFAULT 'managed',
- delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
- delivery_status TEXT NOT NULL DEFAULT 'active',
- close_outcome TEXT, integrated_commit TEXT, closed_at TEXT,
  runtime_id TEXT NOT NULL DEFAULT '', runtime_name TEXT NOT NULL DEFAULT '',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS workspace_locations (
+ id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+ project_location_id TEXT NOT NULL REFERENCES project_locations(id),
+ location_name TEXT NOT NULL, source_path TEXT NOT NULL, access_mode TEXT NOT NULL,
+ git_status TEXT NOT NULL, worktree_id TEXT, checkout_path TEXT, branch TEXT,
+ base_branch TEXT, start_commit TEXT, forked_from_commit TEXT,
+ remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL DEFAULT 'managed',
+ delivery_mode TEXT NOT NULL DEFAULT 'remote_review', delivery_status TEXT NOT NULL DEFAULT 'active',
+ close_outcome TEXT, integrated_commit TEXT, closed_at TEXT,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ UNIQUE(workspace_id,project_location_id)
+);
+CREATE INDEX IF NOT EXISTS workspace_locations_workspace ON workspace_locations(workspace_id);
+CREATE TRIGGER IF NOT EXISTS projects_default_location_insert
+BEFORE INSERT ON projects WHEN NEW.default_location_id IS NOT NULL
+BEGIN SELECT CASE WHEN NOT EXISTS(
+ SELECT 1 FROM project_locations WHERE id=NEW.default_location_id AND project_id=NEW.id AND git_common_dir IS NOT NULL
+) THEN RAISE(ABORT,'default location must be a Git location in this Project') END; END;
+CREATE TRIGGER IF NOT EXISTS projects_default_location_update
+BEFORE UPDATE OF default_location_id ON projects WHEN NEW.default_location_id IS NOT NULL
+BEGIN SELECT CASE WHEN NOT EXISTS(
+ SELECT 1 FROM project_locations WHERE id=NEW.default_location_id AND project_id=NEW.id AND git_common_dir IS NOT NULL
+) THEN RAISE(ABORT,'default location must be a Git location in this Project') END; END;
 CREATE TABLE IF NOT EXISTS sessions (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  name TEXT NOT NULL, kind TEXT NOT NULL, cwd TEXT NOT NULL, original_cwd TEXT NOT NULL,
@@ -58,6 +73,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE TABLE IF NOT EXISTS session_additional_directories (
  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, path TEXT NOT NULL,
+ access_mode TEXT NOT NULL DEFAULT 'read_write',
  PRIMARY KEY(session_id,path)
 );
 CREATE TABLE IF NOT EXISTS todos (
@@ -67,7 +83,7 @@ CREATE TABLE IF NOT EXISTS todos (
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS delivery_operations (
- workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+ workspace_location_id TEXT PRIMARY KEY REFERENCES workspace_locations(id) ON DELETE CASCADE,
  phase TEXT NOT NULL, code_action TEXT NOT NULL, todo_action TEXT NOT NULL DEFAULT 'keep',
  push_after_merge INTEGER NOT NULL DEFAULT 0,
  keep_session_history INTEGER NOT NULL,
@@ -78,16 +94,16 @@ CREATE TABLE IF NOT EXISTS delivery_operations (
  started_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS rebase_operations (
- id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_location_id TEXT NOT NULL REFERENCES workspace_locations(id) ON DELETE CASCADE,
  status TEXT NOT NULL, phase TEXT NOT NULL, before_head TEXT NOT NULL,
  target_head TEXT NOT NULL, rebased_head TEXT, recovery_ref TEXT NOT NULL,
  error TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  completed_at TEXT
 );
-CREATE INDEX IF NOT EXISTS rebase_operations_workspace_updated
- ON rebase_operations(workspace_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS rebase_operations_location_updated
+ ON rebase_operations(workspace_location_id,updated_at DESC);
 CREATE TABLE IF NOT EXISTS delivery_preflights (
- id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_location_id TEXT NOT NULL REFERENCES workspace_locations(id) ON DELETE CASCADE,
  code_action TEXT NOT NULL, source_head TEXT NOT NULL, target_head TEXT NOT NULL,
  target_branch TEXT NOT NULL, source_status TEXT NOT NULL, source_dirty INTEGER NOT NULL,
  target_dirty INTEGER NOT NULL, ahead INTEGER NOT NULL, behind INTEGER NOT NULL,
@@ -95,17 +111,17 @@ CREATE TABLE IF NOT EXISTS delivery_preflights (
  blockers TEXT NOT NULL, warnings TEXT NOT NULL,
  created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS delivery_preflights_workspace_created
- ON delivery_preflights(workspace_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS delivery_preflights_location_created
+ ON delivery_preflights(workspace_location_id,created_at DESC);
 CREATE TABLE IF NOT EXISTS reset_operations (
- id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_location_id TEXT NOT NULL REFERENCES workspace_locations(id) ON DELETE CASCADE,
  status TEXT NOT NULL, mode TEXT NOT NULL, before_head TEXT NOT NULL,
  target_head TEXT NOT NULL, result_head TEXT, recovery_ref TEXT NOT NULL,
  error TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  completed_at TEXT
 );
-CREATE INDEX IF NOT EXISTS reset_operations_workspace_started
- ON reset_operations(workspace_id,started_at DESC);
+CREATE INDEX IF NOT EXISTS reset_operations_location_started
+ ON reset_operations(workspace_location_id,started_at DESC);
 DROP TABLE IF EXISTS settings;
 "#;
 
@@ -124,39 +140,45 @@ impl Store {
 
     pub fn projects(&self) -> Result<Vec<Project>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare("SELECT id,name,description,status,primary_directory_id,git_common_dir,preferred_remote,default_target_branch,default_delivery_mode,created_at,updated_at FROM projects ORDER BY updated_at DESC")?;
-        let values = stmt
+        let mut stmt = db.prepare("SELECT id,name,description,status,default_location_id,default_base_branch,default_delivery_mode,created_at,updated_at FROM projects ORDER BY updated_at DESC")?;
+        let mut values = stmt
             .query_map([], project_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        for project in &mut values {
+            hydrate_project_compat(&db, project)?;
+        }
         Ok(values)
     }
 
     pub fn project(&self, id: &str) -> Result<Project> {
         let db = self.0.lock();
-        Ok(db.query_row("SELECT id,name,description,status,primary_directory_id,git_common_dir,preferred_remote,default_target_branch,default_delivery_mode,created_at,updated_at FROM projects WHERE id=?", [id], project_row)?)
+        let mut project = db.query_row("SELECT id,name,description,status,default_location_id,default_base_branch,default_delivery_mode,created_at,updated_at FROM projects WHERE id=?", [id], project_row)?;
+        hydrate_project_compat(&db, &mut project)?;
+        Ok(project)
     }
 
-    pub fn create_project(&self, p: &Project, d: &Directory) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
-        tx.execute(
-            "INSERT INTO projects(id,name,description,status,primary_directory_id,git_common_dir,preferred_remote,default_target_branch,default_delivery_mode,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            params![
-                p.id,
-                p.name,
-                p.description,
-                p.status,
-                p.primary_directory_id,
-                p.git_common_dir,
-                p.preferred_remote,
-                p.default_target_branch,
-                p.default_delivery_mode,
-                p.created_at,
-                p.updated_at
-            ],
+    pub fn create_empty_project(&self, p: &Project) -> Result<()> {
+        self.0.lock().execute(
+            "INSERT INTO projects(id,name,description,status,default_location_id,default_base_branch,default_delivery_mode,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            params![p.id,p.name,p.description,p.status,p.default_location_id,p.default_base_branch,p.default_delivery_mode,p.created_at,p.updated_at],
         )?;
-        tx.execute("INSERT INTO project_directories(id,project_id,name,description,worktree_setup_command,path,role,is_git,created_at) VALUES(?,?,?,?,?,?,?,?,?)", params![d.id,d.project_id,d.name,d.description,d.worktree_setup_command,d.path,d.role,d.is_git,d.created_at])?;
-        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn update_project_defaults(
+        &self,
+        id: &str,
+        default_location_id: Option<&str>,
+        default_base_branch: &str,
+        default_delivery_mode: &str,
+    ) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE projects SET default_location_id=?,default_base_branch=?,default_delivery_mode=?,updated_at=? WHERE id=?",
+            params![default_location_id,default_base_branch,default_delivery_mode,now(),id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
         Ok(())
     }
 
@@ -184,7 +206,7 @@ impl Store {
 
     pub fn directories(&self, project_id: &str) -> Result<Vec<Directory>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare("SELECT id,project_id,name,description,worktree_setup_command,path,role,is_git,created_at FROM project_directories WHERE project_id=? ORDER BY CASE role WHEN 'primary' THEN 0 ELSE 1 END,name")?;
+        let mut stmt = db.prepare("SELECT id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,git_common_dir,created_at,updated_at FROM project_locations WHERE project_id=? ORDER BY name")?;
         let values = stmt
             .query_map([project_id], directory_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -193,11 +215,17 @@ impl Store {
 
     pub fn directory(&self, id: &str) -> Result<Directory> {
         let db = self.0.lock();
-        Ok(db.query_row("SELECT id,project_id,name,description,worktree_setup_command,path,role,is_git,created_at FROM project_directories WHERE id=?", [id], directory_row)?)
+        Ok(db.query_row("SELECT id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,git_common_dir,created_at,updated_at FROM project_locations WHERE id=?", [id], directory_row)?)
     }
 
     pub fn create_directory(&self, d: &Directory) -> Result<()> {
-        self.0.lock().execute("INSERT INTO project_directories(id,project_id,name,description,worktree_setup_command,path,role,is_git,created_at) VALUES(?,?,?,?,?,?,?,?,?)", params![d.id,d.project_id,d.name,d.description,d.worktree_setup_command,d.path,d.role,d.is_git,d.created_at])?;
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        insert_project_location(&tx, d)?;
+        if d.git_common_dir.is_some() {
+            tx.execute("UPDATE projects SET default_location_id=COALESCE(default_location_id,?),updated_at=? WHERE id=?", params![d.id,now(),d.project_id])?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -209,33 +237,146 @@ impl Store {
         worktree_setup_command: &str,
     ) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE project_directories SET name=?,description=?,worktree_setup_command=? WHERE id=?",
-            params![name, description, worktree_setup_command, id],
+            "UPDATE project_locations SET name=?,description=?,worktree_setup_command=?,updated_at=? WHERE id=?",
+            params![name, description, worktree_setup_command, now(), id],
         )?;
+        Ok(())
+    }
+
+    pub fn refresh_project_location(&self, location: &ProjectLocation) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE project_locations SET path=?,repository_url=?,preferred_remote_name=?,base_branch=?,git_common_dir=?,updated_at=? WHERE id=?",
+            params![location.path,location.repository_url,location.preferred_remote_name,location.base_branch,location.git_common_dir,location.updated_at,location.id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn reattach_project_location(
+        &self,
+        id: &str,
+        path: &str,
+        git_common_dir: &str,
+        repository_url: Option<&str>,
+        preferred_remote_name: Option<&str>,
+    ) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE project_locations SET path=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,updated_at=? WHERE id=?",
+            params![path,git_common_dir,repository_url,preferred_remote_name,now(),id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn delete_project_location(&self, id: &str) -> Result<()> {
+        let db = self.0.lock();
+        let referenced: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workspace_locations WHERE project_location_id=?)",
+            [id],
+            |r| r.get(0),
+        )?;
+        if referenced {
+            return Err(AppError::BadRequest(
+                "location is snapshotted by an existing Workspace".into(),
+            ));
+        }
+        let changed = db.execute("DELETE FROM project_locations WHERE id=?", [id])?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
         Ok(())
     }
 
     pub fn workspaces(&self, project_id: &str) -> Result<Vec<Workspace>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE project_id=? ORDER BY updated_at DESC"))?;
-        let values = stmt
+        let mut values = stmt
             .query_map([project_id], workspace_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        for workspace in &mut values {
+            hydrate_workspace_compat(&db, workspace)?;
+        }
         Ok(values)
     }
 
     pub fn workspace(&self, id: &str) -> Result<Workspace> {
         let db = self.0.lock();
-        Ok(db.query_row(
+        let mut workspace = db.query_row(
             &format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE id=?"),
             [id],
             workspace_row,
+        )?;
+        hydrate_workspace_compat(&db, &mut workspace)?;
+        Ok(workspace)
+    }
+
+    pub fn create_workspace_with_locations(
+        &self,
+        w: &Workspace,
+        locations: &[WorkspaceLocation],
+    ) -> Result<()> {
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        tx.execute("INSERT INTO workspaces(id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)", params![w.id,w.project_id,w.name,w.description,w.status,w.kind,w.parent_workspace_id,w.runtime_id,w.runtime_name,w.created_at,w.updated_at])?;
+        for location in locations {
+            insert_workspace_location(&tx, location)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn workspace_locations(&self, workspace_id: &str) -> Result<Vec<WorkspaceLocation>> {
+        let db = self.0.lock();
+        let mut stmt = db.prepare(&format!("SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_locations WHERE workspace_id=? ORDER BY location_name"))?;
+        let values = stmt
+            .query_map([workspace_id], workspace_location_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(values)
+    }
+
+    pub fn workspace_location(&self, id: &str) -> Result<WorkspaceLocation> {
+        let db = self.0.lock();
+        Ok(db.query_row(
+            &format!("SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_locations WHERE id=?"),
+            [id],
+            workspace_location_row,
         )?)
     }
 
-    pub fn create_workspace(&self, w: &Workspace) -> Result<()> {
-        self.0.lock().execute("INSERT INTO workspaces(id,project_id,name,description,status,kind,parent_workspace_id,checkout_mode,project_directory_id,worktree_id,checkout_path,target_branch,start_commit,branch,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params![w.id,w.project_id,w.name,w.description,w.status,w.kind,w.parent_workspace_id,w.checkout_mode,w.project_directory_id,w.worktree_id,w.checkout_path,w.target_branch,w.start_commit,w.branch,w.forked_from_commit,w.remote_name,w.remote_branch,w.branch_ownership,w.delivery_mode,w.delivery_status,w.close_outcome,w.integrated_commit,w.closed_at,w.runtime_id,w.runtime_name,w.created_at,w.updated_at])?;
-        Ok(())
+    pub fn workspace_locations_for_project_location(
+        &self,
+        project_location_id: &str,
+    ) -> Result<Vec<WorkspaceLocation>> {
+        let db = self.0.lock();
+        let mut stmt = db.prepare(&format!("SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_locations WHERE project_location_id=? ORDER BY created_at"))?;
+        let values = stmt
+            .query_map([project_location_id], workspace_location_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(values)
+    }
+
+    pub fn default_workspace_location(&self, workspace_id: &str) -> Result<WorkspaceLocation> {
+        let db = self.0.lock();
+        Ok(db.query_row(&format!("SELECT {WORKSPACE_LOCATION_JOIN_COLUMNS} FROM workspace_locations wl JOIN workspaces w ON w.id=wl.workspace_id JOIN projects p ON p.id=w.project_id WHERE wl.workspace_id=? ORDER BY wl.project_location_id=p.default_location_id DESC LIMIT 1"), [workspace_id], workspace_location_row)?)
+    }
+
+    fn resolve_workspace_location_id(&self, workspace_or_location_id: &str) -> Result<String> {
+        let db = self.0.lock();
+        if let Some(id) = db
+            .query_row(
+                "SELECT id FROM workspace_locations WHERE id=?",
+                [workspace_or_location_id],
+                |r| r.get(0),
+            )
+            .optional()?
+        {
+            return Ok(id);
+        }
+        Ok(db.query_row("SELECT wl.id FROM workspace_locations wl JOIN workspaces w ON w.id=wl.workspace_id JOIN projects p ON p.id=w.project_id WHERE wl.workspace_id=? ORDER BY wl.project_location_id=p.default_location_id DESC LIMIT 1", [workspace_or_location_id], |r| r.get(0))?)
     }
 
     pub(crate) fn forks(&self, workspace_id: &str) -> Result<Vec<Workspace>> {
@@ -255,17 +396,61 @@ impl Store {
         integrated_commit: Option<&str>,
         timestamp: &str,
     ) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE workspaces SET status='archived',delivery_status=?,close_outcome=?,integrated_commit=?,closed_at=?,updated_at=? WHERE id=?",
-            params![delivery_status, close_outcome, integrated_commit, timestamp, timestamp, id],
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        tx.execute("UPDATE workspace_locations SET delivery_status=?,close_outcome=?,integrated_commit=?,closed_at=?,updated_at=? WHERE workspace_id=?", params![delivery_status,close_outcome,integrated_commit,timestamp,timestamp,id])?;
+        tx.execute(
+            "UPDATE workspaces SET status='archived',updated_at=? WHERE id=?",
+            params![timestamp, id],
         )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn finish_workspace_location(
+        &self,
+        id: &str,
+        delivery_status: &str,
+        close_outcome: &str,
+        integrated_commit: Option<&str>,
+        timestamp: &str,
+    ) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE workspace_locations SET delivery_status=?,close_outcome=?,integrated_commit=?,closed_at=?,updated_at=? WHERE id=?",
+            params![delivery_status,close_outcome,integrated_commit,timestamp,timestamp,id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn archive_workspace(&self, id: &str) -> Result<()> {
+        let db = self.0.lock();
+        let unfinished: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workspace_locations WHERE workspace_id=? AND access_mode='read_write' AND delivery_status NOT IN ('delivered','kept','discarded','remote_merged'))",
+            [id], |r| r.get(0),
+        )?;
+        if unfinished {
+            return Err(AppError::BadRequest(
+                "all Git locations must be finished before archiving the Workspace".into(),
+            ));
+        }
+        let changed = db.execute(
+            "UPDATE workspaces SET status='archived',updated_at=? WHERE id=?",
+            params![now(), id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
         Ok(())
     }
 
     pub fn set_delivery_status(&self, id: &str, status: &str) -> Result<()> {
+        let location_id = self.resolve_workspace_location_id(id)?;
         self.0.lock().execute(
-            "UPDATE workspaces SET delivery_status=?,updated_at=? WHERE id=?",
-            params![status, now(), id],
+            "UPDATE workspace_locations SET delivery_status=?,updated_at=? WHERE id=?",
+            params![status, now(), location_id],
         )?;
         Ok(())
     }
@@ -277,10 +462,8 @@ impl Store {
         remote_branch: Option<&str>,
         delivery_mode: &str,
     ) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE workspaces SET remote_name=?,remote_branch=?,delivery_mode=?,updated_at=? WHERE id=?",
-            params![remote_name, remote_branch, delivery_mode, now(), id],
-        )?;
+        let location_id = self.resolve_workspace_location_id(id)?;
+        let changed = self.0.lock().execute("UPDATE workspace_locations SET remote_name=?,remote_branch=?,delivery_mode=?,updated_at=? WHERE id=?", params![remote_name,remote_branch,delivery_mode,now(),location_id])?;
         if changed == 0 {
             return Err(AppError::NotFound);
         }
@@ -288,13 +471,14 @@ impl Store {
     }
 
     pub fn delivery_operation(&self, workspace_id: &str) -> Result<Option<DeliveryOperation>> {
+        let location_id = self.resolve_workspace_location_id(workspace_id)?;
         let db = self.0.lock();
         Ok(db
             .query_row(
                 &format!(
-                    "SELECT {SETTLEMENT_OPERATION_COLUMNS} FROM delivery_operations WHERE workspace_id=?"
+                    "SELECT {SETTLEMENT_OPERATION_COLUMNS} FROM delivery_operations WHERE workspace_location_id=?"
                 ),
-                [workspace_id],
+                [location_id],
                 delivery_operation_row,
             )
             .optional()?)
@@ -302,9 +486,9 @@ impl Store {
 
     pub fn create_delivery_operation(&self, operation: &DeliveryOperation) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO delivery_operations(workspace_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO delivery_operations(workspace_location_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
-                operation.workspace_id,
+                operation.workspace_location_id,
                 operation.phase,
                 operation.code_action,
                 operation.todo_action,
@@ -333,51 +517,55 @@ impl Store {
         target_head: Option<&str>,
         integrated_commit: Option<&str>,
     ) -> Result<()> {
+        let location_id = self.resolve_workspace_location_id(workspace_id)?;
         self.0.lock().execute(
-            "UPDATE delivery_operations SET phase=?,source_head=COALESCE(?,source_head),target_head=COALESCE(?,target_head),integrated_commit=COALESCE(?,integrated_commit),error='',updated_at=? WHERE workspace_id=?",
-            params![phase, source_head, target_head, integrated_commit, now(), workspace_id],
+            "UPDATE delivery_operations SET phase=?,source_head=COALESCE(?,source_head),target_head=COALESCE(?,target_head),integrated_commit=COALESCE(?,integrated_commit),error='',updated_at=? WHERE workspace_location_id=?",
+            params![phase, source_head, target_head, integrated_commit, now(), location_id],
         )?;
         Ok(())
     }
 
     pub fn set_delivery_error(&self, workspace_id: &str, error: &str) -> Result<()> {
+        let location_id = self.resolve_workspace_location_id(workspace_id)?;
         self.0.lock().execute(
-            "UPDATE delivery_operations SET error=?,updated_at=? WHERE workspace_id=?",
-            params![error, now(), workspace_id],
+            "UPDATE delivery_operations SET error=?,updated_at=? WHERE workspace_location_id=?",
+            params![error, now(), location_id],
         )?;
         Ok(())
     }
 
     pub fn latest_rebase_operation(&self, workspace_id: &str) -> Result<Option<RebaseOperation>> {
+        let location_id = self.resolve_workspace_location_id(workspace_id)?;
         let db = self.0.lock();
         Ok(db
             .query_row(
                 &format!(
-                    "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workspace_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 1"
+                    "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workspace_location_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 1"
                 ),
-                [workspace_id],
+                [location_id],
                 rebase_operation_row,
             )
             .optional()?)
     }
 
     pub fn rebase_operations(&self, workspace_id: &str) -> Result<Vec<RebaseOperation>> {
+        let location_id = self.resolve_workspace_location_id(workspace_id)?;
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!(
-            "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workspace_id=? ORDER BY started_at DESC,rowid DESC"
+            "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workspace_location_id=? ORDER BY started_at DESC,rowid DESC"
         ))?;
         let values = stmt
-            .query_map([workspace_id], rebase_operation_row)?
+            .query_map([location_id], rebase_operation_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
     pub fn create_rebase_operation(&self, operation: &RebaseOperation) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO rebase_operations(id,workspace_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO rebase_operations(id,workspace_location_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 operation.id,
-                operation.workspace_id,
+                operation.workspace_location_id,
                 operation.status,
                 operation.phase,
                 operation.before_head,
@@ -421,10 +609,10 @@ impl Store {
 
     pub fn create_delivery_preflight(&self, preflight: &DeliveryPreflight) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO delivery_preflights(id,workspace_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO delivery_preflights(id,workspace_location_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 preflight.id,
-                preflight.workspace_id,
+                preflight.workspace_location_id,
                 preflight.code_action,
                 preflight.source_head,
                 preflight.target_head,
@@ -448,7 +636,7 @@ impl Store {
     pub fn delivery_preflight(&self, id: &str) -> Result<DeliveryPreflight> {
         let db = self.0.lock();
         Ok(db.query_row(
-            "SELECT id,workspace_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at FROM delivery_preflights WHERE id=?",
+            "SELECT id,workspace_location_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at FROM delivery_preflights WHERE id=?",
             [id],
             delivery_preflight_row,
         )?)
@@ -464,33 +652,35 @@ impl Store {
     }
 
     pub fn latest_reset_operation(&self, workspace_id: &str) -> Result<Option<ResetOperation>> {
+        let location_id = self.resolve_workspace_location_id(workspace_id)?;
         let db = self.0.lock();
         Ok(db
             .query_row(
-                &format!("SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workspace_id=? ORDER BY started_at DESC,rowid DESC LIMIT 1"),
-                [workspace_id],
+                &format!("SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workspace_location_id=? ORDER BY started_at DESC,rowid DESC LIMIT 1"),
+                [location_id],
                 reset_operation_row,
             )
             .optional()?)
     }
 
     pub fn reset_operations(&self, workspace_id: &str) -> Result<Vec<ResetOperation>> {
+        let location_id = self.resolve_workspace_location_id(workspace_id)?;
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!(
-            "SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workspace_id=? ORDER BY started_at DESC,rowid DESC"
+            "SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workspace_location_id=? ORDER BY started_at DESC,rowid DESC"
         ))?;
         let values = stmt
-            .query_map([workspace_id], reset_operation_row)?
+            .query_map([location_id], reset_operation_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
     pub fn create_reset_operation(&self, operation: &ResetOperation) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO reset_operations(id,workspace_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO reset_operations(id,workspace_location_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 operation.id,
-                operation.workspace_id,
+                operation.workspace_location_id,
                 operation.status,
                 operation.mode,
                 operation.before_head,
@@ -656,7 +846,7 @@ impl Store {
     fn session_additional_directories(&self, id: &str) -> Result<Vec<String>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(
-            "SELECT path FROM session_additional_directories WHERE session_id=? ORDER BY path",
+            "SELECT path FROM session_additional_directories WHERE session_id=? AND access_mode='read_write' ORDER BY path",
         )?;
         let values = stmt
             .query_map([id], |r| r.get(0))?
@@ -668,13 +858,26 @@ impl Store {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         tx.execute(
-            "DELETE FROM session_additional_directories WHERE session_id=?",
+            "DELETE FROM session_additional_directories WHERE session_id=? AND access_mode='read_write'",
             [id],
         )?;
         for path in paths {
             tx.execute(
                 "INSERT INTO session_additional_directories(session_id,path) VALUES(?,?)",
                 params![id, path],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn add_session_read_only_contexts(&self, id: &str, paths: &[String]) -> Result<()> {
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        for path in paths {
+            tx.execute(
+                "INSERT OR REPLACE INTO session_additional_directories(session_id,path,access_mode) VALUES(?,?,'read_only')",
+                params![id,path],
             )?;
         }
         tx.commit()?;
@@ -783,9 +986,10 @@ impl Store {
     }
 
     pub fn project_detail(&self, id: &str) -> Result<ProjectDetail> {
+        let locations = self.directories(id)?;
         Ok(ProjectDetail {
             project: self.project(id)?,
-            directories: self.directories(id)?,
+            locations,
             workspaces: self
                 .workspaces(id)?
                 .into_iter()
@@ -797,9 +1001,10 @@ impl Store {
 
     pub fn workspace_detail(&self, id: &str) -> Result<WorkspaceDetail> {
         let workspace = self.workspace(id)?;
+        let locations = self.workspace_locations(id)?;
         Ok(WorkspaceDetail {
             project: self.project(&workspace.project_id)?,
-            directories: self.directories(&workspace.project_id)?,
+            locations,
             sessions: self.sessions(id)?,
             todos: self.todos(id)?,
             forks: self.forks(id)?,
@@ -813,21 +1018,45 @@ pub fn now() -> String {
 }
 
 fn project_row(r: &Row<'_>) -> rusqlite::Result<Project> {
+    let default_location_id: Option<String> = r.get(4)?;
+    let default_base_branch: String = r.get(5)?;
     Ok(Project {
         id: r.get(0)?,
         name: r.get(1)?,
         description: r.get(2)?,
         status: r.get(3)?,
-        primary_directory_id: r.get(4)?,
-        git_common_dir: r.get(5)?,
-        preferred_remote: r.get(6)?,
-        default_target_branch: r.get(7)?,
-        default_delivery_mode: r.get(8)?,
-        created_at: r.get(9)?,
-        updated_at: r.get(10)?,
+        default_location_id: default_location_id.clone(),
+        default_base_branch: default_base_branch.clone(),
+        default_delivery_mode: r.get(6)?,
+        created_at: r.get(7)?,
+        updated_at: r.get(8)?,
+        primary_directory_id: default_location_id.unwrap_or_default(),
+        git_common_dir: String::new(),
+        preferred_remote: None,
+        default_target_branch: default_base_branch,
     })
 }
+
+fn hydrate_project_compat(db: &Connection, project: &mut Project) -> rusqlite::Result<()> {
+    let Some(location_id) = project.default_location_id.as_deref() else {
+        return Ok(());
+    };
+    let metadata = db.query_row(
+        "SELECT git_common_dir,preferred_remote_name,COALESCE(base_branch,?) FROM project_locations WHERE id=?",
+        params![project.default_base_branch, location_id],
+        |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?)),
+    ).optional()?;
+    if let Some((git_common_dir, remote, branch)) = metadata {
+        project.primary_directory_id = location_id.to_owned();
+        project.git_common_dir = git_common_dir.unwrap_or_default();
+        project.preferred_remote = remote;
+        project.default_target_branch = branch;
+    }
+    Ok(())
+}
 fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
+    let git_common_dir: Option<String> = r.get(9)?;
+    let is_git = git_common_dir.is_some();
     Ok(Directory {
         id: r.get(0)?,
         project_id: r.get(1)?,
@@ -835,18 +1064,28 @@ fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
         description: r.get(3)?,
         worktree_setup_command: r.get(4)?,
         path: r.get(5)?,
+        repository_url: r.get(6)?,
+        preferred_remote_name: r.get(7)?,
+        base_branch: r.get(8)?,
+        git_common_dir,
+        git_status: if is_git {
+            "ready".into()
+        } else {
+            "not_git".into()
+        },
+        created_at: r.get(10)?,
+        updated_at: r.get(11)?,
         checkout_path: None,
-        role: r.get(6)?,
-        is_git: r.get(7)?,
-        remote_url: None,
+        role: "attached".into(),
+        is_git,
+        remote_url: r.get(6)?,
         branch: None,
         head_commit: None,
         head_summary: None,
         dirty: false,
-        created_at: r.get(8)?,
     })
 }
-const WORKSPACE_COLUMNS: &str = "id,project_id,name,description,status,kind,parent_workspace_id,checkout_mode,project_directory_id,worktree_id,checkout_path,target_branch,start_commit,branch,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at";
+const WORKSPACE_COLUMNS: &str = "id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at";
 fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
     Ok(Workspace {
         id: r.get(0)?,
@@ -856,27 +1095,101 @@ fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
         status: r.get(4)?,
         kind: r.get(5)?,
         parent_workspace_id: r.get(6)?,
-        checkout_mode: r.get(7)?,
-        project_directory_id: r.get(8)?,
-        worktree_id: r.get(9)?,
-        checkout_path: r.get(10)?,
-        target_branch: r.get(11)?,
-        start_commit: r.get(12)?,
-        branch: r.get(13)?,
-        forked_from_commit: r.get(14)?,
-        remote_name: r.get(15)?,
-        remote_branch: r.get(16)?,
-        branch_ownership: r.get(17)?,
-        delivery_mode: r.get(18)?,
-        delivery_status: r.get(19)?,
-        close_outcome: r.get(20)?,
-        integrated_commit: r.get(21)?,
-        closed_at: r.get(22)?,
-        runtime_id: r.get(23)?,
-        runtime_name: r.get(24)?,
-        created_at: r.get(25)?,
-        updated_at: r.get(26)?,
+        runtime_id: r.get(7)?,
+        runtime_name: r.get(8)?,
+        created_at: r.get(9)?,
+        updated_at: r.get(10)?,
+        checkout_mode: "worktree".into(),
+        project_directory_id: String::new(),
+        worktree_id: None,
+        checkout_path: String::new(),
+        target_branch: String::new(),
+        start_commit: String::new(),
+        branch: String::new(),
+        forked_from_commit: None,
+        remote_name: None,
+        remote_branch: None,
+        branch_ownership: "managed".into(),
+        delivery_mode: "remote_review".into(),
+        delivery_status: "active".into(),
+        close_outcome: None,
+        integrated_commit: None,
+        closed_at: None,
     })
+}
+
+const WORKSPACE_LOCATION_COLUMNS: &str = "id,workspace_id,project_location_id,location_name,source_path,access_mode,git_status,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
+const WORKSPACE_LOCATION_JOIN_COLUMNS: &str = "wl.id,wl.workspace_id,wl.project_location_id,wl.location_name,wl.source_path,wl.access_mode,wl.git_status,wl.worktree_id,wl.checkout_path,wl.branch,wl.base_branch,wl.start_commit,wl.forked_from_commit,wl.remote_name,wl.remote_branch,wl.branch_ownership,wl.delivery_mode,wl.delivery_status,wl.close_outcome,wl.integrated_commit,wl.closed_at,wl.created_at,wl.updated_at";
+
+fn workspace_location_row(r: &Row<'_>) -> rusqlite::Result<WorkspaceLocation> {
+    Ok(WorkspaceLocation {
+        id: r.get(0)?,
+        workspace_id: r.get(1)?,
+        project_location_id: r.get(2)?,
+        location_name: r.get(3)?,
+        source_path: r.get(4)?,
+        access_mode: r.get(5)?,
+        git_status: r.get(6)?,
+        worktree_id: r.get(7)?,
+        checkout_path: r.get(8)?,
+        branch: r.get(9)?,
+        base_branch: r.get(10)?,
+        start_commit: r.get(11)?,
+        forked_from_commit: r.get(12)?,
+        remote_name: r.get(13)?,
+        remote_branch: r.get(14)?,
+        branch_ownership: r.get(15)?,
+        delivery_mode: r.get(16)?,
+        delivery_status: r.get(17)?,
+        close_outcome: r.get(18)?,
+        integrated_commit: r.get(19)?,
+        closed_at: r.get(20)?,
+        created_at: r.get(21)?,
+        updated_at: r.get(22)?,
+    })
+}
+
+fn hydrate_workspace_compat(db: &Connection, workspace: &mut Workspace) -> rusqlite::Result<()> {
+    let location = db.query_row(
+        &format!("SELECT {WORKSPACE_LOCATION_JOIN_COLUMNS} FROM workspace_locations wl JOIN projects p ON p.id=? WHERE wl.workspace_id=? ORDER BY wl.project_location_id=p.default_location_id DESC LIMIT 1"),
+        params![workspace.project_id, workspace.id], workspace_location_row,
+    ).optional()?;
+    if let Some(location) = location {
+        workspace.project_directory_id = location.project_location_id;
+        workspace.worktree_id = location.worktree_id;
+        workspace.checkout_path = location
+            .checkout_path
+            .unwrap_or_else(|| location.source_path.clone());
+        workspace.target_branch = location.base_branch.unwrap_or_default();
+        workspace.start_commit = location.start_commit.unwrap_or_default();
+        workspace.branch = location.branch.unwrap_or_default();
+        workspace.forked_from_commit = location.forked_from_commit;
+        workspace.remote_name = location.remote_name;
+        workspace.remote_branch = location.remote_branch;
+        workspace.branch_ownership = location.branch_ownership;
+        workspace.delivery_mode = location.delivery_mode;
+        workspace.delivery_status = location.delivery_status;
+        workspace.close_outcome = location.close_outcome;
+        workspace.integrated_commit = location.integrated_commit;
+        workspace.closed_at = location.closed_at;
+    }
+    Ok(())
+}
+
+fn insert_project_location(
+    tx: &rusqlite::Transaction<'_>,
+    d: &ProjectLocation,
+) -> rusqlite::Result<()> {
+    tx.execute("INSERT INTO project_locations(id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,git_common_dir,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", params![d.id,d.project_id,d.name,d.description,d.worktree_setup_command,d.path,d.repository_url,d.preferred_remote_name,d.base_branch,d.git_common_dir,d.created_at,d.updated_at])?;
+    Ok(())
+}
+
+fn insert_workspace_location(
+    tx: &rusqlite::Transaction<'_>,
+    l: &WorkspaceLocation,
+) -> rusqlite::Result<()> {
+    tx.execute(&format!("INSERT INTO workspace_locations({WORKSPACE_LOCATION_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"), params![l.id,l.workspace_id,l.project_location_id,l.location_name,l.source_path,l.access_mode,l.git_status,l.worktree_id,l.checkout_path,l.branch,l.base_branch,l.start_commit,l.forked_from_commit,l.remote_name,l.remote_branch,l.branch_ownership,l.delivery_mode,l.delivery_status,l.close_outcome,l.integrated_commit,l.closed_at,l.created_at,l.updated_at])?;
+    Ok(())
 }
 const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,yolo,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
 fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
@@ -926,10 +1239,11 @@ fn todo_row(r: &Row<'_>) -> rusqlite::Result<Todo> {
 const TODO_COLUMNS: &str =
     "id,workspace_id,title,description,status,session_id,blocked_reason,created_at,updated_at";
 
-const SETTLEMENT_OPERATION_COLUMNS: &str = "workspace_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
+const SETTLEMENT_OPERATION_COLUMNS: &str = "workspace_location_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
 
 fn delivery_operation_row(r: &Row<'_>) -> rusqlite::Result<DeliveryOperation> {
     Ok(DeliveryOperation {
+        workspace_location_id: r.get(0)?,
         workspace_id: r.get(0)?,
         phase: r.get(1)?,
         code_action: r.get(2)?,
@@ -949,11 +1263,12 @@ fn delivery_operation_row(r: &Row<'_>) -> rusqlite::Result<DeliveryOperation> {
     })
 }
 
-const REBASE_OPERATION_COLUMNS: &str = "id,workspace_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at";
+const REBASE_OPERATION_COLUMNS: &str = "id,workspace_location_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at";
 
 fn rebase_operation_row(r: &Row<'_>) -> rusqlite::Result<RebaseOperation> {
     Ok(RebaseOperation {
         id: r.get(0)?,
+        workspace_location_id: r.get(1)?,
         workspace_id: r.get(1)?,
         status: r.get(2)?,
         phase: r.get(3)?,
@@ -968,11 +1283,12 @@ fn rebase_operation_row(r: &Row<'_>) -> rusqlite::Result<RebaseOperation> {
     })
 }
 
-const RESET_OPERATION_COLUMNS: &str = "id,workspace_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at";
+const RESET_OPERATION_COLUMNS: &str = "id,workspace_location_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at";
 
 fn reset_operation_row(r: &Row<'_>) -> rusqlite::Result<ResetOperation> {
     Ok(ResetOperation {
         id: r.get(0)?,
+        workspace_location_id: r.get(1)?,
         workspace_id: r.get(1)?,
         status: r.get(2)?,
         mode: r.get(3)?,
@@ -990,6 +1306,7 @@ fn reset_operation_row(r: &Row<'_>) -> rusqlite::Result<ResetOperation> {
 fn delivery_preflight_row(r: &Row<'_>) -> rusqlite::Result<DeliveryPreflight> {
     Ok(DeliveryPreflight {
         id: r.get(0)?,
+        workspace_location_id: r.get(1)?,
         workspace_id: r.get(1)?,
         code_action: r.get(2)?,
         source_head: r.get(3)?,
@@ -1029,33 +1346,17 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
     if !exists {
         return Ok(());
     }
-    let workspace_v2 = table_has_column(connection, "projects", "git_common_dir")?
-        && table_has_column(connection, "workspaces", "remote_branch")?
-        && table_has_column(connection, "sessions", "workspace_id")?;
-    let current = workspace_v2 && table_has_column(connection, "workspaces", "kind")?;
+    let current = table_has_column(connection, "projects", "default_location_id")?
+        && table_exists(connection, "project_locations")?
+        && table_exists(connection, "workspace_locations")?;
     if current {
         return Ok(());
     }
 
-    if workspace_v2 {
-        let backup = path.with_extension("pre-workspace-v3.db");
-        if !backup.exists() {
-            let quoted = backup.to_string_lossy().replace('\'', "''");
-            connection.execute_batch(&format!("VACUUM INTO '{quoted}';"))?;
-        }
-        connection.execute_batch(
-            "ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'workspace';
-             ALTER TABLE workspaces ADD COLUMN parent_workspace_id TEXT;
-             ALTER TABLE workspaces ADD COLUMN checkout_mode TEXT NOT NULL DEFAULT 'worktree';
-             ALTER TABLE workspaces ADD COLUMN forked_from_commit TEXT;",
-        )?;
-        return Ok(());
-    }
-
-    // The older pre-release domain change intentionally starts a new local data model.
-    // Keep a byte-for-byte SQLite snapshot beside the database so users can recover
-    // legacy Project/development records with an older Treefold build.
-    let backup = path.with_extension("pre-workspace-v2.db");
+    // Project Locations deliberately starts a new business-data generation. User
+    // preferences live in TOML and are not part of this database. Keep a complete,
+    // versioned SQLite backup before clearing the old Project/Workspace records.
+    let backup = path.with_extension("pre-project-locations-v1.db");
     if !backup.exists() {
         let quoted = backup.to_string_lossy().replace('\'', "''");
         connection.execute_batch(&format!("VACUUM INTO '{quoted}';"))?;
@@ -1078,10 +1379,20 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
          DROP TABLE IF EXISTS workstream_contexts;
          DROP TABLE IF EXISTS project_contexts;
          DROP TABLE IF EXISTS project_directories;
+         DROP TABLE IF EXISTS workspace_locations;
+         DROP TABLE IF EXISTS project_locations;
          DROP TABLE IF EXISTS projects;
          PRAGMA foreign_keys=ON;",
     )?;
     Ok(())
+}
+
+fn table_exists(connection: &Connection, table: &str) -> Result<bool> {
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)",
+        [table],
+        |row| row.get(0),
+    )?)
 }
 
 fn table_has_column(connection: &Connection, table: &str, column: &str) -> Result<bool> {
@@ -1094,7 +1405,7 @@ fn table_has_column(connection: &Connection, table: &str, column: &str) -> Resul
 
 #[cfg(test)]
 mod workspace_schema_tests {
-    use super::{table_has_column, Connection, Store};
+    use super::{table_exists, table_has_column, Connection, Store};
 
     fn temporary_database(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         let root =
@@ -1105,15 +1416,20 @@ mod workspace_schema_tests {
     }
 
     #[test]
-    fn current_workspace_schema_supports_one_level_of_forks() {
+    fn current_schema_separates_projects_workspaces_and_locations() {
         let (root, path) = temporary_database("workspace-schema");
         let store = Store::open(&path).expect("open current Store");
         let connection = Connection::open(&path).expect("inspect current Store");
-        assert!(table_has_column(&connection, "workspaces", "target_branch").unwrap());
-        assert!(table_has_column(&connection, "workspaces", "remote_branch").unwrap());
+        assert!(table_has_column(&connection, "projects", "default_location_id").unwrap());
+        assert!(!table_has_column(&connection, "projects", "primary_directory_id").unwrap());
         assert!(table_has_column(&connection, "workspaces", "kind").unwrap());
         assert!(table_has_column(&connection, "workspaces", "parent_workspace_id").unwrap());
-        assert!(table_has_column(&connection, "workspaces", "checkout_mode").unwrap());
+        assert!(!table_has_column(&connection, "workspaces", "checkout_path").unwrap());
+        assert!(table_exists(&connection, "project_locations").unwrap());
+        assert!(table_exists(&connection, "workspace_locations").unwrap());
+        assert!(
+            table_has_column(&connection, "delivery_operations", "workspace_location_id").unwrap()
+        );
         drop(connection);
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
@@ -1129,14 +1445,14 @@ mod workspace_schema_tests {
         drop(connection);
 
         let store = Store::open(&path).expect("migrate legacy database");
-        assert!(path.with_extension("pre-workspace-v2.db").exists());
+        assert!(path.with_extension("pre-project-locations-v1.db").exists());
         assert!(store.projects().expect("list migrated Projects").is_empty());
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
     }
 
     #[test]
-    fn flat_workspace_schema_is_upgraded_without_losing_records() {
+    fn previous_workspace_schema_is_backed_up_and_business_records_are_cleared() {
         let (root, path) = temporary_database("flat-workspace-migration");
         let connection = Connection::open(&path).expect("create flat Workspace database");
         connection.execute_batch(
@@ -1167,11 +1483,9 @@ mod workspace_schema_tests {
         drop(connection);
 
         let store = Store::open(&path).expect("upgrade flat Workspace database");
-        let workspace = store.workspace("w").expect("preserve Workspace record");
-        assert_eq!(workspace.kind, "workspace");
-        assert_eq!(workspace.checkout_mode, "worktree");
-        assert!(workspace.parent_workspace_id.is_none());
-        assert!(path.with_extension("pre-workspace-v3.db").exists());
+        assert!(store.projects().expect("list Projects").is_empty());
+        assert!(store.workspace("w").is_err());
+        assert!(path.with_extension("pre-project-locations-v1.db").exists());
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
     }

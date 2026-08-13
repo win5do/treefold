@@ -6,18 +6,24 @@ pub struct Project {
     pub name: String,
     pub description: String,
     pub status: String,
-    pub primary_directory_id: String,
-    pub git_common_dir: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub preferred_remote: Option<String>,
-    pub default_target_branch: String,
+    pub default_location_id: Option<String>,
+    pub default_base_branch: String,
     pub default_delivery_mode: String,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip)]
+    pub primary_directory_id: String,
+    #[serde(skip)]
+    pub git_common_dir: String,
+    #[serde(skip)]
+    pub preferred_remote: Option<String>,
+    #[serde(skip)]
+    pub default_target_branch: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Directory {
+pub struct ProjectLocation {
     pub id: String,
     pub project_id: String,
     pub name: String,
@@ -25,20 +31,35 @@ pub struct Directory {
     pub worktree_setup_command: String,
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub checkout_path: Option<String>,
-    pub role: String,
-    pub is_git: bool,
+    pub repository_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remote_url: Option<String>,
+    pub preferred_remote_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
+    pub base_branch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub head_commit: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub head_summary: Option<String>,
-    pub dirty: bool,
+    pub git_common_dir: Option<String>,
+    pub git_status: String,
     pub created_at: String,
+    pub updated_at: String,
+    #[serde(skip)]
+    pub checkout_path: Option<String>,
+    #[serde(skip)]
+    pub role: String,
+    #[serde(skip)]
+    pub is_git: bool,
+    #[serde(skip)]
+    pub remote_url: Option<String>,
+    #[serde(skip)]
+    pub branch: Option<String>,
+    #[serde(skip)]
+    pub head_commit: Option<String>,
+    #[serde(skip)]
+    pub head_summary: Option<String>,
+    #[serde(skip)]
+    pub dirty: bool,
 }
+
+pub type Directory = ProjectLocation;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Workspace {
@@ -50,14 +71,63 @@ pub struct Workspace {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_workspace_id: Option<String>,
+    pub runtime_id: String,
+    pub runtime_name: String,
+    pub created_at: String,
+    pub updated_at: String,
+    #[serde(skip)]
     pub checkout_mode: String,
+    #[serde(skip)]
     pub project_directory_id: String,
+    #[serde(skip)]
+    pub worktree_id: Option<String>,
+    #[serde(skip)]
+    pub checkout_path: String,
+    #[serde(skip)]
+    pub target_branch: String,
+    #[serde(skip)]
+    pub start_commit: String,
+    #[serde(skip)]
+    pub branch: String,
+    #[serde(skip)]
+    pub forked_from_commit: Option<String>,
+    #[serde(skip)]
+    pub remote_name: Option<String>,
+    #[serde(skip)]
+    pub remote_branch: Option<String>,
+    #[serde(skip)]
+    pub branch_ownership: String,
+    #[serde(skip)]
+    pub delivery_mode: String,
+    #[serde(skip)]
+    pub delivery_status: String,
+    #[serde(skip)]
+    pub close_outcome: Option<String>,
+    #[serde(skip)]
+    pub integrated_commit: Option<String>,
+    #[serde(skip)]
+    pub closed_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkspaceLocation {
+    pub id: String,
+    pub workspace_id: String,
+    pub project_location_id: String,
+    pub location_name: String,
+    pub source_path: String,
+    pub access_mode: String,
+    pub git_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_id: Option<String>,
-    pub checkout_path: String,
-    pub target_branch: String,
-    pub start_commit: String,
-    pub branch: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkout_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_commit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forked_from_commit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,8 +143,6 @@ pub struct Workspace {
     pub integrated_commit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub closed_at: Option<String>,
-    pub runtime_id: String,
-    pub runtime_name: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -132,15 +200,15 @@ pub struct Todo {
 pub struct ProjectDetail {
     #[serde(flatten)]
     pub project: Project,
-    pub directories: Vec<Directory>,
+    pub locations: Vec<ProjectLocation>,
     pub workspaces: Vec<Workspace>,
     pub worktrees: Vec<GitWorktree>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct GitWorktree {
-    pub directory_id: String,
-    pub directory_name: String,
+    pub project_location_id: String,
+    pub location_name: String,
     pub path: String,
     pub branch: String,
     pub head_commit: String,
@@ -196,6 +264,8 @@ pub struct RepairResult {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeliveryPreflight {
     pub id: String,
+    pub workspace_location_id: String,
+    #[serde(skip)]
     pub workspace_id: String,
     pub code_action: String,
     pub source_head: String,
@@ -219,7 +289,7 @@ pub struct WorkspaceDetail {
     #[serde(flatten)]
     pub workspace: Workspace,
     pub project: Project,
-    pub directories: Vec<Directory>,
+    pub locations: Vec<WorkspaceLocation>,
     pub sessions: Vec<Session>,
     pub todos: Vec<Todo>,
     pub forks: Vec<Workspace>,
@@ -238,8 +308,22 @@ pub struct GitSyncResult {
     pub message: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitSyncItemResult {
+    pub project_location_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_location_id: Option<String>,
+    pub location_name: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<GitSyncResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeliveryOperation {
+    pub workspace_location_id: String,
     pub workspace_id: String,
     pub phase: String,
     pub code_action: String,
@@ -261,6 +345,8 @@ pub struct DeliveryOperation {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RebaseOperation {
     pub id: String,
+    pub workspace_location_id: String,
+    #[serde(skip)]
     pub workspace_id: String,
     pub status: String,
     pub phase: String,
@@ -279,6 +365,8 @@ pub struct RebaseOperation {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResetOperation {
     pub id: String,
+    pub workspace_location_id: String,
+    #[serde(skip)]
     pub workspace_id: String,
     pub status: String,
     pub mode: String,

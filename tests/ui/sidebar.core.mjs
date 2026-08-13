@@ -323,17 +323,17 @@ try {
     timeout: 3_000,
     timeoutMsg: "fixture Workspace navigation did not update the route",
   });
-  let baseSection = await browser.$('[data-testid="workspace-base-section"]');
+  let baseSection = await browser.$('[data-testid="workspace-locations-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await browser.$("button=Configure")).isExisting(), true, "Workspace must expose remote branch configuration");
-  assert.equal(await (await browser.$("button=Pull")).isExisting(), true, "Workspace must expose Pull when it owns an upstream");
-  assert.equal(await (await browser.$("button=Push")).isExisting(), true, "Workspace must expose Push when it owns an upstream");
-  assert.equal(await (await baseSection.$("h2")).getText(), "Base", "worktree metadata must be grouped under Base");
-  const baseLabels = await baseSection.$$("th");
-  assert.deepEqual(await baseLabels.map((label) => label.getText()), ["worktree dir", "git branch", "target"], "Base must identify worktree, branch, and fixed target");
+  assert.equal(await (await browser.$("button=Pull all")).isExisting(), true, "Workspace must expose best-effort Pull all");
+  assert.equal(await (await browser.$("button=Push all")).isExisting(), true, "Workspace must expose best-effort Push all");
+  assert.equal(await (await baseSection.$("h2")).getText(), "Repository locations", "worktree metadata must be grouped by location");
+  assert.match(await baseSection.getText(), /fixture-repository[\s\S]*read_write/);
+  assert.match(await baseSection.getText(), /fixture-documentation[\s\S]*read_only/);
   const forksSection = await browser.$('[data-testid="workspace-forks-section"]');
   const todosSection = await browser.$('[data-testid="workspace-todos-section"]');
-  assert.ok((await baseSection.getLocation("y")) < (await forksSection.getLocation("y")), "Base section must appear above Forks");
+  assert.ok((await baseSection.getLocation("y")) < (await forksSection.getLocation("y")), "Locations section must appear above Forks");
   assert.ok((await forksSection.getLocation("y")) < (await todosSection.getLocation("y")), "Forks must remain above Todos");
 
   await (await browser.$("button=New Shell")).click();
@@ -343,7 +343,7 @@ try {
   });
   assert.match(await main.getText(), /shell[\s\S]*running/i, "the created Shell must render from the POST response without a full refresh");
   await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
-  baseSection = await browser.$('[data-testid="workspace-base-section"]');
+  baseSection = await browser.$('[data-testid="workspace-locations-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
 
   await browser.$('button[aria-label="Hide left sidebar"]').click();
@@ -433,10 +433,10 @@ try {
   });
   const projectContent = await browser.$('[data-testid="page-content"]');
   assert.match(await projectContent.getText(), /fixture-documentation/, "attached Directory must remain visible on the Project page");
-  await (await browser.$("button*=Add directory")).click();
+  await (await browser.$("button*=Add location")).click();
   const addDirectoryDialog = await browser.$('[role="dialog"]');
   await addDirectoryDialog.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await addDirectoryDialog.getText(), /Add directory/);
+  assert.match(await addDirectoryDialog.getText(), /Add project location/);
   await browser.keys(Key.Escape);
   const branchSelector = await browser.$(`[data-testid="branch-selector-${FIXTURE_IDS.primaryDirectory}"]`);
   await branchSelector.click();
@@ -448,7 +448,7 @@ try {
   await releaseBranch.click();
   await browser.waitUntil(async () => (await branchSelector.getText()).includes("release/ui-fixture"), { timeout: 3_000, timeoutMsg: "Directory branch checkout did not refresh the selected branch" });
   assert.equal((await browser.$$('button[aria-label^="Delete worktree "]')).length, 2, "independent Git worktrees must expose delete controls");
-  await (await browser.$("button=Pull")).click();
+  await (await browser.$("button=Pull all")).click();
   await browser.$('button[aria-label="Edit fixture-repository"]').click();
   const setupCommand = await browser.$('textarea[aria-label="Worktree setup command"]');
   await setupCommand.waitForDisplayed({ timeout: 3_000 });
@@ -488,9 +488,9 @@ try {
   assert.equal(await rightSidebar.isExisting(), true, "right sidebar must stay mounted for its exit transition");
 
   await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.fork}`);
-  await browser.$('[data-testid="workspace-base-section"]').waitForDisplayed({ timeout: 3_000 });
-  assert.equal(await (await browser.$("button=Pull")).isExisting(), false, "Fork must not expose Pull");
-  assert.equal(await (await browser.$("button=Push")).isExisting(), false, "Fork must not expose Push");
+  await browser.$('[data-testid="workspace-locations-section"]').waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await (await browser.$("button=Pull all")).isExisting(), false, "Fork must not expose Pull all");
+  assert.equal(await (await browser.$("button=Push all")).isExisting(), false, "Fork must not expose Push all");
   assert.equal(await (await browser.$("button=Configure")).isExisting(), false, "Fork must not expose remote configuration");
   const showForkInspector = await browser.$('button[aria-label="Show right sidebar"]');
   await showForkInspector.waitForDisplayed({ timeout: 3_000 });
@@ -516,11 +516,11 @@ try {
   assert.match(await preflight.getText(), /2 ahead/);
   assert.match(await preflight.getText(), /2 files/);
   assert.match(await preflight.getText(), /source is 1 commit/);
-  const finishButton = await browser.$("button*=Finish Fork");
+  const finishButton = await browser.$("button*=Finish fixture-repository");
   assert.equal(await finishButton.isEnabled(), true, "a ready preflight must unlock Finish");
   const finishDialog = await browser.$('[role="dialog"]');
   assert.equal((await finishDialog.getText()).includes("Context"), false, "Finish must not expose the removed Context feature");
-  assert.match(await finishDialog.getText(), /Records and cleanup[\s\S]*Todos/, "Finish must retain Todo and Session record controls");
+  assert.match(await finishDialog.getText(), /REPOSITORY[\s\S]*fixture-repository/, "Finish must select one repository at a time");
   const finishBottom = (await finishButton.getLocation("y")) + (await finishButton.getSize("height"));
   const dialogBottom = (await finishDialog.getLocation("y")) + (await finishDialog.getSize("height"));
   assert.ok(finishBottom <= dialogBottom, "Finish footer must remain visible inside the dialog");

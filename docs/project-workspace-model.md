@@ -1,71 +1,85 @@
-# Project, Workspace, Fork, and Session
+# Project, Locations, Workspace, Fork, and Session
 
-Treefold uses a shallow development hierarchy:
+Treefold uses a shallow development hierarchy with explicit repository
+locations:
 
 ```text
 Project
-└── Workspace
-    ├── Session
-    ├── Todo
-    └── Fork
+├── ProjectLocation (default Git location)
+├── ProjectLocation (additional Git location)
+└── ProjectLocation (non-Git context)
+    └── Workspace
+        ├── WorkspaceLocation (one snapshot per ProjectLocation)
         ├── Session
-        └── Todo
+        ├── Todo
+        └── Fork
 ```
 
-Workspace and Fork can create formal Shell or Codex Sessions. Project exposes
-unmanaged external tools instead of owning development Sessions.
+## Project and ProjectLocation
 
-## Project
+A Project is an organizing record and may initially have no locations. A
+ProjectLocation is a local path with a display name, description, optional
+worktree setup command, and observed Git identity. Its dynamic status is one of
+`ready`, `not_git`, `missing`, `broken`, or `mismatch`.
 
-A Project is a registered Git repository, not a development branch. It owns the
-source checkout, Git common directory, remotes, default target branch, default
-delivery mode, and the inventory of Workspaces and worktrees.
+The first ready Git location becomes the default. Creating a Workspace requires
+that default to be ready and also blocks when any additional location previously
+identified as Git is unavailable. Non-Git locations do not block creation.
+Refreshing a non-Git location after `git init` gives future Workspaces Git
+capability; existing Workspace snapshots are unchanged.
 
-`Open Shell` and `Open Codex` launch unrestricted external tools in the source
-checkout. Treefold does not record, resume, stop, archive, or attach those
-processes to delivery. The user owns the effects of commands run there.
+Project Pull All and Push All operate each Git location independently. Pull is
+fast-forward only and requires the user's main directory to already be clean and
+on its configured base branch. Treefold never switches that directory for the
+user.
 
-Project Pull fetches the preferred remote target and fast-forwards only when the
-source checkout is clean and currently on that target. Project Push pushes that
-target without force.
+## Workspace and WorkspaceLocation
 
-## Workspace
+A Workspace is common lifecycle state: name, Project, parent, Sessions, Todos,
+and archive status. Repository-specific state belongs to WorkspaceLocation.
+At creation time every ProjectLocation is snapshotted:
 
-A Workspace is one feature, fix, or other deliverable body of work. It owns a
-managed worktree, local feature branch, fixed target and creation commit,
-optional remote feature branch, delivery state, Sessions, Todos, and Forks.
+- every ready Git location gets a managed worktree and the same generated
+  feature branch name;
+- a non-Git location keeps its original path with `read_only` access;
+- base branch, start commit, upstream, and delivery state are stored per Git
+  location.
 
-Workspace Pull fast-forwards its configured upstream only. Workspace Push sets
-the upstream and pushes without force. The local and remote branch names are
-independent.
+Branch conflicts are checked across all repositories before creation. If any
+worktree or setup command fails, created worktrees are removed best-effort and
+no Workspace rows are committed.
+
+Workspace Pull All and Push All are best-effort. Their result contains a
+`success`, `skipped`, or `failed` item for every location, and successful repos
+are not rolled back when another repo fails.
 
 ## Fork
 
-A Fork is one level of parallel subwork beneath a Workspace. It starts from the
-parent Workspace's current HEAD and owns its own managed worktree, local branch,
-Sessions, and Todos. Forks cannot nest.
+A Fork is one level of parallel work beneath a Workspace. Every writable parent
+WorkspaceLocation is copied from its current HEAD into a same-named Fork branch;
+read-only snapshots are inherited. Forks cannot nest. Each Git location merges
+back into the corresponding parent WorkspaceLocation.
 
-A Fork has no remote branch, Pull, or Push. Finishing it performs a local merge
-into the parent Workspace. The parent remains responsible for remote
-synchronization and final delivery.
+## Session access
 
-## Session
+Codex starts in the default WorkspaceLocation worktree. Other Git worktrees are
+passed through `--add-dir` and are writable. Non-Git locations are recorded in
+the runtime context as `read_only` but are not passed through `--add-dir`.
+Developer instructions repeat this rule and warn that YOLO mode removes sandbox
+enforcement, so the read-only marker must still be honored explicitly.
 
-A Session belongs directly to a Workspace or Fork.
+## Finishing and unavailable repositories
 
-Shell Sessions run the login shell. Codex Sessions run Codex with their owner's
-checkout as primary context. Treefold records lifecycle state and can stop,
-restart, hide, and resume both kinds.
+Each Git WorkspaceLocation independently chooses `local_merge`,
+`remote_merged`, `keep`, or `discard`. A root local merge directly uses the
+corresponding ProjectLocation main directory and requires it to exist, be clean,
+remain on its configured base branch, and match preflight HEAD. Treefold does not
+checkout that directory. A Workspace can be archived only after every writable
+location reaches a terminal delivery state.
 
-## Finishing
-
-A root Workspace can verify a remote-reviewed merge, merge locally into its
-fixed target with an optional push, preserve its work, or discard it. Active
-Forks must be finished first.
-
-A Fork can merge locally into its parent Workspace, preserve its work, or
-discard it. By default its Todos are carried into the parent Workspace;
-assigned, in-progress, or blocked work returns to pending while completed work
-stays completed. A Fork cannot claim a remote merge or push after merge. All
-delivery paths use preflight validation and delay cleanup until the selected
-outcome is proven.
+Moving a main directory uses Reattach. The candidate must be the Git main
+worktree, match the saved remote identity when present, retain registrations for
+known managed worktrees, and pass `git worktree repair` before the database path
+is updated. Missing main directories remain visible as unavailable; reads and
+best-effort cleanup continue without assuming that an unverified directory is
+safe to delete.

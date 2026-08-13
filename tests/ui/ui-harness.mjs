@@ -2,7 +2,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer as createViteServer } from "vite";
-import { createSidebarCoreFixture } from "./fixtures/sidebar-core.mjs";
+import { createSidebarCoreFixture, FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -69,13 +69,17 @@ async function startFixtureApi() {
     }
     if (request.method === "PATCH" && projectMatch && fixture.projectDetails[projectMatch[1]]) {
       const input = await readJson(request);
-      if (input.status !== "active" && input.status !== "archived") {
+      if (input.status !== undefined && input.status !== "active" && input.status !== "archived") {
         sendJson(response, 400, { error: "Project status must be active or archived" });
         return;
       }
       const project = fixture.projects.find((item) => item.id === projectMatch[1]);
-      project.status = input.status;
-      fixture.projectDetails[projectMatch[1]].status = input.status;
+      if (input.status !== undefined) project.status = input.status;
+      if (input.status !== undefined) fixture.projectDetails[projectMatch[1]].status = input.status;
+      if (input.default_location_id !== undefined) {
+        project.default_location_id = input.default_location_id;
+        fixture.projectDetails[projectMatch[1]].default_location_id = input.default_location_id;
+      }
       if (input.status === "archived") {
         Object.values(fixture.workspaceDetails).filter((detail) => detail.project_id === projectMatch[1]).forEach((detail) => {
           detail.sessions.forEach((session) => { session.sidebar_visible = false; session.status = "closed"; });
@@ -109,9 +113,17 @@ async function startFixtureApi() {
       return;
     }
 
-    const syncMatch = pathname.match(/^\/api\/(projects|workspaces)\/([^/]+)\/git\/(pull|push)$/);
+    const syncMatch = pathname.match(/^\/api\/(projects|workspaces)\/([^/]+)\/git\/(pull|push)(-all)?$/);
     if (request.method === "POST" && syncMatch) {
-      sendJson(response, 200, { scope: syncMatch[1] === "projects" ? "project" : "workspace", action: syncMatch[3], branch: "main", remote: "origin", remote_branch: "main", status: "up_to_date", message: "up to date" });
+      sendJson(response, 200, [{ project_location_id: fixture.projectDetails[FIXTURE_IDS.project].default_location_id, location_name: "fixture-repository", status: "success", result: { scope: syncMatch[1] === "projects" ? "project_location" : "workspace_location", action: syncMatch[3], branch: "main", remote: "origin", remote_branch: "main", status: "up_to_date", message: "up to date" } }]);
+      return;
+    }
+
+    const locationRefreshMatch = pathname.match(/^\/api\/project-locations\/([^/]+)\/refresh$/);
+    if (request.method === "POST" && locationRefreshMatch) {
+      const location = Object.values(fixture.projectDetails).flatMap((detail) => detail.locations).find((item) => item.id === locationRefreshMatch[1]);
+      if (!location) return sendJson(response, 404, { error: "Location not found" });
+      sendJson(response, 200, location);
       return;
     }
 
@@ -223,7 +235,7 @@ async function startFixtureApi() {
       return;
     }
 
-    const preflightMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/delivery-preflight$/);
+    const preflightMatch = pathname.match(/^\/api\/workspace-locations\/([^/]+)\/delivery-preflight$/);
     if (request.method === "POST" && preflightMatch && fixture.deliveryPreflights[preflightMatch[1]]) {
       const input = await readJson(request);
       const base = fixture.deliveryPreflights[preflightMatch[1]];
