@@ -4,7 +4,10 @@ use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::de::DeserializeOwned;
 
-use crate::{error::Result, model::*};
+use crate::{
+    error::{AppError, Result},
+    model::*,
+};
 
 #[derive(Clone)]
 pub struct Store(Arc<Mutex<Connection>>);
@@ -14,7 +17,9 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS projects (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  status TEXT NOT NULL DEFAULT 'active',
- primary_directory_id TEXT NOT NULL, base_branch TEXT NOT NULL DEFAULT 'main',
+ primary_directory_id TEXT NOT NULL, git_common_dir TEXT NOT NULL,
+ preferred_remote TEXT, default_target_branch TEXT NOT NULL DEFAULT 'main',
+ default_delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS project_directories (
@@ -24,21 +29,21 @@ CREATE TABLE IF NOT EXISTS project_directories (
  role TEXT NOT NULL, is_git INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
  UNIQUE(project_id,path)
 );
-CREATE TABLE IF NOT EXISTS workstreams (
+CREATE TABLE IF NOT EXISTS workspaces (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
- kind TEXT NOT NULL DEFAULT 'workstream',
- parent_workstream_id TEXT REFERENCES workstreams(id) ON DELETE RESTRICT,
- workspace_mode TEXT NOT NULL, project_directory_id TEXT NOT NULL REFERENCES project_directories(id),
- worktree_id TEXT, workspace_path TEXT NOT NULL, base_ref TEXT NOT NULL DEFAULT '',
- base_commit TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '',
- forked_from_commit TEXT, integration_status TEXT NOT NULL DEFAULT 'none',
+ project_directory_id TEXT NOT NULL REFERENCES project_directories(id),
+ worktree_id TEXT, checkout_path TEXT NOT NULL, target_branch TEXT NOT NULL DEFAULT '',
+ start_commit TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '',
+ remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL DEFAULT 'managed',
+ delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
+ delivery_status TEXT NOT NULL DEFAULT 'active',
  close_outcome TEXT, integrated_commit TEXT, closed_at TEXT,
  runtime_id TEXT NOT NULL DEFAULT '', runtime_name TEXT NOT NULL DEFAULT '',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sessions (
- id TEXT PRIMARY KEY, workstream_id TEXT NOT NULL REFERENCES workstreams(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  name TEXT NOT NULL, kind TEXT NOT NULL, cwd TEXT NOT NULL, original_cwd TEXT NOT NULL,
  initial_prompt TEXT NOT NULL DEFAULT '',
  codex_session_id TEXT, yolo INTEGER NOT NULL DEFAULT 0, sidebar_visible INTEGER NOT NULL DEFAULT 1,
@@ -53,17 +58,15 @@ CREATE TABLE IF NOT EXISTS session_additional_directories (
  PRIMARY KEY(session_id,path)
 );
 CREATE TABLE IF NOT EXISTS todos (
- id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
- workstream_id TEXT REFERENCES workstreams(id) ON DELETE CASCADE,
- origin_workstream_id TEXT REFERENCES workstreams(id) ON DELETE SET NULL,
+ id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
  session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL, blocked_reason TEXT,
- created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
- CHECK ((project_id IS NULL) != (workstream_id IS NULL))
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS settlement_operations (
- workstream_id TEXT PRIMARY KEY REFERENCES workstreams(id) ON DELETE CASCADE,
- phase TEXT NOT NULL, code_action TEXT NOT NULL, todo_action TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS delivery_operations (
+ workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+ phase TEXT NOT NULL, code_action TEXT NOT NULL, todo_action TEXT NOT NULL DEFAULT 'keep',
+ push_after_merge INTEGER NOT NULL DEFAULT 0,
  keep_session_history INTEGER NOT NULL,
  delete_worktree INTEGER NOT NULL, delete_branch INTEGER NOT NULL,
  commit_message TEXT NOT NULL DEFAULT '', before_head TEXT NOT NULL DEFAULT '',
@@ -72,16 +75,16 @@ CREATE TABLE IF NOT EXISTS settlement_operations (
  started_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS rebase_operations (
- id TEXT PRIMARY KEY, workstream_id TEXT NOT NULL REFERENCES workstreams(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  status TEXT NOT NULL, phase TEXT NOT NULL, before_head TEXT NOT NULL,
- parent_head TEXT NOT NULL, rebased_head TEXT, recovery_ref TEXT NOT NULL,
+ target_head TEXT NOT NULL, rebased_head TEXT, recovery_ref TEXT NOT NULL,
  error TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  completed_at TEXT
 );
-CREATE INDEX IF NOT EXISTS rebase_operations_workstream_updated
- ON rebase_operations(workstream_id,updated_at DESC);
-CREATE TABLE IF NOT EXISTS settlement_preflights (
- id TEXT PRIMARY KEY, workstream_id TEXT NOT NULL REFERENCES workstreams(id) ON DELETE CASCADE,
+CREATE INDEX IF NOT EXISTS rebase_operations_workspace_updated
+ ON rebase_operations(workspace_id,updated_at DESC);
+CREATE TABLE IF NOT EXISTS delivery_preflights (
+ id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  code_action TEXT NOT NULL, source_head TEXT NOT NULL, target_head TEXT NOT NULL,
  target_branch TEXT NOT NULL, source_status TEXT NOT NULL, source_dirty INTEGER NOT NULL,
  target_dirty INTEGER NOT NULL, ahead INTEGER NOT NULL, behind INTEGER NOT NULL,
@@ -89,17 +92,17 @@ CREATE TABLE IF NOT EXISTS settlement_preflights (
  blockers TEXT NOT NULL, warnings TEXT NOT NULL,
  created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS settlement_preflights_workstream_created
- ON settlement_preflights(workstream_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS delivery_preflights_workspace_created
+ ON delivery_preflights(workspace_id,created_at DESC);
 CREATE TABLE IF NOT EXISTS reset_operations (
- id TEXT PRIMARY KEY, workstream_id TEXT NOT NULL REFERENCES workstreams(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  status TEXT NOT NULL, mode TEXT NOT NULL, before_head TEXT NOT NULL,
  target_head TEXT NOT NULL, result_head TEXT, recovery_ref TEXT NOT NULL,
  error TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  completed_at TEXT
 );
-CREATE INDEX IF NOT EXISTS reset_operations_workstream_started
- ON reset_operations(workstream_id,started_at DESC);
+CREATE INDEX IF NOT EXISTS reset_operations_workspace_started
+ ON reset_operations(workspace_id,started_at DESC);
 DROP TABLE IF EXISTS settings;
 "#;
 
@@ -110,7 +113,7 @@ impl Store {
         }
         let connection = Connection::open(path)?;
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
-        migrate_development_schema(&connection)?;
+        migrate_development_schema(&connection, path)?;
         connection.execute_batch("PRAGMA journal_mode=WAL;")?;
         connection.execute_batch(SCHEMA)?;
         Ok(Self(Arc::new(Mutex::new(connection))))
@@ -118,7 +121,7 @@ impl Store {
 
     pub fn projects(&self) -> Result<Vec<Project>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare("SELECT id,name,description,status,primary_directory_id,base_branch,created_at,updated_at FROM projects ORDER BY updated_at DESC")?;
+        let mut stmt = db.prepare("SELECT id,name,description,status,primary_directory_id,git_common_dir,preferred_remote,default_target_branch,default_delivery_mode,created_at,updated_at FROM projects ORDER BY updated_at DESC")?;
         let values = stmt
             .query_map([], project_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -127,21 +130,24 @@ impl Store {
 
     pub fn project(&self, id: &str) -> Result<Project> {
         let db = self.0.lock();
-        Ok(db.query_row("SELECT id,name,description,status,primary_directory_id,base_branch,created_at,updated_at FROM projects WHERE id=?", [id], project_row)?)
+        Ok(db.query_row("SELECT id,name,description,status,primary_directory_id,git_common_dir,preferred_remote,default_target_branch,default_delivery_mode,created_at,updated_at FROM projects WHERE id=?", [id], project_row)?)
     }
 
     pub fn create_project(&self, p: &Project, d: &Directory) -> Result<()> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         tx.execute(
-            "INSERT INTO projects(id,name,description,status,primary_directory_id,base_branch,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT INTO projects(id,name,description,status,primary_directory_id,git_common_dir,preferred_remote,default_target_branch,default_delivery_mode,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 p.id,
                 p.name,
                 p.description,
                 p.status,
                 p.primary_directory_id,
-                p.base_branch,
+                p.git_common_dir,
+                p.preferred_remote,
+                p.default_target_branch,
+                p.default_delivery_mode,
                 p.created_at,
                 p.updated_at
             ],
@@ -206,93 +212,113 @@ impl Store {
         Ok(())
     }
 
-    pub fn workstreams(&self, project_id: &str) -> Result<Vec<Workstream>> {
+    pub fn workspaces(&self, project_id: &str) -> Result<Vec<Workspace>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare(&format!("SELECT {WORKSTREAM_COLUMNS} FROM workstreams WHERE project_id=? ORDER BY updated_at DESC"))?;
+        let mut stmt = db.prepare(&format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE project_id=? ORDER BY updated_at DESC"))?;
         let values = stmt
-            .query_map([project_id], workstream_row)?
+            .query_map([project_id], workspace_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
-    pub fn base_workstream(&self, project_id: &str) -> Result<Option<Workstream>> {
+    #[cfg(any())]
+    pub(crate) fn base_workspace(&self, project_id: &str) -> Result<Option<Workspace>> {
         let db = self.0.lock();
         Ok(db
             .query_row(
-                &format!("SELECT {WORKSTREAM_COLUMNS} FROM workstreams WHERE project_id=? AND kind='base' LIMIT 1"),
+                &format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE project_id=? AND kind='base' LIMIT 1"),
                 [project_id],
-                workstream_row,
+                workspace_row,
             )
             .optional()?)
     }
 
-    pub fn workstream(&self, id: &str) -> Result<Workstream> {
+    pub fn workspace(&self, id: &str) -> Result<Workspace> {
         let db = self.0.lock();
         Ok(db.query_row(
-            &format!("SELECT {WORKSTREAM_COLUMNS} FROM workstreams WHERE id=?"),
+            &format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE id=?"),
             [id],
-            workstream_row,
+            workspace_row,
         )?)
     }
 
-    pub fn create_workstream(&self, w: &Workstream) -> Result<()> {
-        self.0.lock().execute("INSERT INTO workstreams(id,project_id,name,description,status,kind,parent_workstream_id,workspace_mode,project_directory_id,worktree_id,workspace_path,base_ref,base_commit,branch,forked_from_commit,integration_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params![w.id,w.project_id,w.name,w.description,w.status,w.kind,w.parent_workstream_id,w.workspace_mode,w.project_directory_id,w.worktree_id,w.workspace_path,w.base_ref,w.base_commit,w.branch,w.forked_from_commit,w.integration_status,w.close_outcome,w.integrated_commit,w.closed_at,w.runtime_id,w.runtime_name,w.created_at,w.updated_at])?;
+    pub fn create_workspace(&self, w: &Workspace) -> Result<()> {
+        self.0.lock().execute("INSERT INTO workspaces(id,project_id,name,description,status,project_directory_id,worktree_id,checkout_path,target_branch,start_commit,branch,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params![w.id,w.project_id,w.name,w.description,w.status,w.project_directory_id,w.worktree_id,w.checkout_path,w.target_branch,w.start_commit,w.branch,w.remote_name,w.remote_branch,w.branch_ownership,w.delivery_mode,w.delivery_status,w.close_outcome,w.integrated_commit,w.closed_at,w.runtime_id,w.runtime_name,w.created_at,w.updated_at])?;
         Ok(())
     }
 
-    pub fn forks(&self, workstream_id: &str) -> Result<Vec<Workstream>> {
+    #[cfg(any())]
+    pub(crate) fn forks(&self, workspace_id: &str) -> Result<Vec<Workspace>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare(&format!("SELECT {WORKSTREAM_COLUMNS} FROM workstreams WHERE parent_workstream_id=? ORDER BY updated_at DESC"))?;
+        let mut stmt = db.prepare(&format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE parent_workspace_id=? ORDER BY updated_at DESC"))?;
         let values = stmt
-            .query_map([workstream_id], workstream_row)?
+            .query_map([workspace_id], workspace_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
-    pub fn settle_workstream(
+    pub fn finish_workspace(
         &self,
         id: &str,
-        integration_status: &str,
+        delivery_status: &str,
         close_outcome: &str,
         integrated_commit: Option<&str>,
         timestamp: &str,
     ) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE workstreams SET status='archived',integration_status=?,close_outcome=?,integrated_commit=?,closed_at=?,updated_at=? WHERE id=?",
-            params![integration_status, close_outcome, integrated_commit, timestamp, timestamp, id],
+            "UPDATE workspaces SET status='archived',delivery_status=?,close_outcome=?,integrated_commit=?,closed_at=?,updated_at=? WHERE id=?",
+            params![delivery_status, close_outcome, integrated_commit, timestamp, timestamp, id],
         )?;
         Ok(())
     }
 
-    pub fn set_integration_status(&self, id: &str, status: &str) -> Result<()> {
+    pub fn set_delivery_status(&self, id: &str, status: &str) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE workstreams SET integration_status=?,updated_at=? WHERE id=?",
+            "UPDATE workspaces SET delivery_status=?,updated_at=? WHERE id=?",
             params![status, now(), id],
         )?;
         Ok(())
     }
 
-    pub fn settlement_operation(&self, workstream_id: &str) -> Result<Option<SettlementOperation>> {
+    pub fn update_workspace_delivery(
+        &self,
+        id: &str,
+        remote_name: Option<&str>,
+        remote_branch: Option<&str>,
+        delivery_mode: &str,
+    ) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE workspaces SET remote_name=?,remote_branch=?,delivery_mode=?,updated_at=? WHERE id=?",
+            params![remote_name, remote_branch, delivery_mode, now(), id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn delivery_operation(&self, workspace_id: &str) -> Result<Option<DeliveryOperation>> {
         let db = self.0.lock();
         Ok(db
             .query_row(
                 &format!(
-                    "SELECT {SETTLEMENT_OPERATION_COLUMNS} FROM settlement_operations WHERE workstream_id=?"
+                    "SELECT {SETTLEMENT_OPERATION_COLUMNS} FROM delivery_operations WHERE workspace_id=?"
                 ),
-                [workstream_id],
-                settlement_operation_row,
+                [workspace_id],
+                delivery_operation_row,
             )
             .optional()?)
     }
 
-    pub fn create_settlement_operation(&self, operation: &SettlementOperation) -> Result<()> {
+    pub fn create_delivery_operation(&self, operation: &DeliveryOperation) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO settlement_operations(workstream_id,phase,code_action,todo_action,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO delivery_operations(workspace_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
-                operation.workstream_id,
+                operation.workspace_id,
                 operation.phase,
                 operation.code_action,
                 operation.todo_action,
+                operation.push_after_merge,
                 operation.keep_session_history,
                 operation.delete_worktree,
                 operation.delete_branch,
@@ -309,63 +335,63 @@ impl Store {
         Ok(())
     }
 
-    pub fn advance_settlement(
+    pub fn advance_delivery(
         &self,
-        workstream_id: &str,
+        workspace_id: &str,
         phase: &str,
         source_head: Option<&str>,
         target_head: Option<&str>,
         integrated_commit: Option<&str>,
     ) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE settlement_operations SET phase=?,source_head=COALESCE(?,source_head),target_head=COALESCE(?,target_head),integrated_commit=COALESCE(?,integrated_commit),error='',updated_at=? WHERE workstream_id=?",
-            params![phase, source_head, target_head, integrated_commit, now(), workstream_id],
+            "UPDATE delivery_operations SET phase=?,source_head=COALESCE(?,source_head),target_head=COALESCE(?,target_head),integrated_commit=COALESCE(?,integrated_commit),error='',updated_at=? WHERE workspace_id=?",
+            params![phase, source_head, target_head, integrated_commit, now(), workspace_id],
         )?;
         Ok(())
     }
 
-    pub fn set_settlement_error(&self, workstream_id: &str, error: &str) -> Result<()> {
+    pub fn set_delivery_error(&self, workspace_id: &str, error: &str) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE settlement_operations SET error=?,updated_at=? WHERE workstream_id=?",
-            params![error, now(), workstream_id],
+            "UPDATE delivery_operations SET error=?,updated_at=? WHERE workspace_id=?",
+            params![error, now(), workspace_id],
         )?;
         Ok(())
     }
 
-    pub fn latest_rebase_operation(&self, workstream_id: &str) -> Result<Option<RebaseOperation>> {
+    pub fn latest_rebase_operation(&self, workspace_id: &str) -> Result<Option<RebaseOperation>> {
         let db = self.0.lock();
         Ok(db
             .query_row(
                 &format!(
-                    "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workstream_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 1"
+                    "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workspace_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 1"
                 ),
-                [workstream_id],
+                [workspace_id],
                 rebase_operation_row,
             )
             .optional()?)
     }
 
-    pub fn rebase_operations(&self, workstream_id: &str) -> Result<Vec<RebaseOperation>> {
+    pub fn rebase_operations(&self, workspace_id: &str) -> Result<Vec<RebaseOperation>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!(
-            "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workstream_id=? ORDER BY started_at DESC,rowid DESC"
+            "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workspace_id=? ORDER BY started_at DESC,rowid DESC"
         ))?;
         let values = stmt
-            .query_map([workstream_id], rebase_operation_row)?
+            .query_map([workspace_id], rebase_operation_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
     pub fn create_rebase_operation(&self, operation: &RebaseOperation) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO rebase_operations(id,workstream_id,status,phase,before_head,parent_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO rebase_operations(id,workspace_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 operation.id,
-                operation.workstream_id,
+                operation.workspace_id,
                 operation.status,
                 operation.phase,
                 operation.before_head,
-                operation.parent_head,
+                operation.target_head,
                 operation.rebased_head,
                 operation.recovery_ref,
                 operation.error,
@@ -403,12 +429,12 @@ impl Store {
         Ok(())
     }
 
-    pub fn create_settlement_preflight(&self, preflight: &SettlementPreflight) -> Result<()> {
+    pub fn create_delivery_preflight(&self, preflight: &DeliveryPreflight) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO settlement_preflights(id,workstream_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO delivery_preflights(id,workspace_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 preflight.id,
-                preflight.workstream_id,
+                preflight.workspace_id,
                 preflight.code_action,
                 preflight.source_head,
                 preflight.target_head,
@@ -429,12 +455,12 @@ impl Store {
         Ok(())
     }
 
-    pub fn settlement_preflight(&self, id: &str) -> Result<SettlementPreflight> {
+    pub fn delivery_preflight(&self, id: &str) -> Result<DeliveryPreflight> {
         let db = self.0.lock();
         Ok(db.query_row(
-            "SELECT id,workstream_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at FROM settlement_preflights WHERE id=?",
+            "SELECT id,workspace_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at FROM delivery_preflights WHERE id=?",
             [id],
-            settlement_preflight_row,
+            delivery_preflight_row,
         )?)
     }
 
@@ -447,34 +473,34 @@ impl Store {
         )?)
     }
 
-    pub fn latest_reset_operation(&self, workstream_id: &str) -> Result<Option<ResetOperation>> {
+    pub fn latest_reset_operation(&self, workspace_id: &str) -> Result<Option<ResetOperation>> {
         let db = self.0.lock();
         Ok(db
             .query_row(
-                &format!("SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workstream_id=? ORDER BY started_at DESC,rowid DESC LIMIT 1"),
-                [workstream_id],
+                &format!("SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workspace_id=? ORDER BY started_at DESC,rowid DESC LIMIT 1"),
+                [workspace_id],
                 reset_operation_row,
             )
             .optional()?)
     }
 
-    pub fn reset_operations(&self, workstream_id: &str) -> Result<Vec<ResetOperation>> {
+    pub fn reset_operations(&self, workspace_id: &str) -> Result<Vec<ResetOperation>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!(
-            "SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workstream_id=? ORDER BY started_at DESC,rowid DESC"
+            "SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workspace_id=? ORDER BY started_at DESC,rowid DESC"
         ))?;
         let values = stmt
-            .query_map([workstream_id], reset_operation_row)?
+            .query_map([workspace_id], reset_operation_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
     pub fn create_reset_operation(&self, operation: &ResetOperation) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO reset_operations(id,workstream_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO reset_operations(id,workspace_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 operation.id,
-                operation.workstream_id,
+                operation.workspace_id,
                 operation.status,
                 operation.mode,
                 operation.before_head,
@@ -506,13 +532,13 @@ impl Store {
         Ok(())
     }
 
-    pub fn sessions(&self, workstream_id: &str) -> Result<Vec<Session>> {
+    pub fn sessions(&self, workspace_id: &str) -> Result<Vec<Session>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!(
-            "SELECT {SESSION_COLUMNS} FROM sessions WHERE workstream_id=? ORDER BY created_at DESC"
+            "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? ORDER BY created_at DESC"
         ))?;
         let mut values = stmt
-            .query_map([workstream_id], session_row)?
+            .query_map([workspace_id], session_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(stmt);
         drop(db);
@@ -537,7 +563,7 @@ impl Store {
     pub fn create_session(&self, s: &Session) -> Result<()> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
-        tx.execute("INSERT INTO sessions(id,workstream_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,yolo,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params![s.id,s.workstream_id,s.name,s.kind,s.cwd,s.original_cwd,s.initial_prompt,s.codex_session_id,s.yolo,s.sidebar_visible,s.hidden_at,s.evicted_at,s.process_id,s.process_name,s.status,s.pid,s.process_group_id,s.exit_code,s.exit_signal,serde_json::to_string(&s.command).unwrap_or_default(),s.launch_started_at,s.last_attached_at,s.created_at,s.updated_at])?;
+        tx.execute("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,yolo,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params![s.id,s.workspace_id,s.name,s.kind,s.cwd,s.original_cwd,s.initial_prompt,s.codex_session_id,s.yolo,s.sidebar_visible,s.hidden_at,s.evicted_at,s.process_id,s.process_name,s.status,s.pid,s.process_group_id,s.exit_code,s.exit_signal,serde_json::to_string(&s.command).unwrap_or_default(),s.launch_started_at,s.last_attached_at,s.created_at,s.updated_at])?;
         for path in &s.additional_directories {
             tx.execute(
                 "INSERT INTO session_additional_directories(session_id,path) VALUES(?,?)",
@@ -548,6 +574,7 @@ impl Store {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn set_session_process_runtime(
         &self,
         id: &str,
@@ -620,21 +647,18 @@ impl Store {
         Ok(())
     }
 
-    pub fn settle_sessions(
+    pub fn finalize_sessions(
         &self,
-        workstream_id: &str,
+        workspace_id: &str,
         resume_cwd: &str,
         keep_history: bool,
     ) -> Result<()> {
         let timestamp = now();
         let db = self.0.lock();
         if keep_history {
-            db.execute("UPDATE sessions SET cwd=?,sidebar_visible=0,hidden_at=?,status='closed',pid=0,updated_at=? WHERE workstream_id=?", params![resume_cwd,timestamp,timestamp,workstream_id])?;
+            db.execute("UPDATE sessions SET cwd=?,sidebar_visible=0,hidden_at=?,status='closed',pid=0,updated_at=? WHERE workspace_id=?", params![resume_cwd,timestamp,timestamp,workspace_id])?;
         } else {
-            db.execute(
-                "DELETE FROM sessions WHERE workstream_id=?",
-                [workstream_id],
-            )?;
+            db.execute("DELETE FROM sessions WHERE workspace_id=?", [workspace_id])?;
         }
         Ok(())
     }
@@ -667,25 +691,23 @@ impl Store {
         Ok(())
     }
 
-    pub fn todos(&self, workstream_id: &str) -> Result<Vec<Todo>> {
+    pub fn todos(&self, workspace_id: &str) -> Result<Vec<Todo>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!(
-            "SELECT {TODO_COLUMNS} FROM todos WHERE workstream_id=? OR origin_workstream_id=? ORDER BY created_at DESC"
+            "SELECT {TODO_COLUMNS} FROM todos WHERE workspace_id=? ORDER BY created_at DESC"
         ))?;
         let values = stmt
-            .query_map([workstream_id, workstream_id], todo_row)?
+            .query_map([workspace_id], todo_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
     pub fn create_todo(&self, t: &Todo) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO todos(id,project_id,workstream_id,origin_workstream_id,title,description,status,session_id,blocked_reason,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO todos(id,workspace_id,title,description,status,session_id,blocked_reason,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
             params![
                 t.id,
-                t.project_id,
-                t.workstream_id,
-                t.origin_workstream_id,
+                t.workspace_id,
                 t.title,
                 t.description,
                 t.status,
@@ -751,65 +773,30 @@ impl Store {
         Ok(())
     }
 
-    pub fn project_todos(&self, project_id: &str) -> Result<Vec<Todo>> {
-        let db = self.0.lock();
-        let mut stmt = db.prepare(&format!(
-            "SELECT {TODO_COLUMNS} FROM todos WHERE project_id=? ORDER BY updated_at DESC"
-        ))?;
-        let values = stmt
-            .query_map([project_id], todo_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
-    }
-
-    pub fn carry_todos(
-        &self,
-        from_workstream_id: &str,
-        project_id: Option<&str>,
-        workstream_id: Option<&str>,
-    ) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE todos SET project_id=?,workstream_id=?,origin_workstream_id=COALESCE(origin_workstream_id,?),session_id=NULL,status=CASE WHEN status IN ('assigned','in_progress') THEN 'pending' ELSE status END,updated_at=? WHERE workstream_id=?",
-            params![project_id, workstream_id, from_workstream_id, now(), from_workstream_id],
-        )?;
-        Ok(())
-    }
-
-    pub fn delete_todos(&self, workstream_id: &str) -> Result<()> {
+    pub fn delete_todos(&self, workspace_id: &str) -> Result<()> {
         self.0
             .lock()
-            .execute("DELETE FROM todos WHERE workstream_id=?", [workstream_id])?;
+            .execute("DELETE FROM todos WHERE workspace_id=?", [workspace_id])?;
         Ok(())
     }
 
     pub fn project_detail(&self, id: &str) -> Result<ProjectDetail> {
-        let base = self.base_workstream(id)?;
         Ok(ProjectDetail {
             project: self.project(id)?,
             directories: self.directories(id)?,
-            workstreams: self
-                .workstreams(id)?
-                .into_iter()
-                .filter(|item| item.kind != "base")
-                .collect(),
+            workspaces: self.workspaces(id)?,
             worktrees: Vec::new(),
-            todos: self.project_todos(id)?,
-            sessions: match base {
-                Some(value) => self.sessions(&value.id)?,
-                None => Vec::new(),
-            },
         })
     }
 
-    pub fn workstream_detail(&self, id: &str) -> Result<WorkstreamDetail> {
-        let workstream = self.workstream(id)?;
-        Ok(WorkstreamDetail {
-            project: self.project(&workstream.project_id)?,
-            directories: self.directories(&workstream.project_id)?,
+    pub fn workspace_detail(&self, id: &str) -> Result<WorkspaceDetail> {
+        let workspace = self.workspace(id)?;
+        Ok(WorkspaceDetail {
+            project: self.project(&workspace.project_id)?,
+            directories: self.directories(&workspace.project_id)?,
             sessions: self.sessions(id)?,
             todos: self.todos(id)?,
-            forks: self.forks(id)?,
-            workstream,
+            workspace,
         })
     }
 }
@@ -825,9 +812,12 @@ fn project_row(r: &Row<'_>) -> rusqlite::Result<Project> {
         description: r.get(2)?,
         status: r.get(3)?,
         primary_directory_id: r.get(4)?,
-        base_branch: r.get(5)?,
-        created_at: r.get(6)?,
-        updated_at: r.get(7)?,
+        git_common_dir: r.get(5)?,
+        preferred_remote: r.get(6)?,
+        default_target_branch: r.get(7)?,
+        default_delivery_mode: r.get(8)?,
+        created_at: r.get(9)?,
+        updated_at: r.get(10)?,
     })
 }
 fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
@@ -838,7 +828,7 @@ fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
         description: r.get(3)?,
         worktree_setup_command: r.get(4)?,
         path: r.get(5)?,
-        workspace_path: None,
+        checkout_path: None,
         role: r.get(6)?,
         is_git: r.get(7)?,
         remote_url: None,
@@ -849,25 +839,25 @@ fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
         created_at: r.get(8)?,
     })
 }
-const WORKSTREAM_COLUMNS: &str = "id,project_id,name,description,status,kind,parent_workstream_id,workspace_mode,project_directory_id,worktree_id,workspace_path,base_ref,base_commit,branch,forked_from_commit,integration_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at";
-fn workstream_row(r: &Row<'_>) -> rusqlite::Result<Workstream> {
-    Ok(Workstream {
+const WORKSPACE_COLUMNS: &str = "id,project_id,name,description,status,project_directory_id,worktree_id,checkout_path,target_branch,start_commit,branch,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at";
+fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
+    Ok(Workspace {
         id: r.get(0)?,
         project_id: r.get(1)?,
         name: r.get(2)?,
         description: r.get(3)?,
         status: r.get(4)?,
-        kind: r.get(5)?,
-        parent_workstream_id: r.get(6)?,
-        workspace_mode: r.get(7)?,
-        project_directory_id: r.get(8)?,
-        worktree_id: r.get(9)?,
-        workspace_path: r.get(10)?,
-        base_ref: r.get(11)?,
-        base_commit: r.get(12)?,
-        branch: r.get(13)?,
-        forked_from_commit: r.get(14)?,
-        integration_status: r.get(15)?,
+        project_directory_id: r.get(5)?,
+        worktree_id: r.get(6)?,
+        checkout_path: r.get(7)?,
+        target_branch: r.get(8)?,
+        start_commit: r.get(9)?,
+        branch: r.get(10)?,
+        remote_name: r.get(11)?,
+        remote_branch: r.get(12)?,
+        branch_ownership: r.get(13)?,
+        delivery_mode: r.get(14)?,
+        delivery_status: r.get(15)?,
         close_outcome: r.get(16)?,
         integrated_commit: r.get(17)?,
         closed_at: r.get(18)?,
@@ -877,12 +867,12 @@ fn workstream_row(r: &Row<'_>) -> rusqlite::Result<Workstream> {
         updated_at: r.get(22)?,
     })
 }
-const SESSION_COLUMNS: &str = "id,workstream_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,yolo,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
+const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,yolo,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
 fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
     let command: String = r.get(19)?;
     Ok(Session {
         id: r.get(0)?,
-        workstream_id: r.get(1)?,
+        workspace_id: r.get(1)?,
         name: r.get(2)?,
         kind: r.get(3)?,
         cwd: r.get(4)?,
@@ -911,53 +901,53 @@ fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
 fn todo_row(r: &Row<'_>) -> rusqlite::Result<Todo> {
     Ok(Todo {
         id: r.get(0)?,
-        project_id: r.get(1)?,
-        workstream_id: r.get(2)?,
-        origin_workstream_id: r.get(3)?,
-        title: r.get(4)?,
-        description: r.get(5)?,
-        status: r.get(6)?,
-        session_id: r.get(7)?,
-        blocked_reason: r.get(8)?,
-        created_at: r.get(9)?,
-        updated_at: r.get(10)?,
+        workspace_id: r.get(1)?,
+        title: r.get(2)?,
+        description: r.get(3)?,
+        status: r.get(4)?,
+        session_id: r.get(5)?,
+        blocked_reason: r.get(6)?,
+        created_at: r.get(7)?,
+        updated_at: r.get(8)?,
     })
 }
 
-const TODO_COLUMNS: &str = "id,project_id,workstream_id,origin_workstream_id,title,description,status,session_id,blocked_reason,created_at,updated_at";
+const TODO_COLUMNS: &str =
+    "id,workspace_id,title,description,status,session_id,blocked_reason,created_at,updated_at";
 
-const SETTLEMENT_OPERATION_COLUMNS: &str = "workstream_id,phase,code_action,todo_action,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
+const SETTLEMENT_OPERATION_COLUMNS: &str = "workspace_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
 
-fn settlement_operation_row(r: &Row<'_>) -> rusqlite::Result<SettlementOperation> {
-    Ok(SettlementOperation {
-        workstream_id: r.get(0)?,
+fn delivery_operation_row(r: &Row<'_>) -> rusqlite::Result<DeliveryOperation> {
+    Ok(DeliveryOperation {
+        workspace_id: r.get(0)?,
         phase: r.get(1)?,
         code_action: r.get(2)?,
         todo_action: r.get(3)?,
-        keep_session_history: r.get(4)?,
-        delete_worktree: r.get(5)?,
-        delete_branch: r.get(6)?,
-        commit_message: r.get(7)?,
-        before_head: r.get(8)?,
-        source_head: r.get(9)?,
-        target_head: r.get(10)?,
-        integrated_commit: r.get(11)?,
-        error: r.get(12)?,
-        started_at: r.get(13)?,
-        updated_at: r.get(14)?,
+        push_after_merge: r.get(4)?,
+        keep_session_history: r.get(5)?,
+        delete_worktree: r.get(6)?,
+        delete_branch: r.get(7)?,
+        commit_message: r.get(8)?,
+        before_head: r.get(9)?,
+        source_head: r.get(10)?,
+        target_head: r.get(11)?,
+        integrated_commit: r.get(12)?,
+        error: r.get(13)?,
+        started_at: r.get(14)?,
+        updated_at: r.get(15)?,
     })
 }
 
-const REBASE_OPERATION_COLUMNS: &str = "id,workstream_id,status,phase,before_head,parent_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at";
+const REBASE_OPERATION_COLUMNS: &str = "id,workspace_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at";
 
 fn rebase_operation_row(r: &Row<'_>) -> rusqlite::Result<RebaseOperation> {
     Ok(RebaseOperation {
         id: r.get(0)?,
-        workstream_id: r.get(1)?,
+        workspace_id: r.get(1)?,
         status: r.get(2)?,
         phase: r.get(3)?,
         before_head: r.get(4)?,
-        parent_head: r.get(5)?,
+        target_head: r.get(5)?,
         rebased_head: r.get(6)?,
         recovery_ref: r.get(7)?,
         error: r.get(8)?,
@@ -967,12 +957,12 @@ fn rebase_operation_row(r: &Row<'_>) -> rusqlite::Result<RebaseOperation> {
     })
 }
 
-const RESET_OPERATION_COLUMNS: &str = "id,workstream_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at";
+const RESET_OPERATION_COLUMNS: &str = "id,workspace_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at";
 
 fn reset_operation_row(r: &Row<'_>) -> rusqlite::Result<ResetOperation> {
     Ok(ResetOperation {
         id: r.get(0)?,
-        workstream_id: r.get(1)?,
+        workspace_id: r.get(1)?,
         status: r.get(2)?,
         mode: r.get(3)?,
         before_head: r.get(4)?,
@@ -986,10 +976,10 @@ fn reset_operation_row(r: &Row<'_>) -> rusqlite::Result<ResetOperation> {
     })
 }
 
-fn settlement_preflight_row(r: &Row<'_>) -> rusqlite::Result<SettlementPreflight> {
-    Ok(SettlementPreflight {
+fn delivery_preflight_row(r: &Row<'_>) -> rusqlite::Result<DeliveryPreflight> {
+    Ok(DeliveryPreflight {
         id: r.get(0)?,
-        workstream_id: r.get(1)?,
+        workspace_id: r.get(1)?,
         code_action: r.get(2)?,
         source_head: r.get(3)?,
         target_head: r.get(4)?,
@@ -1019,7 +1009,7 @@ fn decode_json_column<T: DeserializeOwned>(r: &Row<'_>, index: usize) -> rusqlit
     })
 }
 
-fn migrate_development_schema(connection: &Connection) -> Result<()> {
+fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()> {
     let exists: bool = connection.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='projects')",
         [],
@@ -1028,174 +1018,99 @@ fn migrate_development_schema(connection: &Connection) -> Result<()> {
     if !exists {
         return Ok(());
     }
-    let add = |table: &str, column: &str, sql: &str| -> Result<()> {
-        let mut stmt = connection.prepare(&format!("PRAGMA table_info({table})"))?;
-        let names = stmt
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        if !names.iter().any(|name| name == column) {
-            connection.execute_batch(sql)?;
-        }
-        Ok(())
-    };
-    add(
-        "projects",
-        "base_branch",
-        "ALTER TABLE projects ADD COLUMN base_branch TEXT NOT NULL DEFAULT 'main';",
-    )?;
-    add(
-        "projects",
-        "status",
-        "ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active';",
-    )?;
-    add(
-        "project_directories",
-        "worktree_setup_command",
-        "ALTER TABLE project_directories ADD COLUMN worktree_setup_command TEXT NOT NULL DEFAULT '';",
-    )?;
-    add(
-        "workstreams",
-        "kind",
-        "ALTER TABLE workstreams ADD COLUMN kind TEXT NOT NULL DEFAULT 'workstream';",
-    )?;
-    add(
-        "workstreams",
-        "parent_workstream_id",
-        "ALTER TABLE workstreams ADD COLUMN parent_workstream_id TEXT;",
-    )?;
-    add(
-        "workstreams",
-        "forked_from_commit",
-        "ALTER TABLE workstreams ADD COLUMN forked_from_commit TEXT;",
-    )?;
-    add(
-        "workstreams",
-        "integration_status",
-        "ALTER TABLE workstreams ADD COLUMN integration_status TEXT NOT NULL DEFAULT 'none';",
-    )?;
-    add(
-        "workstreams",
-        "close_outcome",
-        "ALTER TABLE workstreams ADD COLUMN close_outcome TEXT;",
-    )?;
-    add(
-        "workstreams",
-        "integrated_commit",
-        "ALTER TABLE workstreams ADD COLUMN integrated_commit TEXT;",
-    )?;
-    add(
-        "workstreams",
-        "closed_at",
-        "ALTER TABLE workstreams ADD COLUMN closed_at TEXT;",
-    )?;
-    add(
-        "sessions",
-        "original_cwd",
-        "ALTER TABLE sessions ADD COLUMN original_cwd TEXT NOT NULL DEFAULT '';",
-    )?;
-    connection.execute(
-        "UPDATE sessions SET original_cwd=cwd WHERE original_cwd=''",
-        [],
-    )?;
+    let current = table_has_column(connection, "projects", "git_common_dir")?
+        && table_has_column(connection, "workspaces", "remote_branch")?
+        && !table_has_column(connection, "workspaces", "kind")?
+        && table_has_column(connection, "sessions", "workspace_id")?;
+    if current {
+        return Ok(());
+    }
 
-    let mut stmt = connection.prepare("PRAGMA table_info(todos)")?;
-    let todo_columns = stmt
-        .query_map([], |row| row.get::<_, String>(1))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    if !todo_columns.iter().any(|name| name == "project_id") {
-        connection.execute_batch(
-            "ALTER TABLE todos RENAME TO todos_legacy;
-             CREATE TABLE todos (
-               id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
-               workstream_id TEXT REFERENCES workstreams(id) ON DELETE CASCADE,
-               origin_workstream_id TEXT REFERENCES workstreams(id) ON DELETE SET NULL,
-               title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
-               session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
-               blocked_reason TEXT,
-               created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
-               CHECK ((project_id IS NULL) != (workstream_id IS NULL))
-             );
-             INSERT INTO todos(id,workstream_id,title,description,status,session_id,created_at,updated_at)
-             SELECT id,workstream_id,title,description,status,session_id,created_at,updated_at FROM todos_legacy;
-             DROP TABLE todos_legacy;",
-        )?;
-    }
-    add(
-        "todos",
-        "blocked_reason",
-        "ALTER TABLE todos ADD COLUMN blocked_reason TEXT;",
-    )?;
-    let settlement_exists: bool = connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='settlement_operations')",
-        [],
-        |row| row.get(0),
-    )?;
-    if settlement_exists {
-        let mut stmt = connection.prepare("PRAGMA table_info(settlement_operations)")?;
-        let settlement_columns = stmt
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        if settlement_columns
-            .iter()
-            .any(|name| name == "context_action")
-        {
-            connection
-                .execute_batch("ALTER TABLE settlement_operations DROP COLUMN context_action;")?;
-        }
-    }
-    let preflight_exists: bool = connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='settlement_preflights')",
-        [],
-        |row| row.get(0),
-    )?;
-    if preflight_exists {
-        for column in [
-            "verification_command",
-            "verification_status",
-            "verification_output",
-        ] {
-            let mut stmt = connection.prepare("PRAGMA table_info(settlement_preflights)")?;
-            let columns = stmt
-                .query_map([], |row| row.get::<_, String>(1))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            if columns.iter().any(|name| name == column) {
-                connection.execute_batch(&format!(
-                    "ALTER TABLE settlement_preflights DROP COLUMN {column};"
-                ))?;
-            }
-        }
-    }
-    let legacy_session_directories_exist: bool = connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_context_paths')",
-        [],
-        |row| row.get(0),
-    )?;
-    if legacy_session_directories_exist {
-        let current_session_directories_exist: bool = connection.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_additional_directories')",
-            [],
-            |row| row.get(0),
-        )?;
-        if current_session_directories_exist {
-            connection.execute_batch(
-                "INSERT OR IGNORE INTO session_additional_directories(session_id,path)
-                   SELECT session_id,path FROM session_context_paths;
-                 DROP TABLE session_context_paths;",
-            )?;
-        } else {
-            connection.execute_batch(
-                "ALTER TABLE session_context_paths RENAME TO session_additional_directories;",
-            )?;
-        }
+    // This pre-release domain change intentionally starts a new local data model.
+    // Keep a byte-for-byte SQLite snapshot beside the database so users can recover
+    // legacy Project/development records with an older Treefold build.
+    let backup = path.with_extension("pre-workspace-v2.db");
+    if !backup.exists() {
+        let quoted = backup.to_string_lossy().replace('\'', "''");
+        connection.execute_batch(&format!("VACUUM INTO '{quoted}';"))?;
     }
     connection.execute_batch(
-        "DROP TABLE IF EXISTS workstream_contexts;
-         DROP TABLE IF EXISTS project_contexts;",
+        "PRAGMA foreign_keys=OFF;
+         DROP TABLE IF EXISTS session_additional_directories;
+         DROP TABLE IF EXISTS session_context_paths;
+         DROP TABLE IF EXISTS todos;
+         DROP TABLE IF EXISTS delivery_preflights;
+         DROP TABLE IF EXISTS settlement_preflights;
+         DROP TABLE IF EXISTS delivery_operations;
+         DROP TABLE IF EXISTS settlement_operations;
+         DROP TABLE IF EXISTS rebase_operations;
+         DROP TABLE IF EXISTS reset_operations;
+         DROP TABLE IF EXISTS sessions;
+         DROP TABLE IF EXISTS workspaces;
+         DROP TABLE IF EXISTS workstreams;
+         DROP TABLE IF EXISTS workspace_contexts;
+         DROP TABLE IF EXISTS workstream_contexts;
+         DROP TABLE IF EXISTS project_contexts;
+         DROP TABLE IF EXISTS project_directories;
+         DROP TABLE IF EXISTS projects;
+         PRAGMA foreign_keys=ON;",
     )?;
     Ok(())
 }
 
+fn table_has_column(connection: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let names = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(names.iter().any(|name| name == column))
+}
+
 #[cfg(test)]
+mod workspace_schema_tests {
+    use super::{table_has_column, Connection, Store};
+
+    fn temporary_database(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root =
+            std::env::temp_dir().join(format!("treefold-{name}-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&root).expect("create temporary database root");
+        let path = root.join("treefold.db");
+        (root, path)
+    }
+
+    #[test]
+    fn current_workspace_schema_has_no_legacy_hierarchy_columns() {
+        let (root, path) = temporary_database("workspace-schema");
+        let store = Store::open(&path).expect("open current Store");
+        let connection = Connection::open(&path).expect("inspect current Store");
+        assert!(table_has_column(&connection, "workspaces", "target_branch").unwrap());
+        assert!(table_has_column(&connection, "workspaces", "remote_branch").unwrap());
+        assert!(!table_has_column(&connection, "workspaces", "kind").unwrap());
+        assert!(!table_has_column(&connection, "workspaces", "parent_workspace_id").unwrap());
+        assert!(!table_has_column(&connection, "workspaces", "checkout_mode").unwrap());
+        drop(connection);
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[test]
+    fn legacy_database_is_backed_up_before_the_new_schema_is_created() {
+        let (root, path) = temporary_database("workspace-migration");
+        let connection = Connection::open(&path).expect("create legacy database");
+        connection
+            .execute_batch("CREATE TABLE projects(id TEXT PRIMARY KEY);")
+            .expect("create legacy schema");
+        drop(connection);
+
+        let store = Store::open(&path).expect("migrate legacy database");
+        assert!(path.with_extension("pre-workspace-v2.db").exists());
+        assert!(store.projects().expect("list migrated Projects").is_empty());
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+}
+
+#[cfg(any())]
 mod tests {
     use rusqlite::Connection;
 
@@ -1226,7 +1141,7 @@ mod tests {
     }
 
     #[test]
-    fn removes_legacy_context_schema_without_losing_settlement_history() {
+    fn removes_legacy_context_schema_without_losing_delivery_history() {
         let root = std::env::temp_dir().join(format!(
             "treefold-context-migration-test-{}",
             uuid::Uuid::new_v4()
@@ -1240,19 +1155,19 @@ mod tests {
         connection
             .execute_batch(
                 "ALTER TABLE project_directories DROP COLUMN worktree_setup_command;
-                 ALTER TABLE settlement_preflights
+                 ALTER TABLE delivery_preflights
                    ADD COLUMN verification_command TEXT NOT NULL DEFAULT '[]';
-                 ALTER TABLE settlement_preflights
+                 ALTER TABLE delivery_preflights
                    ADD COLUMN verification_status TEXT NOT NULL DEFAULT 'not_run';
-                 ALTER TABLE settlement_preflights
+                 ALTER TABLE delivery_preflights
                    ADD COLUMN verification_output TEXT NOT NULL DEFAULT '';
                  CREATE TABLE project_contexts (
                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
                    key TEXT NOT NULL, value TEXT NOT NULL,
                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                  );
-                 CREATE TABLE workstream_contexts (
-                   id TEXT PRIMARY KEY, workstream_id TEXT NOT NULL,
+                 CREATE TABLE workspace_contexts (
+                   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL,
                    key TEXT NOT NULL, value TEXT NOT NULL,
                    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                  );
@@ -1260,7 +1175,7 @@ mod tests {
                    session_id TEXT NOT NULL, path TEXT NOT NULL,
                    PRIMARY KEY(session_id,path)
                  );
-                 ALTER TABLE settlement_operations
+                 ALTER TABLE delivery_operations
                    ADD COLUMN context_action TEXT NOT NULL DEFAULT 'carry';
                  INSERT INTO projects VALUES(
                    'project-1','Project','', 'active','directory-1','main','now','now'
@@ -1268,26 +1183,26 @@ mod tests {
                  INSERT INTO project_directories VALUES(
                    'directory-1','project-1','repo','','/tmp/repo','primary',1,'now'
                  );
-                 INSERT INTO workstreams VALUES(
-                   'workstream-1','project-1','Work','', 'active','workstream',NULL,
+                 INSERT INTO workspaces VALUES(
+                   'workspace-1','project-1','Work','', 'active','workspace',NULL,
                    'managed_worktree','directory-1',NULL,'/tmp/worktree','main','head',
                    'treefold/work',NULL,'none',NULL,NULL,NULL,'','','now','now'
                  );
                  INSERT INTO sessions(
-                   id,workstream_id,name,kind,cwd,original_cwd,initial_prompt,yolo,
+                   id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,yolo,
                    sidebar_visible,process_id,process_name,status,pid,process_group_id,
                    exit_signal,command,launch_started_at,created_at,updated_at
                  ) VALUES(
-                   'session-1','workstream-1','Codex','codex','/tmp/worktree',
+                   'session-1','workspace-1','Codex','codex','/tmp/worktree',
                    '/tmp/worktree','',0,1,'','','closed',0,0,'','[]','now','now','now'
                  );
                  INSERT INTO session_context_paths VALUES('session-1','/tmp/legacy-attached');
-                 INSERT INTO settlement_operations(
-                   workstream_id,phase,code_action,todo_action,keep_session_history,
+                 INSERT INTO delivery_operations(
+                   workspace_id,phase,code_action,todo_action,keep_session_history,
                    delete_worktree,delete_branch,commit_message,before_head,source_head,
                    target_head,integrated_commit,error,started_at,updated_at,context_action
                  ) VALUES(
-                   'workstream-1','code_integrated','merge','carry',1,1,1,'','before',
+                   'workspace-1','code_integrated','merge','carry',1,1,1,'','before',
                    'source','target',NULL,'','now','now','carry'
                  );",
             )
@@ -1298,7 +1213,7 @@ mod tests {
         let db = store.0.lock();
         for table in [
             "project_contexts",
-            "workstream_contexts",
+            "workspace_contexts",
             "session_context_paths",
         ] {
             let exists: bool = db
@@ -1311,20 +1226,20 @@ mod tests {
             assert!(!exists, "{table} should be removed");
         }
         let columns = db
-            .prepare("PRAGMA table_info(settlement_operations)")
-            .expect("inspect settlement schema")
+            .prepare("PRAGMA table_info(delivery_operations)")
+            .expect("inspect delivery schema")
             .query_map([], |row| row.get::<_, String>(1))
-            .expect("read settlement columns")
+            .expect("read delivery columns")
             .collect::<rusqlite::Result<Vec<_>>>()
-            .expect("collect settlement columns");
+            .expect("collect delivery columns");
         assert!(!columns.iter().any(|name| name == "context_action"));
         let preflight_columns = db
-            .prepare("PRAGMA table_info(settlement_preflights)")
-            .expect("inspect settlement preflight schema")
+            .prepare("PRAGMA table_info(delivery_preflights)")
+            .expect("inspect delivery preflight schema")
             .query_map([], |row| row.get::<_, String>(1))
-            .expect("read settlement preflight columns")
+            .expect("read delivery preflight columns")
             .collect::<rusqlite::Result<Vec<_>>>()
-            .expect("collect settlement preflight columns");
+            .expect("collect delivery preflight columns");
         for removed in [
             "verification_command",
             "verification_status",
@@ -1333,10 +1248,10 @@ mod tests {
             assert!(!preflight_columns.iter().any(|name| name == removed));
         }
         let operation_count: i64 = db
-            .query_row("SELECT COUNT(*) FROM settlement_operations", [], |row| {
+            .query_row("SELECT COUNT(*) FROM delivery_operations", [], |row| {
                 row.get(0)
             })
-            .expect("count settlement history");
+            .expect("count delivery history");
         assert_eq!(operation_count, 1);
         let foreign_key_violations: i64 = db
             .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {

@@ -6,19 +6,19 @@
 
 Treefold 核心业务保持 **API-first**：React UI、CLI、Skill 和未来 Mobile/Web 客户端
 通过同一套 HTTP API 与 WebSocket 访问 Workstation backend。Tauri IPC 只用于文件选择、
-窗口、菜单、通知等桌面原生能力，不承载 Workstream 等核心业务接口。
+窗口、菜单、通知等桌面原生能力，不承载 Workspace 等核心业务接口。
 
 ```text
 Desktop React ─┐
 CLI / Skill ───┼─ HTTP API / WebSocket ─→ Treefold Workstation
-Mobile / Web ──┘                           ├── Workstream / Todo / Session
+Mobile / Web ──┘                           ├── Workspace / Todo / Session
                                           ├── Git / Worktree
 Desktop React ── Tauri IPC ──────────────→ └── Desktop native capabilities
 ```
 
 ## 原因
 
-- Project、Workstream、Todo 和 Session 是多客户端都需要的产品能力，不应绑定
+- Project、Workspace、Todo 和 Session 是多客户端都需要的产品能力，不应绑定
   Tauri WebView。
 - HTTP/WebSocket 可直接复用于 CLI、Skill 和 Remote 客户端，也便于测试、调试和生成 SDK。
 - Terminal 和实时状态天然适合 WebSocket，未来从本地连接切换到远程连接时不需要重写协议。
@@ -29,9 +29,9 @@ Desktop React ── Tauri IPC ──────────────→ └
 
 使用 HTTP API：
 
-- Project、Workstream、Fork；
+- Project、Workspace；
 - Todo、Report 和执行状态；
-- Session、Git/worktree、Rebase 和 Settlement；
+- Session、Git/worktree、Rebase 和 Delivery；
 - Workstation 状态、能力发现和授权信息。
 
 使用 WebSocket：
@@ -67,7 +67,7 @@ Workstation 始终拥有代码和执行环境。可选的 Relay 只负责设备�
 
 - 使用版本化路径和稳定 DTO；
 - 提供结构化错误码与 request ID；
-- 本地连接使用 capability token，Agent token 限制到所属 Session/Workstream；
+- 本地连接使用 capability token，Agent token 限制到所属 Session/Workspace；
 - 只监听 loopback，限制可信 Origin，不使用任意 Origin CORS；
 - 支持端口发现，客户端不依赖固定端口；
 - 写操作具备幂等与冲突语义；

@@ -119,10 +119,7 @@ impl TerminalManager {
             ("TREEFOLD_SESSION_ID".into(), session.id.clone()),
             ("TREEFOLD_API_TOKEN".into(), session.id.clone()),
             ("TREEFOLD_API_URL".into(), "http://127.0.0.1:7331".into()),
-            (
-                "TREEFOLD_WORKSTREAM_ID".into(),
-                session.workstream_id.clone(),
-            ),
+            ("TREEFOLD_WORKSPACE_ID".into(), session.workspace_id.clone()),
             ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
             (
                 "AMUX_STATE_DIR".into(),
@@ -313,7 +310,7 @@ mod tests {
     fn session() -> Session {
         Session {
             id: "session-1".into(),
-            workstream_id: "workstream-1".into(),
+            workspace_id: "workspace-1".into(),
             name: "Codex".into(),
             kind: "codex".into(),
             cwd: "/tmp/primary worktree".into(),

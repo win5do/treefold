@@ -25,7 +25,7 @@ Treefold 是一个本地优先、免费开源的 macOS 应用，用于在受管�
 ## 三个核心卖点
 
 1. **安全并行**：每项工作拥有独立 workspace，多个 Session 不互相污染。
-2. **持续工作**：Session 可以关闭或恢复，工作归属于 Workstream 而不是一次对话。
+2. **持续工作**：Session 可以关闭或恢复，工作归属于 Workspace 而不是一次对话。
 3. **干净收尾**：统一完成 diff、rebase、恢复、向上合并和 branch/worktree 回收。
 
 核心观念：
@@ -53,11 +53,11 @@ Treefold 是一个本地优先、免费开源的 macOS 应用，用于在受管�
 
 演示应在 30～45 秒内完成以下流程：
 
-1. 导入本地 Git 项目并创建 Workstream。
+1. 导入本地 Git 项目并创建 Workspace。
 2. 自动创建 branch/worktree，启动 Codex 和 Shell。
-3. 创建 Fork 完成独立子功能。
-4. 查看变化并将 Fork rebase 到父级。
-5. Close and settle，向上合并并清理 branch/worktree。
+3. 为并行子功能创建同级 Workspace。
+4. 将 Workspace rebase 到固定 target，或同步其 remote feature branch。
+5. Finish Workspace，通过远端合并或本地合并完成交付并清理 branch/worktree。
 6. 从历史记录 Resume Codex Session。
 
 ## 宣传边界

@@ -29,7 +29,7 @@ enum CliCommand {
     },
     /// Show the current Treefold-managed Session context.
     Current,
-    /// Manage Todos belonging to the current Workstream.
+    /// Manage Todos belonging to the current Workspace.
     Todo {
         #[command(subcommand)]
         command: TodoCommand,
@@ -42,7 +42,7 @@ enum CliCommand {
 
 #[derive(Debug, Subcommand)]
 enum TodoCommand {
-    /// List Todos in the current Workstream.
+    /// List Todos in the current Workspace.
     List,
     /// Show one Todo.
     Show { id: String },
@@ -242,7 +242,7 @@ fn run_doctor(json_output: bool) -> Result<(), CliError> {
     checks.push(json!({"name":"app_api", "ok":api, "value":api_url}));
     for name in [
         "TREEFOLD_SESSION_ID",
-        "TREEFOLD_WORKSTREAM_ID",
+        "TREEFOLD_WORKSPACE_ID",
         "AMUX_SOCKET",
         "AMUX_WORKSPACE",
     ] {
@@ -365,8 +365,8 @@ fn print_value(value: &Value, json_output: bool, output: HumanOutput) {
                 value["project"]["name"].as_str().unwrap_or("unknown")
             );
             println!(
-                "Workstream: {}",
-                value["workstream"]["name"].as_str().unwrap_or("unknown")
+                "Workspace: {}",
+                value["workspace"]["name"].as_str().unwrap_or("unknown")
             );
             println!(
                 "Session:    {}",

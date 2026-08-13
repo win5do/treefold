@@ -4,7 +4,7 @@
 
 Treefold is a local-first macOS workspace for running Codex and Shell sessions
 in managed Git worktrees, with resume, rebase, recovery, merge, and cleanup.
-The UI is React + Vite inside Tauri's system WebView; projects, workstreams,
+The UI is React + Vite inside Tauri's system WebView; projects, workspaces,
 SQLite data, and Git worktrees are managed by the Rust backend. Persistent PTY
 processes are managed by the local Rust `amux` runtime.
 
@@ -78,7 +78,7 @@ Treefold stores its files under `~/.treefold` by default:
 
 Set `TREEFOLD_HOME` before starting the app to relocate this complete tree. The
 settings file owns durable user preferences (`language`, `worktree_root`, and
-agent launch defaults); SQLite owns Projects, Workstreams, Sessions, Todos, and
+agent launch defaults); SQLite owns Projects, Workspaces, Sessions, Todos, and
 operation records. Treefold creates `settings.toml` with `schema_version = 1` on
 first launch. Configuration changes made outside the app are picked up on the
 next settings read; invalid or unsupported schemas are reported instead of
@@ -105,7 +105,7 @@ Tauri macOS process
 ├── Rust/Axum: loopback REST + terminal WebSocket
 ├── Rust/rusqlite: local project and session metadata
 ├── Rust/amux: persistent shell and Codex terminal processes
-└── Git CLI: isolated Workstream worktrees
+└── Git CLI: isolated Workspace worktrees
 ```
 
 The amux control plane runs inside Treefold, while detached amux shims own the PTY
@@ -116,7 +116,7 @@ so deep links work from both Vite and packaged assets.
 ## Product documentation
 
 - [Product direction](docs/product-strategy.md)
-- [Project and Workstream model](docs/project-workstream-model.md)
+- [Project and Workspace model](docs/project-workspace-model.md)
 - [Git worktree lifecycle](docs/git-worktree-lifecycle.md)
 - [Keymap configuration plan](docs/keymap-configuration-plan.md)
 - [Agent Skill, CLI, and App API architecture](docs/agent-skill-cli-api-architecture.md)

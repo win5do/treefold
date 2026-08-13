@@ -16,8 +16,8 @@ hard storage boundary.
   `$TREEFOLD_HOME/config/keymap.toml` described in
   `docs/keymap-configuration-plan.md`. Do not implement or store keymaps until
   that deferred feature is explicitly requested.
-- `$TREEFOLD_HOME/data/treefold.db` owns Projects, Directories, Workstreams,
-  Sessions, Todos, settlement/rebase/reset operations, and similar relational
+- `$TREEFOLD_HOME/data/treefold.db` owns Projects, Directories, Workspaces,
+  Sessions, Todos, delivery/rebase/reset operations, and similar relational
   runtime records. Do not add user preferences or keymaps to SQLite.
 - Temporary UI state may use SQLite or frontend local storage. Caches and
   derived data may use SQLite or a future cache directory, but neither is a
@@ -69,7 +69,7 @@ Prefer semantic locators such as roles, accessible names, and labels, followed b
 
 Core assertions should cover the applicable behavior:
 
-- controls appear only in the correct Project, Workstream, Fork, or Session context;
+- controls appear only in the correct Project, Workspace, or Session context;
 - sidebar show, hide, resize, minimum size, tree nesting, and content offsets;
 - long labels do not hide or misalign row actions;
 - toolbar titles align with page content;

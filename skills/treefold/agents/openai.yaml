@@ -1,4 +1,4 @@
 interface:
   display_name: "Treefold"
-  short_description: "Manage Treefold context and Workstream Todos"
+  short_description: "Manage Treefold context and Workspace Todos"
   default_prompt: "Use $treefold to inspect my managed workspace and update its Todos."

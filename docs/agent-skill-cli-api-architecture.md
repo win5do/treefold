@@ -4,7 +4,7 @@
 
 ## 决策摘要
 
-Treefold 是管理层，不是 Agent 智能层：它管理 Project、Workstream/Fork、物理工作目录、Session 和 Todo，但不复制 Codex 会话历史，不要求逐轮总结，也不存 Report、handoff、验证证据或 Agent memory。
+Treefold 是管理层，不是 Agent 智能层：它管理 Project、Workspace、物理工作目录、Session 和 Todo，但不复制 Codex 会话历史，不要求逐轮总结，也不存 Report、handoff、验证证据或 Agent memory。
 
 ```text
 Treefold App
@@ -64,13 +64,13 @@ treefold current --json
 一次返回：
 
 - Project；
-- Workstream 或 Fork；
+- Workspace；
 - Session；
 - 当前及原始 workspace path；
 - 目录拓扑；
 - branch、HEAD、dirty 等 Git 摘要；
-- 父 Workstream 或 Project base integration target；
-- 当前 Workstream 的 Todo；
+- Workspace 固定的 Project target branch；
+- 当前 Workspace 的 Todo；
 - 当前物理 workspace 对应的 amux workspace。
 
 Git 信息是读取时快照。Agent 在破坏性或历史修改前仍需使用 Git 重新确认。
@@ -109,9 +109,9 @@ POST   /api/v1/agent/todos/{id}/done
 POST   /api/v1/agent/todos/{id}/block
 ```
 
-接口要求 `Authorization: Bearer <TREEFOLD_API_TOKEN>`，并把能力限制到 token 绑定的当前 Session 和 Workstream。MVP 的本地 loopback capability 使用随机 Session ID；后续可以替换成独立短期 token，而不改变 CLI 协议。
+接口要求 `Authorization: Bearer <TREEFOLD_API_TOKEN>`，并把能力限制到 token 绑定的当前 Session 和 Workspace。MVP 的本地 loopback capability 使用随机 Session ID；后续可以替换成独立短期 token，而不改变 CLI 协议。
 
-Agent API 不暴露 Project/Workstream/Fork 创建删除、Session 控制、checkout、rebase、reset 或 settlement。
+Agent API 不暴露 Project/Workspace 创建删除、Session 控制、checkout、rebase、reset 或 delivery。
 
 ## amux runtime
 
@@ -126,11 +126,10 @@ socket: /tmp/treefold-amux-<TREEFOLD_HOME hash>/amuxd.sock
 
 ```text
 Project main worktree  ↔ amux workspace
-managed Workstream     ↔ amux workspace
-Fork worktree          ↔ amux workspace
+managed Workspace     ↔ amux workspace
 ```
 
-多个 `in_place` Workstream 若共享同一路径，也共享同一 amux workspace。映射按规范化路径生成稳定名称，而不是按 Workstream ID 生成。
+每个 Workspace 都拥有 managed worktree，并按规范化路径映射到稳定的 amux workspace。
 
 Treefold Session 注入：
 
@@ -138,7 +137,7 @@ Treefold Session 注入：
 TREEFOLD_API_URL
 TREEFOLD_API_TOKEN
 TREEFOLD_PROJECT_ID
-TREEFOLD_WORKSTREAM_ID
+TREEFOLD_WORKSPACE_ID
 TREEFOLD_SESSION_ID
 AMUX_STATE_DIR
 AMUX_SOCKET
@@ -180,7 +179,7 @@ amux Skill：
 
 - `treefold` 无参数能启动桌面 App；
 - managed Session 中 `treefold current --json` 返回完整、来源明确的当前快照；
-- Agent 只能读写当前 Workstream 的 Todo；
+- Agent 只能读写当前 Workspace 的 Todo；
 - 两个 Session 同时 claim 同一 Todo 时只有一个成功；
 - Todo 支持 CRUD、claim、release、done 和带原因的 block；
 - 每个实际 workspace root 使用稳定且隔离的 amux workspace；

@@ -1,6 +1,6 @@
 ---
 name: treefold
-description: Manage context and Todos in a Treefold-managed coding Session through the `treefold` CLI. Use when `TREEFOLD_SESSION_ID` is present, when a user asks about the current Treefold Project, Workstream, Fork, workspace, integration target, or Todos, or when work should be claimed, released, completed, blocked, created, edited, or removed in Treefold.
+description: Manage context and Todos in a Treefold-managed coding Session through the `treefold` CLI. Use when `TREEFOLD_SESSION_ID` is present, when a user asks about the current Treefold Project, Workspace, target branch, or Todos, or when work should be claimed, released, completed, blocked, created, edited, or removed in Treefold.
 ---
 
 # Treefold
@@ -21,7 +21,7 @@ If `TREEFOLD_SESSION_ID` is absent, do not assume the current directory belongs 
 
 ## Manage Todos
 
-List and inspect work assigned to the current Workstream:
+List and inspect work assigned to the current Workspace:
 
 ```bash
 treefold todo list --json
@@ -55,6 +55,6 @@ Do not look for `treefold service`, `treefold logs`, or Treefold child-Agent com
 
 ## Respect lifecycle ownership
 
-Treefold owns managed worktree creation, rebase, reset, settlement, cleanup, and Session lifecycle. Do not invoke those lifecycle actions merely as part of task completion. Normal edits, commits, tests, and user-requested Git work inside the active workspace remain allowed.
+Treefold owns managed worktree creation, rebase, reset, delivery, cleanup, and Session lifecycle. Do not invoke those lifecycle actions merely as part of task completion. Normal edits, commits, tests, and user-requested Git work inside the active workspace remain allowed.
 
 If the Treefold App/API is unavailable, continue safe local work when possible and tell the user that Todo synchronization could not be completed.

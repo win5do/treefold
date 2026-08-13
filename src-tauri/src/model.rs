@@ -7,7 +7,11 @@ pub struct Project {
     pub description: String,
     pub status: String,
     pub primary_directory_id: String,
-    pub base_branch: String,
+    pub git_common_dir: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_remote: Option<String>,
+    pub default_target_branch: String,
+    pub default_delivery_mode: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -21,7 +25,7 @@ pub struct Directory {
     pub worktree_setup_command: String,
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_path: Option<String>,
+    pub checkout_path: Option<String>,
     pub role: String,
     pub is_git: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,26 +41,26 @@ pub struct Directory {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Workstream {
+pub struct Workspace {
     pub id: String,
     pub project_id: String,
     pub name: String,
     pub description: String,
     pub status: String,
-    pub kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_workstream_id: Option<String>,
-    pub workspace_mode: String,
     pub project_directory_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_id: Option<String>,
-    pub workspace_path: String,
-    pub base_ref: String,
-    pub base_commit: String,
+    pub checkout_path: String,
+    pub target_branch: String,
+    pub start_commit: String,
     pub branch: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub forked_from_commit: Option<String>,
-    pub integration_status: String,
+    pub remote_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remote_branch: Option<String>,
+    pub branch_ownership: String,
+    pub delivery_mode: String,
+    pub delivery_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub close_outcome: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -72,7 +76,7 @@ pub struct Workstream {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
-    pub workstream_id: String,
+    pub workspace_id: String,
     pub name: String,
     pub kind: String,
     pub cwd: String,
@@ -106,12 +110,7 @@ pub struct Session {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Todo {
     pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub project_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub workstream_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub origin_workstream_id: Option<String>,
+    pub workspace_id: String,
     pub title: String,
     pub description: String,
     pub status: String,
@@ -128,10 +127,8 @@ pub struct ProjectDetail {
     #[serde(flatten)]
     pub project: Project,
     pub directories: Vec<Directory>,
-    pub workstreams: Vec<Workstream>,
+    pub workspaces: Vec<Workspace>,
     pub worktrees: Vec<GitWorktree>,
-    pub todos: Vec<Todo>,
-    pub sessions: Vec<Session>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -143,9 +140,9 @@ pub struct GitWorktree {
     pub head_commit: String,
     pub is_main: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workstream_id: Option<String>,
+    pub workspace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workstream_name: Option<String>,
+    pub workspace_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -170,7 +167,7 @@ pub struct ReconciliationIssue {
     pub severity: String,
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workstream_id: Option<String>,
+    pub workspace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     pub actions: Vec<String>,
@@ -191,9 +188,9 @@ pub struct RepairResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SettlementPreflight {
+pub struct DeliveryPreflight {
     pub id: String,
-    pub workstream_id: String,
+    pub workspace_id: String,
     pub code_action: String,
     pub source_head: String,
     pub target_head: String,
@@ -212,22 +209,35 @@ pub struct SettlementPreflight {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct WorkstreamDetail {
+pub struct WorkspaceDetail {
     #[serde(flatten)]
-    pub workstream: Workstream,
+    pub workspace: Workspace,
     pub project: Project,
     pub directories: Vec<Directory>,
     pub sessions: Vec<Session>,
     pub todos: Vec<Todo>,
-    pub forks: Vec<Workstream>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitSyncResult {
+    pub scope: String,
+    pub action: String,
+    pub branch: String,
+    pub remote: String,
+    pub remote_branch: String,
+    pub before_head: String,
+    pub after_head: String,
+    pub status: String,
+    pub message: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SettlementOperation {
-    pub workstream_id: String,
+pub struct DeliveryOperation {
+    pub workspace_id: String,
     pub phase: String,
     pub code_action: String,
     pub todo_action: String,
+    pub push_after_merge: bool,
     pub keep_session_history: bool,
     pub delete_worktree: bool,
     pub delete_branch: bool,
@@ -244,11 +254,11 @@ pub struct SettlementOperation {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RebaseOperation {
     pub id: String,
-    pub workstream_id: String,
+    pub workspace_id: String,
     pub status: String,
     pub phase: String,
     pub before_head: String,
-    pub parent_head: String,
+    pub target_head: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rebased_head: Option<String>,
     pub recovery_ref: String,
@@ -262,7 +272,7 @@ pub struct RebaseOperation {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResetOperation {
     pub id: String,
-    pub workstream_id: String,
+    pub workspace_id: String,
     pub status: String,
     pub mode: String,
     pub before_head: String,
