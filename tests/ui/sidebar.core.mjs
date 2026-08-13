@@ -323,7 +323,7 @@ try {
     timeout: 3_000,
     timeoutMsg: "fixture Workspace navigation did not update the route",
   });
-  const baseSection = await browser.$('[data-testid="workspace-base-section"]');
+  let baseSection = await browser.$('[data-testid="workspace-base-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await browser.$("button=Configure")).isExisting(), true, "Workspace must expose remote branch configuration");
   assert.equal(await (await browser.$("button=Pull")).isExisting(), true, "Workspace must expose Pull when it owns an upstream");
@@ -335,6 +335,16 @@ try {
   const todosSection = await browser.$('[data-testid="workspace-todos-section"]');
   assert.ok((await baseSection.getLocation("y")) < (await forksSection.getLocation("y")), "Base section must appear above Forks");
   assert.ok((await forksSection.getLocation("y")) < (await todosSection.getLocation("y")), "Forks must remain above Todos");
+
+  await (await browser.$("button=New Shell")).click();
+  await browser.waitUntil(async () => (await browser.getUrl()).includes(`#/workspaces/${FIXTURE_IDS.workspace}/sessions/session-created-shell-ui-fixture`), {
+    timeout: 1_000,
+    timeoutMsg: "Shell creation waited for the intentionally slow full Workspace refresh",
+  });
+  assert.match(await main.getText(), /shell[\s\S]*running/i, "the created Shell must render from the POST response without a full refresh");
+  await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+  baseSection = await browser.$('[data-testid="workspace-base-section"]');
+  await baseSection.waitForDisplayed({ timeout: 3_000 });
 
   await browser.$('button[aria-label="Hide left sidebar"]').click();
   const showSidebar = await browser.$('button[aria-label="Show left sidebar"]');

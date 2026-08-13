@@ -25,6 +25,7 @@ async function readJson(request) {
 async function startFixtureApi() {
   const fixture = createSidebarCoreFixture();
   const unexpectedRequests = [];
+  let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
       sendJson(response, 204, null);
@@ -159,6 +160,10 @@ async function startFixtureApi() {
 
     const workspaceMatch = pathname.match(/^\/api\/workspaces\/([^/]+)$/);
     if (request.method === "GET" && workspaceMatch && fixture.workspaceDetails[workspaceMatch[1]]) {
+      if (slowWorkspaceRefreshesRemaining > 0) {
+        slowWorkspaceRefreshesRemaining -= 1;
+        await new Promise((resolve) => setTimeout(resolve, 1_500));
+      }
       sendJson(response, 200, fixture.workspaceDetails[workspaceMatch[1]]);
       return;
     }
@@ -167,6 +172,43 @@ async function startFixtureApi() {
       Object.assign(fixture.workspaceDetails[workspaceMatch[1]], { remote_name: input.remote_name || undefined, remote_branch: input.remote_branch || undefined, delivery_mode: input.delivery_mode });
       sendJson(response, 200, fixture.workspaceDetails[workspaceMatch[1]]);
       return;
+    }
+
+    const workspaceSessionsMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/sessions$/);
+    if (workspaceSessionsMatch && fixture.workspaceDetails[workspaceSessionsMatch[1]]) {
+      const detail = fixture.workspaceDetails[workspaceSessionsMatch[1]];
+      if (request.method === "GET") {
+        sendJson(response, 200, detail.sessions);
+        return;
+      }
+      if (request.method === "POST") {
+        const input = await readJson(request);
+        const created = {
+          ...detail.sessions[0],
+          id: "session-created-shell-ui-fixture",
+          workspace_id: detail.id,
+          process_id: "session-created-shell-ui-fixture",
+          process_name: "shell-created-ui-fixture",
+          name: input.name || "shell",
+          kind: input.kind || "shell",
+          cwd: input.project_directory_id
+            ? detail.directories.find((directory) => directory.id === input.project_directory_id)?.checkout_path || detail.checkout_path
+            : detail.checkout_path,
+          original_cwd: detail.checkout_path,
+          initial_prompt: input.initial_prompt || "",
+          codex_session_id: undefined,
+          yolo: Boolean(input.yolo),
+          status: "running",
+          pid: 4242,
+          process_group_id: 4242,
+          created_at: "2026-08-10T08:10:00.000Z",
+          updated_at: "2026-08-10T08:10:00.000Z",
+        };
+        detail.sessions.push(created);
+        slowWorkspaceRefreshesRemaining = 1;
+        sendJson(response, 201, created);
+        return;
+      }
     }
 
     const workspaceHistoryMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/git-history$/);

@@ -247,6 +247,19 @@ function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
   };
 }
 
+function upsertSession(sessions: Session[], session: Session): Session[] {
+  const index = sessions.findIndex((item) => item.id === session.id);
+  if (index === -1) return [...sessions, session];
+  return sessions.map((item, itemIndex) => itemIndex === index ? session : item);
+}
+
+function updateProjectWorkspaceSessions(projects: ProjectDetail[], workspaceId: string, sessions: Session[]): ProjectDetail[] {
+  return projects.map((project) => ({
+    ...project,
+    workspaces: project.workspaces.map((stream) => stream.id === workspaceId ? { ...stream, sessions } : stream),
+  }));
+}
+
 export default function App() {
   return (
     <Routes>
@@ -293,6 +306,7 @@ function Workspace() {
   const [closingSessionIds, setClosingSessionIds] = useState<Set<string>>(new Set());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set());
+  const sessionRefreshInFlight = useRef(false);
 
   const refresh = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -309,7 +323,7 @@ function Workspace() {
       setSystem(systemStatus);
       setSettings(appSettings);
       if (params.workspaceId) {
-        const detail = normalizeWorkspace(await api<WorkspaceDetail>(`/api/workspaces/${params.workspaceId}`));
+        const detail = streamsByID.get(params.workspaceId) ?? normalizeWorkspace(await api<WorkspaceDetail>(`/api/workspaces/${params.workspaceId}`));
         setWorkspace(detail);
         setExpandedProjects((current) => new Set(current).add(detail.project.id));
         setExpandedWorkspaces((current) => {
@@ -329,6 +343,20 @@ function Workspace() {
     }
   }, [params.workspaceId]);
 
+  const refreshWorkspaceSessions = useCallback(async (workspaceId: string) => {
+    if (sessionRefreshInFlight.current) return;
+    sessionRefreshInFlight.current = true;
+    try {
+      const sessions = await api<Session[]>(`/api/workspaces/${workspaceId}/sessions`);
+      setProjects((current) => updateProjectWorkspaceSessions(current, workspaceId, sessions));
+      setWorkspace((current) => current?.id === workspaceId ? { ...current, sessions } : current);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Session 状态刷新失败");
+    } finally {
+      sessionRefreshInFlight.current = false;
+    }
+  }, []);
+
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
     const preference = settings?.language ?? "system";
@@ -340,9 +368,9 @@ function Workspace() {
   }, [settings?.language]);
   useEffect(() => {
     if (!params.workspaceId) return;
-    const timer = window.setInterval(() => void refresh(true), 2500);
+    const timer = window.setInterval(() => void refreshWorkspaceSessions(params.workspaceId!), 2500);
     return () => window.clearInterval(timer);
-  }, [params.workspaceId, refresh]);
+  }, [params.workspaceId, refreshWorkspaceSessions]);
   useEffect(() => {
     if (!resizingSidebar) return;
     const resize = (event: PointerEvent) => {
@@ -408,11 +436,21 @@ function Workspace() {
 
   async function createShell(stream: WorkspaceDetail | Workspace, directory?: Directory) {
     setSessionMenu(null);
-    let created: Session | null = null;
-    const ok = await act(async () => {
-      created = await api<Session>(`/api/workspaces/${stream.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "shell", project_directory_id: directory?.id }) });
-    });
-    if (ok && created) navigate(`/workspaces/${stream.id}/sessions/${(created as Session).id}`);
+    setBusy(true);
+    try {
+      const created = await api<Session>(`/api/workspaces/${stream.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "shell", project_directory_id: directory?.id }) });
+      setProjects((current) => {
+        const owner = current.flatMap((project) => project.workspaces).find((item) => item.id === stream.id) as SidebarStream | undefined;
+        return updateProjectWorkspaceSessions(current, stream.id, upsertSession(owner?.sessions ?? [], created));
+      });
+      setWorkspace((current) => current?.id === stream.id ? { ...current, sessions: upsertSession(current.sessions, created) } : current);
+      setError("");
+      navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Shell 创建失败");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function openProjectTool(project: ProjectDetail, kind: "shell" | "codex", directory?: Directory) {

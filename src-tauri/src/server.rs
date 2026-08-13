@@ -140,7 +140,10 @@ fn app(state: AppState) -> Router {
             post(restore_workspace_reset),
         )
         .route("/api/workspaces/{id}/finish", post(finish_workspace))
-        .route("/api/workspaces/{id}/sessions", post(create_session))
+        .route(
+            "/api/workspaces/{id}/sessions",
+            get(list_sessions).post(create_session),
+        )
         .route("/api/workspaces/{id}/todos", post(create_todo))
         .route("/api/todos/{id}", patch(update_todo))
         .route(
@@ -3419,6 +3422,21 @@ async fn create_session(
     create_session_for_workspace(&state, workspace, input).await
 }
 
+async fn list_sessions(
+    State(state): State<AppState>,
+    AxumPath(workspace_id): AxumPath<String>,
+) -> Result<Json<Vec<Session>>> {
+    state.store.workspace(&workspace_id)?;
+    let mut sessions = state.store.sessions(&workspace_id)?;
+    for session in &mut sessions {
+        if let Ok(process) = state.terminals.inspect(&session.id).await {
+            apply_amux_process(session, process);
+            persist_amux_process(&state.store, &session.id, session)?;
+        }
+    }
+    Ok(Json(sessions))
+}
+
 async fn create_session_for_workspace(
     state: &AppState,
     workspace: Workspace,
@@ -4589,6 +4607,15 @@ mod current_workspace_tests {
         )
         .await
         .expect("create Workspace");
+        let sessions = app(state.clone())
+            .oneshot(
+                Request::get(format!("/api/workspaces/{}/sessions", workspace.id))
+                    .body(Body::empty())
+                    .expect("build Session list request"),
+            )
+            .await
+            .expect("list Workspace Sessions");
+        assert_eq!(sessions.status(), StatusCode::OK);
         let (_, Json(fork)) = create_fork(
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
