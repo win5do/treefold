@@ -1,30 +1,52 @@
 export const FIXTURE_IDS = Object.freeze({
   project: "project-ui-fixture",
-  directory: "directory-ui-fixture",
+  primaryDirectory: "directory-primary-ui-fixture",
+  attachedDirectory: "directory-attached-ui-fixture",
   workspace: "workspace-ui-fixture",
   fork: "fork-ui-fixture",
-  shell: "session-shell-ui-fixture",
+  archivedFork: "fork-archived-ui-fixture",
+  workspaceShell: "session-workspace-shell-ui-fixture",
+  workspaceCodex: "session-workspace-codex-ui-fixture",
   forkShell: "session-fork-shell-ui-fixture",
 });
 
 export const FIXTURE_NAMES = Object.freeze({
   project: "UI Fixture Project",
-  workspace: "Feature workspace with a readable long name",
-  fork: "Parallel parser experiment",
+  workspace: "Workspace with an intentionally long name for sidebar layout verification",
+  fork: "Fork with an intentionally long name that must preserve its action button",
+  archivedFork: "Archived Fork that must stay out of the active sidebar tree",
 });
 
-const timestamp = "2026-08-13T08:00:00.000Z";
-const sourcePath = "/tmp/treefold-ui-fixture/repository";
-const workspacePath = "/tmp/treefold-ui-fixture/worktrees/feature";
-const forkPath = "/tmp/treefold-ui-fixture/worktrees/fork";
+export const FIXTURE_COMMITS = Object.freeze([
+  {
+    hash: "f5377ee1234567890abcdef1234567890abcdef1",
+    short_hash: "f5377ee",
+    subject: "Replace Makefile with Justfile",
+    author: "win5do",
+    authored_at: "2026-08-07T11:17:00+08:00",
+  },
+  {
+    hash: "3cddb0b1234567890abcdef1234567890abcdef1",
+    short_hash: "3cddb0b",
+    subject: "Reimplement amux runtime in Rust",
+    author: "win5do",
+    authored_at: "2026-08-07T10:42:00+08:00",
+  },
+]);
+
+const timestamp = "2026-08-10T08:00:00.000Z";
+const primaryPath = "/tmp/treefold-ui-fixture/repository-with-a-long-readable-path";
+const attachedPath = "/tmp/treefold-ui-fixture/attached-documentation";
+const workspacePath = "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture";
+const forkPath = "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture";
 
 const project = {
   id: FIXTURE_IDS.project,
   name: FIXTURE_NAMES.project,
-  description: "Repository metadata fixture",
+  description: "Deterministic data used only by the Treefold UI core test.",
   status: "active",
-  primary_directory_id: FIXTURE_IDS.directory,
-  git_common_dir: "/tmp/treefold-ui-fixture/repository/.git",
+  primary_directory_id: FIXTURE_IDS.primaryDirectory,
+  git_common_dir: `${primaryPath}/.git`,
   preferred_remote: "origin",
   default_target_branch: "main",
   default_delivery_mode: "remote_review",
@@ -32,40 +54,89 @@ const project = {
   updated_at: timestamp,
 };
 
-const directory = {
-  id: FIXTURE_IDS.directory,
-  project_id: FIXTURE_IDS.project,
-  name: "repository",
-  description: "Primary repository",
-  worktree_setup_command: "",
-  path: sourcePath,
-  role: "primary",
-  is_git: true,
-  branch: "main",
-  head_commit: "0123456789",
-  head_summary: "Fixture commit",
-  dirty: false,
-  created_at: timestamp,
-};
+const directories = [
+  {
+    id: FIXTURE_IDS.primaryDirectory,
+    project_id: FIXTURE_IDS.project,
+    name: "fixture-repository",
+    description: "Primary Git repository",
+    worktree_setup_command: "",
+    path: primaryPath,
+    role: "primary",
+    is_git: true,
+    remote_url: "https://example.test/treefold/ui-fixture.git",
+    branch: "main",
+    head_commit: "0123456789",
+    head_summary: "Deterministic fixture commit",
+    dirty: false,
+    created_at: timestamp,
+  },
+  {
+    id: FIXTURE_IDS.attachedDirectory,
+    project_id: FIXTURE_IDS.project,
+    name: "fixture-documentation",
+    description: "Attached non-Git reference directory",
+    worktree_setup_command: "",
+    path: attachedPath,
+    role: "attached",
+    is_git: false,
+    dirty: false,
+    created_at: timestamp,
+  },
+];
+
+function session({ id, workspaceId, name, kind, cwd, status, codexSessionId }) {
+  return {
+    id,
+    workspace_id: workspaceId,
+    name,
+    kind,
+    cwd,
+    original_cwd: cwd,
+    initial_prompt: kind === "codex" ? "Verify the deterministic UI fixture." : "",
+    codex_session_id: codexSessionId,
+    yolo: false,
+    sidebar_visible: true,
+    process_id: id,
+    process_name: `${kind}-fixture`,
+    status,
+    pid: 0,
+    process_group_id: 0,
+    exit_code: status === "exited" ? 0 : undefined,
+    exit_signal: "",
+    command: kind === "codex" ? ["codex", "resume", codexSessionId] : ["/bin/zsh"],
+    launch_started_at: timestamp,
+    last_attached_at: timestamp,
+    created_at: timestamp,
+    updated_at: timestamp,
+    additional_directories: [attachedPath],
+  };
+}
 
 const workspace = {
   id: FIXTURE_IDS.workspace,
   project_id: FIXTURE_IDS.project,
   name: FIXTURE_NAMES.workspace,
-  description: "Feature development unit",
+  description: "Parent Workspace for the deterministic sidebar flow.",
   status: "active",
   kind: "workspace",
+  parent_workspace_id: null,
   checkout_mode: "worktree",
-  project_directory_id: FIXTURE_IDS.directory,
+  project_directory_id: FIXTURE_IDS.primaryDirectory,
+  worktree_id: null,
   checkout_path: workspacePath,
   target_branch: "main",
   start_commit: "0123456789abcdef",
-  branch: "treefold/feature-a1b2c3",
+  branch: "treefold/w-ui-fixture",
+  forked_from_commit: null,
   remote_name: "origin",
-  remote_branch: "feature/treefold-model",
+  remote_branch: "feature/ui-fixture",
   branch_ownership: "managed",
   delivery_mode: "remote_review",
   delivery_status: "published",
+  close_outcome: null,
+  integrated_commit: null,
+  closed_at: null,
   runtime_id: FIXTURE_IDS.workspace,
   runtime_name: "treefold-workspace-ui-fixture",
   created_at: timestamp,
@@ -76,13 +147,13 @@ const fork = {
   ...workspace,
   id: FIXTURE_IDS.fork,
   name: FIXTURE_NAMES.fork,
-  description: "Parallel subwork fixture",
+  description: "Active Fork with a long label.",
   kind: "fork",
   parent_workspace_id: FIXTURE_IDS.workspace,
   checkout_path: forkPath,
   target_branch: workspace.branch,
-  branch: "treefold/f-1122334455",
-  forked_from_commit: "abcdef1234567890",
+  branch: "treefold/f-ui-fixture",
+  forked_from_commit: "0123456789abcdef",
   remote_name: undefined,
   remote_branch: undefined,
   delivery_mode: "local_merge",
@@ -91,73 +162,206 @@ const fork = {
   runtime_name: "treefold-fork-ui-fixture",
 };
 
-const shell = {
-  id: FIXTURE_IDS.shell,
-  workspace_id: FIXTURE_IDS.workspace,
-  name: "Workspace Shell",
-  kind: "shell",
-  cwd: workspacePath,
-  original_cwd: workspacePath,
-  initial_prompt: "",
-  yolo: false,
-  sidebar_visible: true,
-  status: "running",
+const archivedFork = {
+  ...fork,
+  id: FIXTURE_IDS.archivedFork,
+  name: FIXTURE_NAMES.archivedFork,
+  status: "archived",
+  checkout_path: "/tmp/treefold-ui-fixture/worktrees/archived-fork-ui-fixture",
+  branch: "treefold/f-archived-ui-fixture",
+  delivery_status: "discarded",
+  close_outcome: "discarded",
+  closed_at: timestamp,
+  runtime_id: FIXTURE_IDS.archivedFork,
+  runtime_name: "treefold-archived-fork-ui-fixture",
 };
 
-const forkShell = { ...shell, id: FIXTURE_IDS.forkShell, workspace_id: FIXTURE_IDS.fork, name: "Fork Shell", cwd: forkPath, original_cwd: forkPath };
+const workspaceSessions = [
+  session({
+    id: FIXTURE_IDS.workspaceShell,
+    workspaceId: FIXTURE_IDS.workspace,
+    name: "Parent Shell Session",
+    kind: "shell",
+    cwd: workspacePath,
+    status: "running",
+  }),
+  session({
+    id: FIXTURE_IDS.workspaceCodex,
+    workspaceId: FIXTURE_IDS.workspace,
+    name: "Parent Codex Session with a deliberately long resumable label",
+    kind: "codex",
+    cwd: workspacePath,
+    status: "exited",
+    codexSessionId: "codex-ui-fixture-session",
+  }),
+];
 
-const projectDetail = {
-  ...project,
-  directories: [directory],
-  workspaces: [workspace],
-  worktrees: [{ directory_id: directory.id, directory_name: directory.name, path: sourcePath, branch: "main", head_commit: "0123456789", is_main: true }],
-};
+const forkSessions = [
+  session({
+    id: FIXTURE_IDS.forkShell,
+    workspaceId: FIXTURE_IDS.fork,
+    name: "Fork Shell Session",
+    kind: "shell",
+    cwd: forkPath,
+    status: "running",
+  }),
+];
+
+const workspaceTodos = [
+  {
+    id: "todo-pending-ui-fixture",
+    workspace_id: FIXTURE_IDS.workspace,
+    title: "Pending deterministic Todo",
+    description: "Remains pending for UI coverage.",
+    status: "pending",
+  },
+  {
+    id: "todo-done-ui-fixture",
+    workspace_id: FIXTURE_IDS.workspace,
+    title: "Completed deterministic Todo",
+    description: "Remains in history for UI coverage.",
+    status: "done",
+  },
+];
 
 const workspaceDetail = {
   ...workspace,
   project,
-  directories: [{ ...directory, checkout_path: workspacePath }],
-  sessions: [shell],
-  todos: [{ id: "todo-ui-fixture", workspace_id: workspace.id, title: "Verify Workspace delivery", description: "", status: "pending" }],
-  forks: [fork],
+  directories,
+  sessions: workspaceSessions,
+  todos: workspaceTodos,
+  forks: [fork, archivedFork],
 };
 
 const forkDetail = {
   ...fork,
   project,
-  directories: [{ ...directory, checkout_path: forkPath }],
-  sessions: [forkShell],
+  directories: directories.map((directory) => directory.id === FIXTURE_IDS.primaryDirectory ? { ...directory, checkout_path: forkPath } : directory),
+  sessions: forkSessions,
   todos: [],
   forks: [],
 };
 
+const projectDetail = {
+  ...project,
+  directories,
+  workspaces: [workspace, fork, archivedFork],
+  worktrees: [
+    {
+      directory_id: FIXTURE_IDS.primaryDirectory,
+      directory_name: "fixture-repository",
+      path: primaryPath,
+      branch: "main",
+      head_commit: "0123456789",
+      is_main: true,
+    },
+    {
+      directory_id: FIXTURE_IDS.primaryDirectory,
+      directory_name: "fixture-repository",
+      path: workspacePath,
+      branch: workspace.branch,
+      head_commit: "0123456789",
+      is_main: false,
+      workspace_id: FIXTURE_IDS.workspace,
+      workspace_name: FIXTURE_NAMES.workspace,
+    },
+    {
+      directory_id: FIXTURE_IDS.primaryDirectory,
+      directory_name: "fixture-repository",
+      path: forkPath,
+      branch: fork.branch,
+      head_commit: "0123456789",
+      is_main: false,
+      workspace_id: FIXTURE_IDS.fork,
+      workspace_name: FIXTURE_NAMES.fork,
+    },
+  ],
+};
+
 const deliveryPreflight = {
-  id: "preflight-ui-fixture",
-  workspace_id: workspace.id,
-  code_action: "remote_merged",
-  source_head: "abcdef1234567890",
-  target_head: "fedcba0987654321",
-  target_branch: "main",
+  id: "delivery-preflight-ui-fixture",
+  workspace_id: FIXTURE_IDS.fork,
+  code_action: "local_merge",
+  source_head: "abcdef1234567890abcdef1234567890abcdef12",
+  target_head: "0123456789abcdef0123456789abcdef01234567",
+  target_branch: workspace.branch,
   source_status: "",
   source_dirty: false,
   target_dirty: false,
   ahead: 2,
-  behind: 0,
+  behind: 1,
   changed_files: ["src/App.tsx", "src-tauri/src/server.rs"],
-  commits: [],
-  diff_stat: "2 files changed",
+  commits: FIXTURE_COMMITS,
+  diff_stat: "2 files changed, 24 insertions(+)",
   blockers: [],
-  warnings: [],
+  warnings: ["source is 1 commit(s) behind its merge target"],
   created_at: timestamp,
 };
 
+const gitOperations = [
+  {
+    id: "reset-operation-ui-fixture",
+    kind: "reset",
+    action: "parent",
+    status: "restored",
+    before_head: "abcdef1234567890abcdef1234567890abcdef12",
+    target_head: "0123456789abcdef0123456789abcdef01234567",
+    result_head: "0123456789abcdef0123456789abcdef01234567",
+    recovery_ref: "refs/treefold/recovery/reset-ui-fixture",
+    error: "",
+    started_at: timestamp,
+    updated_at: timestamp,
+  },
+  {
+    id: "rebase-operation-ui-fixture",
+    kind: "rebase",
+    action: "onto_parent",
+    status: "completed",
+    before_head: "1111111111111111111111111111111111111111",
+    target_head: "2222222222222222222222222222222222222222",
+    result_head: "3333333333333333333333333333333333333333",
+    recovery_ref: "refs/treefold/recovery/rebase-ui-fixture",
+    error: "",
+    started_at: "2026-08-09T08:00:00.000Z",
+    updated_at: "2026-08-09T08:01:00.000Z",
+  },
+];
+
 export function createSidebarCoreFixture() {
   return structuredClone({
-    settings: { schema_version: 1, language: "en-US", worktree_root: "/tmp/treefold-ui-fixture/worktrees", agents: { codex: { extra_args: ["--model", "gpt-5.4"] } } },
-    system: { codex_available: true, codex_version: "codex-ui-fixture", backend: "fixture", terminal_runtime: "fixture" },
+    settings: {
+      schema_version: 1,
+      language: "en-US",
+      worktree_root: "/fixture/treefold/worktrees",
+      agents: {
+        codex: {
+          extra_args: [
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--model",
+            "gpt-5.4",
+          ],
+        },
+      },
+    },
+    system: {
+      platform: "test",
+      codex_available: true,
+      codex_version: "codex-ui-fixture",
+      backend: "fixture",
+      terminal_runtime: "fixture",
+    },
     projects: [project],
-    projectDetails: { [project.id]: projectDetail },
-    workspaceDetails: { [workspace.id]: workspaceDetail, [fork.id]: forkDetail },
-    deliveryPreflights: { [workspace.id]: deliveryPreflight, [fork.id]: { ...deliveryPreflight, id: "preflight-fork-ui-fixture", workspace_id: fork.id, code_action: "local_merge", target_branch: workspace.branch } },
+    projectDetails: { [FIXTURE_IDS.project]: projectDetail },
+    workspaceDetails: {
+      [FIXTURE_IDS.workspace]: workspaceDetail,
+      [FIXTURE_IDS.fork]: forkDetail,
+    },
+    gitHistories: {
+      [FIXTURE_IDS.project]: { branch: "main", commits: FIXTURE_COMMITS },
+      [FIXTURE_IDS.workspace]: { branch: workspace.branch, commits: FIXTURE_COMMITS },
+      [FIXTURE_IDS.fork]: { branch: fork.branch, commits: FIXTURE_COMMITS },
+    },
+    deliveryPreflights: { [FIXTURE_IDS.workspace]: { ...deliveryPreflight, id: "delivery-preflight-workspace-ui-fixture", workspace_id: FIXTURE_IDS.workspace, code_action: "remote_merged", target_branch: "main" }, [FIXTURE_IDS.fork]: deliveryPreflight },
+    gitOperations: { [FIXTURE_IDS.fork]: gitOperations },
   });
 }

@@ -24,6 +24,7 @@ export const zhCN = {
     newInProject: "在项目 {{name}} 中新建",
     newInWorkspace: "在 Workspace {{name}} 中新建",
     newWorkspace: "新建 Workspace",
+    newFork: "新建 Fork",
     noWorkspaces: "暂无工作流",
     newSessionIn: "新建会话于…",
     primary: "主目录",

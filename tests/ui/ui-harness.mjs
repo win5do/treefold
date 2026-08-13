@@ -5,43 +5,261 @@ import { createServer as createViteServer } from "vite";
 import { createSidebarCoreFixture } from "./fixtures/sidebar-core.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const sendJson = (response, status, value) => { response.writeHead(status, { "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS", "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" }); response.end(JSON.stringify(value)); };
-async function readJson(request) { const chunks = []; for await (const chunk of request) chunks.push(chunk); return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"); }
+
+function sendJson(response, status, value) {
+  response.writeHead(status, {
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS",
+    "Access-Control-Allow-Origin": "*",
+    "Content-Type": "application/json; charset=utf-8",
+  });
+  response.end(JSON.stringify(value));
+}
+
+async function readJson(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+}
 
 async function startFixtureApi() {
-  const fixture = createSidebarCoreFixture(); const unexpectedRequests = [];
+  const fixture = createSidebarCoreFixture();
+  const unexpectedRequests = [];
   const server = http.createServer(async (request, response) => {
-    if (request.method === "OPTIONS") return sendJson(response, 204, null);
-    const pathname = new URL(request.url ?? "/", "http://fixture.test").pathname;
-    if (request.method === "GET" && pathname === "/api/settings") return sendJson(response, 200, fixture.settings);
-    if (request.method === "GET" && pathname === "/api/system") return sendJson(response, 200, fixture.system);
-    if (request.method === "PATCH" && pathname === "/api/settings") { const input = await readJson(request); if (input.language) fixture.settings.language = input.language; if (input.agents?.codex?.extra_args) fixture.settings.agents.codex.extra_args = input.agents.codex.extra_args; return sendJson(response, 200, fixture.settings); }
-    if (request.method === "GET" && pathname === "/api/projects") return sendJson(response, 200, fixture.projects);
-    const project = pathname.match(/^\/api\/projects\/([^/]+)$/);
-    if (request.method === "GET" && project && fixture.projectDetails[project[1]]) return sendJson(response, 200, fixture.projectDetails[project[1]]);
-    const projectTool = pathname.match(/^\/api\/projects\/([^/]+)\/open-tool$/);
-    if (request.method === "POST" && projectTool && fixture.projectDetails[projectTool[1]]) { const input = await readJson(request); return sendJson(response, 200, { opened: true, kind: input.kind, path: fixture.projectDetails[projectTool[1]].directories[0].path, managed_session: false }); }
-    const workspace = pathname.match(/^\/api\/workspaces\/([^/]+)$/);
-    if (request.method === "GET" && workspace && fixture.workspaceDetails[workspace[1]]) return sendJson(response, 200, fixture.workspaceDetails[workspace[1]]);
-    if (request.method === "PATCH" && workspace && fixture.workspaceDetails[workspace[1]]) {
-      const input = await readJson(request); Object.assign(fixture.workspaceDetails[workspace[1]], { remote_name: input.remote_name || undefined, remote_branch: input.remote_branch || undefined, delivery_mode: input.delivery_mode });
-      Object.assign(fixture.projectDetails[fixture.workspaceDetails[workspace[1]].project_id].workspaces[0], fixture.workspaceDetails[workspace[1]]);
-      return sendJson(response, 200, fixture.workspaceDetails[workspace[1]]);
+    if (request.method === "OPTIONS") {
+      sendJson(response, 204, null);
+      return;
     }
-    const sync = pathname.match(/^\/api\/(projects|workspaces)\/([^/]+)\/git\/(pull|push)$/);
-    if (request.method === "POST" && sync) return sendJson(response, 200, { scope: sync[1] === "projects" ? "project" : "workspace", action: sync[3], branch: sync[1] === "projects" ? "main" : "treefold/feature-a1b2c3", remote: "origin", remote_branch: sync[1] === "projects" ? "main" : "feature/treefold-model", status: "up_to_date", message: `${sync[3]} up_to_date` });
-    const preflight = pathname.match(/^\/api\/workspaces\/([^/]+)\/delivery-preflight$/);
-    if (request.method === "POST" && preflight && fixture.deliveryPreflights[preflight[1]]) { const input = await readJson(request); return sendJson(response, 201, { ...fixture.deliveryPreflights[preflight[1]], code_action: input.code_action }); }
-    unexpectedRequests.push(`${request.method} ${pathname}`); return sendJson(response, 501, { error: `Fixture does not implement ${request.method} ${pathname}` });
+
+    const pathname = new URL(request.url ?? "/", "http://fixture.test").pathname;
+    if (request.method === "GET" && pathname === "/api/system") {
+      sendJson(response, 200, fixture.system);
+      return;
+    }
+    if (request.method === "GET" && pathname === "/api/settings") {
+      sendJson(response, 200, fixture.settings);
+      return;
+    }
+    if (request.method === "PATCH" && pathname === "/api/settings") {
+      const input = await readJson(request);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const allowed = new Set(["language", "worktree_root", "agents"]);
+      if (Object.keys(input).some((key) => !allowed.has(key))) {
+        sendJson(response, 400, { error: "Unknown settings field" });
+        return;
+      }
+      if (input.language !== undefined) fixture.settings.language = input.language;
+      if (input.worktree_root !== undefined) fixture.settings.worktree_root = input.worktree_root;
+      if (input.agents?.codex?.extra_args !== undefined) {
+        fixture.settings.agents.codex.extra_args = [...input.agents.codex.extra_args];
+      }
+      sendJson(response, 200, fixture.settings);
+      return;
+    }
+    if (request.method === "GET" && pathname === "/api/projects") {
+      sendJson(response, 200, fixture.projects);
+      return;
+    }
+
+    const projectMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
+    if (request.method === "GET" && projectMatch && fixture.projectDetails[projectMatch[1]]) {
+      sendJson(response, 200, fixture.projectDetails[projectMatch[1]]);
+      return;
+    }
+    if (request.method === "PATCH" && projectMatch && fixture.projectDetails[projectMatch[1]]) {
+      const input = await readJson(request);
+      if (input.status !== "active" && input.status !== "archived") {
+        sendJson(response, 400, { error: "Project status must be active or archived" });
+        return;
+      }
+      const project = fixture.projects.find((item) => item.id === projectMatch[1]);
+      project.status = input.status;
+      fixture.projectDetails[projectMatch[1]].status = input.status;
+      if (input.status === "archived") {
+        Object.values(fixture.workspaceDetails).filter((detail) => detail.project_id === projectMatch[1]).forEach((detail) => {
+          detail.sessions.forEach((session) => { session.sidebar_visible = false; session.status = "closed"; });
+        });
+      }
+      sendJson(response, 200, project);
+      return;
+    }
+    if (request.method === "DELETE" && projectMatch && fixture.projectDetails[projectMatch[1]]) {
+      const project = fixture.projects.find((item) => item.id === projectMatch[1]);
+      if (project.status !== "archived") {
+        sendJson(response, 400, { error: "Archive the Project before permanently deleting it" });
+        return;
+      }
+      fixture.projects = fixture.projects.filter((item) => item.id !== projectMatch[1]);
+      delete fixture.projectDetails[projectMatch[1]];
+      sendJson(response, 204, null);
+      return;
+    }
+
+    const projectHistoryMatch = pathname.match(/^\/api\/projects\/([^/]+)\/git-history$/);
+    if (request.method === "GET" && projectHistoryMatch && fixture.gitHistories[projectHistoryMatch[1]]) {
+      sendJson(response, 200, fixture.gitHistories[projectHistoryMatch[1]]);
+      return;
+    }
+
+    const projectToolMatch = pathname.match(/^\/api\/projects\/([^/]+)\/open-tool$/);
+    if (request.method === "POST" && projectToolMatch && fixture.projectDetails[projectToolMatch[1]]) {
+      const input = await readJson(request);
+      sendJson(response, 200, { opened: true, kind: input.kind, project_directory_id: input.project_directory_id, managed_session: false });
+      return;
+    }
+
+    const syncMatch = pathname.match(/^\/api\/(projects|workspaces)\/([^/]+)\/git\/(pull|push)$/);
+    if (request.method === "POST" && syncMatch) {
+      sendJson(response, 200, { scope: syncMatch[1] === "projects" ? "project" : "workspace", action: syncMatch[3], branch: "main", remote: "origin", remote_branch: "main", status: "up_to_date", message: "up to date" });
+      return;
+    }
+
+    const revealMatch = pathname.match(/^\/api\/(projects|workspaces)\/([^/]+)\/reveal$/);
+    if (request.method === "POST" && revealMatch) {
+      sendJson(response, 200, { revealed: true });
+      return;
+    }
+
+    const directoryMatch = pathname.match(/^\/api\/project-directories\/([^/]+)$/);
+    if (request.method === "PATCH" && directoryMatch) {
+      const input = await readJson(request);
+      const directory = Object.values(fixture.projectDetails)
+        .flatMap((detail) => detail.directories)
+        .find((item) => item.id === directoryMatch[1]);
+      if (!directory) {
+        sendJson(response, 404, { error: "Directory not found" });
+        return;
+      }
+      directory.name = input.name;
+      directory.description = input.description ?? "";
+      directory.worktree_setup_command = input.worktree_setup_command ?? "";
+      Object.values(fixture.workspaceDetails).forEach((detail) => {
+        const item = detail.directories.find((candidate) => candidate.id === directory.id);
+        if (item) Object.assign(item, directory, item.checkout_path ? { checkout_path: item.checkout_path } : {});
+      });
+      sendJson(response, 200, directory);
+      return;
+    }
+
+    const branchesMatch = pathname.match(/^\/api\/project-directories\/([^/]+)\/branches$/);
+    if (request.method === "GET" && branchesMatch) {
+      sendJson(response, 200, { current: "main", local: ["main", "release/ui-fixture"], remotes: [{ name: "origin", branches: ["main", "feature/ui-fixture"] }] });
+      return;
+    }
+
+    const checkoutMatch = pathname.match(/^\/api\/project-directories\/([^/]+)\/checkout$/);
+    if (request.method === "POST" && checkoutMatch) {
+      const input = await readJson(request);
+      const directory = Object.values(fixture.projectDetails).flatMap((detail) => detail.directories).find((item) => item.id === checkoutMatch[1]);
+      if (!directory) return sendJson(response, 404, { error: "Directory not found" });
+      directory.branch = input.branch;
+      sendJson(response, 200, directory);
+      return;
+    }
+
+    const workspaceMatch = pathname.match(/^\/api\/workspaces\/([^/]+)$/);
+    if (request.method === "GET" && workspaceMatch && fixture.workspaceDetails[workspaceMatch[1]]) {
+      sendJson(response, 200, fixture.workspaceDetails[workspaceMatch[1]]);
+      return;
+    }
+    if (request.method === "PATCH" && workspaceMatch && fixture.workspaceDetails[workspaceMatch[1]]) {
+      const input = await readJson(request);
+      Object.assign(fixture.workspaceDetails[workspaceMatch[1]], { remote_name: input.remote_name || undefined, remote_branch: input.remote_branch || undefined, delivery_mode: input.delivery_mode });
+      sendJson(response, 200, fixture.workspaceDetails[workspaceMatch[1]]);
+      return;
+    }
+
+    const workspaceHistoryMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/git-history$/);
+    if (request.method === "GET" && workspaceHistoryMatch && fixture.gitHistories[workspaceHistoryMatch[1]]) {
+      sendJson(response, 200, fixture.gitHistories[workspaceHistoryMatch[1]]);
+      return;
+    }
+
+    const operationsMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/git-operations$/);
+    if (request.method === "GET" && operationsMatch && fixture.gitOperations[operationsMatch[1]]) {
+      sendJson(response, 200, fixture.gitOperations[operationsMatch[1]]);
+      return;
+    }
+
+    const preflightMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/delivery-preflight$/);
+    if (request.method === "POST" && preflightMatch && fixture.deliveryPreflights[preflightMatch[1]]) {
+      const input = await readJson(request);
+      const base = fixture.deliveryPreflights[preflightMatch[1]];
+      sendJson(response, 201, {
+        ...base,
+        code_action: input.code_action,
+      });
+      return;
+    }
+
+    unexpectedRequests.push(`${request.method} ${pathname}`);
+    sendJson(response, 501, { error: `UI fixture does not implement ${request.method} ${pathname}` });
   });
-  await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
-  const address = server.address(); if (!address || typeof address === "string") throw new Error("Could not determine fixture API address");
-  return { baseUrl: `http://127.0.0.1:${address.port}`, unexpectedRequests, close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) };
+
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Could not determine UI fixture API address");
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    unexpectedRequests,
+    async close() {
+      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    },
+  };
 }
 
 export async function startUiHarness() {
+  if (process.env.TREEFOLD_UI_URL) {
+    return {
+      baseUrl: process.env.TREEFOLD_UI_URL,
+      assertNoUnexpectedRequests() {},
+      async close() {},
+    };
+  }
+
   const fixtureApi = await startFixtureApi();
-  const vite = await createViteServer({ configFile: path.join(projectRoot, "vite.config.ts"), root: projectRoot, logLevel: "error", define: { "import.meta.env.VITE_TREEFOLD_API_BASE": JSON.stringify(fixtureApi.baseUrl) }, server: { host: "127.0.0.1", port: 0 } });
-  await vite.listen(); const address = vite.httpServer?.address(); if (!address || typeof address === "string") throw new Error("Could not determine Vite address");
-  return { baseUrl: `http://127.0.0.1:${address.port}`, assertNoUnexpectedRequests() { if (fixtureApi.unexpectedRequests.length) throw new Error(`Unexpected requests: ${fixtureApi.unexpectedRequests.join(", ")}`); }, async close() { await vite.close(); await fixtureApi.close(); } };
+  let vite;
+  try {
+    vite = await createViteServer({
+      configFile: path.join(projectRoot, "vite.config.ts"),
+      root: projectRoot,
+      logLevel: "error",
+      define: {
+        "import.meta.env.VITE_TREEFOLD_API_BASE": JSON.stringify(fixtureApi.baseUrl),
+      },
+      server: {
+        host: "127.0.0.1",
+        port: 0,
+        strictPort: false,
+      },
+    });
+    await vite.listen();
+  } catch (error) {
+    await fixtureApi.close();
+    throw error;
+  }
+
+  const address = vite.httpServer?.address();
+  if (!address || typeof address === "string") {
+    await vite.close();
+    await fixtureApi.close();
+    throw new Error("Could not determine UI fixture Vite address");
+  }
+
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    assertNoUnexpectedRequests() {
+      if (fixtureApi.unexpectedRequests.length > 0) {
+        throw new Error(`Unexpected UI fixture requests: ${fixtureApi.unexpectedRequests.join(", ")}`);
+      }
+    },
+    async close() {
+      await vite.close();
+      await fixtureApi.close();
+    },
+  };
 }

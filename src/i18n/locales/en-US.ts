@@ -22,6 +22,7 @@ export const enUS = {
     newInProject: "New in Project {{name}}",
     newInWorkspace: "New in Workspace {{name}}",
     newWorkspace: "New Workspace",
+    newFork: "New Fork",
     noWorkspaces: "No Workspaces yet",
     newSessionIn: "New Session in…",
     primary: "primary",
