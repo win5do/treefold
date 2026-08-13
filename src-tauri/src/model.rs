@@ -203,6 +203,7 @@ pub struct ProjectDetail {
     #[serde(flatten)]
     pub project: Project,
     pub locations: Vec<ProjectLocation>,
+    pub sessions: Vec<Session>,
     pub workspaces: Vec<Workspace>,
     pub worktrees: Vec<GitWorktree>,
 }

@@ -126,7 +126,11 @@ async function startFixtureApi() {
         fixture.projectDetails[projectMatch[1]].default_location_id = input.default_location_id;
       }
       if (input.status === "archived") {
+        const projectSessions = fixture.projectDetails[projectMatch[1]].sessions;
+        fixture.projectDetails[projectMatch[1]].sessions = projectSessions.filter((session) => session.kind !== "shell");
+        fixture.projectDetails[projectMatch[1]].sessions.forEach((session) => { session.sidebar_visible = false; session.status = "closed"; });
         Object.values(fixture.workspaceDetails).filter((detail) => detail.project_id === projectMatch[1]).forEach((detail) => {
+          detail.sessions = detail.sessions.filter((session) => session.kind !== "shell");
           detail.sessions.forEach((session) => { session.sidebar_visible = false; session.status = "closed"; });
         });
       }
@@ -151,11 +155,40 @@ async function startFixtureApi() {
       return;
     }
 
-    const projectToolMatch = pathname.match(/^\/api\/projects\/([^/]+)\/open-tool$/);
-    if (request.method === "POST" && projectToolMatch && fixture.projectDetails[projectToolMatch[1]]) {
-      const input = await readJson(request);
-      sendJson(response, 200, { opened: true, kind: input.kind, project_directory_id: input.project_directory_id, managed_session: false });
-      return;
+    const projectSessionsMatch = pathname.match(/^\/api\/projects\/([^/]+)\/sessions$/);
+    if (projectSessionsMatch && fixture.projectDetails[projectSessionsMatch[1]]) {
+      const detail = fixture.projectDetails[projectSessionsMatch[1]];
+      if (request.method === "GET") {
+        sendJson(response, 200, detail.sessions);
+        return;
+      }
+      if (request.method === "POST") {
+        const input = await readJson(request);
+        const directory = detail.directories.find((item) => item.id === input.project_directory_id) ?? detail.directories[0];
+        const created = {
+          ...detail.sessions[0],
+          id: input.kind === "codex" ? "session-created-project-codex-ui-fixture" : "session-created-project-shell-ui-fixture",
+          workspace_id: `project-base-${detail.id}`,
+          process_id: input.kind === "codex" ? "session-created-project-codex-ui-fixture" : "session-created-project-shell-ui-fixture",
+          process_name: `${input.kind || "shell"}-project-fixture`,
+          name: input.name || `${input.kind || "shell"} · ${directory.name}`,
+          kind: input.kind || "shell",
+          cwd: directory.path,
+          original_cwd: directory.path,
+          initial_prompt: input.initial_prompt || "",
+          codex_session_id: input.kind === "codex" ? "codex-created-project-ui-fixture" : undefined,
+          yolo: Boolean(input.yolo),
+          sidebar_visible: true,
+          status: "running",
+          pid: 4343,
+          process_group_id: 4343,
+          created_at: "2026-08-10T08:12:00.000Z",
+          updated_at: "2026-08-10T08:12:00.000Z",
+        };
+        detail.sessions.push(created);
+        sendJson(response, 201, created);
+        return;
+      }
     }
 
     const syncMatch = pathname.match(/^\/api\/(projects|workspaces)\/([^/]+)\/git\/(pull|push)(-all)?$/);
@@ -272,6 +305,34 @@ async function startFixtureApi() {
     const workspaceHistoryMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/git-history$/);
     if (request.method === "GET" && workspaceHistoryMatch && fixture.gitHistories[workspaceHistoryMatch[1]]) {
       sendJson(response, 200, fixture.gitHistories[workspaceHistoryMatch[1]]);
+      return;
+    }
+
+    const sessionActionMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/(close|open|stop|restart)$/);
+    if (request.method === "POST" && sessionActionMatch) {
+      const collections = [
+        ...Object.values(fixture.projectDetails).map((detail) => detail.sessions),
+        ...Object.values(fixture.workspaceDetails).map((detail) => detail.sessions),
+      ];
+      const sessions = collections.find((items) => items.some((session) => session.id === sessionActionMatch[1]));
+      const session = sessions?.find((item) => item.id === sessionActionMatch[1]);
+      if (!sessions || !session) {
+        sendJson(response, 404, { error: "Session not found" });
+        return;
+      }
+      if (sessionActionMatch[2] === "close" && session.kind === "shell") {
+        collections.forEach((items) => {
+          const index = items.findIndex((item) => item.id === session.id);
+          if (index >= 0) items.splice(index, 1);
+        });
+        sendJson(response, 200, { ...session, sidebar_visible: false, status: "closed" });
+        return;
+      }
+      if (sessionActionMatch[2] === "close") session.sidebar_visible = false;
+      if (sessionActionMatch[2] === "open") session.sidebar_visible = true;
+      if (sessionActionMatch[2] === "stop" || sessionActionMatch[2] === "close") session.status = "closed";
+      if (sessionActionMatch[2] === "restart") session.status = "running";
+      sendJson(response, 200, session);
       return;
     }
 

@@ -239,7 +239,7 @@ try {
   await projectCreateButton.click();
   let sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await sessionMenu.getText(), /OPEN EXTERNAL TOOL IN/);
+  assert.match(await sessionMenu.getText(), /NEW SESSION IN/);
   const createWorkspaceAction = await sessionMenu.$('[data-testid="create-workspace-action"]');
   assert.equal(await createWorkspaceAction.getText(), "New Workspace", "Project plus menu must offer Workspace creation first");
   assert.equal(await browser.execute(() => {
@@ -248,9 +248,9 @@ try {
     return Boolean(action && sessionHeading && (action.compareDocumentPosition(sessionHeading) & Node.DOCUMENT_POSITION_FOLLOWING));
   }), true, "New Workspace must appear above the Session directory section");
   await (await sessionMenu.$(`[data-testid="session-directory-${FIXTURE_IDS.primaryDirectory}"]`)).moveTo();
-  const externalToolSubmenu = await sessionMenu.$('[data-testid="directory-session-submenu"]');
-  assert.match(await externalToolSubmenu.getText(), /Open Shell/);
-  assert.match(await externalToolSubmenu.getText(), /Open Codex/);
+  const projectSessionSubmenu = await sessionMenu.$('[data-testid="directory-session-submenu"]');
+  assert.match(await projectSessionSubmenu.getText(), /Shell/);
+  assert.match(await projectSessionSubmenu.getText(), /Codex/);
   await createWorkspaceAction.moveTo();
   await createWorkspaceAction.click();
   const createWorkspaceDialog = await browser.$('[role="dialog"]');
@@ -264,7 +264,7 @@ try {
   sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
   await (await sessionMenu.$(`[data-testid="session-directory-${FIXTURE_IDS.primaryDirectory}"]`)).moveTo();
-  await (await sessionMenu.$("button=Open Shell")).click();
+  await main.click();
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
   const actionButtons = await browser.$$('[data-testid="sidebar-node-action"]');
@@ -352,9 +352,17 @@ try {
     timeoutMsg: "Shell creation waited for the intentionally slow full Workspace refresh",
   });
   assert.match(await main.getText(), /shell[\s\S]*running/i, "the created Shell must render from the POST response without a full refresh");
-  await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+  await (await browser.$("button=Close Shell")).click();
+  await browser.waitUntil(async () => (await browser.getUrl()).endsWith(`#/workspaces/${FIXTURE_IDS.workspace}`), {
+    timeout: 3_000,
+    timeoutMsg: "closing a Workspace Shell did not return to the Workspace",
+  });
   baseSection = await browser.$('[data-testid="workspace-locations-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
+  await browser.waitUntil(async () => !(await (await browser.$('[data-testid="workspace-session-session-created-shell-ui-fixture"]')).isExisting()), {
+    timeout: 3_000,
+    timeoutMsg: "closed Workspace Shell remained in Session history",
+  });
 
   await browser.$('button[aria-label="Hide left sidebar"]').click();
   const showSidebar = await browser.$('button[aria-label="Show left sidebar"]');
@@ -381,7 +389,7 @@ try {
   await projectLink.click({ button: "right" });
   const directoryMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await directoryMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await directoryMenu.getText(), /OPEN EXTERNAL TOOL IN/);
+  assert.match(await directoryMenu.getText(), /NEW SESSION IN/);
   assert.match(await directoryMenu.getText(), /fixture-repository/);
   assert.match(await directoryMenu.getText(), /fixture-documentation/);
   assert.match(await directoryMenu.getText(), /Open in Finder/);
@@ -400,6 +408,7 @@ try {
   assert.ok(Math.abs((await directorySubmenu.getLocation("y")) - (await attachedDirectoryItem.getLocation("y"))) <= 1, "submenu must move to align with the newly hovered directory");
   assert.match(await directorySubmenu.getText(), /Shell/);
   assert.match(await directorySubmenu.getText(), /Codex/);
+  assert.equal(await (await directorySubmenu.$("button=Codex")).isEnabled(), false, "non-Git locations must remain read-only Codex context");
   assert.equal(await attachedDirectoryItem.getAttribute("aria-expanded"), "true", "switching directories must update active feedback");
   assert.equal((await directorySubmenu.getCSSProperty("animation-name")).value, "directory-submenu-swap", "switching directories must animate the submenu");
   const finderItem = await directoryMenu.$("button*=Open in Finder");
@@ -443,8 +452,61 @@ try {
   });
   const projectContent = await browser.$('[data-testid="page-content"]');
   assert.match(await projectContent.getText(), /fixture-documentation/, "attached Directory must remain visible on the Project page");
+  const projectSessionsSection = await browser.$('[data-testid="project-sessions-section"]');
+  assert.match(await projectSessionsSection.getText(), /Saved Project Codex Session/, "saved Project Codex history must remain available after archiving and restoring");
+  await (await browser.$("button=New Shell")).click();
+  await browser.waitUntil(async () => (await browser.getUrl()).includes(`#/projects/${FIXTURE_IDS.project}/sessions/session-created-project-shell-ui-fixture`), {
+    timeout: 1_000,
+    timeoutMsg: "Project Shell did not open in the managed Web terminal",
+  });
+  const closeProjectShell = await browser.$("button=Close Shell");
+  await closeProjectShell.waitForDisplayed({ timeout: 3_000 });
+  await closeProjectShell.click();
+  await browser.waitUntil(async () => (await browser.getUrl()).endsWith(`#/projects/${FIXTURE_IDS.project}`), {
+    timeout: 3_000,
+    timeoutMsg: "closing a Project Shell did not return to the Project",
+  });
+  await browser.waitUntil(async () => !(await (await browser.$('[data-testid="project-session-session-created-project-shell-ui-fixture"]')).isExisting()), {
+    timeout: 3_000,
+    timeoutMsg: "closed Project Shell remained beside saved Codex history",
+  });
+  await (await browser.$("button=New Codex")).click();
+  const projectCodexDialog = await browser.$('[role="dialog"]');
+  await projectCodexDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await projectCodexDialog.getText(), /modifies the original repository directly/, "Project Codex must warn that it operates without Workspace isolation");
+  await browser.keys(Key.Escape);
+  await projectCodexDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   const orderedLocationNames = await browser.$$('[data-testid^="project-location-"] h3');
   assert.equal(await orderedLocationNames[0].getText(), "fixture-repository", "primary location must render before attached locations");
+  const primaryLocation = await browser.$(`[data-testid="project-location-${FIXTURE_IDS.primaryDirectory}"]`);
+  const primaryRepositoryToggle = await primaryLocation.$(`[data-testid="project-location-toggle-${FIXTURE_IDS.primaryDirectory}"]`);
+  assert.equal(await primaryRepositoryToggle.getAttribute("aria-expanded"), "true", "primary repository worktrees must be expanded by default");
+  assert.match(await primaryLocation.getText(), /current\s+main[\s\S]*base\s+main/, "repository rows must show read-only current and base branches");
+  assert.equal(await primaryLocation.$(`[data-testid="branch-selector-${FIXTURE_IDS.primaryDirectory}"]`).isExisting(), false, "Project repositories must not expose branch switching");
+  let primaryWorktrees = await primaryLocation.$(`[data-testid="project-location-worktrees-${FIXTURE_IDS.primaryDirectory}"]`);
+  assert.equal((await primaryWorktrees.$$('[data-testid="project-worktree-row"]')).length, 3, "primary worktrees must be grouped below their repository");
+  assert.match(await primaryWorktrees.getText(), /Main checkout[\s\S]*Workspace with an intentionally long name/);
+
+  const secondaryLocation = await browser.$(`[data-testid="project-location-${FIXTURE_IDS.secondaryDirectory}"]`);
+  const secondaryRepositoryToggle = await secondaryLocation.$(`[data-testid="project-location-toggle-${FIXTURE_IDS.secondaryDirectory}"]`);
+  assert.equal(await secondaryRepositoryToggle.getAttribute("aria-expanded"), "false", "attached repositories must be collapsed by default");
+  assert.match(await secondaryLocation.getText(), /current\s+release\/api-fixture[\s\S]*base\s+develop/, "each repository must show its own branch metadata");
+  assert.equal(await secondaryLocation.$(`[data-testid="project-location-worktrees-${FIXTURE_IDS.secondaryDirectory}"]`).isExisting(), false, "collapsed repositories must hide their worktrees");
+  const contextLocation = await browser.$(`[data-testid="project-location-${FIXTURE_IDS.attachedDirectory}"]`);
+  assert.equal(await contextLocation.$(`[data-testid="project-location-toggle-${FIXTURE_IDS.attachedDirectory}"]`).isExisting(), false, "non-Git context locations must not expose a worktree toggle");
+  assert.equal(await browser.$("h2=Git Worktrees").isExisting(), false, "Project pages must not render a separate cross-repository worktree list");
+
+  await primaryRepositoryToggle.click();
+  await primaryWorktrees.waitForExist({ reverse: true, timeout: 3_000 });
+  assert.equal(await primaryRepositoryToggle.getAttribute("aria-expanded"), "false", "repository worktrees must collapse independently");
+  await secondaryRepositoryToggle.click();
+  const secondaryWorktrees = await secondaryLocation.$(`[data-testid="project-location-worktrees-${FIXTURE_IDS.secondaryDirectory}"]`);
+  await secondaryWorktrees.waitForDisplayed({ timeout: 3_000 });
+  assert.equal((await secondaryWorktrees.$$('[data-testid="project-worktree-row"]')).length, 2, "secondary worktrees must remain scoped to the secondary repository");
+  assert.equal((await secondaryWorktrees.$$(`[data-testid="project-worktree-row"][data-project-location-id="${FIXTURE_IDS.secondaryDirectory}"]`)).length, 2, "worktree rows must retain their repository identity");
+  await primaryRepositoryToggle.click();
+  primaryWorktrees = await primaryLocation.$(`[data-testid="project-location-worktrees-${FIXTURE_IDS.primaryDirectory}"]`);
+  await primaryWorktrees.waitForDisplayed({ timeout: 3_000 });
   await (await browser.$("button*=Add location")).click();
   const addDirectoryDialog = await browser.$('[role="dialog"]');
   await addDirectoryDialog.waitForDisplayed({ timeout: 3_000 });
@@ -466,16 +528,7 @@ try {
   await (await addDirectoryDialog.$("button=Add 2 locations")).click();
   await addDirectoryDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await browser.waitUntil(async () => (await (await browser.$('[data-testid="page-content"]')).getText()).includes("new-api-repository"), { timeout: 3_000, timeoutMsg: "batch-added locations did not refresh the Project" });
-  const branchSelector = await browser.$(`[data-testid="branch-selector-${FIXTURE_IDS.primaryDirectory}"]`);
-  await branchSelector.click();
-  const localBranches = await browser.$("button*=Local");
-  await localBranches.waitForDisplayed({ timeout: 3_000 });
-  await localBranches.click();
-  const releaseBranch = await browser.$("button*=release/ui-fixture");
-  await releaseBranch.waitForDisplayed({ timeout: 3_000 });
-  await releaseBranch.click();
-  await browser.waitUntil(async () => (await branchSelector.getText()).includes("release/ui-fixture"), { timeout: 3_000, timeoutMsg: "Directory branch checkout did not refresh the selected branch" });
-  assert.equal((await browser.$$('button[aria-label^="Delete worktree "]')).length, 2, "independent Git worktrees must expose delete controls");
+  assert.equal((await browser.$$('button[aria-label^="Delete worktree "]')).length, 3, "expanded repositories must expose delete controls for their own non-main worktrees");
   await (await browser.$("button=Pull all")).click();
   await browser.$('button[aria-label="Edit fixture-repository"]').click();
   const setupCommand = await browser.$('textarea[aria-label="Worktree setup command"]');

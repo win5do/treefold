@@ -162,8 +162,15 @@ impl Store {
     }
 
     pub fn delete_project_location(&self, id: &str) -> Result<()> {
-        let db = self.0.lock();
-        let referenced: bool = db.query_row(
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        tx.execute(
+            "DELETE FROM workspace_locations
+             WHERE project_location_id=?
+               AND workspace_id IN (SELECT id FROM workspaces WHERE kind='base')",
+            [id],
+        )?;
+        let referenced: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM workspace_locations WHERE project_location_id=?) AS referenced",
             [id],
             |r| r.get("referenced"),
@@ -173,10 +180,11 @@ impl Store {
                 "location is snapshotted by an existing Workspace".into(),
             ));
         }
-        let changed = db.execute("DELETE FROM project_locations WHERE id=?", [id])?;
+        let changed = tx.execute("DELETE FROM project_locations WHERE id=?", [id])?;
         if changed == 0 {
             return Err(AppError::NotFound);
         }
+        tx.commit()?;
         Ok(())
     }
 
@@ -185,6 +193,7 @@ impl Store {
         Ok(ProjectDetail {
             project: self.project(id)?,
             locations,
+            sessions: self.project_sessions(id)?,
             workspaces: self
                 .workspaces(id)?
                 .into_iter()

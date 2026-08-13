@@ -167,6 +167,7 @@ type WorkspaceLocation = {
 type ProjectDetail = Project & {
   locations: Directory[];
   directories: Directory[];
+  sessions: Session[];
   workspaces: Workspace[];
   worktrees: GitWorktree[];
 };
@@ -182,12 +183,6 @@ type GitWorktree = {
   is_main: boolean;
   workspace_id?: string;
   workspace_name?: string;
-};
-
-type GitBranches = {
-  current: string;
-  local: string[];
-  remotes: Array<{ name: string; branches: string[] }>;
 };
 
 type GitCommit = {
@@ -229,8 +224,6 @@ type GitOperationRecord = {
   started_at: string;
   updated_at: string;
 };
-
-type BranchSelection = { kind: "local"; branch: string } | { kind: "remote"; remote: string; branch: string };
 
 type ProjectLocationInspection = {
   path: string;
@@ -286,7 +279,7 @@ function normalizeProject(value: ProjectDetail): ProjectDetail {
   const locations = value.locations ?? value.directories ?? [];
   const directories = locations.map((location) => ({ ...location, git_status: location.git_status ?? (location.is_git ? "ready" : "not_git"), role: (value.default_location_id ?? value.primary_directory_id) === location.id ? "primary" as const : "attached" as const, is_git: location.git_status ? location.git_status === "ready" : location.is_git, remote_url: location.repository_url ?? location.remote_url }));
   const primary = directories.find((location) => value.default_location_id === location.id);
-  return { ...value, default_base_branch: value.default_base_branch ?? value.default_target_branch ?? "main", default_target_branch: value.default_base_branch ?? value.default_target_branch ?? "main", primary_directory_id: value.default_location_id ?? "", git_common_dir: primary?.git_common_dir ?? "", preferred_remote: primary?.preferred_remote_name, locations: directories, directories, workspaces: value.workspaces ?? [], worktrees: value.worktrees ?? [] };
+  return { ...value, default_base_branch: value.default_base_branch ?? value.default_target_branch ?? "main", default_target_branch: value.default_base_branch ?? value.default_target_branch ?? "main", primary_directory_id: value.default_location_id ?? "", git_common_dir: primary?.git_common_dir ?? "", preferred_remote: primary?.preferred_remote_name, locations: directories, directories, sessions: value.sessions ?? [], workspaces: value.workspaces ?? [], worktrees: value.worktrees ?? [] };
 }
 
 function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
@@ -333,6 +326,7 @@ export default function App() {
       <Route path="/" element={<Workspace />} />
       <Route path="/projects" element={<Workspace />} />
       <Route path="/projects/:projectId" element={<Workspace />} />
+      <Route path="/projects/:projectId/sessions/:sessionId" element={<Workspace />} />
       <Route path="/workspaces/:workspaceId" element={<Workspace />} />
       <Route path="/workspaces/:workspaceId/sessions/:sessionId" element={<Workspace />} />
       <Route path="*" element={<Workspace />} />
@@ -364,7 +358,7 @@ function Workspace() {
   const [addDirectoryProject, setAddDirectoryProject] = useState<ProjectDetail | null>(null);
   const [editDirectory, setEditDirectory] = useState<Directory | null>(null);
   const [createWorkspaceProject, setCreateWorkspaceProject] = useState<ProjectDetail | null>(null);
-  const [createCodexTarget, setCreateCodexTarget] = useState<{ project: ProjectDetail; workspace: WorkspaceDetail | Workspace; directory?: Directory } | null>(null);
+  const [createCodexTarget, setCreateCodexTarget] = useState<{ project: ProjectDetail; workspace?: WorkspaceDetail | Workspace; directory?: Directory } | null>(null);
   const [createForkWorkspace, setCreateForkWorkspace] = useState<Workspace | null>(null);
   const [configureWorkspace, setConfigureWorkspace] = useState<WorkspaceDetail | null>(null);
   const [finishWorkspaceDialog, setFinishWorkspaceDialog] = useState<WorkspaceDetail | null>(null);
@@ -424,6 +418,19 @@ function Workspace() {
     }
   }, []);
 
+  const refreshProjectSessions = useCallback(async (projectId: string) => {
+    if (sessionRefreshInFlight.current) return;
+    sessionRefreshInFlight.current = true;
+    try {
+      const sessions = await api<Session[]>(`/api/projects/${projectId}/sessions`);
+      setProjects((current) => current.map((project) => project.id === projectId ? { ...project, sessions } : project));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Session 状态刷新失败");
+    } finally {
+      sessionRefreshInFlight.current = false;
+    }
+  }, []);
+
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
     const preference = settings?.language ?? "system";
@@ -434,10 +441,15 @@ function Workspace() {
     return () => window.removeEventListener("languagechange", updateFromSystem);
   }, [settings?.language]);
   useEffect(() => {
-    if (!params.workspaceId) return;
-    const timer = window.setInterval(() => void refreshWorkspaceSessions(params.workspaceId!), 2500);
+    const refreshSessions = params.workspaceId
+      ? () => void refreshWorkspaceSessions(params.workspaceId!)
+      : params.projectId
+        ? () => void refreshProjectSessions(params.projectId!)
+        : null;
+    if (!refreshSessions) return;
+    const timer = window.setInterval(refreshSessions, 2500);
     return () => window.clearInterval(timer);
-  }, [params.workspaceId, refreshWorkspaceSessions]);
+  }, [params.projectId, params.workspaceId, refreshProjectSessions, refreshWorkspaceSessions]);
   useEffect(() => {
     if (!resizingSidebar) return;
     const resize = (event: PointerEvent) => {
@@ -461,7 +473,7 @@ function Workspace() {
   useEffect(() => { window.localStorage.setItem("treefold.sidebar.width", String(sidebarWidth)); }, [sidebarWidth]);
 
   const selectedProject = useMemo(() => projects.find((project) => project.id === params.projectId || project.id === workspace?.project.id) ?? null, [params.projectId, projects, workspace]);
-  const selectedSession = workspace?.sessions.find((session) => session.id === params.sessionId) ?? null;
+  const selectedSession = workspace?.sessions.find((session) => session.id === params.sessionId) ?? selectedProject?.sessions.find((session) => session.id === params.sessionId) ?? null;
 
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
@@ -520,9 +532,19 @@ function Workspace() {
     }
   }
 
-  async function openProjectTool(project: ProjectDetail, kind: "shell" | "codex", directory?: Directory) {
+  async function createProjectShell(project: ProjectDetail, directory?: Directory) {
     setSessionMenu(null);
-    await act(() => api(`/api/projects/${project.id}/open-tool`, { method: "POST", body: JSON.stringify({ kind, project_directory_id: directory?.id }) }));
+    setBusy(true);
+    try {
+      const created = await api<Session>(`/api/projects/${project.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "shell", project_directory_id: directory?.id }) });
+      setProjects((current) => current.map((item) => item.id === project.id ? { ...item, sessions: upsertSession(item.sessions, created) } : item));
+      setError("");
+      navigate(`/projects/${project.id}/sessions/${created.id}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Shell 创建失败");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function openInFinder(project: ProjectDetail, stream?: Workspace) {
@@ -561,25 +583,6 @@ function Workspace() {
     }));
   }
 
-  async function checkoutDirectoryBranch(directory: Directory, selection: BranchSelection) {
-    setBusy(true);
-    try {
-      await api<Directory>(`/api/project-directories/${directory.id}/checkout`, {
-        method: "POST",
-        body: JSON.stringify(selection),
-      });
-      await refresh(true);
-      setWarning("");
-      setError("");
-      return true;
-    } catch (cause) {
-      setWarning(cause instanceof Error ? cause.message : "Git could not switch branches");
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function refreshLocation(location: Directory) {
     await act(() => api(`/api/project-locations/${location.id}/refresh`, { method: "POST" }));
   }
@@ -605,6 +608,31 @@ function Workspace() {
       await refresh(true);
       setError(cause instanceof Error ? cause.message : "关闭 Session 失败");
     } finally {
+      if (session.kind === "shell") {
+        setProjects((current) => updateProjectWorkspaceSessions(current, stream.id, (current.flatMap((project) => project.workspaces).find((item) => item.id === stream.id) as SidebarStream | undefined)?.sessions?.filter((item) => item.id !== session.id) ?? []));
+        setWorkspace((current) => current?.id === stream.id ? { ...current, sessions: current.sessions.filter((item) => item.id !== session.id) } : current);
+      }
+      setClosingSessionIds((current) => {
+        const next = new Set(current);
+        next.delete(session.id);
+        return next;
+      });
+    }
+  }
+
+  async function closeProjectSession(project: ProjectDetail, session: Session) {
+    setClosingSessionIds((current) => new Set(current).add(session.id));
+    if (params.sessionId === session.id) navigate(`/projects/${project.id}`);
+    try {
+      await api(`/api/sessions/${session.id}/close`, { method: "POST" });
+      await refresh(true);
+    } catch (cause) {
+      await refresh(true);
+      setError(cause instanceof Error ? cause.message : "关闭 Session 失败");
+    } finally {
+      if (session.kind === "shell") {
+        setProjects((current) => current.map((item) => item.id === project.id ? { ...item, sessions: item.sessions.filter((candidate) => candidate.id !== session.id) } : item));
+      }
       setClosingSessionIds((current) => {
         const next = new Set(current);
         next.delete(session.id);
@@ -619,6 +647,14 @@ function Workspace() {
       if (!ok) return;
     }
     navigate(`/workspaces/${stream.id}/sessions/${session.id}`);
+  }
+
+  async function openProjectHistorySession(project: ProjectDetail, session: Session) {
+    if (!session.sidebar_visible) {
+      const ok = await act(() => api(`/api/sessions/${session.id}/open`, { method: "POST" }));
+      if (!ok) return;
+    }
+    navigate(`/projects/${project.id}/sessions/${session.id}`);
   }
 
   function toggle(setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) {
@@ -667,11 +703,12 @@ function Workspace() {
           onCreateFork={setCreateForkWorkspace}
           onCreateShell={(stream, directory) => void createShell(stream, directory)}
           onCreateCodex={(stream, directory) => { setSessionMenu(null); const project = projects.find((item) => item.id === stream.project_id); if (project) setCreateCodexTarget({ project, workspace: stream, directory }); }}
-          onCreateBaseShell={(project, directory) => void openProjectTool(project, "shell", directory)}
-          onCreateBaseCodex={(project, directory) => void openProjectTool(project, "codex", directory)}
+          onCreateBaseShell={(project, directory) => void createProjectShell(project, directory)}
+          onCreateBaseCodex={(project, directory) => { setSessionMenu(null); setCreateCodexTarget({ project, directory }); }}
           onOpenInFinder={(project, stream) => void openInFinder(project, stream)}
           onArchiveProject={(project) => void updateProjectStatus(project, "archived")}
           onCloseSession={(stream, session) => void closeSidebarSession(stream, session)}
+          onCloseProjectSession={(project, session) => void closeProjectSession(project, session)}
           onResizeStart={() => setResizingSidebar(true)}
           onResizeKeyboard={(delta) => setSidebarWidth((current) => Math.min(520, Math.max(240, current + delta)))}
           onSettings={() => setSettingsOpen(true)}
@@ -689,12 +726,18 @@ function Workspace() {
                 busy={busy}
                 onStop={() => void act(() => api(`/api/sessions/${selectedSession.id}/stop`, { method: "POST" }))}
                 onRestart={() => void act(() => api(`/api/sessions/${selectedSession.id}/restart`, { method: "POST" }))}
-                onExit={() => void refresh(true)}
+                onClose={() => workspace ? void closeSidebarSession(workspace, selectedSession) : selectedProject ? void closeProjectSession(selectedProject, selectedSession) : undefined}
+                onExit={() => {
+                  if (selectedSession.kind === "shell") {
+                    navigate(workspace ? `/workspaces/${workspace.id}` : `/projects/${selectedProject!.id}`);
+                  }
+                  void refresh(true);
+                }}
               />
             ) : workspace ? (
               <WorkspaceHome detail={workspace} busy={busy} onOpen={(session) => void openHistorySession(workspace, session)} onOpenFork={(fork) => navigate(`/workspaces/${fork.id}`)} onShell={(directory) => void createShell(workspace, directory)} onCodex={() => setCreateCodexTarget({ project: selectedProject!, workspace })} onFork={() => setCreateForkWorkspace(workspace)} onConfigure={() => setConfigureWorkspace(workspace)} onPull={() => void gitSync("workspaces", workspace.id, "pull")} onPush={() => void gitSync("workspaces", workspace.id, "push")} onReveal={() => void openInFinder(selectedProject!, workspace)} onFinish={() => setFinishWorkspaceDialog(workspace)} />
             ) : selectedProject ? (
-              <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onCreate={() => setCreateWorkspaceProject(selectedProject)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onCheckoutBranch={checkoutDirectoryBranch} onDeleteWorktree={(item) => void removeWorktree(item)} onOpenTool={(kind, directory) => void openProjectTool(selectedProject, kind, directory)} onPull={() => void gitSync("projects", selectedProject.id, "pull")} onPush={() => void gitSync("projects", selectedProject.id, "push")} />
+              <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onOpenSession={(session) => void openProjectHistorySession(selectedProject, session)} onCreate={() => setCreateWorkspaceProject(selectedProject)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onDeleteWorktree={(item) => void removeWorktree(item)} onShell={(directory) => void createProjectShell(selectedProject, directory)} onCodex={(directory) => setCreateCodexTarget({ project: selectedProject, directory })} onPull={() => void gitSync("projects", selectedProject.id, "pull")} onPush={() => void gitSync("projects", selectedProject.id, "push")} />
             ) : (
               <Overview projects={projects} busy={busy} onOpen={(id) => navigate(`/projects/${id}`)} onCreate={() => setCreateProjectOpen(true)} onRestore={(project) => void updateProjectStatus(project, "active")} onDelete={(project) => void permanentlyDeleteProject(project)} />
             )}
@@ -750,9 +793,11 @@ function Workspace() {
         if (!createCodexTarget) return;
         const form = new FormData(event.currentTarget);
         let created: Session | null = null;
-        const endpoint = `/api/workspaces/${createCodexTarget.workspace.id}/sessions`;
+        const endpoint = createCodexTarget.workspace
+          ? `/api/workspaces/${createCodexTarget.workspace.id}/sessions`
+          : `/api/projects/${createCodexTarget.project.id}/sessions`;
         const ok = await act(async () => { created = await api<Session>(endpoint, { method: "POST", body: JSON.stringify({ kind: "codex", name: form.get("name"), initial_prompt: form.get("initial_prompt"), yolo: form.get("yolo") === "on", project_directory_id: createCodexTarget.directory?.id }) }); });
-        if (ok && created) { const target = createCodexTarget; setCreateCodexTarget(null); navigate(`/workspaces/${target.workspace.id}/sessions/${(created as Session).id}`); }
+        if (ok && created) { const target = createCodexTarget; setCreateCodexTarget(null); navigate(target.workspace ? `/workspaces/${target.workspace.id}/sessions/${(created as Session).id}` : `/projects/${target.project.id}/sessions/${(created as Session).id}`); }
       }} />
       <CreateForkDialog workspace={createForkWorkspace} busy={busy} onOpenChange={(open) => { if (!open) setCreateForkWorkspace(null); }} onSubmit={async (event) => {
         event.preventDefault();
@@ -779,7 +824,7 @@ function Workspace() {
   );
 }
 
-function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onArchiveProject, onCloseSession, onResizeStart, onResizeKeyboard, onSettings }: {
+function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings }: {
   projects: ProjectDetail[];
   selectedWorkspaceId?: string;
   selectedSessionId?: string;
@@ -804,6 +849,7 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
   onOpenInFinder: (project: ProjectDetail, stream?: Workspace) => void;
   onArchiveProject: (project: ProjectDetail) => void;
   onCloseSession: (stream: Workspace, session: Session) => void;
+  onCloseProjectSession: (project: ProjectDetail, session: Session) => void;
   onResizeStart: () => void;
   onResizeKeyboard: (delta: number) => void;
   onSettings: () => void;
@@ -833,8 +879,9 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
             <button data-testid="sidebar-project-link" className={cn(sidebarTreeLinkClass, "text-xs font-medium")} title={project.name} onClick={() => onNavigate(`/projects/${project.id}`)}><FolderGit2 data-testid="sidebar-tree-icon" className={sidebarTreeIconClass} /><span data-sidebar-tree-label="true" className="min-w-0 flex-1 truncate">{project.name}</span></button>
             <button data-testid="sidebar-project-action" data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center rounded-md text-neutral-500 hover:bg-white" aria-label={t("sidebar.newInProject", { name: project.name })} onClick={(event) => { event.stopPropagation(); setContextOwner(null); const id = `project:${project.id}`; const rect = event.currentTarget.getBoundingClientRect(); onSessionMenu(sessionMenu?.id === id ? null : { id, x: rect.left, y: rect.bottom + 4 }); }}><Plus className="size-3.5" /></button>
           </div>
-          {sessionMenu?.id === `project:${project.id}` && <SessionDirectoryMenu testId="sidebar-session-menu" directories={project.directories} position={sessionMenu} external primaryAction={<button data-testid="create-workspace-action" className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium hover:bg-neutral-100" onClick={() => { onSessionMenu(null); onCreateWorkspace(project); }}><Workflow className="size-3.5" />{t("sidebar.newWorkspace")}</button>} onShell={(directory) => { onSessionMenu(null); onCreateBaseShell(project, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateBaseCodex(project, directory); }} />}
+          {sessionMenu?.id === `project:${project.id}` && <SessionDirectoryMenu testId="sidebar-session-menu" directories={project.directories} position={sessionMenu} primaryAction={<button data-testid="create-workspace-action" className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium hover:bg-neutral-100" onClick={() => { onSessionMenu(null); onCreateWorkspace(project); }}><Workflow className="size-3.5" />{t("sidebar.newWorkspace")}</button>} onShell={(directory) => { onSessionMenu(null); onCreateBaseShell(project, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateBaseCodex(project, directory); }} />}
           {projectOpen && <div data-testid="sidebar-project-children" className="ml-3.5 border-l border-neutral-300 pl-1">
+            <SidebarProjectSessions project={project} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} onNavigate={onNavigate} onCloseSession={onCloseProjectSession} />
             {project.workspaces.filter((item) => !item.parent_workspace_id).map((stream) => <SidebarWorkspaceNode
               key={stream.id}
               stream={stream}
@@ -858,7 +905,7 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
         </div>;
       })}
     </div>
-    {contextOwner && <SessionDirectoryMenu testId="directory-session-context-menu" directories={contextOwner.stream?.directories ?? contextOwner.project.directories} position={contextOwner} external={!contextOwner.stream} footerRows={contextOwner.stream ? 1 : 2} onShell={(directory) => { const owner = contextOwner; setContextOwner(null); owner.stream ? onCreateShell(owner.stream, directory) : onCreateBaseShell(owner.project, directory); }} onCodex={(directory) => { const owner = contextOwner; setContextOwner(null); owner.stream ? onCreateCodex(owner.stream, directory) : onCreateBaseCodex(owner.project, directory); }} footer={<><button className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs hover:bg-neutral-100" onClick={() => { const owner = contextOwner; setContextOwner(null); onOpenInFinder(owner.project, owner.stream); }}><FolderOpen className="size-3.5" />{t("sidebar.openInFinder")}</button>{!contextOwner.stream && <button data-testid="archive-project-action" className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs text-amber-700 hover:bg-amber-50" onClick={() => { const owner = contextOwner; setContextOwner(null); onArchiveProject(owner.project); }}><Archive className="size-3.5" />{t("sidebar.archiveProject")}</button>}</>} />}
+    {contextOwner && <SessionDirectoryMenu testId="directory-session-context-menu" directories={contextOwner.stream?.directories ?? contextOwner.project.directories} position={contextOwner} footerRows={contextOwner.stream ? 1 : 2} onShell={(directory) => { const owner = contextOwner; setContextOwner(null); owner.stream ? onCreateShell(owner.stream, directory) : onCreateBaseShell(owner.project, directory); }} onCodex={(directory) => { const owner = contextOwner; setContextOwner(null); owner.stream ? onCreateCodex(owner.stream, directory) : onCreateBaseCodex(owner.project, directory); }} footer={<><button className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs hover:bg-neutral-100" onClick={() => { const owner = contextOwner; setContextOwner(null); onOpenInFinder(owner.project, owner.stream); }}><FolderOpen className="size-3.5" />{t("sidebar.openInFinder")}</button>{!contextOwner.stream && <button data-testid="archive-project-action" className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs text-amber-700 hover:bg-amber-50" onClick={() => { const owner = contextOwner; setContextOwner(null); onArchiveProject(owner.project); }}><Archive className="size-3.5" />{t("sidebar.archiveProject")}</button>}</>} />}
     <div className="border-t border-neutral-200 p-2"><button data-testid="open-settings" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-neutral-600 hover:bg-white/70" onClick={onSettings}><Settings2 className="size-4 shrink-0" />{t("sidebar.settings")}</button></div>
     <div data-testid="sidebar-resize-handle" role="separator" aria-label={t("sidebar.resize")} aria-orientation="vertical" tabIndex={0} className="absolute inset-y-0 right-0 hidden w-1 translate-x-1/2 cursor-col-resize touch-none hover:bg-blue-400/50 focus:bg-blue-400/50 md:block" onPointerDown={(event) => { event.preventDefault(); onResizeStart(); }} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); onResizeKeyboard(-16); } else if (event.key === "ArrowRight") { event.preventDefault(); onResizeKeyboard(16); } }} />
   </aside>;
@@ -887,7 +934,7 @@ type SidebarNodeProps = {
   onCloseSession: (stream: Workspace, session: Session) => void;
 };
 
-function SessionDirectoryMenu({ directories, testId, position, external = false, primaryAction, footer, footerRows = 1, onShell, onCodex }: { directories: Directory[]; testId: string; position: { x: number; y: number }; external?: boolean; primaryAction?: React.ReactNode; footer?: React.ReactNode; footerRows?: number; onShell: (directory: Directory) => void; onCodex: (directory: Directory) => void }) {
+function SessionDirectoryMenu({ directories, testId, position, primaryAction, footer, footerRows = 1, onShell, onCodex }: { directories: Directory[]; testId: string; position: { x: number; y: number }; primaryAction?: React.ReactNode; footer?: React.ReactNode; footerRows?: number; onShell: (directory: Directory) => void; onCodex: (directory: Directory) => void }) {
   const { t } = useTranslation();
   const [directory, setDirectory] = useState<Directory | null>(null);
   const [submenuTop, setSubmenuTop] = useState(0);
@@ -902,8 +949,8 @@ function SessionDirectoryMenu({ directories, testId, position, external = false,
   const top = Math.max(8, Math.min(position.y, window.innerHeight - menuHeight - 8));
   return createPortal(<div data-testid={testId} className="fixed z-[100] w-52 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={{ left, top }} onClick={(event) => event.stopPropagation()} onMouseLeave={() => setDirectory(null)}>
     {primaryAction && <div data-testid="session-menu-primary-action" className="mb-1 border-b border-neutral-100 pb-1" onMouseEnter={() => setDirectory(null)} onFocus={() => setDirectory(null)}>{primaryAction}</div>}
-    <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400">{external ? "Open external tool in…" : t("sidebar.newSessionIn")}</p>{directories.map((item) => <button key={item.id} data-testid={`session-directory-${item.id}`} aria-expanded={directory?.id === item.id} className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100", directory?.id === item.id && "bg-neutral-100 text-neutral-950")} onMouseEnter={(event) => activate(item, event.currentTarget)} onFocus={(event) => activate(item, event.currentTarget)}>{item.is_git ? <FolderGit2 className="size-3.5" /> : <Folder className="size-3.5" />}<span className="min-w-0 flex-1 truncate">{item.name}</span>{item.role === "primary" && <span className="text-[9px] text-neutral-400">{t("sidebar.primary")}</span>}<ChevronRight className={cn("size-3 transition-transform", directory?.id === item.id && "translate-x-0.5")} /></button>)}
-    {directory && <div key={directory.id} data-testid="directory-session-submenu" className="directory-session-submenu absolute left-full w-40 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={{ top: submenuTop }}><p className="truncate px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400" title={directory.name}>{directory.name}</p><button className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-neutral-100" onClick={() => onShell(directory)}><Shell className="size-3.5" />{external ? "Open Shell" : "Shell"}</button><button className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-neutral-100" onClick={() => onCodex(directory)}><Bot className="size-3.5" />{external ? "Open Codex" : "Codex"}</button></div>}
+    <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400">{t("sidebar.newSessionIn")}</p>{directories.map((item) => <button key={item.id} data-testid={`session-directory-${item.id}`} aria-expanded={directory?.id === item.id} className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100", directory?.id === item.id && "bg-neutral-100 text-neutral-950")} onMouseEnter={(event) => activate(item, event.currentTarget)} onFocus={(event) => activate(item, event.currentTarget)}>{item.is_git ? <FolderGit2 className="size-3.5" /> : <Folder className="size-3.5" />}<span className="min-w-0 flex-1 truncate">{item.name}</span>{item.role === "primary" && <span className="text-[9px] text-neutral-400">{t("sidebar.primary")}</span>}<ChevronRight className={cn("size-3 transition-transform", directory?.id === item.id && "translate-x-0.5")} /></button>)}
+    {directory && <div key={directory.id} data-testid="directory-session-submenu" className="directory-session-submenu absolute left-full w-40 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={{ top: submenuTop }}><p className="truncate px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400" title={directory.name}>{directory.name}</p><button className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-neutral-100" onClick={() => onShell(directory)}><Shell className="size-3.5" />Shell</button><button className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={!directory.is_git || directory.git_status !== "ready"} title={!directory.is_git ? "Non-Git locations are read-only Codex context" : undefined} onClick={() => onCodex(directory)}><Bot className="size-3.5" />Codex</button></div>}
     {footer && <div data-testid="session-menu-footer" className="mt-1 border-t border-neutral-100 pt-1" onMouseEnter={() => setDirectory(null)} onMouseMove={() => setDirectory(null)} onFocus={() => setDirectory(null)}>{footer}</div>}
   </div>, document.body);
 }
@@ -922,6 +969,16 @@ function SidebarSessions({ stream, selectedSessionId, closingSessionIds, onNavig
       <button className="invisible mr-1 shrink-0 rounded p-1 opacity-70 hover:bg-white/15 group-hover/session:visible focus-visible:visible disabled:cursor-not-allowed disabled:opacity-30" disabled={capturing} title={capturing ? "Capturing session ID" : session.kind === "shell" ? "Close shell" : "Remove from sidebar"} aria-label={capturing ? "Capturing session ID" : session.kind === "shell" ? "Close shell" : "Remove from sidebar"} onClick={(event) => { event.stopPropagation(); onCloseSession(stream, session); }}><X className="size-3" /></button>
     </div>;
   }) ?? null;
+}
+
+function SidebarProjectSessions({ project, selectedSessionId, closingSessionIds, onNavigate, onCloseSession }: { project: ProjectDetail; selectedSessionId?: string; closingSessionIds: Set<string>; onNavigate: (path: string) => void; onCloseSession: (project: ProjectDetail, session: Session) => void }) {
+  return project.sessions.filter((session) => session.sidebar_visible && !closingSessionIds.has(session.id)).map((session) => {
+    const capturing = session.kind === "codex" && !session.codex_session_id;
+    return <div key={session.id} data-testid="sidebar-project-session" className={cn("group/session flex items-center rounded-md text-[11px] text-neutral-600 hover:bg-white/70", selectedSessionId === session.id && "bg-neutral-900 text-white hover:bg-neutral-800")}>
+      <button className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-2 py-1.5 text-left" title={session.name} onClick={() => onNavigate(`/projects/${project.id}/sessions/${session.id}`)}>{session.kind === "codex" ? <Bot className="size-3 shrink-0" /> : <TerminalSquare className="size-3 shrink-0" />}<span className="min-w-0 flex-1 truncate">{session.name}</span><StatusDot status={session.status} /></button>
+      <button className="invisible mr-1 shrink-0 rounded p-1 opacity-70 hover:bg-white/15 group-hover/session:visible focus-visible:visible disabled:cursor-not-allowed disabled:opacity-30" disabled={capturing} title={capturing ? "Capturing session ID" : session.kind === "shell" ? "Close shell" : "Remove from sidebar"} aria-label={capturing ? "Capturing session ID" : session.kind === "shell" ? "Close shell" : "Remove from sidebar"} onClick={(event) => { event.stopPropagation(); onCloseSession(project, session); }}><X className="size-3" /></button>
+    </div>;
+  });
 }
 
 function SidebarForkNode(props: SidebarNodeProps) {
@@ -958,13 +1015,13 @@ function SidebarWorkspaceNode(props: SidebarNodeProps & { allStreams: Workspace[
   </div>;
 }
 
-function SessionWorkspace({ session, busy, onStop, onRestart, onExit }: { session: Session; busy: boolean; onStop: () => void; onRestart: () => void; onExit: () => void }) {
+function SessionWorkspace({ session, busy, onStop, onRestart, onClose, onExit }: { session: Session; busy: boolean; onStop: () => void; onRestart: () => void; onClose: () => void; onExit: () => void }) {
   const terminalState = ["exited", "failed", "closed", "evicted"].includes(session.status);
   return <div className="flex h-full min-h-0 flex-col bg-[#111315]">
     <div className="flex h-10 shrink-0 items-center border-b border-white/10 bg-[#191b1e] px-3">
       <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-neutral-200">{session.kind === "codex" ? <Bot className="size-3.5 shrink-0" /> : <TerminalSquare className="size-3.5 shrink-0" />}<span className="truncate font-medium">{session.name}</span><StatusDot status={session.status} /><span className="text-[10px] text-neutral-500">{session.status}</span></div>
       <div className="flex items-center gap-1 px-2">
-        {terminalState ? <Button size="sm" variant="secondary" disabled={busy} onClick={onRestart}><RotateCcw className="size-3" />{session.kind === "codex" ? "Resume" : "Restart"}</Button> : <Button size="sm" variant="ghost" className="text-neutral-300 hover:bg-white/10 hover:text-white" disabled={busy} onClick={onStop}><Square className="size-3" />Stop</Button>}
+        {session.kind === "shell" ? <Button size="sm" variant="ghost" className="text-neutral-300 hover:bg-white/10 hover:text-white" disabled={busy} onClick={onClose}><X className="size-3" />Close Shell</Button> : terminalState ? <Button size="sm" variant="secondary" disabled={busy} onClick={onRestart}><RotateCcw className="size-3" />Resume</Button> : <Button size="sm" variant="ghost" className="text-neutral-300 hover:bg-white/10 hover:text-white" disabled={busy} onClick={onStop}><Square className="size-3" />Stop</Button>}
       </div>
     </div>
     <WebTerminal key={session.id} session={session} onExit={onExit} />
@@ -1087,10 +1144,10 @@ function WorkspaceInspector({ open, project, workspace, session }: { open: boole
       </div>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
-    {tab === "history" ? <GitHistoryPanel history={history} error={historyError} /> : tab === "operations" ? <GitOperationsPanel operations={operations} error={operationsError} /> : session && workspace ? <div className="space-y-6 p-4">
+    {tab === "history" ? <GitHistoryPanel history={history} error={historyError} /> : tab === "operations" ? <GitOperationsPanel operations={operations} error={operationsError} /> : session ? <div className="space-y-6 p-4">
       <div><div className="flex items-center gap-2"><div className="grid size-9 place-items-center rounded-lg bg-neutral-100">{session.kind === "codex" ? <Bot className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{session.name}</p><div className="mt-1 flex items-center gap-2"><Badge>{session.kind}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "danger" : "neutral"}>{session.status}</Badge>{session.yolo && <Badge variant="danger">YOLO</Badge>}</div></div></div></div>
       <InspectorGroup title="Process"><InspectorRow label="Name" value={session.process_name} /><InspectorRow label="Process ID" value={session.process_id} mono /><InspectorRow label="PID" value={session.pid ? String(session.pid) : "—"} /><InspectorRow label="PGID" value={session.process_group_id ? String(session.process_group_id) : "—"} /><InspectorRow label="Exit" value={session.exit_code === undefined ? "—" : `${session.exit_code}${session.exit_signal ? ` · ${session.exit_signal}` : ""}`} /></InspectorGroup>
-      <InspectorGroup title="Workspace"><InspectorRow label="Workspace" value={workspace.name} /><InspectorRow label="Runtime" value={workspace.runtime_name} /><InspectorRow label="Workspace ID" value={workspace.runtime_id} mono /><InspectorRow label="Workdir" value={session.cwd} mono />{session.original_cwd !== session.cwd && <InspectorRow label="Original" value={session.original_cwd} mono />}</InspectorGroup>
+      <InspectorGroup title={workspace ? "Workspace" : "Project Session"}>{workspace && <><InspectorRow label="Workspace" value={workspace.name} /><InspectorRow label="Runtime" value={workspace.runtime_name} /><InspectorRow label="Workspace ID" value={workspace.runtime_id} mono /></>}<InspectorRow label="Workdir" value={session.cwd} mono />{session.original_cwd !== session.cwd && <InspectorRow label="Original" value={session.original_cwd} mono />}</InspectorGroup>
       {session.kind === "codex" && <InspectorGroup title="Codex"><InspectorRow label="Session ID" value={session.codex_session_id || "Capturing…"} mono /><InspectorRow label="Autonomy" value={session.yolo ? "Bypass approvals & sandbox" : "Use Codex defaults"} />{session.initial_prompt && <div className="mt-3 rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-600">{session.initial_prompt}</div>}</InspectorGroup>}
       <InspectorGroup title="Command"><code className="block break-all rounded-lg bg-neutral-950 p-3 text-[10px] leading-5 text-neutral-300">{session.command?.join(" ") || "—"}</code></InspectorGroup>
     </div> : workspace ? <div className="space-y-6 p-4">
@@ -1180,7 +1237,7 @@ function WorkspaceHome({ detail, busy, onOpen, onOpenFork, onShell, onCodex, onF
         </div>
         {sessions.map((session) => {
           const label = actionLabel(session);
-          return <div key={session.id} className="grid gap-3 border-b border-neutral-100 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] md:items-center">
+          return <div key={session.id} data-testid={`workspace-session-${session.id}`} className="grid gap-3 border-b border-neutral-100 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] md:items-center">
             <div className="flex min-w-0 items-center gap-3"><div className="grid size-8 shrink-0 place-items-center rounded-lg bg-neutral-100">{session.kind === "codex" ? <Bot className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{session.name}</p><p className="mt-0.5 truncate font-mono text-[9px] text-neutral-400">{session.codex_session_id || session.id}</p></div></div>
             <div><Badge>{session.kind === "codex" ? "Agent" : "Shell"}</Badge></div>
             <div className="flex items-center gap-2 text-xs text-neutral-600"><StatusDot status={session.status} />{displayStatus(session)}</div>
@@ -1201,80 +1258,60 @@ function repositoryLabel(remote?: string) {
   return remote.replace(/^git@([^:]+):/, "$1/").replace(/^https?:\/\//, "").replace(/\.git$/, "");
 }
 
-function BranchSelector({ directory, busy, onCheckout }: { directory: Directory; busy: boolean; onCheckout: (directory: Directory, selection: BranchSelection) => Promise<boolean> }) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [branches, setBranches] = useState<GitBranches | null>(null);
-  const [view, setView] = useState<"root" | "local" | "remotes" | `remote:${string}`>("root");
-  const [error, setError] = useState("");
+function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, onRefresh, onMakeDefault, onReattach, onDeleteWorktree }: { directory: Directory; worktrees: GitWorktree[]; busy: boolean; onOpen: (id: string) => void; onEdit: () => void; onRefresh: () => void; onMakeDefault: () => void; onReattach: () => void; onDeleteWorktree: (worktree: GitWorktree) => void }) {
+  const isRepository = directory.git_status !== "not_git";
+  const [expanded, setExpanded] = useState(isRepository && (directory.role === "primary" || directory.git_status !== "ready"));
+  const orderedWorktrees = useMemo(() => [...worktrees].sort((left, right) => Number(right.is_main) - Number(left.is_main)), [worktrees]);
+  const currentBranch = directory.branch || (directory.head_commit ? `detached @ ${directory.head_commit.slice(0, 7)}` : "detached");
+  const repositoryDetails = <>
+    <span>current <strong className="font-medium text-neutral-600">{currentBranch}</strong></span>
+    <span>·</span>
+    <span>base <strong className="font-medium text-neutral-600">{directory.base_branch || "—"}</strong></span>
+    <span>·</span>
+    <span>{repositoryLabel(directory.repository_url)}</span>
+    <span>·</span>
+    <span>{directory.delivery_mode === "local_merge" ? "local merge" : "remote review"}</span>
+  </>;
+  const locationSummary = <>
+    <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100">{isRepository ? <FolderGit2 className="size-4" /> : <Folder className="size-4" />}</div>
+    <div className="min-w-0 flex-1">
+      <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold">{directory.name}</h3><Badge>{directory.role}</Badge><Badge variant={directory.git_status === "ready" ? "success" : directory.git_status === "not_git" ? "neutral" : "danger"}>{directory.git_status}</Badge>{directory.worktree_setup_command && <Badge>Setup</Badge>}{isRepository && <span className="text-[10px] text-neutral-400">{worktrees.length} {worktrees.length === 1 ? "worktree" : "worktrees"}</span>}</div>
+      <p className="mt-1 text-xs leading-5 text-neutral-500">{directory.description || "No purpose described yet."}</p>
+      <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-neutral-400">{isRepository && repositoryDetails}<code className="min-w-0 truncate" title={directory.path}>{directory.path}</code></div>
+    </div>
+    {isRepository && (expanded ? <ChevronDown className="mt-3 size-4 shrink-0 text-neutral-400" /> : <ChevronRight className="mt-3 size-4 shrink-0 text-neutral-400" />)}
+  </>;
 
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (!hostRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-
-  async function toggleOpen() {
-    if (open) { setOpen(false); return; }
-    setOpen(true);
-    setView("root");
-    setLoading(true);
-    setError("");
-    try {
-      setBranches(await api<GitBranches>(`/api/project-directories/${directory.id}/branches`));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load branches");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function choose(selection: BranchSelection) {
-    if (await onCheckout(directory, selection)) setOpen(false);
-  }
-
-  const remoteName = view.startsWith("remote:") ? view.slice("remote:".length) : "";
-  const remote = branches?.remotes.find((item) => item.name === remoteName);
-  const openRemote = () => {
-    if (!branches?.remotes.length) return;
-    setView(branches.remotes.length === 1 ? `remote:${branches.remotes[0].name}` : "remotes");
-  };
-  const back = () => setView(view.startsWith("remote:") && branches && branches.remotes.length > 1 ? "remotes" : "root");
-
-  return <div ref={hostRef} className={cn("relative shrink-0", open ? "z-30" : "z-0")}>
-    <button data-testid={`branch-selector-${directory.id}`} className="flex items-center gap-1 rounded-md px-1.5 py-1 font-medium text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900" disabled={busy} onClick={() => void toggleOpen()}><GitBranch className="size-3" /><span>{directory.branch || "No branch"}</span><ChevronDown className="size-3 text-neutral-400" /></button>
-    {open && <div className="absolute left-0 top-7 w-72 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-xl">
-      <div className="flex h-9 items-center border-b border-neutral-100 px-2">
-        {view !== "root" && <button className="mr-1 rounded p-1 hover:bg-neutral-100" aria-label="Back" onClick={back}><ChevronRight className="size-3.5 rotate-180" /></button>}
-        <span className="min-w-0 flex-1 truncate px-1 text-[11px] font-semibold">{view === "root" ? "Branches" : view === "local" ? "Local" : view === "remotes" ? "Remote" : remoteName}</span>
-        {loading && <RefreshCw className="size-3 animate-spin text-neutral-400" />}
-      </div>
-      <div className="max-h-72 overflow-y-auto p-1.5">
-        {error ? <p className="px-2 py-3 text-[11px] text-red-600">{error}</p> : !loading && branches && view === "root" ? <>
-          <button className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-neutral-100" onClick={() => setView("local")}><Folder className="size-4 text-neutral-400" /><span className="flex-1 font-medium">Local</span><span className="text-[10px] text-neutral-400">{branches.local.length}</span><ChevronRight className="size-3.5 text-neutral-400" /></button>
-          <button className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-neutral-100 disabled:opacity-40" disabled={branches.remotes.length === 0} onClick={openRemote}><Folder className="size-4 text-neutral-400" /><span className="flex-1 font-medium">Remote</span><span className="text-[10px] text-neutral-400">{branches.remotes.reduce((count, item) => count + item.branches.length, 0)}</span><ChevronRight className="size-3.5 text-neutral-400" /></button>
-        </> : !loading && branches && view === "local" ? <>{branches.local.map((branch) => <button key={branch} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-neutral-100" disabled={busy} onClick={() => void choose({ kind: "local", branch })}><GitBranch className="size-3.5 text-neutral-400" /><span className="min-w-0 flex-1 truncate" title={branch}>{branch}</span>{branch === branches.current && <Badge variant="success">current</Badge>}</button>)}{branches.local.length === 0 && <p className="px-2 py-3 text-[11px] text-neutral-400">No local branches</p>}</> : !loading && branches && view === "remotes" ? <>{branches.remotes.map((item) => <button key={item.name} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-neutral-100" onClick={() => setView(`remote:${item.name}`)}><Folder className="size-4 text-neutral-400" /><span className="min-w-0 flex-1 truncate font-medium">{item.name}</span><span className="text-[10px] text-neutral-400">{item.branches.length}</span><ChevronRight className="size-3.5 text-neutral-400" /></button>)}</> : !loading && remote ? <>{remote.branches.map((branch) => <button key={branch} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-neutral-100" disabled={busy} onClick={() => void choose({ kind: "remote", remote: remote.name, branch })}><GitBranch className="size-3.5 text-neutral-400" /><span className="min-w-0 flex-1 truncate" title={branch}>{branch}</span></button>)}{remote.branches.length === 0 && <p className="px-2 py-3 text-[11px] text-neutral-400">No remote branches</p>}</> : null}
+  return <article data-testid={`project-location-${directory.id}`}>
+    <div className="flex items-start gap-3 p-4">
+      {isRepository ? <button data-testid={`project-location-toggle-${directory.id}`} className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2" aria-expanded={expanded} aria-controls={`project-location-worktrees-${directory.id}`} aria-label={`${expanded ? "Collapse" : "Expand"} repository ${directory.name}`} onClick={() => setExpanded((value) => !value)}>{locationSummary}</button> : <div className="flex min-w-0 flex-1 items-start gap-3">{locationSummary}</div>}
+      <div className="flex shrink-0 gap-1"><Button size="sm" variant="ghost" disabled={busy} onClick={onRefresh}>Refresh</Button>{directory.git_status === "ready" && directory.role !== "primary" && <Button size="sm" variant="ghost" disabled={busy} onClick={onMakeDefault}>Make default</Button>}{["missing", "broken", "mismatch"].includes(directory.git_status) && <Button size="sm" variant="ghost" disabled={busy} onClick={onReattach}>Reattach</Button>}<button className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-800" aria-label={`Edit ${directory.name}`} onClick={onEdit}><Pencil className="size-3.5" /></button></div>
+    </div>
+    {isRepository && expanded && <div id={`project-location-worktrees-${directory.id}`} data-testid={`project-location-worktrees-${directory.id}`} role="group" aria-label={`Worktrees for ${directory.name}`} className="border-t border-neutral-100 bg-neutral-50/60 px-4 py-2">
+      <div className="ml-5 divide-y divide-neutral-200 border-l border-neutral-200">
+        {orderedWorktrees.map((item) => <div key={`${item.project_location_id}:${item.path}`} data-testid="project-worktree-row" data-project-location-id={directory.id} className="flex min-w-0 items-center gap-3 py-3 pl-5">
+          <GitBranch className="size-4 shrink-0 text-neutral-400" />
+          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold">{item.branch || "detached"}</span>{item.is_main && <Badge>Main checkout</Badge>}{item.workspace_id && <button className="min-w-0 truncate text-xs font-medium text-blue-600 hover:underline" onClick={() => onOpen(item.workspace_id!)}>{item.workspace_name}</button>}</div><div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-neutral-400">{item.head_commit && <><span className="font-mono">{item.head_commit.slice(0, 10)}</span><span>·</span></>}<code className="min-w-0 truncate" title={item.path}>{item.path}</code></div></div>
+          {!item.is_main && <Button size="icon" variant="ghost" disabled={busy} aria-label={`Delete worktree ${item.path}`} onClick={() => onDeleteWorktree(item)}><Trash2 className="size-4 text-neutral-400" /></Button>}
+        </div>)}
+        {orderedWorktrees.length === 0 && <div className="py-5 pl-5 text-xs text-neutral-400">No worktrees found for this repository.</div>}
       </div>
     </div>}
-  </div>;
+  </article>;
 }
 
-function ProjectHome({ project, busy, onOpen, onCreate, onAddDirectory, onEditDirectory, onRefreshLocation, onMakeDefault, onReattach, onCheckoutBranch, onDeleteWorktree, onOpenTool, onPull, onPush }: { project: ProjectDetail; busy: boolean; onOpen: (id: string) => void; onCreate: () => void; onAddDirectory: () => void; onEditDirectory: (directory: Directory) => void; onRefreshLocation: (directory: Directory) => void; onMakeDefault: (directory: Directory) => void; onReattach: (directory: Directory) => void; onCheckoutBranch: (directory: Directory, selection: BranchSelection) => Promise<boolean>; onDeleteWorktree: (worktree: GitWorktree) => void; onOpenTool: (kind: "shell" | "codex", directory?: Directory) => void; onPull: () => void; onPush: () => void }) {
+function ProjectHome({ project, busy, onOpen, onOpenSession, onCreate, onAddDirectory, onEditDirectory, onRefreshLocation, onMakeDefault, onReattach, onDeleteWorktree, onShell, onCodex, onPull, onPush }: { project: ProjectDetail; busy: boolean; onOpen: (id: string) => void; onOpenSession: (session: Session) => void; onCreate: () => void; onAddDirectory: () => void; onEditDirectory: (directory: Directory) => void; onRefreshLocation: (directory: Directory) => void; onMakeDefault: (directory: Directory) => void; onReattach: (directory: Directory) => void; onDeleteWorktree: (worktree: GitWorktree) => void; onShell: (directory?: Directory) => void; onCodex: (directory?: Directory) => void; onPull: () => void; onPush: () => void }) {
   const hasGitRepository = project.directories.some((directory) => directory.is_git);
   const primary = project.directories.find((directory) => directory.id === project.primary_directory_id) ?? project.directories.find((directory) => directory.role === "primary");
   const rootWorkspaces = project.workspaces.filter((stream) => !stream.parent_workspace_id);
   return <div data-testid="page-scroll" className="h-full overflow-y-auto p-5 [scrollbar-gutter:stable] sm:p-8 lg:p-12"><div data-testid="page-content" className="mx-auto max-w-6xl">
-    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-neutral-400">Project · multi-repository locations</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{project.name}</h1><p className="mt-2 text-sm text-neutral-500">{project.description}</p></div><div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={busy || !primary} onClick={() => onOpenTool("shell", primary)}><Shell className="size-4" />Open Shell</Button><Button variant="secondary" disabled={busy || !primary} onClick={() => onOpenTool("codex", primary)}><Bot className="size-4" />Open Codex</Button><Button disabled={busy || primary?.git_status !== "ready"} onClick={onCreate}><Plus className="size-4" />New Workspace</Button></div></div>
+    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-neutral-400">Project · multi-repository locations</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{project.name}</h1><p className="mt-2 text-sm text-neutral-500">{project.description}</p></div><div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={busy || !primary} onClick={() => onShell(primary)}><Shell className="size-4" />New Shell</Button><Button variant="secondary" disabled={busy || primary?.git_status !== "ready"} onClick={() => onCodex(primary)}><Bot className="size-4" />New Codex</Button><Button disabled={busy || primary?.git_status !== "ready"} onClick={onCreate}><Plus className="size-4" />New Workspace</Button></div></div>
     <section className="mt-8 rounded-xl border border-neutral-200 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Repository synchronization</h2><p className="mt-1 text-xs text-neutral-400">Best effort across every Git location · failures do not roll back successful repositories.</p></div><div className="flex gap-2"><Button size="sm" variant="secondary" disabled={busy || !hasGitRepository} onClick={onPull}><RefreshCw className="size-3.5" />Pull all</Button><Button size="sm" variant="secondary" disabled={busy || !hasGitRepository} onClick={onPush}><Upload className="size-3.5" />Push all</Button></div></div></section>
-    <section className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Project locations</h2><p className="mt-1 text-xs text-neutral-400">Git locations join new Workspaces; non-Git locations remain read-only context.</p></div><Button size="sm" variant="secondary" onClick={onAddDirectory}><Plus className="size-3.5" />Add location</Button></div>
-      <div className="relative z-10 mt-4 divide-y divide-neutral-100 rounded-xl border border-neutral-200 bg-white">{project.directories.map((directory) => <article key={directory.id} data-testid={`project-location-${directory.id}`} className="flex items-start gap-3 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100">{directory.is_git ? <FolderGit2 className="size-4" /> : <Folder className="size-4" />}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold">{directory.name}</h3><Badge>{directory.role}</Badge><Badge variant={directory.git_status === "ready" ? "success" : directory.git_status === "not_git" ? "neutral" : "danger"}>{directory.git_status}</Badge>{directory.worktree_setup_command && <Badge>Setup</Badge>}</div><p className="mt-1 text-xs leading-5 text-neutral-500">{directory.description || "No purpose described yet."}</p><div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-neutral-400">{directory.is_git && <><BranchSelector directory={directory} busy={busy} onCheckout={onCheckoutBranch} /><span>·</span><span>{repositoryLabel(directory.repository_url)}</span><span>·</span><span>base {directory.base_branch}</span><span>·</span><span>{directory.delivery_mode === "local_merge" ? "local merge" : "remote review"}</span></>}<code className="min-w-0 truncate" title={directory.path}>{directory.path}</code></div></div><div className="flex shrink-0 gap-1"><Button size="sm" variant="ghost" disabled={busy} onClick={() => onRefreshLocation(directory)}>Refresh</Button>{directory.git_status === "ready" && directory.role !== "primary" && <Button size="sm" variant="ghost" disabled={busy} onClick={() => onMakeDefault(directory)}>Make default</Button>}{["missing", "broken", "mismatch"].includes(directory.git_status) && <Button size="sm" variant="ghost" disabled={busy} onClick={() => onReattach(directory)}>Reattach</Button>}<button className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-800" aria-label={`Edit ${directory.name}`} onClick={() => onEditDirectory(directory)}><Pencil className="size-3.5" /></button></div></article>)}{project.directories.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">Add a Git location before creating a Workspace.</div>}</div>
+    <section className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Repositories</h2><p className="mt-1 text-xs text-neutral-400">Expand a repository to inspect its worktrees; non-Git locations remain read-only context.</p></div><Button size="sm" variant="secondary" onClick={onAddDirectory}><Plus className="size-3.5" />Add location</Button></div>
+      <div data-testid="project-repository-tree" className="relative z-10 mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.directories.map((directory) => <ProjectLocationTreeRow key={directory.id} directory={directory} worktrees={project.worktrees.filter((item) => item.project_location_id === directory.id)} busy={busy} onOpen={onOpen} onEdit={() => onEditDirectory(directory)} onRefresh={() => onRefreshLocation(directory)} onMakeDefault={() => onMakeDefault(directory)} onReattach={() => onReattach(directory)} onDeleteWorktree={onDeleteWorktree} />)}{project.directories.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">Add a Git location before creating a Workspace.</div>}</div>
     </section>
+    <section data-testid="project-sessions-section" className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Project Sessions</h2><p className="mt-1 text-xs text-amber-600">These Sessions operate directly in Project locations. Shell records disappear when closed; Codex history is retained.</p></div><span className="text-[11px] text-neutral-400">{project.sessions.length}</span></div><div className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.sessions.map((session) => <div key={session.id} data-testid={`project-session-${session.id}`} className="flex items-center gap-3 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100">{session.kind === "codex" ? <Bot className="size-4 text-neutral-500" /> : <TerminalSquare className="size-4 text-neutral-500" />}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{session.name}</p><Badge>{session.kind === "codex" ? "Codex" : "Shell"}</Badge><Badge variant={session.status === "running" ? "success" : "neutral"}>{session.sidebar_visible ? session.status : "history"}</Badge></div><code className="mt-1 block truncate text-[10px] text-neutral-400" title={session.cwd}>{session.cwd}</code></div><Button size="sm" variant="secondary" disabled={busy || (session.kind === "codex" && !session.codex_session_id)} onClick={() => onOpenSession(session)}>{session.sidebar_visible ? "Open" : "Resume"}</Button></div>)}{project.sessions.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">No active Shell or saved Codex Sessions</div>}</div></section>
     <section className="mt-10"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Workspaces</h2><span className="text-[11px] text-neutral-400">{rootWorkspaces.length}</span></div><div className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{rootWorkspaces.map((stream) => <button key={stream.id} onClick={() => onOpen(stream.id)} className="flex w-full items-center gap-3 p-4 text-left hover:bg-neutral-50"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100"><Workflow className="size-4 text-neutral-500" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{stream.name}</p>{stream.status === "archived" && <Badge>archived</Badge>}</div><p className="mt-1 truncate text-xs text-neutral-500">{stream.description || stream.checkout_path}</p></div><ChevronRight className="size-4 shrink-0 text-neutral-300" /></button>)}{rootWorkspaces.length === 0 && <div className="py-12 text-center text-xs text-neutral-400">No Workspaces yet</div>}</div></section>
-    {hasGitRepository && <section className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Git Worktrees</h2><p className="mt-1 text-xs text-neutral-400">Worktrees are created for every Git location in a Workspace.</p></div><span className="text-[11px] text-neutral-400">{project.worktrees.length}</span></div><div className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.worktrees.map((item) => <div key={`${item.project_location_id}:${item.path}`} className="flex items-center gap-3 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100"><GitBranch className="size-4 text-neutral-500" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold">{item.branch}</span>{item.is_main && <Badge>Project location</Badge>}{item.workspace_id && <button className="text-xs font-medium text-blue-600 hover:underline" onClick={() => onOpen(item.workspace_id!)}>{item.workspace_name}</button>}</div><div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-neutral-400"><span>{item.location_name}</span>{item.head_commit && <><span>·</span><span className="font-mono">{item.head_commit}</span></>}<span>·</span><code className="min-w-0 truncate" title={item.path}>{item.path}</code></div></div>{!item.is_main && <Button size="icon" variant="ghost" disabled={busy} aria-label={`Delete worktree ${item.path}`} onClick={() => onDeleteWorktree(item)}><Trash2 className="size-4 text-neutral-400" /></Button>}</div>)}{project.worktrees.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">No Git worktrees found</div>}</div></section>}
   </div></div>;
 }
 function Overview({ projects, busy, onOpen, onCreate, onRestore, onDelete }: { projects: ProjectDetail[]; busy: boolean; onOpen: (id: string) => void; onCreate: () => void; onRestore: (project: ProjectDetail) => void; onDelete: (project: ProjectDetail) => void }) {
@@ -1349,7 +1386,7 @@ function AddDirectoryDialog({ project, busy, onOpenChange, onSubmit }: { project
 function EditDirectoryDialog({ directory, busy, onOpenChange, onSubmit }: { directory: Directory | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { const isGit = directory?.git_common_dir != null; return <Dialog open={Boolean(directory)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="text-lg font-semibold">{directory?.name}</DialogTitle><DialogDescription className="mt-1 truncate font-mono text-[11px] text-neutral-500">{directory?.path}</DialogDescription>{directory && <form key={directory.id} className="mt-6 space-y-3" onSubmit={onSubmit}><Textarea name="description" defaultValue={directory.description} placeholder="What is this location used for?" />{isGit && <WorktreeSetupField defaultValue={directory.worktree_setup_command} />}{isGit && <div className="grid grid-cols-2 gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3"><label className="text-[11px] text-neutral-500">Base branch<Input className="mt-1 font-mono text-xs" name="base_branch" defaultValue={directory.base_branch} required /></label><label className="text-[11px] text-neutral-500">Delivery mode<Select className="mt-1" name="delivery_mode" defaultValue={directory.delivery_mode ?? "remote_review"}><option value="remote_review">Remote review / CR-CI</option><option value="local_merge">Local merge</option></Select></label></div>}<div className="flex justify-end"><Button disabled={busy}>Save</Button></div></form>}</DialogContent></Dialog>; }
 function CreateWorkspaceDialog({ project, busy, onOpenChange, onSubmit }: { project: ProjectDetail | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <Dialog open={Boolean(project)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="text-lg font-semibold">New Workspace</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">Each Git location uses its own base branch and delivery mode.</DialogDescription><form className="mt-6 space-y-3" onSubmit={onSubmit}><Input name="name" placeholder="Feature or fix name" required /><Textarea name="description" placeholder="Scope and expected outcome" /><label className="block text-[11px] text-neutral-500">Shared local branch<Input className="mt-1 font-mono text-xs" name="branch" placeholder="Leave empty to generate treefold/name-random" /></label><div className="grid grid-cols-2 gap-3"><label className="block text-[11px] text-neutral-500">Default repo remote<Input className="mt-1 font-mono text-xs" name="remote_name" defaultValue={project?.preferred_remote ?? ""} placeholder="origin" /></label><label className="block text-[11px] text-neutral-500">Default repo feature branch<Input className="mt-1 font-mono text-xs" name="remote_branch" placeholder="feature/my-change (optional)" /></label></div><p className="rounded-lg bg-neutral-50 px-3 py-2 text-[11px] leading-5 text-neutral-500">Base branches and Finish behavior come from repository locations. The shared branch name is used across all Git worktrees.</p><div className="flex justify-end"><Button disabled={busy}>Create Workspace</Button></div></form></DialogContent></Dialog>; }
 function ConfigureWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit }: { workspace: WorkspaceDetail | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="text-lg font-semibold">Workspace delivery settings</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">Target branch 固定为 {workspace?.target_branch}；这里只修改 feature branch 的 upstream 与交付方式。</DialogDescription>{workspace && <form key={workspace.id} className="mt-6 space-y-3" onSubmit={onSubmit}><div className="grid grid-cols-2 gap-3"><label className="block text-[11px] text-neutral-500">Remote<Input className="mt-1 font-mono text-xs" name="remote_name" defaultValue={workspace.remote_name ?? ""} placeholder="origin" /></label><label className="block text-[11px] text-neutral-500">Remote feature branch<Input className="mt-1 font-mono text-xs" name="remote_branch" defaultValue={workspace.remote_branch ?? ""} placeholder="feature/my-change" /></label></div><Select name="delivery_mode" defaultValue={workspace.delivery_mode}><option value="remote_review">Remote review / CR-CI</option><option value="local_merge">Local merge + optional push</option></Select><p className="rounded-lg bg-neutral-50 px-3 py-2 text-[11px] text-neutral-500">两项都留空会清除 upstream。Treefold 不会替你 force push。</p><div className="flex justify-end"><Button disabled={busy}>Save</Button></div></form>}</DialogContent></Dialog>; }
-function CreateCodexDialog({ target, busy, yoloDefault, onOpenChange, onSubmit }: { target: { project: ProjectDetail; workspace: WorkspaceDetail | Workspace; directory?: Directory } | null; busy: boolean; yoloDefault: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { const label = target?.directory?.name ?? target?.workspace.name; return <Dialog open={Boolean(target)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="flex items-center gap-2 text-lg font-semibold"><Bot className="size-5" />New Codex Session</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">在 {label} 中启动正式的 Treefold Session。</DialogDescription><form className="mt-6 space-y-3" onSubmit={onSubmit}><Input name="name" placeholder="Session name" /><Textarea name="initial_prompt" placeholder="What should Codex work on?" /><label className="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50/60 p-4"><input className="mt-0.5" type="checkbox" name="yolo" defaultChecked={yoloDefault} /><span><span className="block text-sm font-medium text-red-800">YOLO mode</span><span className="mt-1 block text-xs leading-5 text-red-600">跳过 approvals 和 sandbox，仅在受控 Workspace 中使用。</span></span></label><div className="flex justify-end"><Button disabled={busy}>Start Codex</Button></div></form></DialogContent></Dialog>; }
+function CreateCodexDialog({ target, busy, yoloDefault, onOpenChange, onSubmit }: { target: { project: ProjectDetail; workspace?: WorkspaceDetail | Workspace; directory?: Directory } | null; busy: boolean; yoloDefault: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { const label = target?.directory?.name ?? target?.workspace?.name ?? target?.project.name; const direct = Boolean(target && !target.workspace); return <Dialog open={Boolean(target)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="flex items-center gap-2 text-lg font-semibold"><Bot className="size-5" />New Codex Session</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">在 {label} 中启动正式的 Treefold Session。</DialogDescription>{direct && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-700">This Project Session modifies the original repository directly. It does not have Workspace worktree or delivery protection.</p>}<form className="mt-6 space-y-3" onSubmit={onSubmit}><Input name="name" placeholder="Session name" /><Textarea name="initial_prompt" placeholder="What should Codex work on?" /><label className="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50/60 p-4"><input className="mt-0.5" type="checkbox" name="yolo" defaultChecked={yoloDefault} /><span><span className="block text-sm font-medium text-red-800">YOLO mode</span><span className="mt-1 block text-xs leading-5 text-red-600">跳过 approvals 和 sandbox，仅在你信任的目录中使用。</span></span></label><div className="flex justify-end"><Button disabled={busy}>Start Codex</Button></div></form></DialogContent></Dialog>; }
 function CreateForkDialog({ workspace, busy, onOpenChange, onSubmit }: { workspace: Workspace | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) { return <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}><DialogContent><DialogTitle className="flex items-center gap-2 text-lg font-semibold"><GitBranch className="size-5" />Fork work</DialogTitle><DialogDescription className="mt-1 text-sm text-neutral-500">从 {workspace?.name} 当前 HEAD 创建一个独立 worktree。Fork 不能继续嵌套。</DialogDescription><form className="mt-6 space-y-3" onSubmit={onSubmit}><Input name="name" placeholder="Fork name" required /><Textarea name="description" placeholder="Independent feature or experiment" /><div className="rounded-lg bg-neutral-50 px-3 py-2 text-[11px] text-neutral-500">父 workspace 必须 clean；完成后可以通过 Close and settle 合回父 Workspace。</div><div className="flex justify-end"><Button disabled={busy}>Create Fork</Button></div></form></DialogContent></Dialog>; }
 
 type FinishPayload = { code_action: string; todo_action: string; push_after_merge: boolean; keep_session_history: boolean; delete_worktree: boolean; delete_branch: boolean; commit_message?: string; preflight_id?: string };

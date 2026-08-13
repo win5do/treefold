@@ -4,6 +4,13 @@ use super::{now, Store};
 use crate::{error::Result, model::*};
 
 impl Store {
+    pub fn project_sessions(&self, project_id: &str) -> Result<Vec<Session>> {
+        match self.project_session_workspace(project_id)? {
+            Some(workspace) => self.sessions(&workspace.id),
+            None => Ok(Vec::new()),
+        }
+    }
+
     pub fn sessions(&self, workspace_id: &str) -> Result<Vec<Session>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!(
@@ -157,7 +164,11 @@ impl Store {
         let timestamp = now();
         let db = self.0.lock();
         if keep_history {
-            db.execute("UPDATE sessions SET cwd=?,sidebar_visible=0,hidden_at=?,status='closed',pid=0,updated_at=? WHERE workspace_id=?", params![resume_cwd,timestamp,timestamp,workspace_id])?;
+            db.execute(
+                "DELETE FROM sessions WHERE workspace_id=? AND kind='shell'",
+                [workspace_id],
+            )?;
+            db.execute("UPDATE sessions SET cwd=?,sidebar_visible=0,hidden_at=?,status='closed',pid=0,updated_at=? WHERE workspace_id=? AND kind='codex'", params![resume_cwd,timestamp,timestamp,workspace_id])?;
         } else {
             db.execute("DELETE FROM sessions WHERE workspace_id=?", [workspace_id])?;
         }

@@ -7,12 +7,13 @@ locations:
 Project
 ├── ProjectLocation (default Git location)
 ├── ProjectLocation (additional Git location)
-└── ProjectLocation (non-Git context)
-    └── Workspace
-        ├── WorkspaceLocation (one snapshot per ProjectLocation)
-        ├── Session
-        ├── Todo
-        └── Fork
+├── ProjectLocation (non-Git context)
+├── Project Session (direct source checkout)
+└── Workspace
+    ├── WorkspaceLocation (one snapshot per ProjectLocation)
+    ├── Session
+    ├── Todo
+    └── Fork
 ```
 
 ## Project and ProjectLocation
@@ -73,6 +74,12 @@ passed through `--add-dir` and are writable. Non-Git locations are recorded in
 the runtime context as `read_only` but are not passed through `--add-dir`.
 Developer instructions repeat this rule and warn that YOLO mode removes sandbox
 enforcement, so the read-only marker must still be honored explicitly.
+
+Project Shell and Codex Sessions use the same managed Web terminal but run in
+the selected source ProjectLocation without creating a worktree. Project Codex
+history is retained for resume and is explicitly marked as direct repository
+access. Shell records are kept only while running in every scope; closing or
+finishing a Shell removes it instead of adding it to Session history.
 
 ## Finishing and unavailable repositories
 

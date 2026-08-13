@@ -5,18 +5,20 @@ small, explicit hierarchy: `Project → Workspace → Fork`, with managed Sessio
 owned by development units.
 
 - **Project is repository context.** It stores Git metadata, directories,
-  remotes, a default target branch, and a default delivery policy. Unmanaged
-  external tools support repository-level operations in the source checkout.
+  remotes, a default target branch, and a default delivery policy. Managed Web
+  Sessions can operate directly in its source locations.
 - **Workspace is development context.** It owns an isolated worktree, feature
   branch, fixed target, optional upstream, Sessions, and Todos.
 - **Fork is bounded parallel context.** It is one level of local subwork beneath
   a Workspace, with no remote synchronization and no nested Forks.
-- **Session is execution context.** It runs Shell or Codex inside a Workspace or
-  Fork checkout.
+- **Session is execution context.** It runs Shell or Codex in a Project source
+  location or a Workspace/Fork checkout. Shells are ephemeral; Codex history is
+  resumable.
 - **Delivery follows real repositories.** Teams can use remote review and CI;
   individuals can merge locally and optionally push the target branch.
-- **Escape hatches are honest.** Project Open Shell/Open Codex processes are not
-  managed Sessions, and the user owns their effects in the source checkout.
+- **Direct work is honest.** Project Sessions are managed processes, but the user
+  owns their effects in the source checkout because they have no worktree or
+  delivery isolation.
 
 The product should make `Create → Work → Sync → Verify → Finish → Cleanup`
 reliable without attempting to replace Git hosting, code review, CI, or Codex's

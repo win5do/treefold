@@ -7,6 +7,57 @@ use crate::{
 };
 
 impl Store {
+    pub fn project_session_workspace(&self, project_id: &str) -> Result<Option<Workspace>> {
+        let db = self.0.lock();
+        let mut workspace = db
+            .query_row(
+                &format!(
+                    "SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE project_id=? AND kind='base' LIMIT 1"
+                ),
+                [project_id],
+                workspace_row,
+            )
+            .optional()?;
+        if let Some(value) = &mut workspace {
+            hydrate_workspace_compat(&db, value)?;
+        }
+        Ok(workspace)
+    }
+
+    pub fn sync_project_session_workspace(
+        &self,
+        workspace: &Workspace,
+        locations: &[WorkspaceLocation],
+    ) -> Result<()> {
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        tx.execute(
+            "INSERT INTO workspaces(id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at)
+             VALUES(:id,:project_id,:name,:description,:status,'base',NULL,:runtime_id,:runtime_name,:created_at,:updated_at)
+             ON CONFLICT(id) DO UPDATE SET name=excluded.name,status=excluded.status,updated_at=excluded.updated_at",
+            named_params! {
+                ":id": workspace.id,
+                ":project_id": workspace.project_id,
+                ":name": workspace.name,
+                ":description": workspace.description,
+                ":status": workspace.status,
+                ":runtime_id": workspace.runtime_id,
+                ":runtime_name": workspace.runtime_name,
+                ":created_at": workspace.created_at,
+                ":updated_at": workspace.updated_at,
+            },
+        )?;
+        tx.execute(
+            "DELETE FROM workspace_locations WHERE workspace_id=?",
+            [&workspace.id],
+        )?;
+        for location in locations {
+            insert_workspace_location(&tx, location)?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn workspaces(&self, project_id: &str) -> Result<Vec<Workspace>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE project_id=? ORDER BY updated_at DESC"))?;
@@ -260,6 +311,10 @@ fn workspace_location_row(r: &Row<'_>) -> rusqlite::Result<WorkspaceLocation> {
 }
 
 fn hydrate_workspace_compat(db: &Connection, workspace: &mut Workspace) -> rusqlite::Result<()> {
+    if workspace.kind == "base" {
+        workspace.checkout_mode = "in_place".into();
+        workspace.branch_ownership = "user".into();
+    }
     let location = db.query_row(
         &format!("SELECT {WORKSPACE_LOCATION_JOIN_COLUMNS} FROM workspace_locations wl JOIN projects p ON p.id=? WHERE wl.workspace_id=? ORDER BY wl.project_location_id=p.default_location_id DESC LIMIT 1"),
         params![workspace.project_id, workspace.id], workspace_location_row,
@@ -282,6 +337,11 @@ fn hydrate_workspace_compat(db: &Connection, workspace: &mut Workspace) -> rusql
         workspace.close_outcome = location.close_outcome;
         workspace.integrated_commit = location.integrated_commit;
         workspace.closed_at = location.closed_at;
+    }
+    if workspace.kind == "base" {
+        workspace.checkout_mode = "in_place".into();
+        workspace.branch_ownership = "user".into();
+        workspace.delivery_status = "not_applicable".into();
     }
     Ok(())
 }

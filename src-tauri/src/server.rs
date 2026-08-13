@@ -89,7 +89,10 @@ fn app(state: AppState) -> Router {
         .route("/api/projects/{id}/git/push", post(push_project))
         .route("/api/projects/{id}/git/pull-all", post(pull_all_project))
         .route("/api/projects/{id}/git/push-all", post(push_all_project))
-        .route("/api/projects/{id}/open-tool", post(open_project_tool))
+        .route(
+            "/api/projects/{id}/sessions",
+            get(list_project_sessions).post(create_project_session),
+        )
         .route("/api/projects/{id}/reveal", post(reveal_project))
         .route(
             "/api/projects/{id}/reconciliation",
@@ -262,95 +265,6 @@ async fn system_status() -> Result<Json<Value>> {
         "platform":"darwin", "codex_available":codex.is_some(), "codex_version":codex,
         "backend":"rust", "terminal_runtime":"portable-pty"
     })))
-}
-
-#[derive(Deserialize)]
-struct OpenProjectTool {
-    kind: String,
-    project_directory_id: Option<String>,
-}
-
-async fn open_project_tool(
-    State(state): State<AppState>,
-    AxumPath(project_id): AxumPath<String>,
-    ApiJson(input): ApiJson<OpenProjectTool>,
-) -> Result<Json<Value>> {
-    let project = state.store.project(&project_id)?;
-    let directory_id = input
-        .project_directory_id
-        .as_deref()
-        .unwrap_or(&project.primary_directory_id);
-    let directory = state.store.directory(directory_id)?;
-    if directory.project_id != project.id {
-        return Err(AppError::BadRequest(
-            "project directory does not belong to Project".into(),
-        ));
-    }
-    if input.kind != "shell" && input.kind != "codex" {
-        return Err(AppError::BadRequest("kind must be shell or codex".into()));
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let suffix = if input.kind == "codex" {
-            let settings = state.settings.load()?;
-            let args = settings
-                .agents
-                .codex
-                .extra_args
-                .iter()
-                .map(|value| shell_quote(value))
-                .collect::<Vec<_>>()
-                .join(" ");
-            if args.is_empty() {
-                " && codex".to_string()
-            } else {
-                format!(" && codex {args}")
-            }
-        } else {
-            String::new()
-        };
-        let script = format!(
-            "tell application \"Terminal\"\nactivate\ndo script \"cd \" & quoted form of (item 1 of argv) & {}\nend tell",
-            apple_script_string(&suffix)
-        );
-        let status = Command::new("/usr/bin/osascript")
-            .arg("-e")
-            .arg(script)
-            .arg("--")
-            .arg(&directory.path)
-            .status()
-            .map_err(anyhow::Error::from)?;
-        if !status.success() {
-            return Err(AppError::BadRequest(format!(
-                "could not open {} in Terminal",
-                input.kind
-            )));
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = state;
-        return Err(AppError::BadRequest(
-            "unmanaged Project tools are currently available on macOS only".into(),
-        ));
-    }
-
-    Ok(Json(json!({
-        "opened": true,
-        "kind": input.kind,
-        "path": directory.path,
-        "managed_session": false
-    })))
-}
-
-fn shell_quote(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\\''"))
-}
-
-fn apple_script_string(value: &str) -> String {
-    format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 struct AgentContext {
@@ -727,10 +641,15 @@ async fn update_project(
         for workspace in state.store.workspaces(&id)? {
             for mut session in state.store.sessions(&workspace.id)? {
                 capture_codex_session_id(&state.store, &mut session)?;
-                if state.terminals.is_running(&session.id).await {
-                    let _ = state.terminals.stop(&session.id).await;
+                if session.kind == "shell" {
+                    let _ = state.terminals.remove(&session.id).await;
+                    state.store.delete_session(&session.id)?;
+                } else {
+                    if state.terminals.is_running(&session.id).await {
+                        let _ = state.terminals.stop(&session.id).await;
+                    }
+                    state.store.set_session_visible(&session.id, false)?;
                 }
-                state.store.set_session_visible(&session.id, false)?;
             }
         }
     }
@@ -776,6 +695,7 @@ async fn get_project(
     }
     let tracked_workspaces = state.store.workspaces(&id)?;
     detail.worktrees = project_worktrees(&detail.locations, &tracked_workspaces);
+    detail.sessions = refresh_session_records(&state, detail.sessions).await?;
     Ok(Json(detail))
 }
 
@@ -2039,12 +1959,7 @@ async fn get_workspace(
             .into();
         }
     }
-    for session in &mut detail.sessions {
-        if let Ok(process) = state.terminals.inspect(&session.id).await {
-            apply_amux_process(session, process);
-            persist_amux_process(&state.store, &session.id, session)?;
-        }
-    }
+    detail.sessions = refresh_session_records(&state, detail.sessions).await?;
     Ok(Json(detail))
 }
 
@@ -4536,7 +4451,7 @@ async fn finish_workspace_steps(
     if !delivery_phase_at_least(&operation.phase, "sessions_finalized")? {
         for mut session in state.store.sessions(id)? {
             capture_codex_session_id(&state.store, &mut session)?;
-            if input.keep_session_history {
+            if input.keep_session_history && session.kind == "codex" {
                 if state.terminals.is_running(&session.id).await {
                     let _ = state.terminals.stop(&session.id).await;
                 }
@@ -4852,6 +4767,122 @@ struct CreateSession {
     initial_prompt: Option<String>,
     yolo: Option<bool>,
 }
+
+async fn create_project_session(
+    State(state): State<AppState>,
+    AxumPath(project_id): AxumPath<String>,
+    ApiJson(input): ApiJson<CreateSession>,
+) -> Result<(StatusCode, Json<Session>)> {
+    let workspace = sync_project_session_workspace(&state, &project_id)?;
+    create_session_for_workspace(&state, workspace, input).await
+}
+
+async fn list_project_sessions(
+    State(state): State<AppState>,
+    AxumPath(project_id): AxumPath<String>,
+) -> Result<Json<Vec<Session>>> {
+    state.store.project(&project_id)?;
+    let sessions = state.store.project_sessions(&project_id)?;
+    Ok(Json(refresh_session_records(&state, sessions).await?))
+}
+
+fn sync_project_session_workspace(state: &AppState, project_id: &str) -> Result<Workspace> {
+    let project = state.store.project(project_id)?;
+    if project.status != "active" {
+        return Err(AppError::BadRequest(
+            "cannot create a Session in an archived Project".into(),
+        ));
+    }
+    let mut project_locations = state.store.directories(project_id)?;
+    if project_locations.is_empty() {
+        return Err(AppError::BadRequest(
+            "Project has no location for a Session".into(),
+        ));
+    }
+    for location in &mut project_locations {
+        refresh_location_observation(location)?;
+    }
+    let timestamp = now();
+    let workspace = Workspace {
+        id: format!("project-base-{project_id}"),
+        project_id: project_id.into(),
+        name: format!("{} · Project Sessions", project.name),
+        description: "Sessions that operate directly in Project locations".into(),
+        status: "active".into(),
+        kind: "base".into(),
+        parent_workspace_id: None,
+        runtime_id: format!("project-base-{project_id}"),
+        runtime_name: format!(
+            "treefold-project-{}",
+            &project_id[..project_id.len().min(10)]
+        ),
+        created_at: timestamp.clone(),
+        updated_at: timestamp.clone(),
+        checkout_mode: "in_place".into(),
+        project_directory_id: String::new(),
+        worktree_id: None,
+        checkout_path: String::new(),
+        target_branch: String::new(),
+        start_commit: String::new(),
+        branch: String::new(),
+        forked_from_commit: None,
+        remote_name: None,
+        remote_branch: None,
+        branch_ownership: "user".into(),
+        delivery_mode: "keep".into(),
+        delivery_status: "not_applicable".into(),
+        close_outcome: None,
+        integrated_commit: None,
+        closed_at: None,
+    };
+    let locations = project_locations
+        .iter()
+        .map(|location| project_session_location(&workspace.id, location, &timestamp))
+        .collect::<Vec<_>>();
+    state
+        .store
+        .sync_project_session_workspace(&workspace, &locations)?;
+    state.store.workspace(&workspace.id)
+}
+
+fn project_session_location(
+    workspace_id: &str,
+    location: &ProjectLocation,
+    timestamp: &str,
+) -> WorkspaceLocation {
+    let tracked_git = location.git_common_dir.is_some();
+    WorkspaceLocation {
+        id: format!("{workspace_id}-{}", location.id),
+        workspace_id: workspace_id.into(),
+        project_location_id: location.id.clone(),
+        location_name: location.name.clone(),
+        source_path: location.path.clone(),
+        access_mode: if tracked_git {
+            "read_write"
+        } else {
+            "read_only"
+        }
+        .into(),
+        git_status: location.git_status.clone(),
+        worktree_id: None,
+        checkout_path: tracked_git.then(|| location.path.clone()),
+        branch: location.branch.clone(),
+        base_branch: location.base_branch.clone(),
+        start_commit: location.head_commit.clone(),
+        forked_from_commit: None,
+        remote_name: location.preferred_remote_name.clone(),
+        remote_branch: None,
+        branch_ownership: if tracked_git { "user" } else { "none" }.into(),
+        delivery_mode: "keep".into(),
+        delivery_status: "not_applicable".into(),
+        close_outcome: None,
+        integrated_commit: None,
+        closed_at: None,
+        created_at: timestamp.into(),
+        updated_at: timestamp.into(),
+    }
+}
+
 async fn create_session(
     State(state): State<AppState>,
     AxumPath(workspace_id): AxumPath<String>,
@@ -4866,14 +4897,8 @@ async fn list_sessions(
     AxumPath(workspace_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
     state.store.workspace(&workspace_id)?;
-    let mut sessions = state.store.sessions(&workspace_id)?;
-    for session in &mut sessions {
-        if let Ok(process) = state.terminals.inspect(&session.id).await {
-            apply_amux_process(session, process);
-            persist_amux_process(&state.store, &session.id, session)?;
-        }
-    }
-    Ok(Json(sessions))
+    let sessions = state.store.sessions(&workspace_id)?;
+    Ok(Json(refresh_session_records(&state, sessions).await?))
 }
 
 async fn create_session_for_workspace(
@@ -4900,44 +4925,67 @@ async fn create_session_for_workspace(
     }
     let project = state.store.project(&workspace.project_id)?;
     let locations = state.store.workspace_locations(&workspace.id)?;
-    let default_location = locations
-        .iter()
-        .find(|location| {
-            project.default_location_id.as_deref() == Some(location.project_location_id.as_str())
-        })
-        .or_else(|| {
-            locations
-                .iter()
-                .find(|location| location.access_mode == "read_write")
-        })
-        .ok_or_else(|| AppError::BadRequest("Workspace has no usable location".into()))?;
-    let mut cwd = default_location
+    let selected_location = if let Some(directory_id) = input.project_directory_id.as_deref() {
+        locations
+            .iter()
+            .find(|location| location.project_location_id == directory_id)
+            .ok_or_else(|| {
+                AppError::BadRequest("project directory does not belong to project".into())
+            })?
+    } else {
+        locations
+            .iter()
+            .find(|location| {
+                project.default_location_id.as_deref()
+                    == Some(location.project_location_id.as_str())
+            })
+            .or_else(|| {
+                locations.iter().find(|location| {
+                    location.access_mode == "read_write" && location.git_status == "ready"
+                })
+            })
+            .or_else(|| {
+                (workspace.kind == "base")
+                    .then(|| locations.first())
+                    .flatten()
+            })
+            .ok_or_else(|| AppError::BadRequest("Workspace has no usable location".into()))?
+    };
+    if kind == "codex"
+        && (selected_location.access_mode != "read_write"
+            || selected_location.git_status != "ready")
+    {
+        return Err(AppError::BadRequest(
+            "Codex must start in an available Git location; non-Git locations are read-only context"
+                .into(),
+        ));
+    }
+    let cwd = selected_location
         .checkout_path
         .clone()
-        .unwrap_or_else(|| default_location.source_path.clone());
+        .unwrap_or_else(|| selected_location.source_path.clone());
+    if !Path::new(&cwd).is_dir() {
+        return Err(AppError::BadRequest(format!(
+            "Session location is unavailable: {cwd}"
+        )));
+    }
     let mut additional_directories = Vec::new();
     let mut read_only_contexts = Vec::new();
-    let mut selected_name = None;
+    let selected_name = Some(selected_location.location_name.clone());
     for location in &locations {
         let path = location
             .checkout_path
             .clone()
             .unwrap_or_else(|| location.source_path.clone());
-        if location.access_mode == "read_write" && normalized_path(&path) != normalized_path(&cwd) {
+        if location.access_mode == "read_write"
+            && location.git_status == "ready"
+            && normalized_path(&path) != normalized_path(&cwd)
+        {
             additional_directories.push(path.clone());
         }
         if location.access_mode == "read_only" {
             read_only_contexts.push(path.clone());
         }
-        if input.project_directory_id.as_deref() == Some(&location.project_location_id) {
-            cwd = path;
-            selected_name = Some(location.location_name.clone());
-        }
-    }
-    if input.project_directory_id.is_some() && selected_name.is_none() {
-        return Err(AppError::BadRequest(
-            "project directory does not belong to project".into(),
-        ));
     }
     let codex_extra_args = if kind == "codex" {
         state.settings.load()?.agents.codex.extra_args
@@ -5024,8 +5072,18 @@ async fn get_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id)?;
+    if session.kind == "shell" && terminal_session_status(&session.status) {
+        let _ = state.terminals.remove(&id).await;
+        state.store.delete_session(&id)?;
+        return Err(AppError::NotFound);
+    }
     if let Ok(process) = state.terminals.inspect(&id).await {
         apply_amux_process(&mut session, process);
+        if session.kind == "shell" && terminal_session_status(&session.status) {
+            let _ = state.terminals.remove(&id).await;
+            state.store.delete_session(&id)?;
+            return Err(AppError::NotFound);
+        }
         persist_amux_process(&state.store, &id, &session)?;
     }
     Ok(Json(session))
@@ -5054,14 +5112,26 @@ async fn restart_session(
         .remove(&id)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    let workspace = state.store.workspace(&session.workspace_id)?;
+    let mut workspace = state.store.workspace(&session.workspace_id)?;
+    if workspace.kind == "base" {
+        workspace = sync_project_session_workspace(&state, &workspace.project_id)?;
+    }
     if session.kind == "codex" {
         session.additional_directories = state
             .store
-            .directories(&workspace.project_id)?
+            .workspace_locations(&workspace.id)?
             .into_iter()
-            .filter(|directory| directory.role == "attached")
-            .map(|directory| directory.path)
+            .filter(|location| {
+                location.access_mode == "read_write"
+                    && location.git_status == "ready"
+                    && normalized_path(
+                        location
+                            .checkout_path
+                            .as_deref()
+                            .unwrap_or(&location.source_path),
+                    ) != normalized_path(&session.cwd)
+            })
+            .map(|location| location.checkout_path.unwrap_or(location.source_path))
             .collect();
         state
             .store
@@ -5097,6 +5167,14 @@ async fn close_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id)?;
+    if session.kind == "shell" {
+        let _ = state.terminals.remove(&id).await;
+        state.store.delete_session(&id)?;
+        session.sidebar_visible = false;
+        session.status = "closed".into();
+        session.pid = 0;
+        return Ok(Json(session));
+    }
     capture_codex_session_id(&state.store, &mut session)?;
     if state.terminals.is_running(&id).await {
         let _ = state.terminals.stop(&id).await;
@@ -5209,6 +5287,32 @@ fn apply_amux_process(session: &mut Session, process: amux::model::Process) {
     session.command = process.command;
 }
 
+fn terminal_session_status(status: &str) -> bool {
+    matches!(status, "exited" | "failed" | "closed" | "evicted")
+}
+
+async fn refresh_session_records(state: &AppState, sessions: Vec<Session>) -> Result<Vec<Session>> {
+    let mut active = Vec::with_capacity(sessions.len());
+    for mut session in sessions {
+        if session.kind == "shell" && terminal_session_status(&session.status) {
+            let _ = state.terminals.remove(&session.id).await;
+            state.store.delete_session(&session.id)?;
+            continue;
+        }
+        if let Ok(process) = state.terminals.inspect(&session.id).await {
+            apply_amux_process(&mut session, process);
+            if session.kind == "shell" && terminal_session_status(&session.status) {
+                let _ = state.terminals.remove(&session.id).await;
+                state.store.delete_session(&session.id)?;
+                continue;
+            }
+            persist_amux_process(&state.store, &session.id, &session)?;
+        }
+        active.push(session);
+    }
+    Ok(active)
+}
+
 fn persist_amux_process(store: &Store, id: &str, session: &Session) -> Result<()> {
     store.set_session_process_runtime(
         id,
@@ -5280,7 +5384,12 @@ async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
             Err(_) => return,
         };
         apply_amux_process(&mut session, process);
-        let _ = persist_amux_process(&state.store, &id, &session);
+        if session.kind == "shell" && terminal_session_status(&session.status) {
+            let _ = state.terminals.remove(&id).await;
+            let _ = state.store.delete_session(&id);
+        } else {
+            let _ = persist_amux_process(&state.store, &id, &session);
+        }
     }
 }
 
@@ -5921,7 +6030,9 @@ fn project_worktrees(directories: &[Directory], workspaces: &[Workspace]) -> Vec
                 continue;
             }
             let workspace = workspaces.iter().find(|stream| {
-                stream.status == "active" && normalized_path(&stream.checkout_path) == path
+                stream.kind != "base"
+                    && stream.status == "active"
+                    && normalized_path(&stream.checkout_path) == path
             });
             result.push(GitWorktree {
                 project_location_id: directory.id.clone(),
@@ -6167,14 +6278,14 @@ mod current_workspace_tests {
     use tower::ServiceExt;
 
     use super::{
-        app, apple_script_string, command_output, create_delivery_preflight_impl, create_directory,
-        create_fork, create_project, create_workspace, finish_workspace_impl, pull_workspace,
-        push_workspace, refresh_project_location, shell_quote, update_workspace, ApiJson, AppState,
-        CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject, CreateWorkspace,
-        FinishWorkspace, UpdateWorkspace,
+        app, close_session, command_output, create_delivery_preflight_impl, create_directory,
+        create_fork, create_project, create_project_session, create_workspace,
+        finish_workspace_impl, pull_workspace, push_workspace, refresh_project_location,
+        update_workspace, ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork,
+        CreateProject, CreateSession, CreateWorkspace, FinishWorkspace, UpdateWorkspace,
     };
     use crate::{
-        model::Todo,
+        model::{Session, Todo},
         settings::SettingsStore,
         store::{now, Store},
         terminal::TerminalManager,
@@ -6205,14 +6316,116 @@ mod current_workspace_tests {
         command_output(repository, "git", &["commit", "-m", "initial"]).expect("commit fixture");
     }
 
-    #[test]
-    fn unmanaged_project_tool_arguments_are_quoted() {
-        assert_eq!(shell_quote("hello world"), "'hello world'");
-        assert_eq!(shell_quote("it's safe"), "'it'\\''s safe'");
+    #[tokio::test]
+    async fn project_shell_is_managed_but_deleted_on_close_while_codex_is_retained() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-project-session-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        initialize_repository(&repository);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Managed Project Sessions".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_target_branch: Some("main".into()),
+                default_base_branch: Some("main".into()),
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create Project");
+        let (_, Json(shell)) = create_project_session(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateSession {
+                name: None,
+                kind: Some("shell".into()),
+                project_directory_id: project.default_location_id.clone(),
+                initial_prompt: None,
+                yolo: None,
+            }),
+        )
+        .await
+        .expect("create managed Project Shell");
         assert_eq!(
-            apple_script_string(" && codex \"now\""),
-            "\" && codex \\\"now\\\"\""
+            state.store.workspace(&shell.workspace_id).unwrap().kind,
+            "base"
         );
+        assert_eq!(state.store.project_sessions(&project.id).unwrap().len(), 1);
+        assert!(state.terminals.is_running(&shell.id).await);
+
+        let _ = close_session(State(state.clone()), axum::extract::Path(shell.id.clone()))
+            .await
+            .expect("close Project Shell");
+        assert!(state.store.session(&shell.id).is_err());
+        assert!(!state.terminals.is_running(&shell.id).await);
+
+        let timestamp = now();
+        let codex = Session {
+            id: "saved-project-codex".into(),
+            workspace_id: shell.workspace_id,
+            name: "Saved Project Codex".into(),
+            kind: "codex".into(),
+            cwd: repository.to_string_lossy().into_owned(),
+            original_cwd: repository.to_string_lossy().into_owned(),
+            initial_prompt: "Keep this context".into(),
+            codex_session_id: Some("codex-session-id".into()),
+            yolo: false,
+            sidebar_visible: true,
+            hidden_at: None,
+            evicted_at: None,
+            process_id: "saved-project-codex".into(),
+            process_name: "codex-history".into(),
+            status: "exited".into(),
+            pid: 0,
+            process_group_id: 0,
+            exit_code: Some(0),
+            exit_signal: String::new(),
+            command: vec!["codex".into()],
+            launch_started_at: timestamp.clone(),
+            last_attached_at: None,
+            created_at: timestamp.clone(),
+            updated_at: timestamp,
+            additional_directories: vec![],
+        };
+        state.store.create_session(&codex).unwrap();
+        let _ = close_session(State(state.clone()), axum::extract::Path(codex.id.clone()))
+            .await
+            .expect("hide saved Project Codex");
+        let saved = state
+            .store
+            .session(&codex.id)
+            .expect("retain Codex history");
+        assert!(!saved.sidebar_visible);
+        assert_eq!(state.store.project_sessions(&project.id).unwrap().len(), 1);
+
+        let mut finalized_shell = codex.clone();
+        finalized_shell.id = "finalized-shell".into();
+        finalized_shell.name = "Finalized Shell".into();
+        finalized_shell.kind = "shell".into();
+        finalized_shell.codex_session_id = None;
+        finalized_shell.sidebar_visible = true;
+        state.store.create_session(&finalized_shell).unwrap();
+        state
+            .store
+            .finalize_sessions(&codex.workspace_id, &codex.cwd, true)
+            .expect("finalize Session history");
+        assert!(state.store.session(&finalized_shell.id).is_err());
+        assert_eq!(
+            state.store.session(&codex.id).unwrap().status,
+            "closed",
+            "Codex remains resumable while Shell history is removed"
+        );
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove Project Session fixture");
     }
 
     #[tokio::test]
@@ -6377,17 +6590,6 @@ mod current_workspace_tests {
                 .expect("list Fork branch")
                 .is_empty()
         );
-
-        let response = app(state.clone())
-            .oneshot(
-                Request::post(format!("/api/projects/{}/sessions", project.id))
-                    .header("content-type", "application/json")
-                    .body(Body::from(r#"{"kind":"shell"}"#))
-                    .expect("build request"),
-            )
-            .await
-            .expect("request removed Project Session route");
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
         drop(state);
         std::fs::remove_dir_all(root).expect("remove test fixture");
