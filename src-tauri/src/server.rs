@@ -6251,9 +6251,9 @@ mod current_workspace_tests {
             "treefold-multi-location-test-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let first = root.join("repo-a");
-        let second = root.join("repo-b");
-        let context = root.join("reference");
+        let first = root.join("repo-z-primary");
+        let second = root.join("repo-a-second");
+        let context = root.join("reference-third");
         initialize_repository(&first);
         initialize_repository(&second);
         std::fs::create_dir_all(&context).expect("create context");
@@ -6291,6 +6291,32 @@ mod current_workspace_tests {
             .expect("create Project location");
             ids.push(location.id);
         }
+        assert_eq!(
+            state
+                .store
+                .directories(&project.id)
+                .expect("list ordered Project locations")
+                .iter()
+                .map(|location| location.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["repo-z-primary", "repo-a-second", "reference-third"],
+            "the primary location stays first and the rest keep insertion order"
+        );
+        state
+            .store
+            .update_project_defaults(&project.id, Some(&ids[1]), "main", "local_merge")
+            .expect("switch primary location");
+        assert_eq!(
+            state
+                .store
+                .directories(&project.id)
+                .expect("list reordered Project locations")
+                .iter()
+                .map(|location| location.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["repo-a-second", "repo-z-primary", "reference-third"],
+            "switching primary moves only that location to the front"
+        );
         let (_, Json(workspace)) = create_workspace(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),

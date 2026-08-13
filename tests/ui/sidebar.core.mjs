@@ -443,6 +443,8 @@ try {
   });
   const projectContent = await browser.$('[data-testid="page-content"]');
   assert.match(await projectContent.getText(), /fixture-documentation/, "attached Directory must remain visible on the Project page");
+  const orderedLocationNames = await browser.$$('[data-testid^="project-location-"] h3');
+  assert.equal(await orderedLocationNames[0].getText(), "fixture-repository", "primary location must render before attached locations");
   await (await browser.$("button*=Add location")).click();
   const addDirectoryDialog = await browser.$('[role="dialog"]');
   await addDirectoryDialog.waitForDisplayed({ timeout: 3_000 });

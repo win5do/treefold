@@ -207,7 +207,15 @@ impl Store {
 
     pub fn directories(&self, project_id: &str) -> Result<Vec<Directory>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare("SELECT id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,delivery_mode,git_common_dir,created_at,updated_at FROM project_locations WHERE project_id=? ORDER BY name")?;
+        let mut stmt = db.prepare(
+            "SELECT pl.id,pl.project_id,pl.name,pl.description,pl.worktree_setup_command,pl.path,pl.repository_url,pl.preferred_remote_name,pl.base_branch,pl.delivery_mode,pl.git_common_dir,pl.created_at,pl.updated_at
+             FROM project_locations pl
+             JOIN projects p ON p.id=pl.project_id
+             WHERE pl.project_id=?
+             ORDER BY CASE WHEN pl.id=p.default_location_id THEN 0 ELSE 1 END,
+                      pl.created_at ASC,
+                      pl.rowid ASC",
+        )?;
         let values = stmt
             .query_map([project_id], directory_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
