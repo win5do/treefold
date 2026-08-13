@@ -32,9 +32,12 @@ CREATE TABLE IF NOT EXISTS project_directories (
 CREATE TABLE IF NOT EXISTS workspaces (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+ kind TEXT NOT NULL DEFAULT 'workspace', parent_workspace_id TEXT REFERENCES workspaces(id),
+ checkout_mode TEXT NOT NULL DEFAULT 'worktree',
  project_directory_id TEXT NOT NULL REFERENCES project_directories(id),
  worktree_id TEXT, checkout_path TEXT NOT NULL, target_branch TEXT NOT NULL DEFAULT '',
  start_commit TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '',
+ forked_from_commit TEXT,
  remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL DEFAULT 'managed',
  delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
  delivery_status TEXT NOT NULL DEFAULT 'active',
@@ -221,7 +224,6 @@ impl Store {
         Ok(values)
     }
 
-    #[cfg(any())]
     pub(crate) fn base_workspace(&self, project_id: &str) -> Result<Option<Workspace>> {
         let db = self.0.lock();
         Ok(db
@@ -243,11 +245,10 @@ impl Store {
     }
 
     pub fn create_workspace(&self, w: &Workspace) -> Result<()> {
-        self.0.lock().execute("INSERT INTO workspaces(id,project_id,name,description,status,project_directory_id,worktree_id,checkout_path,target_branch,start_commit,branch,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params![w.id,w.project_id,w.name,w.description,w.status,w.project_directory_id,w.worktree_id,w.checkout_path,w.target_branch,w.start_commit,w.branch,w.remote_name,w.remote_branch,w.branch_ownership,w.delivery_mode,w.delivery_status,w.close_outcome,w.integrated_commit,w.closed_at,w.runtime_id,w.runtime_name,w.created_at,w.updated_at])?;
+        self.0.lock().execute("INSERT INTO workspaces(id,project_id,name,description,status,kind,parent_workspace_id,checkout_mode,project_directory_id,worktree_id,checkout_path,target_branch,start_commit,branch,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", params![w.id,w.project_id,w.name,w.description,w.status,w.kind,w.parent_workspace_id,w.checkout_mode,w.project_directory_id,w.worktree_id,w.checkout_path,w.target_branch,w.start_commit,w.branch,w.forked_from_commit,w.remote_name,w.remote_branch,w.branch_ownership,w.delivery_mode,w.delivery_status,w.close_outcome,w.integrated_commit,w.closed_at,w.runtime_id,w.runtime_name,w.created_at,w.updated_at])?;
         Ok(())
     }
 
-    #[cfg(any())]
     pub(crate) fn forks(&self, workspace_id: &str) -> Result<Vec<Workspace>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE parent_workspace_id=? ORDER BY updated_at DESC"))?;
@@ -781,11 +782,22 @@ impl Store {
     }
 
     pub fn project_detail(&self, id: &str) -> Result<ProjectDetail> {
+        let base = self.base_workspace(id)?;
+        let sessions = if let Some(base) = base.as_ref() {
+            self.sessions(&base.id)?
+        } else {
+            Vec::new()
+        };
         Ok(ProjectDetail {
             project: self.project(id)?,
             directories: self.directories(id)?,
-            workspaces: self.workspaces(id)?,
+            workspaces: self
+                .workspaces(id)?
+                .into_iter()
+                .filter(|workspace| workspace.kind == "workspace")
+                .collect(),
             worktrees: Vec::new(),
+            sessions,
         })
     }
 
@@ -796,6 +808,7 @@ impl Store {
             directories: self.directories(&workspace.project_id)?,
             sessions: self.sessions(id)?,
             todos: self.todos(id)?,
+            forks: self.forks(id)?,
             workspace,
         })
     }
@@ -839,7 +852,7 @@ fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
         created_at: r.get(8)?,
     })
 }
-const WORKSPACE_COLUMNS: &str = "id,project_id,name,description,status,project_directory_id,worktree_id,checkout_path,target_branch,start_commit,branch,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at";
+const WORKSPACE_COLUMNS: &str = "id,project_id,name,description,status,kind,parent_workspace_id,checkout_mode,project_directory_id,worktree_id,checkout_path,target_branch,start_commit,branch,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,runtime_id,runtime_name,created_at,updated_at";
 fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
     Ok(Workspace {
         id: r.get(0)?,
@@ -847,24 +860,28 @@ fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
         name: r.get(2)?,
         description: r.get(3)?,
         status: r.get(4)?,
-        project_directory_id: r.get(5)?,
-        worktree_id: r.get(6)?,
-        checkout_path: r.get(7)?,
-        target_branch: r.get(8)?,
-        start_commit: r.get(9)?,
-        branch: r.get(10)?,
-        remote_name: r.get(11)?,
-        remote_branch: r.get(12)?,
-        branch_ownership: r.get(13)?,
-        delivery_mode: r.get(14)?,
-        delivery_status: r.get(15)?,
-        close_outcome: r.get(16)?,
-        integrated_commit: r.get(17)?,
-        closed_at: r.get(18)?,
-        runtime_id: r.get(19)?,
-        runtime_name: r.get(20)?,
-        created_at: r.get(21)?,
-        updated_at: r.get(22)?,
+        kind: r.get(5)?,
+        parent_workspace_id: r.get(6)?,
+        checkout_mode: r.get(7)?,
+        project_directory_id: r.get(8)?,
+        worktree_id: r.get(9)?,
+        checkout_path: r.get(10)?,
+        target_branch: r.get(11)?,
+        start_commit: r.get(12)?,
+        branch: r.get(13)?,
+        forked_from_commit: r.get(14)?,
+        remote_name: r.get(15)?,
+        remote_branch: r.get(16)?,
+        branch_ownership: r.get(17)?,
+        delivery_mode: r.get(18)?,
+        delivery_status: r.get(19)?,
+        close_outcome: r.get(20)?,
+        integrated_commit: r.get(21)?,
+        closed_at: r.get(22)?,
+        runtime_id: r.get(23)?,
+        runtime_name: r.get(24)?,
+        created_at: r.get(25)?,
+        updated_at: r.get(26)?,
     })
 }
 const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,yolo,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
@@ -1018,15 +1035,30 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
     if !exists {
         return Ok(());
     }
-    let current = table_has_column(connection, "projects", "git_common_dir")?
+    let workspace_v2 = table_has_column(connection, "projects", "git_common_dir")?
         && table_has_column(connection, "workspaces", "remote_branch")?
-        && !table_has_column(connection, "workspaces", "kind")?
         && table_has_column(connection, "sessions", "workspace_id")?;
+    let current = workspace_v2 && table_has_column(connection, "workspaces", "kind")?;
     if current {
         return Ok(());
     }
 
-    // This pre-release domain change intentionally starts a new local data model.
+    if workspace_v2 {
+        let backup = path.with_extension("pre-workspace-v3.db");
+        if !backup.exists() {
+            let quoted = backup.to_string_lossy().replace('\'', "''");
+            connection.execute_batch(&format!("VACUUM INTO '{quoted}';"))?;
+        }
+        connection.execute_batch(
+            "ALTER TABLE workspaces ADD COLUMN kind TEXT NOT NULL DEFAULT 'workspace';
+             ALTER TABLE workspaces ADD COLUMN parent_workspace_id TEXT;
+             ALTER TABLE workspaces ADD COLUMN checkout_mode TEXT NOT NULL DEFAULT 'worktree';
+             ALTER TABLE workspaces ADD COLUMN forked_from_commit TEXT;",
+        )?;
+        return Ok(());
+    }
+
+    // The older pre-release domain change intentionally starts a new local data model.
     // Keep a byte-for-byte SQLite snapshot beside the database so users can recover
     // legacy Project/development records with an older Treefold build.
     let backup = path.with_extension("pre-workspace-v2.db");
@@ -1079,15 +1111,15 @@ mod workspace_schema_tests {
     }
 
     #[test]
-    fn current_workspace_schema_has_no_legacy_hierarchy_columns() {
+    fn current_workspace_schema_supports_one_level_of_forks() {
         let (root, path) = temporary_database("workspace-schema");
         let store = Store::open(&path).expect("open current Store");
         let connection = Connection::open(&path).expect("inspect current Store");
         assert!(table_has_column(&connection, "workspaces", "target_branch").unwrap());
         assert!(table_has_column(&connection, "workspaces", "remote_branch").unwrap());
-        assert!(!table_has_column(&connection, "workspaces", "kind").unwrap());
-        assert!(!table_has_column(&connection, "workspaces", "parent_workspace_id").unwrap());
-        assert!(!table_has_column(&connection, "workspaces", "checkout_mode").unwrap());
+        assert!(table_has_column(&connection, "workspaces", "kind").unwrap());
+        assert!(table_has_column(&connection, "workspaces", "parent_workspace_id").unwrap());
+        assert!(table_has_column(&connection, "workspaces", "checkout_mode").unwrap());
         drop(connection);
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
@@ -1105,6 +1137,47 @@ mod workspace_schema_tests {
         let store = Store::open(&path).expect("migrate legacy database");
         assert!(path.with_extension("pre-workspace-v2.db").exists());
         assert!(store.projects().expect("list migrated Projects").is_empty());
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[test]
+    fn flat_workspace_schema_is_upgraded_without_losing_records() {
+        let (root, path) = temporary_database("flat-workspace-migration");
+        let connection = Connection::open(&path).expect("create flat Workspace database");
+        connection.execute_batch(
+            "CREATE TABLE projects (
+               id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL,
+               primary_directory_id TEXT NOT NULL, git_common_dir TEXT NOT NULL, preferred_remote TEXT,
+               default_target_branch TEXT NOT NULL, default_delivery_mode TEXT NOT NULL,
+               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             CREATE TABLE workspaces (
+               id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL,
+               status TEXT NOT NULL, project_directory_id TEXT NOT NULL, worktree_id TEXT,
+               checkout_path TEXT NOT NULL, target_branch TEXT NOT NULL, start_commit TEXT NOT NULL,
+               branch TEXT NOT NULL, remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL,
+               delivery_mode TEXT NOT NULL, delivery_status TEXT NOT NULL, close_outcome TEXT,
+               integrated_commit TEXT, closed_at TEXT, runtime_id TEXT NOT NULL, runtime_name TEXT NOT NULL,
+               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             CREATE TABLE sessions (workspace_id TEXT NOT NULL);
+             INSERT INTO projects VALUES(
+               'p','Project','','active','d','/repo/.git','origin','main','remote_review','now','now'
+             );
+             INSERT INTO workspaces VALUES(
+               'w','p','Feature','','active','d',NULL,'/worktree','main','abc','treefold/feature',
+               'origin','feature/test','managed','remote_review','active',NULL,NULL,NULL,'w','treefold-w','now','now'
+             );",
+        ).expect("seed flat Workspace schema");
+        drop(connection);
+
+        let store = Store::open(&path).expect("upgrade flat Workspace database");
+        let workspace = store.workspace("w").expect("preserve Workspace record");
+        assert_eq!(workspace.kind, "workspace");
+        assert_eq!(workspace.checkout_mode, "worktree");
+        assert!(workspace.parent_workspace_id.is_none());
+        assert!(path.with_extension("pre-workspace-v3.db").exists());
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
     }

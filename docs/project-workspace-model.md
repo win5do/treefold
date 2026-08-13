@@ -1,76 +1,73 @@
-# Project, Workspace, and Session
+# Project, Workspace, Fork, and Session
 
-Treefold uses one development hierarchy:
+Treefold uses a shallow development hierarchy:
 
 ```text
 Project
+├── Session
 └── Workspace
     ├── Session
-    └── Todo
+    ├── Todo
+    └── Fork
+        ├── Session
+        └── Todo
 ```
+
+Every level can create formal Shell or Codex Sessions. The levels differ in
+their Git ownership, not in whether they can host a terminal.
 
 ## Project
 
-A Project is a registered Git repository, not a development branch. It owns
-repository metadata and defaults:
+A Project is a registered Git repository, not a development branch. It owns the
+source checkout, Git common directory, remotes, default target branch, default
+delivery mode, and the inventory of Workspaces and worktrees.
 
-- the source checkout and absolute Git common directory;
-- registered directories and remotes;
-- the preferred remote and default target branch;
-- the default delivery mode;
-- the inventory of Workspaces and Git worktrees.
+Project Sessions run in the source checkout and are recorded, resumed, stopped,
+and archived like other Sessions. They are an explicit escape hatch for
+repository-level work: the user owns the effects of commands run there.
 
-A Project does not own formal Sessions or Todos. `Open Shell` and `Open Codex`
-launch an unmanaged external terminal in the source checkout. Treefold does not
-record, resume, stop, archive, or attach those processes to a delivery.
-
-Project Pull fetches the preferred remote's target branch and applies only a
-fast-forward in a clean source checkout currently on the target branch. Project
-Push pushes that target branch without force.
+Project Pull fetches the preferred remote target and fast-forwards only when the
+source checkout is clean and currently on that target. Project Push pushes that
+target without force.
 
 ## Workspace
 
-A Workspace is one feature, fix, or other deliverable body of work. It owns:
+A Workspace is one feature, fix, or other deliverable body of work. It owns a
+managed worktree, local feature branch, fixed target and creation commit,
+optional remote feature branch, delivery state, Sessions, Todos, and Forks.
 
-- a managed Git worktree;
-- a locally unique feature branch;
-- a fixed target branch and creation commit;
-- an optional remote name and remote feature branch;
-- a delivery mode and delivery status;
-- managed Shell/Codex Sessions and Todos.
+Workspace Pull fast-forwards its configured upstream only. Workspace Push sets
+the upstream and pushes without force. The local and remote branch names are
+independent.
 
-The local branch may be supplied by the user. Otherwise Treefold generates a
-readable `treefold/<slug>-<random>` branch. The remote branch is independent of
-the local branch and can be configured or cleared later.
+## Fork
 
-Workspace Pull fetches its configured upstream and fast-forwards only. If local
-and remote have diverged, Treefold stops and asks the user to rebase or merge
-explicitly. Workspace Push sets the upstream and pushes without force.
+A Fork is one level of parallel subwork beneath a Workspace. It starts from the
+parent Workspace's current HEAD and owns its own managed worktree, local branch,
+Sessions, and Todos. Forks cannot nest.
+
+A Fork has no remote branch, Pull, or Push. Finishing it performs a local merge
+into the parent Workspace. The parent remains responsible for remote
+synchronization and final delivery.
 
 ## Session
 
-A Session always belongs to a Workspace. Shell Sessions run the login shell;
-Codex Sessions run Codex with the Workspace worktree as their primary context.
-Treefold records lifecycle state and can stop, restart, hide, and resume these
-managed processes.
+A Session belongs directly to a Project, Workspace, or Fork. Internally,
+Project Sessions use a hidden in-place runtime owner so the persistence and PTY
+lifecycle stay uniform; this is an implementation detail, not a visible
+development Workspace.
 
-## Finishing a Workspace
+Shell Sessions run the login shell. Codex Sessions run Codex with their owner's
+checkout as primary context. Treefold records lifecycle state and can stop,
+restart, hide, and resume both kinds.
 
-Finishing delivers to the Workspace's fixed target rather than to a mutable
-Project working state. Preflight snapshots source and target state before any
-mutation. Four outcomes are supported:
+## Finishing
 
-1. **Remote merged**: verify the Workspace head is reachable from the fetched
-   remote target after review and CI.
-2. **Local merge**: merge into the clean local target checkout, optionally push
-   the target branch, then clean up.
-3. **Preserve**: keep the Workspace, worktree, and branch for later work.
-4. **Discard**: explicitly remove the worktree and branch without delivery.
+A root Workspace can verify a remote-reviewed merge, merge locally into its
+fixed target with an optional push, preserve its work, or discard it. Active
+Forks must be finished first.
 
-Todos may be kept in the archived Workspace or discarded; they are never
-implicitly moved to Project. Session history may be retained. Cleanup happens
-only after delivery verification, and an interrupted operation remains
-recoverable.
-
-Fork is intentionally not part of the active model. Parallel development is
-represented by sibling Workspaces under the same Project.
+A Fork can merge locally into its parent Workspace, preserve its work, or
+discard it. It cannot claim a remote merge or push after merge. All delivery
+paths use preflight validation and delay cleanup until the selected outcome is
+proven.

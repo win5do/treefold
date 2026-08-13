@@ -1,15 +1,15 @@
-# Project Unmanaged Tools
+# Project Session Implementation
 
-Project pages expose `Open Shell` and `Open Codex` for repository maintenance.
-These actions open an external terminal in the selected Project directory and
-do not create a Treefold Session, hidden Workspace, Todo owner, or delivery
-record.
+Project pages can create formal Shell and Codex Sessions in the source
+checkout. The public model is a Session directly owned by the Project.
 
-This is an intentional escape hatch. Users may fetch, inspect, repair, or make
-direct changes in the source checkout and are responsible for those operations.
-Treefold's managed Workspace safety remains independent: creation fixes a target
-and start commit, and pull, rebase, finish, and cleanup validate actual Git state
-when they run.
+The persistence layer lazily creates one hidden `base` Workspace per Project.
+It uses `checkout_mode = in_place`, points at the primary source checkout, and
+exists only to reuse the same Session, PTY, restart, resume, and archive
+machinery as Workspace and Fork Sessions. It is excluded from visible Workspace
+lists, reconciliation, delivery, Pull/Push, and Fork creation.
 
-Only Workspace pages can create formal Shell or Codex Sessions. This preserves
-the invariant that every managed Session belongs to a development unit.
+Commands executed by a Project Session are intentionally unrestricted within
+the user's environment. Treefold does not pretend they are isolated feature
+development, and later managed Git operations still validate real checkout
+state before mutating it.

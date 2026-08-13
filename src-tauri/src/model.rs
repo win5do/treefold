@@ -47,6 +47,10 @@ pub struct Workspace {
     pub name: String,
     pub description: String,
     pub status: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_workspace_id: Option<String>,
+    pub checkout_mode: String,
     pub project_directory_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_id: Option<String>,
@@ -54,6 +58,8 @@ pub struct Workspace {
     pub target_branch: String,
     pub start_commit: String,
     pub branch: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forked_from_commit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -129,6 +135,7 @@ pub struct ProjectDetail {
     pub directories: Vec<Directory>,
     pub workspaces: Vec<Workspace>,
     pub worktrees: Vec<GitWorktree>,
+    pub sessions: Vec<Session>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -216,6 +223,7 @@ pub struct WorkspaceDetail {
     pub directories: Vec<Directory>,
     pub sessions: Vec<Session>,
     pub todos: Vec<Todo>,
+    pub forks: Vec<Workspace>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

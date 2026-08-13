@@ -2,17 +2,22 @@ export const FIXTURE_IDS = Object.freeze({
   project: "project-ui-fixture",
   directory: "directory-ui-fixture",
   workspace: "workspace-ui-fixture",
+  fork: "fork-ui-fixture",
+  projectShell: "session-project-shell-ui-fixture",
   shell: "session-shell-ui-fixture",
+  forkShell: "session-fork-shell-ui-fixture",
 });
 
 export const FIXTURE_NAMES = Object.freeze({
   project: "UI Fixture Project",
   workspace: "Feature workspace with a readable long name",
+  fork: "Parallel parser experiment",
 });
 
 const timestamp = "2026-08-13T08:00:00.000Z";
 const sourcePath = "/tmp/treefold-ui-fixture/repository";
 const workspacePath = "/tmp/treefold-ui-fixture/worktrees/feature";
+const forkPath = "/tmp/treefold-ui-fixture/worktrees/fork";
 
 const project = {
   id: FIXTURE_IDS.project,
@@ -50,6 +55,8 @@ const workspace = {
   name: FIXTURE_NAMES.workspace,
   description: "Feature development unit",
   status: "active",
+  kind: "workspace",
+  checkout_mode: "worktree",
   project_directory_id: FIXTURE_IDS.directory,
   checkout_path: workspacePath,
   target_branch: "main",
@@ -66,6 +73,25 @@ const workspace = {
   updated_at: timestamp,
 };
 
+const fork = {
+  ...workspace,
+  id: FIXTURE_IDS.fork,
+  name: FIXTURE_NAMES.fork,
+  description: "Parallel subwork fixture",
+  kind: "fork",
+  parent_workspace_id: FIXTURE_IDS.workspace,
+  checkout_path: forkPath,
+  target_branch: workspace.branch,
+  branch: "treefold/f-1122334455",
+  forked_from_commit: "abcdef1234567890",
+  remote_name: undefined,
+  remote_branch: undefined,
+  delivery_mode: "local_merge",
+  delivery_status: "active",
+  runtime_id: FIXTURE_IDS.fork,
+  runtime_name: "treefold-fork-ui-fixture",
+};
+
 const shell = {
   id: FIXTURE_IDS.shell,
   workspace_id: FIXTURE_IDS.workspace,
@@ -79,11 +105,15 @@ const shell = {
   status: "running",
 };
 
+const projectShell = { ...shell, id: FIXTURE_IDS.projectShell, workspace_id: "project-base-ui-fixture", name: "Project Shell", cwd: sourcePath, original_cwd: sourcePath };
+const forkShell = { ...shell, id: FIXTURE_IDS.forkShell, workspace_id: FIXTURE_IDS.fork, name: "Fork Shell", cwd: forkPath, original_cwd: forkPath };
+
 const projectDetail = {
   ...project,
   directories: [directory],
   workspaces: [workspace],
   worktrees: [{ directory_id: directory.id, directory_name: directory.name, path: sourcePath, branch: "main", head_commit: "0123456789", is_main: true }],
+  sessions: [projectShell],
 };
 
 const workspaceDetail = {
@@ -92,6 +122,16 @@ const workspaceDetail = {
   directories: [{ ...directory, checkout_path: workspacePath }],
   sessions: [shell],
   todos: [{ id: "todo-ui-fixture", workspace_id: workspace.id, title: "Verify Workspace delivery", description: "", status: "pending" }],
+  forks: [fork],
+};
+
+const forkDetail = {
+  ...fork,
+  project,
+  directories: [{ ...directory, checkout_path: forkPath }],
+  sessions: [forkShell],
+  todos: [],
+  forks: [],
 };
 
 const deliveryPreflight = {
@@ -120,7 +160,7 @@ export function createSidebarCoreFixture() {
     system: { codex_available: true, codex_version: "codex-ui-fixture", backend: "fixture", terminal_runtime: "fixture" },
     projects: [project],
     projectDetails: { [project.id]: projectDetail },
-    workspaceDetails: { [workspace.id]: workspaceDetail },
-    deliveryPreflights: { [workspace.id]: deliveryPreflight },
+    workspaceDetails: { [workspace.id]: workspaceDetail, [fork.id]: forkDetail },
+    deliveryPreflights: { [workspace.id]: deliveryPreflight, [fork.id]: { ...deliveryPreflight, id: "preflight-fork-ui-fixture", workspace_id: fork.id, code_action: "local_merge", target_branch: workspace.branch } },
   });
 }
