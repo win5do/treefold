@@ -148,10 +148,7 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/projects/{id}/workspaces", post(create_workspace))
         .route("/api/workspaces/{id}/forks", post(create_fork))
-        .route(
-            "/api/workspaces/{id}",
-            get(get_workspace).patch(update_workspace),
-        )
+        .route("/api/workspaces/{id}", get(get_workspace))
         .route(
             "/api/workspaces/{id}/git-history",
             get(get_workspace_git_history),
@@ -169,6 +166,10 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/workspace-locations/{id}/git-history",
             get(get_workspace_location_git_history),
+        )
+        .route(
+            "/api/workspace-locations/{id}",
+            patch(update_workspace_location),
         )
         .route(
             "/api/workspace-locations/{id}/git/pull",
@@ -2128,6 +2129,17 @@ async fn sync_all_workspace_locations(
             });
             continue;
         }
+        if location.remote_name.is_none() || location.remote_branch.is_none() {
+            results.push(GitSyncItemResult {
+                project_location_id: location.project_location_id,
+                workspace_location_id: Some(location.id),
+                location_name: location.location_name,
+                status: "skipped".into(),
+                result: None,
+                error: Some("upstream is not configured".into()),
+            });
+            continue;
+        }
         match sync_workspace_location(&location, action).await {
             Ok(result) => results.push(GitSyncItemResult {
                 project_location_id: location.project_location_id,
@@ -3145,23 +3157,25 @@ fn git_operation_history(state: &AppState, id: &str) -> Result<Vec<GitOperationR
 }
 
 #[derive(Deserialize)]
-struct UpdateWorkspace {
+struct UpdateWorkspaceLocation {
     remote_name: Option<String>,
     remote_branch: Option<String>,
-    delivery_mode: Option<String>,
 }
-async fn update_workspace(
+
+async fn update_workspace_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
-    ApiJson(input): ApiJson<UpdateWorkspace>,
-) -> Result<Json<Workspace>> {
-    let workspace = state.store.workspace(&id)?;
+    ApiJson(input): ApiJson<UpdateWorkspaceLocation>,
+) -> Result<Json<WorkspaceLocation>> {
+    let location = state.store.workspace_location(&id)?;
+    let workspace = state.store.workspace(&location.workspace_id)?;
     ensure_active_workspace(&workspace)?;
     if workspace.kind != "workspace" {
         return Err(AppError::BadRequest(
-            "remote delivery settings are available only for a root Workspace".into(),
+            "remote upstream settings are available only for a root Workspace".into(),
         ));
     }
+    let path = workspace_location_git_path(&location)?;
     let remote_name = trimmed(input.remote_name).filter(|value| !value.is_empty());
     let remote_branch = trimmed(input.remote_branch).filter(|value| !value.is_empty());
     if remote_name.is_some() != remote_branch.is_some() {
@@ -3170,28 +3184,20 @@ async fn update_workspace(
         ));
     }
     if let Some(remote) = remote_name.as_deref() {
-        let remotes = git_remote_names(&workspace.checkout_path)?;
+        let remotes = git_remote_names(path)?;
         if !remotes.iter().any(|candidate| candidate == remote) {
             return Err(AppError::BadRequest(
-                "Workspace remote was not found".into(),
+                "Workspace location remote was not found".into(),
             ));
         }
-    }
-    let delivery_mode = trimmed(input.delivery_mode)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| workspace.delivery_mode.clone());
-    if delivery_mode != "remote_review" && delivery_mode != "local_merge" {
-        return Err(AppError::BadRequest(
-            "delivery_mode must be remote_review or local_merge".into(),
-        ));
     }
     state.store.update_workspace_delivery(
         &id,
         remote_name.as_deref(),
         remote_branch.as_deref(),
-        &delivery_mode,
+        &location.delivery_mode,
     )?;
-    Ok(Json(state.store.workspace(&id)?))
+    Ok(Json(state.store.workspace_location(&id)?))
 }
 
 #[derive(Deserialize)]
@@ -6273,8 +6279,9 @@ mod current_workspace_tests {
         app, close_session, command_output, create_delivery_preflight_impl, create_directory,
         create_fork, create_project, create_project_session, create_workspace,
         finish_workspace_impl, pull_workspace, push_workspace, refresh_project_location,
-        update_workspace, ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork,
-        CreateProject, CreateSession, CreateWorkspace, FinishWorkspace, UpdateWorkspace,
+        update_workspace_location, ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory,
+        CreateFork, CreateProject, CreateSession, CreateWorkspace, FinishWorkspace,
+        UpdateWorkspaceLocation,
     };
     use crate::{
         model::{Session, Todo},
@@ -6503,17 +6510,20 @@ mod current_workspace_tests {
                 .to_string()
                 .contains("no remote branch")
         );
-        assert!(update_workspace(
+        let fork_location = state
+            .store
+            .default_workspace_location(&fork.id)
+            .expect("get Fork location");
+        assert!(update_workspace_location(
             State(state.clone()),
-            axum::extract::Path(fork.id.clone()),
-            ApiJson(UpdateWorkspace {
-                remote_name: Some("origin".into()),
-                remote_branch: Some("feature/fork".into()),
-                delivery_mode: Some("remote_review".into()),
+            axum::extract::Path(fork_location.id),
+            ApiJson(UpdateWorkspaceLocation {
+                remote_name: None,
+                remote_branch: None,
             }),
         )
         .await
-        .expect_err("Fork has no remote settings")
+        .expect_err("Fork location has no remote settings")
         .to_string()
         .contains("root Workspace"));
 
@@ -6691,6 +6701,19 @@ mod current_workspace_tests {
             .checkout_path
             .as_deref()
             .is_some_and(|path| Path::new(path).is_dir())));
+        let Json(updated_location) = update_workspace_location(
+            State(state.clone()),
+            axum::extract::Path(writable[0].id.clone()),
+            ApiJson(UpdateWorkspaceLocation {
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("clear Workspace location upstream");
+        assert_eq!(updated_location.delivery_mode, "local_merge");
+        assert!(updated_location.remote_name.is_none());
+        assert!(updated_location.remote_branch.is_none());
         assert_eq!(
             snapshots
                 .iter()

@@ -26,6 +26,7 @@ async function startFixtureApi() {
   const fixture = createSidebarCoreFixture();
   const unexpectedRequests = [];
   const syncRequests = [];
+  const workspaceLocationUpdates = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -200,6 +201,25 @@ async function startFixtureApi() {
     if (request.method === "POST" && projectLocationSyncMatch) {
       syncRequests.push(pathname);
       sendJson(response, 200, { scope: "project_location", action: projectLocationSyncMatch[2], branch: "main", remote: "origin", remote_branch: "main", status: "up_to_date", message: "up to date" });
+      return;
+    }
+
+    const workspaceLocationSyncMatch = pathname.match(/^\/api\/workspace-locations\/([^/]+)\/git\/(pull|push)$/);
+    if (request.method === "POST" && workspaceLocationSyncMatch) {
+      syncRequests.push(pathname);
+      sendJson(response, 200, { scope: "workspace_location", action: workspaceLocationSyncMatch[2], branch: "treefold/w-ui-fixture", remote: "origin", remote_branch: "feature/ui-fixture", status: "up_to_date", message: "up to date" });
+      return;
+    }
+
+    const workspaceLocationMatch = pathname.match(/^\/api\/workspace-locations\/([^/]+)$/);
+    if (request.method === "PATCH" && workspaceLocationMatch) {
+      const input = await readJson(request);
+      const location = Object.values(fixture.workspaceDetails).flatMap((detail) => detail.locations).find((item) => item.id === workspaceLocationMatch[1]);
+      if (!location) return sendJson(response, 404, { error: "Workspace location not found" });
+      location.remote_name = input.remote_name || undefined;
+      location.remote_branch = input.remote_branch || undefined;
+      workspaceLocationUpdates.push({ id: location.id, remote_name: location.remote_name, remote_branch: location.remote_branch });
+      sendJson(response, 200, location);
       return;
     }
 
@@ -385,6 +405,7 @@ async function startFixtureApi() {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests,
+    workspaceLocationUpdates,
     unexpectedRequests,
     async close() {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -397,6 +418,7 @@ export async function startUiHarness() {
     return {
       baseUrl: process.env.TREEFOLD_UI_URL,
       syncRequests: [],
+      workspaceLocationUpdates: [],
       assertNoUnexpectedRequests() {},
       async close() {},
     };
@@ -434,6 +456,7 @@ export async function startUiHarness() {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests: fixtureApi.syncRequests,
+    workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {
         throw new Error(`Unexpected UI fixture requests: ${fixtureApi.unexpectedRequests.join(", ")}`);
