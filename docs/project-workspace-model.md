@@ -17,10 +17,16 @@ Project
 
 ## Project and ProjectLocation
 
-A Project is an organizing record and may initially have no locations. A
-ProjectLocation is a local path with a display name, description, optional
-worktree setup command, and observed Git identity. Its dynamic status is one of
-`ready`, `not_git`, `missing`, `broken`, or `mismatch`.
+A Project is an organizing record and may initially have no locations. Creating
+one only asks for its name and description. A ProjectLocation is a local path
+whose name is always derived from the directory basename. It also stores a
+description and observed Git identity. Its dynamic status is one of `ready`,
+`not_git`, `missing`, `broken`, or `mismatch`.
+
+Base branch, delivery mode, and optional worktree setup command belong to each
+Git ProjectLocation. Non-Git locations do not carry Git settings and are used as
+read-only context. The add-locations flow accepts multiple paths in one dialog,
+checks each path, and only exposes Git settings for rows detected as repositories.
 
 The first ready Git location becomes the default. Creating a Workspace requires
 that default to be ready and also blocks when any additional location previously

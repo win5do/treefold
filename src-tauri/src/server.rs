@@ -99,6 +99,10 @@ fn app(state: AppState) -> Router {
             "/api/projects/{id}/locations",
             get(list_project_locations).post(create_directory),
         )
+        .route(
+            "/api/project-locations/inspect",
+            post(inspect_project_location),
+        )
         .route("/api/project-directories/{id}", patch(update_directory))
         .route(
             "/api/project-locations/{id}",
@@ -678,6 +682,7 @@ async fn create_project(
             repository_url: None,
             preferred_remote_name: trimmed(input.preferred_remote).filter(|v| !v.is_empty()),
             base_branch: Some(project.default_base_branch.clone()),
+            delivery_mode: Some(project.default_delivery_mode.clone()),
             git_common_dir: None,
             git_status: if is_git { "ready" } else { "not_git" }.into(),
             created_at: timestamp.clone(),
@@ -1202,10 +1207,65 @@ async fn delete_project(
 
 #[derive(Deserialize)]
 struct CreateDirectory {
-    name: Option<String>,
     description: Option<String>,
     worktree_setup_command: Option<String>,
     path: String,
+    base_branch: Option<String>,
+    delivery_mode: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct InspectProjectLocation {
+    path: String,
+}
+
+#[derive(Serialize)]
+struct ProjectLocationInspection {
+    path: String,
+    name: String,
+    git_status: String,
+    repository_url: Option<String>,
+    preferred_remote_name: Option<String>,
+    base_branch: Option<String>,
+}
+
+async fn inspect_project_location(
+    ApiJson(input): ApiJson<InspectProjectLocation>,
+) -> Result<Json<ProjectLocationInspection>> {
+    let (path, is_git) = inspect_path(&input.path)?;
+    let mut location = ProjectLocation {
+        id: String::new(),
+        project_id: String::new(),
+        name: basename(&path),
+        description: String::new(),
+        worktree_setup_command: String::new(),
+        path,
+        repository_url: None,
+        preferred_remote_name: None,
+        base_branch: None,
+        delivery_mode: None,
+        git_common_dir: None,
+        git_status: if is_git { "ready" } else { "not_git" }.into(),
+        created_at: String::new(),
+        updated_at: String::new(),
+        checkout_path: None,
+        role: String::new(),
+        is_git,
+        remote_url: None,
+        branch: None,
+        head_commit: None,
+        head_summary: None,
+        dirty: false,
+    };
+    refresh_location_observation(&mut location)?;
+    Ok(Json(ProjectLocationInspection {
+        path: location.path,
+        name: location.name,
+        git_status: location.git_status,
+        repository_url: location.repository_url,
+        preferred_remote_name: location.preferred_remote_name,
+        base_branch: location.base_branch,
+    }))
 }
 
 async fn list_project_locations(
@@ -1235,9 +1295,15 @@ async fn create_directory(
 ) -> Result<(StatusCode, Json<Directory>)> {
     state.store.project(&project_id)?;
     let (path, is_git) = inspect_path(&input.path)?;
-    let name = trimmed(input.name)
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| basename(&path));
+    let name = basename(&path);
+    let requested_delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
+    if let Some(mode) = requested_delivery_mode.as_deref() {
+        if mode != "remote_review" && mode != "local_merge" {
+            return Err(AppError::BadRequest(
+                "delivery_mode must be remote_review or local_merge".into(),
+            ));
+        }
+    }
     let directory = Directory {
         id: id(),
         project_id,
@@ -1247,7 +1313,16 @@ async fn create_directory(
         path,
         repository_url: None,
         preferred_remote_name: None,
-        base_branch: None,
+        base_branch: if is_git {
+            trimmed(input.base_branch).filter(|value| !value.is_empty())
+        } else {
+            None
+        },
+        delivery_mode: if is_git {
+            Some(requested_delivery_mode.unwrap_or_else(|| "remote_review".into()))
+        } else {
+            None
+        },
         git_common_dir: None,
         git_status: if is_git {
             "ready".into()
@@ -1267,6 +1342,9 @@ async fn create_directory(
     };
     let mut directory = directory;
     refresh_location_observation(&mut directory)?;
+    if directory.git_status == "ready" && directory.delivery_mode.is_none() {
+        directory.delivery_mode = Some("remote_review".into());
+    }
     state.store.create_directory(&directory)?;
     Ok((StatusCode::CREATED, Json(directory)))
 }
@@ -1279,6 +1357,10 @@ async fn refresh_project_location(
     let was_git = location.git_common_dir.is_some();
     refresh_location_observation(&mut location)?;
     if location.git_status == "ready" {
+        location.name = basename(&location.path);
+        if location.delivery_mode.is_none() {
+            location.delivery_mode = Some("remote_review".into());
+        }
         location.updated_at = now();
         state.store.refresh_project_location(&location)?;
     } else if was_git {
@@ -1330,6 +1412,7 @@ async fn reattach_project_location(
     }
     let mut observed = current.clone();
     observed.path = candidate.clone();
+    observed.name = basename(&candidate);
     observed.git_common_dir = None;
     refresh_location_observation(&mut observed)?;
     if observed.git_status != "ready" {
@@ -1402,25 +1485,49 @@ async fn delete_project_location(
 
 #[derive(Deserialize)]
 struct UpdateDirectory {
-    name: String,
     description: Option<String>,
     worktree_setup_command: Option<String>,
+    base_branch: Option<String>,
+    delivery_mode: Option<String>,
 }
 async fn update_directory(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateDirectory>,
 ) -> Result<Json<Directory>> {
-    if input.name.trim().is_empty() {
-        return Err(AppError::BadRequest("name is required".into()));
+    let current = state.store.directory(&id)?;
+    let base_branch = trimmed(input.base_branch).filter(|value| !value.is_empty());
+    let delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
+    if current.git_common_dir.is_none() && (base_branch.is_some() || delivery_mode.is_some()) {
+        return Err(AppError::BadRequest(
+            "Git settings can only be configured for a Git location".into(),
+        ));
+    }
+    if let Some(mode) = delivery_mode.as_deref() {
+        if mode != "remote_review" && mode != "local_merge" {
+            return Err(AppError::BadRequest(
+                "delivery_mode must be remote_review or local_merge".into(),
+            ));
+        }
     }
     state.store.update_directory(
         &id,
-        input.name.trim(),
         trimmed(input.description).unwrap_or_default().as_str(),
         trimmed(input.worktree_setup_command)
             .unwrap_or_default()
             .as_str(),
+        if current.git_common_dir.is_some() {
+            base_branch.as_deref().or(current.base_branch.as_deref())
+        } else {
+            None
+        },
+        if current.git_common_dir.is_some() {
+            delivery_mode
+                .as_deref()
+                .or(current.delivery_mode.as_deref())
+        } else {
+            None
+        },
     )?;
     let mut directory = state.store.directory(&id)?;
     enrich_directory(&mut directory, None);
@@ -1518,11 +1625,9 @@ async fn checkout_directory_branch(
 struct CreateWorkspace {
     name: String,
     description: Option<String>,
-    target_branch: Option<String>,
     branch: Option<String>,
     remote_name: Option<String>,
     remote_branch: Option<String>,
-    delivery_mode: Option<String>,
 }
 async fn create_workspace(
     State(state): State<AppState>,
@@ -1566,14 +1671,11 @@ async fn create_workspace(
     let workspace_id = id();
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
     let branch = choose_shared_branch(&locations, explicit_branch.as_deref(), input.name.trim())?;
-    let delivery_mode = trimmed(input.delivery_mode)
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| project.default_delivery_mode.clone());
-    if delivery_mode != "remote_review" && delivery_mode != "local_merge" {
-        return Err(AppError::BadRequest(
-            "delivery_mode must be remote_review or local_merge".into(),
-        ));
-    }
+    let default_delivery_mode = locations
+        .iter()
+        .find(|location| location.id == default_id)
+        .and_then(|location| location.delivery_mode.clone())
+        .unwrap_or_else(|| "remote_review".into());
     let root = state
         .settings
         .worktree_root()?
@@ -1591,17 +1693,14 @@ async fn create_workspace(
             ));
             continue;
         }
-        let base_branch = if location.id == default_id {
-            trimmed(input.target_branch.clone())
-                .filter(|value| !value.is_empty())
-                .or_else(|| location.base_branch.clone())
-                .unwrap_or_else(|| project.default_base_branch.clone())
-        } else {
-            location
-                .base_branch
-                .clone()
-                .unwrap_or_else(|| project.default_base_branch.clone())
-        };
+        let base_branch = location
+            .base_branch
+            .clone()
+            .unwrap_or_else(|| project.default_base_branch.clone());
+        let location_delivery_mode = location
+            .delivery_mode
+            .clone()
+            .unwrap_or_else(|| "remote_review".into());
         let start_commit = match command_output(
             Path::new(&location.path),
             "git",
@@ -1669,7 +1768,7 @@ async fn create_workspace(
             None,
             remote_name,
             remote_branch,
-            delivery_mode.clone(),
+            location_delivery_mode,
         ));
     }
     let workspace = Workspace {
@@ -1695,7 +1794,7 @@ async fn create_workspace(
         remote_name: None,
         remote_branch: None,
         branch_ownership: "managed".into(),
-        delivery_mode,
+        delivery_mode: default_delivery_mode,
         delivery_status: "active".into(),
         close_outcome: None,
         integrated_commit: None,
@@ -6000,11 +6099,9 @@ mod current_workspace_tests {
             ApiJson(CreateWorkspace {
                 name: "Feature".into(),
                 description: None,
-                target_branch: Some("main".into()),
                 branch: Some("feature/current-fork-test".into()),
                 remote_name: None,
                 remote_branch: None,
-                delivery_mode: Some("local_merge".into()),
             }),
         )
         .await
@@ -6178,19 +6275,16 @@ mod current_workspace_tests {
         .await
         .expect("create empty Project");
         let mut ids = Vec::new();
-        for (name, path) in [
-            ("repo-a", &first),
-            ("repo-b", &second),
-            ("reference", &context),
-        ] {
+        for path in [&first, &second, &context] {
             let (_, Json(location)) = create_directory(
                 State(state.clone()),
                 axum::extract::Path(project.id.clone()),
                 ApiJson(CreateDirectory {
-                    name: Some(name.into()),
                     description: None,
                     worktree_setup_command: None,
                     path: path.to_string_lossy().into_owned(),
+                    base_branch: path.join(".git").exists().then(|| "main".into()),
+                    delivery_mode: path.join(".git").exists().then(|| "local_merge".into()),
                 }),
             )
             .await
@@ -6203,11 +6297,9 @@ mod current_workspace_tests {
             ApiJson(CreateWorkspace {
                 name: "Coordinated change".into(),
                 description: None,
-                target_branch: None,
                 branch: None,
                 remote_name: None,
                 remote_branch: None,
-                delivery_mode: Some("local_merge".into()),
             }),
         )
         .await
@@ -6222,6 +6314,9 @@ mod current_workspace_tests {
             .filter(|item| item.access_mode == "read_write")
             .collect::<Vec<_>>();
         assert_eq!(writable.len(), 2);
+        assert!(writable
+            .iter()
+            .all(|item| item.delivery_mode == "local_merge"));
         assert_eq!(
             writable[0].branch, writable[1].branch,
             "all repositories share one branch name"
@@ -6300,10 +6395,11 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateDirectory {
-                name: Some("repo-z".into()),
                 description: None,
                 worktree_setup_command: Some("exit 7".into()),
                 path: second.to_string_lossy().into_owned(),
+                base_branch: Some("main".into()),
+                delivery_mode: Some("local_merge".into()),
             }),
         )
         .await
@@ -6314,11 +6410,9 @@ mod current_workspace_tests {
             ApiJson(CreateWorkspace {
                 name: "Must rollback".into(),
                 description: None,
-                target_branch: None,
                 branch: None,
                 remote_name: None,
                 remote_branch: None,
-                delivery_mode: None,
             }),
         )
         .await

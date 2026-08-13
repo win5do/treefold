@@ -47,6 +47,7 @@ code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 }
 
 .dialog-content.overflow-hidden { overflow: hidden; }
+.dialog-content.location-list-dialog { width: min(94vw, 820px); }
 
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes dialog-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } }

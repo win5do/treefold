@@ -71,6 +71,7 @@ const directories = [
     repository_url: "https://example.test/treefold/ui-fixture.git",
     preferred_remote_name: "origin",
     base_branch: "main",
+    delivery_mode: "remote_review",
     git_common_dir: `${primaryPath}/.git`,
     git_status: "ready",
     role: "primary",

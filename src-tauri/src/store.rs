@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS project_locations (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  worktree_setup_command TEXT NOT NULL DEFAULT '', path TEXT NOT NULL,
- repository_url TEXT, preferred_remote_name TEXT, base_branch TEXT, git_common_dir TEXT,
+ repository_url TEXT, preferred_remote_name TEXT, base_branch TEXT, delivery_mode TEXT,
+ git_common_dir TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  UNIQUE(project_id,path)
 );
@@ -206,7 +207,7 @@ impl Store {
 
     pub fn directories(&self, project_id: &str) -> Result<Vec<Directory>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare("SELECT id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,git_common_dir,created_at,updated_at FROM project_locations WHERE project_id=? ORDER BY name")?;
+        let mut stmt = db.prepare("SELECT id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,delivery_mode,git_common_dir,created_at,updated_at FROM project_locations WHERE project_id=? ORDER BY name")?;
         let values = stmt
             .query_map([project_id], directory_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -215,7 +216,7 @@ impl Store {
 
     pub fn directory(&self, id: &str) -> Result<Directory> {
         let db = self.0.lock();
-        Ok(db.query_row("SELECT id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,git_common_dir,created_at,updated_at FROM project_locations WHERE id=?", [id], directory_row)?)
+        Ok(db.query_row("SELECT id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,delivery_mode,git_common_dir,created_at,updated_at FROM project_locations WHERE id=?", [id], directory_row)?)
     }
 
     pub fn create_directory(&self, d: &Directory) -> Result<()> {
@@ -232,21 +233,22 @@ impl Store {
     pub fn update_directory(
         &self,
         id: &str,
-        name: &str,
         description: &str,
         worktree_setup_command: &str,
+        base_branch: Option<&str>,
+        delivery_mode: Option<&str>,
     ) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE project_locations SET name=?,description=?,worktree_setup_command=?,updated_at=? WHERE id=?",
-            params![name, description, worktree_setup_command, now(), id],
+            "UPDATE project_locations SET description=?,worktree_setup_command=?,base_branch=?,delivery_mode=?,updated_at=? WHERE id=?",
+            params![description, worktree_setup_command, base_branch, delivery_mode, now(), id],
         )?;
         Ok(())
     }
 
     pub fn refresh_project_location(&self, location: &ProjectLocation) -> Result<()> {
         let changed = self.0.lock().execute(
-            "UPDATE project_locations SET path=?,repository_url=?,preferred_remote_name=?,base_branch=?,git_common_dir=?,updated_at=? WHERE id=?",
-            params![location.path,location.repository_url,location.preferred_remote_name,location.base_branch,location.git_common_dir,location.updated_at,location.id],
+            "UPDATE project_locations SET path=?,name=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,git_common_dir=?,updated_at=? WHERE id=?",
+            params![location.path,location.name,location.repository_url,location.preferred_remote_name,location.base_branch,location.delivery_mode,location.git_common_dir,location.updated_at,location.id],
         )?;
         if changed == 0 {
             return Err(AppError::NotFound);
@@ -1042,20 +1044,21 @@ fn hydrate_project_compat(db: &Connection, project: &mut Project) -> rusqlite::R
         return Ok(());
     };
     let metadata = db.query_row(
-        "SELECT git_common_dir,preferred_remote_name,COALESCE(base_branch,?) FROM project_locations WHERE id=?",
-        params![project.default_base_branch, location_id],
-        |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?)),
+        "SELECT git_common_dir,preferred_remote_name,COALESCE(base_branch,?),COALESCE(delivery_mode,?) FROM project_locations WHERE id=?",
+        params![project.default_base_branch, project.default_delivery_mode, location_id],
+        |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)),
     ).optional()?;
-    if let Some((git_common_dir, remote, branch)) = metadata {
+    if let Some((git_common_dir, remote, branch, delivery_mode)) = metadata {
         project.primary_directory_id = location_id.to_owned();
         project.git_common_dir = git_common_dir.unwrap_or_default();
         project.preferred_remote = remote;
         project.default_target_branch = branch;
+        project.default_delivery_mode = delivery_mode;
     }
     Ok(())
 }
 fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
-    let git_common_dir: Option<String> = r.get(9)?;
+    let git_common_dir: Option<String> = r.get(10)?;
     let is_git = git_common_dir.is_some();
     Ok(Directory {
         id: r.get(0)?,
@@ -1067,14 +1070,15 @@ fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
         repository_url: r.get(6)?,
         preferred_remote_name: r.get(7)?,
         base_branch: r.get(8)?,
+        delivery_mode: r.get(9)?,
         git_common_dir,
         git_status: if is_git {
             "ready".into()
         } else {
             "not_git".into()
         },
-        created_at: r.get(10)?,
-        updated_at: r.get(11)?,
+        created_at: r.get(11)?,
+        updated_at: r.get(12)?,
         checkout_path: None,
         role: "attached".into(),
         is_git,
@@ -1180,7 +1184,7 @@ fn insert_project_location(
     tx: &rusqlite::Transaction<'_>,
     d: &ProjectLocation,
 ) -> rusqlite::Result<()> {
-    tx.execute("INSERT INTO project_locations(id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,git_common_dir,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", params![d.id,d.project_id,d.name,d.description,d.worktree_setup_command,d.path,d.repository_url,d.preferred_remote_name,d.base_branch,d.git_common_dir,d.created_at,d.updated_at])?;
+    tx.execute("INSERT INTO project_locations(id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,delivery_mode,git_common_dir,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", params![d.id,d.project_id,d.name,d.description,d.worktree_setup_command,d.path,d.repository_url,d.preferred_remote_name,d.base_branch,d.delivery_mode,d.git_common_dir,d.created_at,d.updated_at])?;
     Ok(())
 }
 
@@ -1350,6 +1354,16 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
         && table_exists(connection, "project_locations")?
         && table_exists(connection, "workspace_locations")?;
     if current {
+        if !table_has_column(connection, "project_locations", "delivery_mode")? {
+            connection.execute(
+                "ALTER TABLE project_locations ADD COLUMN delivery_mode TEXT",
+                [],
+            )?;
+            connection.execute(
+                "UPDATE project_locations SET delivery_mode='remote_review' WHERE git_common_dir IS NOT NULL",
+                [],
+            )?;
+        }
         return Ok(());
     }
 
@@ -1426,11 +1440,48 @@ mod workspace_schema_tests {
         assert!(table_has_column(&connection, "workspaces", "parent_workspace_id").unwrap());
         assert!(!table_has_column(&connection, "workspaces", "checkout_path").unwrap());
         assert!(table_exists(&connection, "project_locations").unwrap());
+        assert!(table_has_column(&connection, "project_locations", "delivery_mode").unwrap());
         assert!(table_exists(&connection, "workspace_locations").unwrap());
         assert!(
             table_has_column(&connection, "delivery_operations", "workspace_location_id").unwrap()
         );
         drop(connection);
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[test]
+    fn adds_location_delivery_mode_without_clearing_current_business_data() {
+        let (root, path) = temporary_database("location-delivery-mode-migration");
+        let connection = Connection::open(&path).expect("create current database");
+        connection
+            .execute_batch(
+                "CREATE TABLE projects (
+                   id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+                   status TEXT NOT NULL DEFAULT 'active', default_location_id TEXT,
+                   default_base_branch TEXT NOT NULL DEFAULT 'main',
+                   default_delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
+                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                 );
+                 CREATE TABLE project_locations (
+                   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
+                   description TEXT NOT NULL DEFAULT '', worktree_setup_command TEXT NOT NULL DEFAULT '',
+                   path TEXT NOT NULL, repository_url TEXT, preferred_remote_name TEXT,
+                   base_branch TEXT, git_common_dir TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+                 );
+                 CREATE TABLE workspace_locations (id TEXT PRIMARY KEY, workspace_id TEXT);
+                 INSERT INTO projects VALUES('p','Project','','active','l','main','remote_review','now','now');
+                 INSERT INTO project_locations VALUES(
+                   'l','p','repo','','','/repo',NULL,NULL,'main','/repo/.git','now','now'
+                 );",
+            )
+            .expect("seed current database without location delivery mode");
+        drop(connection);
+
+        let store = Store::open(&path).expect("upgrade current database");
+        let location = store.directory("l").expect("preserve location");
+        assert_eq!(location.delivery_mode.as_deref(), Some("remote_review"));
+        assert_eq!(location.name, "repo");
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
     }

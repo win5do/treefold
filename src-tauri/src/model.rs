@@ -37,6 +37,8 @@ pub struct ProjectLocation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_branch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub git_common_dir: Option<String>,
     pub git_status: String,
     pub created_at: String,

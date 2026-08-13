@@ -53,6 +53,14 @@ try {
   await toolbar.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await browser.$('button[aria-label="Show right sidebar"]')).isExisting(), false, "right sidebar control must stay hidden outside a Project");
 
+  await (await browser.$('button[aria-label="New Project"]')).click();
+  const newProjectDialog = await browser.$('[role="dialog"]');
+  await newProjectDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await (await newProjectDialog.$('input[name="default_base_branch"]')).isExisting(), false, "Project creation must not ask for a Git base branch");
+  assert.equal(await (await newProjectDialog.$('select[name="default_delivery_mode"]')).isExisting(), false, "Project creation must not ask for a delivery mode");
+  await browser.keys(Key.Escape);
+  await newProjectDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+
   const initialWidth = await sidebar.getSize("width");
   assert.ok(initialWidth >= 240, `sidebar width ${initialWidth}px is below the 240px minimum`);
 
@@ -248,6 +256,8 @@ try {
   const createWorkspaceDialog = await browser.$('[role="dialog"]');
   await createWorkspaceDialog.waitForDisplayed({ timeout: 3_000 });
   assert.match(await createWorkspaceDialog.getText(), /New Workspace/, "Project plus menu must open Workspace creation");
+  assert.equal(await (await createWorkspaceDialog.$('input[name="target_branch"]')).isExisting(), false, "Workspace creation must inherit base branches from Git locations");
+  assert.equal(await (await createWorkspaceDialog.$('select[name="delivery_mode"]')).isExisting(), false, "Workspace creation must inherit delivery modes from Git locations");
   await browser.keys(Key.Escape);
   await createWorkspaceDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await projectCreateButton.click();
@@ -436,8 +446,24 @@ try {
   await (await browser.$("button*=Add location")).click();
   const addDirectoryDialog = await browser.$('[role="dialog"]');
   await addDirectoryDialog.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await addDirectoryDialog.getText(), /Add project location/);
-  await browser.keys(Key.Escape);
+  assert.match(await addDirectoryDialog.getText(), /Add project locations/);
+  assert.equal(await (await addDirectoryDialog.$('input[name="name"]')).isExisting(), false, "Location rows must derive names from dirname");
+  let locationRows = await addDirectoryDialog.$$('[data-testid="location-draft-row"]');
+  assert.equal(locationRows.length, 1, "Location dialog must start with one row");
+  await (await locationRows[0].$('input[aria-label="Location 1 path"]')).setValue("/tmp/treefold-ui-fixture/new-api-repository");
+  await (await locationRows[0].$("button=Check")).click();
+  await (await locationRows[0].$('input[aria-label="Location 1 base branch"]')).waitForDisplayed({ timeout: 3_000 });
+  await (await addDirectoryDialog.$("button=Add another")).click();
+  locationRows = await addDirectoryDialog.$$('[data-testid="location-draft-row"]');
+  assert.equal(locationRows.length, 2, "Add another must append a location row in the same dialog");
+  await (await locationRows[1].$('input[aria-label="Location 2 path"]')).setValue("/tmp/treefold-ui-fixture/reference-context");
+  await (await locationRows[1].$("button=Check")).click();
+  await browser.waitUntil(async () => (await locationRows[1].getText()).includes("Read-only Workspace context"), { timeout: 3_000, timeoutMsg: "non-Git location did not become read-only context" });
+  assert.equal((await addDirectoryDialog.$$('input[aria-label$="base branch"]')).length, 1, "only Git rows may configure a base branch");
+  assert.equal((await addDirectoryDialog.$$('select[aria-label$="delivery mode"]')).length, 1, "only Git rows may configure a delivery mode");
+  await (await addDirectoryDialog.$("button=Add 2 locations")).click();
+  await addDirectoryDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await browser.waitUntil(async () => (await (await browser.$('[data-testid="page-content"]')).getText()).includes("new-api-repository"), { timeout: 3_000, timeoutMsg: "batch-added locations did not refresh the Project" });
   const branchSelector = await browser.$(`[data-testid="branch-selector-${FIXTURE_IDS.primaryDirectory}"]`);
   await branchSelector.click();
   const localBranches = await browser.$("button*=Local");

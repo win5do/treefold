@@ -67,6 +67,51 @@ async function startFixtureApi() {
       sendJson(response, 200, fixture.projectDetails[projectMatch[1]]);
       return;
     }
+
+    if (request.method === "POST" && pathname === "/api/project-locations/inspect") {
+      const input = await readJson(request);
+      const cleanPath = String(input.path ?? "").replace(/\/+$/, "");
+      const name = cleanPath.split("/").filter(Boolean).at(-1) || cleanPath;
+      const isGit = !/docs|documentation|reference|context/i.test(cleanPath);
+      sendJson(response, 200, {
+        path: cleanPath,
+        name,
+        git_status: isGit ? "ready" : "not_git",
+        repository_url: isGit ? `https://example.test/${name}.git` : undefined,
+        preferred_remote_name: isGit ? "origin" : undefined,
+        base_branch: isGit ? "main" : undefined,
+      });
+      return;
+    }
+
+    const projectLocationsMatch = pathname.match(/^\/api\/projects\/([^/]+)\/locations$/);
+    if (request.method === "POST" && projectLocationsMatch && fixture.projectDetails[projectLocationsMatch[1]]) {
+      const input = await readJson(request);
+      const cleanPath = String(input.path ?? "").replace(/\/+$/, "");
+      const name = cleanPath.split("/").filter(Boolean).at(-1) || cleanPath;
+      const isGit = input.base_branch != null;
+      const location = {
+        id: `location-added-${fixture.projectDetails[projectLocationsMatch[1]].locations.length}`,
+        project_id: projectLocationsMatch[1],
+        name,
+        description: input.description ?? "",
+        worktree_setup_command: input.worktree_setup_command ?? "",
+        path: cleanPath,
+        repository_url: isGit ? `https://example.test/${name}.git` : undefined,
+        preferred_remote_name: isGit ? "origin" : undefined,
+        base_branch: isGit ? input.base_branch : undefined,
+        delivery_mode: isGit ? input.delivery_mode : undefined,
+        git_common_dir: isGit ? `${cleanPath}/.git` : undefined,
+        git_status: isGit ? "ready" : "not_git",
+        role: "attached",
+        is_git: isGit,
+        dirty: false,
+        created_at: "2026-08-10T08:20:00.000Z",
+      };
+      fixture.projectDetails[projectLocationsMatch[1]].locations.push(location);
+      sendJson(response, 201, location);
+      return;
+    }
     if (request.method === "PATCH" && projectMatch && fixture.projectDetails[projectMatch[1]]) {
       const input = await readJson(request);
       if (input.status !== undefined && input.status !== "active" && input.status !== "archived") {
@@ -143,9 +188,10 @@ async function startFixtureApi() {
         sendJson(response, 404, { error: "Directory not found" });
         return;
       }
-      directory.name = input.name;
       directory.description = input.description ?? "";
       directory.worktree_setup_command = input.worktree_setup_command ?? "";
+      if (input.base_branch) directory.base_branch = input.base_branch;
+      if (input.delivery_mode) directory.delivery_mode = input.delivery_mode;
       Object.values(fixture.workspaceDetails).forEach((detail) => {
         const item = detail.directories.find((candidate) => candidate.id === directory.id);
         if (item) Object.assign(item, directory, item.checkout_path ? { checkout_path: item.checkout_path } : {});
