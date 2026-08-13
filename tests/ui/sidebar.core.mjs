@@ -335,6 +335,7 @@ try {
   });
   let baseSection = await browser.$('[data-testid="workspace-locations-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await (await browser.$("button=Finder")).isExisting(), false, "Workspace header must rely on the sidebar context menu for Finder access");
   assert.equal(await (await browser.$("button=Configure")).isExisting(), true, "Workspace must expose remote branch configuration");
   assert.equal(await (await browser.$("button=Pull all")).isExisting(), true, "Workspace must expose best-effort Pull all");
   assert.equal(await (await browser.$("button=Push all")).isExisting(), true, "Workspace must expose best-effort Push all");
