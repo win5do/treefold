@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{ApiJson, AppError, Result},
+    git,
     model::*,
     settings::{SettingsPatch, SettingsStore},
     store::{now, Store},
@@ -1128,6 +1129,14 @@ async fn delete_worktree(
     AxumPath(directory_id): AxumPath<String>,
     ApiJson(input): ApiJson<DeleteWorktree>,
 ) -> Result<StatusCode> {
+    blocking_git_operation(move || delete_worktree_impl(state, directory_id, input)).await
+}
+
+fn delete_worktree_impl(
+    state: AppState,
+    directory_id: String,
+    input: DeleteWorktree,
+) -> Result<StatusCode> {
     let directory = state.store.directory(&directory_id)?;
     if !directory.is_git {
         return Err(AppError::BadRequest(
@@ -1197,7 +1206,12 @@ async fn delete_project(
         }
         if workspace.checkout_mode == "worktree" {
             if let Ok(directory) = state.store.directory(&workspace.project_directory_id) {
-                cleanup_worktree(&directory.path, &workspace);
+                let repository = directory.path;
+                blocking_git_operation(move || {
+                    cleanup_worktree(&repository, &workspace);
+                    Ok(())
+                })
+                .await?;
             }
         }
     }
@@ -1551,9 +1565,12 @@ async fn list_directory_branches(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitBranches>> {
-    let directory = state.store.directory(&id)?;
-    ensure_git_directory(&directory)?;
-    Ok(Json(directory_branches(&directory.path)?))
+    blocking_git_operation(move || {
+        let directory = state.store.directory(&id)?;
+        ensure_git_directory(&directory)?;
+        Ok(Json(directory_branches(&directory.path)?))
+    })
+    .await
 }
 
 #[derive(Deserialize)]
@@ -1567,6 +1584,14 @@ async fn checkout_directory_branch(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CheckoutDirectoryBranch>,
+) -> Result<Json<Directory>> {
+    blocking_git_operation(move || checkout_directory_branch_impl(state, id, input)).await
+}
+
+fn checkout_directory_branch_impl(
+    state: AppState,
+    id: String,
+    input: CheckoutDirectoryBranch,
 ) -> Result<Json<Directory>> {
     let mut directory = state.store.directory(&id)?;
     ensure_git_directory(&directory)?;
@@ -1633,6 +1658,14 @@ async fn create_workspace(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateWorkspace>,
+) -> Result<(StatusCode, Json<Workspace>)> {
+    blocking_git_operation(move || create_workspace_impl(state, project_id, input)).await
+}
+
+fn create_workspace_impl(
+    state: AppState,
+    project_id: String,
+    input: CreateWorkspace,
 ) -> Result<(StatusCode, Json<Workspace>)> {
     if input.name.trim().is_empty() {
         return Err(AppError::BadRequest("workspace name is required".into()));
@@ -1824,6 +1857,14 @@ async fn create_fork(
     AxumPath(parent_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateFork>,
 ) -> Result<(StatusCode, Json<Workspace>)> {
+    blocking_git_operation(move || create_fork_impl(state, parent_id, input)).await
+}
+
+fn create_fork_impl(
+    state: AppState,
+    parent_id: String,
+    input: CreateFork,
+) -> Result<(StatusCode, Json<Workspace>)> {
     if input.name.trim().is_empty() {
         return Err(AppError::BadRequest("fork name is required".into()));
     }
@@ -2011,34 +2052,43 @@ async fn get_workspace_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
-    let workspace = state.store.workspace(&id)?;
-    let directory = state.store.directory(&workspace.project_directory_id)?;
-    if !directory.is_git {
-        return Ok(Json(GitHistory {
-            branch: String::new(),
-            commits: Vec::new(),
-        }));
-    }
-    Ok(Json(git_history(&workspace.checkout_path)?))
+    blocking_git_operation(move || {
+        let workspace = state.store.workspace(&id)?;
+        let directory = state.store.directory(&workspace.project_directory_id)?;
+        if !directory.is_git {
+            return Ok(Json(GitHistory {
+                branch: String::new(),
+                commits: Vec::new(),
+            }));
+        }
+        Ok(Json(git_history(&workspace.checkout_path)?))
+    })
+    .await
 }
 
 async fn get_project_location_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
-    let mut location = state.store.directory(&id)?;
-    refresh_location_observation(&mut location)?;
-    ensure_location_ready(&location)?;
-    Ok(Json(git_history(&location.path)?))
+    blocking_git_operation(move || {
+        let mut location = state.store.directory(&id)?;
+        refresh_location_observation(&mut location)?;
+        ensure_location_ready(&location)?;
+        Ok(Json(git_history(&location.path)?))
+    })
+    .await
 }
 
 async fn get_workspace_location_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
-    let location = state.store.workspace_location(&id)?;
-    let path = workspace_location_git_path(&location)?;
-    Ok(Json(git_history(path)?))
+    blocking_git_operation(move || {
+        let location = state.store.workspace_location(&id)?;
+        let path = workspace_location_git_path(&location)?;
+        Ok(Json(git_history(path)?))
+    })
+    .await
 }
 
 async fn pull_project_location(
@@ -2047,7 +2097,9 @@ async fn pull_project_location(
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.directory(&id)?;
     let project = state.store.project(&location.project_id)?;
-    Ok(Json(sync_project_location(&location, &project, "pull")?))
+    Ok(Json(
+        sync_project_location(&location, &project, "pull").await?,
+    ))
 }
 
 async fn push_project_location(
@@ -2056,7 +2108,9 @@ async fn push_project_location(
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.directory(&id)?;
     let project = state.store.project(&location.project_id)?;
-    Ok(Json(sync_project_location(&location, &project, "push")?))
+    Ok(Json(
+        sync_project_location(&location, &project, "push").await?,
+    ))
 }
 
 async fn pull_workspace_location(
@@ -2064,7 +2118,7 @@ async fn pull_workspace_location(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.workspace_location(&id)?;
-    Ok(Json(sync_workspace_location(&location, "pull")?))
+    Ok(Json(sync_workspace_location(&location, "pull").await?))
 }
 
 async fn push_workspace_location(
@@ -2072,22 +2126,22 @@ async fn push_workspace_location(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.workspace_location(&id)?;
-    Ok(Json(sync_workspace_location(&location, "push")?))
+    Ok(Json(sync_workspace_location(&location, "push").await?))
 }
 
 async fn pull_all_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    sync_all_project_locations(&state, &id, "pull")
+    sync_all_project_locations(&state, &id, "pull").await
 }
 async fn push_all_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    sync_all_project_locations(&state, &id, "push")
+    sync_all_project_locations(&state, &id, "push").await
 }
-fn sync_all_project_locations(
+async fn sync_all_project_locations(
     state: &AppState,
     project_id: &str,
     action: &str,
@@ -2106,7 +2160,7 @@ fn sync_all_project_locations(
             });
             continue;
         }
-        match sync_project_location(&location, &project, action) {
+        match sync_project_location(&location, &project, action).await {
             Ok(result) => results.push(GitSyncItemResult {
                 project_location_id: location.id,
                 workspace_location_id: None,
@@ -2132,15 +2186,15 @@ async fn pull_all_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    sync_all_workspace_locations(&state, &id, "pull")
+    sync_all_workspace_locations(&state, &id, "pull").await
 }
 async fn push_all_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    sync_all_workspace_locations(&state, &id, "push")
+    sync_all_workspace_locations(&state, &id, "push").await
 }
-fn sync_all_workspace_locations(
+async fn sync_all_workspace_locations(
     state: &AppState,
     workspace_id: &str,
     action: &str,
@@ -2159,7 +2213,7 @@ fn sync_all_workspace_locations(
             });
             continue;
         }
-        match sync_workspace_location(&location, action) {
+        match sync_workspace_location(&location, action).await {
             Ok(result) => results.push(GitSyncItemResult {
                 project_location_id: location.project_location_id,
                 workspace_location_id: Some(location.id),
@@ -2193,7 +2247,7 @@ fn ensure_location_ready(location: &ProjectLocation) -> Result<()> {
     Ok(())
 }
 
-fn sync_project_location(
+async fn sync_project_location(
     location: &ProjectLocation,
     project: &Project,
     action: &str,
@@ -2212,19 +2266,19 @@ fn sync_project_location(
     if action == "pull" {
         ensure_clean_workspace(&location.path, "Project location")?;
         ensure_checked_out_branch(&location.path, &branch, "Project location")?;
-        fetch_remote_branch(&location.path, &remote, &branch)?;
-        command_output(
+        fetch_remote_branch_async(&location.path, &remote, &branch).await?;
+        git::output_async(
             Path::new(&location.path),
-            "git",
             &["merge", "--ff-only", "FETCH_HEAD"],
         )
+        .await
         .map_err(AppError::BadRequest)?;
     } else {
-        command_output(
+        git::output_async(
             Path::new(&location.path),
-            "git",
             &["push", &remote, &format!("{branch}:{branch}")],
         )
+        .await
         .map_err(AppError::BadRequest)?;
     }
     let after_head = command_output(Path::new(&location.path), "git", &["rev-parse", &branch])
@@ -2266,7 +2320,10 @@ fn workspace_location_git_path(location: &WorkspaceLocation) -> Result<&str> {
     Ok(path)
 }
 
-fn sync_workspace_location(location: &WorkspaceLocation, action: &str) -> Result<GitSyncResult> {
+async fn sync_workspace_location(
+    location: &WorkspaceLocation,
+    action: &str,
+) -> Result<GitSyncResult> {
     let path = workspace_location_git_path(location)?;
     let branch = location
         .branch
@@ -2282,24 +2339,21 @@ fn sync_workspace_location(location: &WorkspaceLocation, action: &str) -> Result
     let before_head = git_head(path)?;
     if action == "pull" {
         ensure_clean_workspace(path, "Workspace location")?;
-        fetch_remote_branch(path, remote, remote_branch)?;
-        if !git_is_ancestor(path, &before_head, "FETCH_HEAD")? {
+        fetch_remote_branch_async(path, remote, remote_branch).await?;
+        if !git_is_ancestor_async(path, &before_head, "FETCH_HEAD").await? {
             return Err(AppError::BadRequest(
                 "Workspace location and upstream have diverged".into(),
             ));
         }
-        command_output(
-            Path::new(path),
-            "git",
-            &["merge", "--ff-only", "FETCH_HEAD"],
-        )
-        .map_err(AppError::BadRequest)?;
+        git::output_async(Path::new(path), &["merge", "--ff-only", "FETCH_HEAD"])
+            .await
+            .map_err(AppError::BadRequest)?;
     } else {
-        command_output(
+        git::output_async(
             Path::new(path),
-            "git",
             &["push", remote, &format!("{branch}:{remote_branch}")],
         )
+        .await
         .map_err(AppError::BadRequest)?;
     }
     Ok(sync_result(
@@ -2325,6 +2379,14 @@ async fn update_workspace_location_rebase(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RebaseInput>,
+) -> Result<Json<RebaseOperation>> {
+    blocking_git_operation(move || update_workspace_location_rebase_impl(state, id, input)).await
+}
+
+fn update_workspace_location_rebase_impl(
+    state: AppState,
+    id: String,
+    input: RebaseInput,
 ) -> Result<Json<RebaseOperation>> {
     let location = state.store.workspace_location(&id)?;
     let path = workspace_location_git_path(&location)?.to_owned();
@@ -2476,6 +2538,14 @@ async fn reset_workspace_location(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<ResetWorkspace>,
 ) -> Result<(StatusCode, Json<ResetOperation>)> {
+    blocking_git_operation(move || reset_workspace_location_impl(state, id, input)).await
+}
+
+fn reset_workspace_location_impl(
+    state: AppState,
+    id: String,
+    input: ResetWorkspace,
+) -> Result<(StatusCode, Json<ResetOperation>)> {
     if !input.confirm {
         return Err(AppError::BadRequest(
             "confirm must be true for reset".into(),
@@ -2549,6 +2619,14 @@ async fn restore_workspace_location_reset(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RestoreReset>,
 ) -> Result<Json<ResetOperation>> {
+    blocking_git_operation(move || restore_workspace_location_reset_impl(state, id, input)).await
+}
+
+fn restore_workspace_location_reset_impl(
+    state: AppState,
+    id: String,
+    input: RestoreReset,
+) -> Result<Json<ResetOperation>> {
     if !input.confirm {
         return Err(AppError::BadRequest(
             "confirm must be true for restore".into(),
@@ -2580,6 +2658,14 @@ async fn create_workspace_location_preflight(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDeliveryPreflight>,
+) -> Result<(StatusCode, Json<DeliveryPreflight>)> {
+    blocking_git_operation(move || create_workspace_location_preflight_impl(state, id, input)).await
+}
+
+fn create_workspace_location_preflight_impl(
+    state: AppState,
+    id: String,
+    input: CreateDeliveryPreflight,
 ) -> Result<(StatusCode, Json<DeliveryPreflight>)> {
     let location = state.store.workspace_location(&id)?;
     let workspace = state.store.workspace(&location.workspace_id)?;
@@ -2702,6 +2788,14 @@ async fn finish_workspace_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<FinishWorkspace>,
+) -> Result<Json<WorkspaceLocation>> {
+    blocking_git_operation(move || finish_workspace_location_impl(state, id, input)).await
+}
+
+fn finish_workspace_location_impl(
+    state: AppState,
+    id: String,
+    input: FinishWorkspace,
 ) -> Result<Json<WorkspaceLocation>> {
     validate_delivery_input(&input)?;
     let location = state.store.workspace_location(&id)?;
@@ -2857,12 +2951,12 @@ async fn pull_project(
         .ok_or_else(|| AppError::BadRequest("Project has no preferred remote".into()))?;
     let remote_branch = project.default_target_branch.clone();
     let before_head = git_head(&directory.path)?;
-    fetch_remote_branch(&directory.path, &remote, &remote_branch)?;
-    command_output(
+    fetch_remote_branch_async(&directory.path, &remote, &remote_branch).await?;
+    git::output_async(
         Path::new(&directory.path),
-        "git",
         &["merge", "--ff-only", "FETCH_HEAD"],
     )
+    .await
     .map_err(|error| {
         AppError::BadRequest(format!(
             "Project target cannot fast-forward from {remote}/{remote_branch}: {error}"
@@ -2898,12 +2992,9 @@ async fn push_project(
     )
     .map_err(AppError::BadRequest)?;
     let refspec = format!("{}:{remote_branch}", project.default_target_branch);
-    command_output(
-        Path::new(&directory.path),
-        "git",
-        &["push", &remote, &refspec],
-    )
-    .map_err(AppError::BadRequest)?;
+    git::output_async(Path::new(&directory.path), &["push", &remote, &refspec])
+        .await
+        .map_err(AppError::BadRequest)?;
     Ok(Json(sync_result(
         "project",
         "push",
@@ -2931,7 +3022,7 @@ async fn pull_workspace(
     ensure_clean_workspace(&workspace.checkout_path, "Workspace")?;
     ensure_checked_out_branch(&workspace.checkout_path, &workspace.branch, "Workspace")?;
     let before_head = git_head(&workspace.checkout_path)?;
-    fetch_remote_branch(&workspace.checkout_path, &remote, &remote_branch)?;
+    fetch_remote_branch_async(&workspace.checkout_path, &remote, &remote_branch).await?;
     let remote_head = command_output(
         Path::new(&workspace.checkout_path),
         "git",
@@ -2939,14 +3030,16 @@ async fn pull_workspace(
     )
     .map_err(AppError::BadRequest)?;
     if before_head != remote_head {
-        if git_is_ancestor(&workspace.checkout_path, &before_head, &remote_head)? {
-            command_output(
+        if git_is_ancestor_async(&workspace.checkout_path, &before_head, &remote_head).await? {
+            git::output_async(
                 Path::new(&workspace.checkout_path),
-                "git",
                 &["merge", "--ff-only", "FETCH_HEAD"],
             )
+            .await
             .map_err(AppError::BadRequest)?;
-        } else if !git_is_ancestor(&workspace.checkout_path, &remote_head, &before_head)? {
+        } else if !git_is_ancestor_async(&workspace.checkout_path, &remote_head, &before_head)
+            .await?
+        {
             return Err(AppError::BadRequest(format!(
                 "Workspace and {remote}/{remote_branch} have diverged; rebase or merge explicitly"
             )));
@@ -2979,11 +3072,11 @@ async fn push_workspace(
     ensure_checked_out_branch(&workspace.checkout_path, &workspace.branch, "Workspace")?;
     let before_head = git_head(&workspace.checkout_path)?;
     let refspec = format!("{}:{remote_branch}", workspace.branch);
-    command_output(
+    git::output_async(
         Path::new(&workspace.checkout_path),
-        "git",
         &["push", "--set-upstream", &remote, &refspec],
     )
+    .await
     .map_err(AppError::BadRequest)?;
     state.store.set_delivery_status(&id, "published")?;
     Ok(Json(sync_result(
@@ -3022,6 +3115,16 @@ fn fetch_remote_branch(repository: &str, remote: &str, branch: &str) -> Result<(
         "git",
         &["fetch", "--no-tags", remote, branch],
     )
+    .map_err(AppError::BadRequest)?;
+    Ok(())
+}
+
+async fn fetch_remote_branch_async(repository: &str, remote: &str, branch: &str) -> Result<()> {
+    git::output_async(
+        Path::new(repository),
+        &["fetch", "--no-tags", remote, branch],
+    )
+    .await
     .map_err(AppError::BadRequest)?;
     Ok(())
 }
@@ -3193,15 +3296,18 @@ async fn update_rebase(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RebaseInput>,
 ) -> Result<Json<RebaseOperation>> {
-    let operation = match input.action.as_str() {
-        "start" => start_rebase(&state, &id),
-        "continue" => continue_rebase(&state, &id),
-        "abort" => abort_rebase(&state, &id),
-        _ => Err(AppError::BadRequest(
-            "rebase action must be start, continue, or abort".into(),
-        )),
-    }?;
-    Ok(Json(operation))
+    blocking_git_operation(move || {
+        let operation = match input.action.as_str() {
+            "start" => start_rebase(&state, &id),
+            "continue" => continue_rebase(&state, &id),
+            "abort" => abort_rebase(&state, &id),
+            _ => Err(AppError::BadRequest(
+                "rebase action must be start, continue, or abort".into(),
+            )),
+        }?;
+        Ok(Json(operation))
+    })
+    .await
 }
 
 fn start_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
@@ -3557,11 +3663,27 @@ fn has_unmerged_paths(workspace: &str) -> Result<bool> {
 }
 
 fn git_is_ancestor(workspace: &str, ancestor: &str, descendant: &str) -> Result<bool> {
-    let status = Command::new("git")
-        .current_dir(workspace)
-        .args(["merge-base", "--is-ancestor", ancestor, descendant])
-        .status()
-        .map_err(|error| AppError::BadRequest(format!("git merge-base: {error}")))?;
+    let status = git::status(
+        Path::new(workspace),
+        &["merge-base", "--is-ancestor", ancestor, descendant],
+    )
+    .map_err(|error| AppError::BadRequest(format!("git merge-base: {error}")))?;
+    match status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => Err(AppError::BadRequest(
+            "git could not compare the rebase commits".into(),
+        )),
+    }
+}
+
+async fn git_is_ancestor_async(workspace: &str, ancestor: &str, descendant: &str) -> Result<bool> {
+    let status = git::status_async(
+        Path::new(workspace),
+        &["merge-base", "--is-ancestor", ancestor, descendant],
+    )
+    .await
+    .map_err(|error| AppError::BadRequest(format!("git merge-base: {error}")))?;
     match status.code() {
         Some(0) => Ok(true),
         Some(1) => Ok(false),
@@ -3582,18 +3704,14 @@ fn delete_recovery_ref(repository: &str, recovery_ref: &str) -> Result<()> {
 }
 
 fn git_rebase_output(dir: &Path, args: &[&str]) -> std::result::Result<String, String> {
-    let output = Command::new("git")
-        .current_dir(dir)
-        .arg("rebase")
-        .args(args)
-        .env("GIT_EDITOR", "true")
-        .env("GIT_SEQUENCE_EDITOR", "true")
-        .output()
-        .map_err(|error| format!("git rebase: {error}"))?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().into());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().into())
+    let mut command_args = Vec::with_capacity(args.len() + 1);
+    command_args.push("rebase");
+    command_args.extend_from_slice(args);
+    git::output_with_env(
+        dir,
+        &command_args,
+        &[("GIT_EDITOR", "true"), ("GIT_SEQUENCE_EDITOR", "true")],
+    )
 }
 
 #[derive(Deserialize)]
@@ -3614,7 +3732,10 @@ async fn reset_workspace(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<ResetWorkspace>,
 ) -> Result<(StatusCode, Json<ResetOperation>)> {
-    start_reset(&state, &id, &input).map(|operation| (StatusCode::CREATED, Json(operation)))
+    blocking_git_operation(move || {
+        start_reset(&state, &id, &input).map(|operation| (StatusCode::CREATED, Json(operation)))
+    })
+    .await
 }
 
 async fn get_reset_status(
@@ -3629,7 +3750,7 @@ async fn restore_workspace_reset(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RestoreReset>,
 ) -> Result<Json<ResetOperation>> {
-    restore_reset(&state, &id, &input).map(Json)
+    blocking_git_operation(move || restore_reset(&state, &id, &input).map(Json)).await
 }
 
 fn start_reset(state: &AppState, id: &str, input: &ResetWorkspace) -> Result<ResetOperation> {
@@ -3903,8 +4024,11 @@ async fn create_delivery_preflight(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDeliveryPreflight>,
 ) -> Result<(StatusCode, Json<DeliveryPreflight>)> {
-    create_delivery_preflight_impl(&state, &id, &input)
-        .map(|preflight| (StatusCode::CREATED, Json(preflight)))
+    blocking_git_operation(move || {
+        create_delivery_preflight_impl(&state, &id, &input)
+            .map(|preflight| (StatusCode::CREATED, Json(preflight)))
+    })
+    .await
 }
 
 fn create_delivery_preflight_impl(
@@ -4246,13 +4370,8 @@ async fn finish_workspace_steps(
                 return Err(AppError::BadRequest("Workspace is already archived".into()));
             }
             if source_is_managed {
-                validate_preflight_snapshot(
-                    state,
-                    &workspace,
-                    &target_path,
-                    &target_branch,
-                    input,
-                )?;
+                validate_preflight_snapshot(state, &workspace, &target_path, &target_branch, input)
+                    .await?;
             }
             if input.code_action == "local_merge" {
                 if !source_is_managed || workspace.branch.is_empty() {
@@ -4267,7 +4386,7 @@ async fn finish_workspace_steps(
                 let remote = project.preferred_remote.as_deref().ok_or_else(|| {
                     AppError::BadRequest("Project has no preferred remote target".into())
                 })?;
-                fetch_remote_branch(&directory.path, remote, &target_branch)?;
+                fetch_remote_branch_async(&directory.path, remote, &target_branch).await?;
                 command_output(
                     Path::new(&directory.path),
                     "git",
@@ -4321,14 +4440,28 @@ async fn finish_workspace_steps(
                     operation.before_head, current_target_head
                 )));
             }
-            commit_source_if_needed(&workspace, input.commit_message.as_deref())?;
+            let commit_workspace = workspace.clone();
+            let commit_message = input.commit_message.clone();
+            blocking_git_operation(move || {
+                commit_source_if_needed(&commit_workspace, commit_message.as_deref())
+            })
+            .await?;
             source_head = git_head(&workspace.checkout_path)?;
-            if let Err(error) = command_output(
-                Path::new(&target_path),
-                "git",
-                &["merge", "--no-edit", &workspace.branch],
-            ) {
-                let _ = command_output(Path::new(&target_path), "git", &["merge", "--abort"]);
+            let merge_target = target_path.clone();
+            let merge_branch = workspace.branch.clone();
+            if let Err(error) = blocking_git_operation(move || {
+                if let Err(error) = command_output(
+                    Path::new(&merge_target),
+                    "git",
+                    &["merge", "--no-edit", &merge_branch],
+                ) {
+                    let _ = command_output(Path::new(&merge_target), "git", &["merge", "--abort"]);
+                    return Err(AppError::BadRequest(error));
+                }
+                Ok(())
+            })
+            .await
+            {
                 state.store.set_delivery_status(id, "conflicted")?;
                 return Err(AppError::BadRequest(format!(
                     "merge failed; both worktrees and branches were preserved: {error}"
@@ -4337,7 +4470,12 @@ async fn finish_workspace_steps(
             target_head = git_head(&target_path)?;
             integrated_commit = Some(target_head.clone());
         } else if input.code_action == "keep" && input.delete_worktree {
-            commit_source_if_needed(&workspace, input.commit_message.as_deref())?;
+            let commit_workspace = workspace.clone();
+            let commit_message = input.commit_message.clone();
+            blocking_git_operation(move || {
+                commit_source_if_needed(&commit_workspace, commit_message.as_deref())
+            })
+            .await?;
             source_head = git_head(&workspace.checkout_path)?;
         }
         state.store.advance_delivery(
@@ -4364,13 +4502,13 @@ async fn finish_workspace_steps(
                     AppError::BadRequest("no remote is configured for target push".into())
                 })?;
             let refspec = format!("{target_branch}:{target_branch}");
-            command_output(Path::new(&target_path), "git", &["push", remote, &refspec]).map_err(
-                |error| {
+            git::output_async(Path::new(&target_path), &["push", remote, &refspec])
+                .await
+                .map_err(|error| {
                     AppError::BadRequest(format!(
                         "Workspace was merged locally but target push failed: {error}"
                     ))
-                },
-            )?;
+                })?;
         }
         state
             .store
@@ -4423,25 +4561,37 @@ async fn finish_workspace_steps(
 
     if !delivery_phase_at_least(&operation.phase, "resources_cleaned")? {
         if input.delete_worktree && source_is_managed {
-            remove_worktree_if_present(&directory.path, &workspace.checkout_path)?;
+            let repository = directory.path.clone();
+            let checkout_path = workspace.checkout_path.clone();
+            blocking_git_operation(move || remove_worktree_if_present(&repository, &checkout_path))
+                .await?;
         }
         if input.delete_branch && !workspace.branch.is_empty() {
             let merged_target = if input.code_action == "remote_merged" {
                 let remote = project.preferred_remote.as_deref().ok_or_else(|| {
                     AppError::BadRequest("Project has no preferred remote target".into())
                 })?;
-                fetch_remote_branch(&directory.path, remote, &target_branch)?;
+                fetch_remote_branch_async(&directory.path, remote, &target_branch).await?;
                 "FETCH_HEAD"
             } else {
                 target_branch.as_str()
             };
-            delete_delivered_branch_if_present(
-                &directory.path,
-                &workspace.branch,
-                merged_target,
-                &operation.source_head,
-                input.code_action == "local_merge" || input.code_action == "remote_merged",
-            )?;
+            let repository = directory.path.clone();
+            let branch = workspace.branch.clone();
+            let merged_target = merged_target.to_owned();
+            let source_head = operation.source_head.clone();
+            let require_merged =
+                input.code_action == "local_merge" || input.code_action == "remote_merged";
+            blocking_git_operation(move || {
+                delete_delivered_branch_if_present(
+                    &repository,
+                    &branch,
+                    &merged_target,
+                    &source_head,
+                    require_merged,
+                )
+            })
+            .await?;
         }
         state
             .store
@@ -4470,7 +4620,7 @@ async fn finish_workspace_steps(
     state.store.workspace(id)
 }
 
-fn validate_preflight_snapshot(
+async fn validate_preflight_snapshot(
     state: &AppState,
     workspace: &Workspace,
     target_path: &str,
@@ -4503,7 +4653,7 @@ fn validate_preflight_snapshot(
             let remote = project.preferred_remote.as_deref().ok_or_else(|| {
                 AppError::BadRequest("Project has no preferred remote target".into())
             })?;
-            fetch_remote_branch(&directory.path, remote, target_branch)?;
+            fetch_remote_branch_async(&directory.path, remote, target_branch).await?;
             command_output(
                 Path::new(&directory.path),
                 "git",
@@ -5156,10 +5306,7 @@ fn inspect_path(value: &str) -> Result<(String, bool)> {
         ));
     }
     let string = path.to_string_lossy().into_owned();
-    let is_git = Command::new("git")
-        .args(["-C", &string, "rev-parse", "--is-inside-work-tree"])
-        .output()
-        .is_ok_and(|o| o.status.success());
+    let is_git = git::output(Path::new(&string), &["rev-parse", "--is-inside-work-tree"]).is_ok();
     Ok((string, is_git))
 }
 
@@ -5241,6 +5388,9 @@ fn repository_identity_matches(expected: &str, observed: &str) -> bool {
     normalize(expected) == normalize(observed)
 }
 fn command_output(dir: &Path, program: &str, args: &[&str]) -> std::result::Result<String, String> {
+    if program == "git" {
+        return git::output(dir, args);
+    }
     let output = Command::new(program)
         .current_dir(dir)
         .args(args)
@@ -5250,6 +5400,16 @@ fn command_output(dir: &Path, program: &str, args: &[&str]) -> std::result::Resu
         return Err(String::from_utf8_lossy(&output.stderr).trim().into());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().into())
+}
+
+async fn blocking_git_operation<T, F>(operation: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    git::blocking(operation)
+        .await
+        .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
 }
 
 fn run_worktree_setup_command(directory: &Directory, checkout_path: &str) -> Result<()> {
@@ -5981,29 +6141,17 @@ fn git_workspace_location(
 
 fn rollback_created_worktrees(created: &[(String, String)]) {
     for (repository, checkout_path) in created.iter().rev() {
-        let _ = Command::new("git")
-            .args([
-                "-C",
-                repository,
-                "worktree",
-                "remove",
-                "--force",
-                checkout_path,
-            ])
-            .status();
+        let _ = git::output(
+            Path::new(repository),
+            &["worktree", "remove", "--force", checkout_path],
+        );
     }
 }
 fn cleanup_worktree(repository: &str, workspace: &Workspace) {
-    let _ = Command::new("git")
-        .args([
-            "-C",
-            repository,
-            "worktree",
-            "remove",
-            "--force",
-            &workspace.checkout_path,
-        ])
-        .status();
+    let _ = git::output(
+        Path::new(repository),
+        &["worktree", "remove", "--force", &workspace.checkout_path],
+    );
 }
 
 #[cfg(test)]

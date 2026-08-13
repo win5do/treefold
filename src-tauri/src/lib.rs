@@ -1,4 +1,5 @@
 mod error;
+mod git;
 mod model;
 mod server;
 mod settings;
