@@ -17,7 +17,7 @@ async function assertOverlayVisibleAndTopmost(browser, selector, label) {
     ];
     return {
       exists: true,
-      portaled: element.closest('[data-testid="sidebar-session-menu"], [data-testid="directory-session-context-menu"]')?.parentElement === document.body,
+      portaled: element.closest('[data-testid="sidebar-session-menu"], [data-testid="directory-session-context-menu"], [data-overlay-root="true"]')?.parentElement === document.body,
       inViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
       topmost: points.every(([x, y]) => {
         const hit = document.elementFromPoint(x, y);
@@ -499,6 +499,16 @@ try {
   await browser.url(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
   const restoredProjectSessionsSection = await browser.$('[data-testid="project-sessions-section"]');
   await restoredProjectSessionsSection.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await browser.$("h2=Repository synchronization").isExisting(), false, "Project pages must not render a separate repository synchronization card");
+  assert.equal(await browser.$("button=Pull all").isExisting(), false, "bulk synchronization actions must stay inside the Repositories menu");
+  const repositoriesMenuTrigger = await browser.$('[data-testid="project-repositories-menu-trigger"]');
+  await repositoriesMenuTrigger.click();
+  let repositoriesMenu = await browser.$('[data-testid="project-repositories-menu"]');
+  await repositoriesMenu.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await repositoriesMenu.getText(), /Pull all[\s\S]*Push all/, "Repositories menu must expose bulk pull and push");
+  await assertOverlayVisibleAndTopmost(browser, '[data-testid="project-repositories-menu"]', "Repositories actions menu");
+  await browser.keys(Key.Escape);
+  await repositoriesMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   const orderedLocationNames = await browser.$$('[data-testid^="project-location-"] h3');
   assert.equal(await orderedLocationNames[0].getText(), "fixture-repository", "primary location must render before attached locations");
   const primaryLocation = await browser.$(`[data-testid="project-location-${FIXTURE_IDS.primaryDirectory}"]`);
@@ -506,6 +516,32 @@ try {
   assert.equal(await primaryRepositoryToggle.getAttribute("aria-expanded"), "true", "primary repository worktrees must be expanded by default");
   assert.match(await primaryLocation.getText(), /current\s+main[\s\S]*base\s+main/, "repository rows must show read-only current and base branches");
   assert.equal(await primaryLocation.$(`[data-testid="branch-selector-${FIXTURE_IDS.primaryDirectory}"]`).isExisting(), false, "Project repositories must not expose branch switching");
+  const primaryChevron = await primaryLocation.$(`[data-testid="project-location-chevron-${FIXTURE_IDS.primaryDirectory}"]`);
+  const primaryRepositoryIcon = await primaryLocation.$(`[data-testid="project-location-icon-${FIXTURE_IDS.primaryDirectory}"]`);
+  assert.ok((await primaryChevron.getLocation("x")) < (await primaryRepositoryIcon.getLocation("x")), "repository disclosure control must sit at the far left before the repository icon");
+  const primaryRefresh = await primaryLocation.$(`[data-testid="project-location-refresh-${FIXTURE_IDS.primaryDirectory}"]`);
+  assert.equal(await primaryRefresh.getText(), "", "repository refresh must use an icon-only control");
+  assert.equal(await primaryRefresh.getAttribute("aria-label"), "Refresh fixture-repository");
+  const primaryActionsTrigger = await primaryLocation.$(`[data-testid="project-location-actions-${FIXTURE_IDS.primaryDirectory}-trigger"]`);
+  await primaryActionsTrigger.click();
+  let primaryActionsMenu = await browser.$(`[data-testid="project-location-actions-${FIXTURE_IDS.primaryDirectory}"]`);
+  await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await primaryActionsMenu.getText(), /Pull main[\s\S]*Push main[\s\S]*Edit location/, "ready repository menu must expose branch-specific sync and edit actions");
+  assert.equal((await primaryActionsMenu.getText()).includes("Make default"), false, "primary repository menu must not expose Make default");
+  await assertOverlayVisibleAndTopmost(browser, `[data-testid="project-location-actions-${FIXTURE_IDS.primaryDirectory}"]`, "repository actions menu");
+  await browser.keys(Key.Escape);
+  await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await primaryActionsTrigger.click();
+  primaryActionsMenu = await browser.$(`[data-testid="project-location-actions-${FIXTURE_IDS.primaryDirectory}"]`);
+  await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
+  await (await browser.$("h2=Repositories")).click();
+  await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await primaryActionsTrigger.click();
+  primaryActionsMenu = await browser.$(`[data-testid="project-location-actions-${FIXTURE_IDS.primaryDirectory}"]`);
+  await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
+  await (await primaryActionsMenu.$(`[data-testid="project-location-pull-${FIXTURE_IDS.primaryDirectory}"]`)).click();
+  await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  assert.equal(harness.syncRequests.at(-1), `/api/project-locations/${FIXTURE_IDS.primaryDirectory}/git/pull`, "repository Pull must target only its project location");
   let primaryWorktrees = await primaryLocation.$(`[data-testid="project-location-worktrees-${FIXTURE_IDS.primaryDirectory}"]`);
   assert.equal((await primaryWorktrees.$$('[data-testid="project-worktree-row"]')).length, 3, "primary worktrees must be grouped below their repository");
   assert.match(await primaryWorktrees.getText(), /Main checkout[\s\S]*Workspace with an intentionally long name/);
@@ -515,8 +551,32 @@ try {
   assert.equal(await secondaryRepositoryToggle.getAttribute("aria-expanded"), "false", "attached repositories must be collapsed by default");
   assert.match(await secondaryLocation.getText(), /current\s+release\/api-fixture[\s\S]*base\s+develop/, "each repository must show its own branch metadata");
   assert.equal(await secondaryLocation.$(`[data-testid="project-location-worktrees-${FIXTURE_IDS.secondaryDirectory}"]`).isExisting(), false, "collapsed repositories must hide their worktrees");
+  const secondaryActionsTrigger = await secondaryLocation.$(`[data-testid="project-location-actions-${FIXTURE_IDS.secondaryDirectory}-trigger"]`);
+  await secondaryActionsTrigger.scrollIntoView({ block: "end" });
+  await secondaryActionsTrigger.click();
+  let secondaryActionsMenu = await browser.$(`[data-testid="project-location-actions-${FIXTURE_IDS.secondaryDirectory}"]`);
+  await secondaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await secondaryActionsMenu.getText(), /Pull develop[\s\S]*Push develop[\s\S]*Make default[\s\S]*Edit location/, "attached repository menu must expose sync and management actions");
+  await assertOverlayVisibleAndTopmost(browser, `[data-testid="project-location-actions-${FIXTURE_IDS.secondaryDirectory}"]`, "viewport-edge repository actions menu");
+  await browser.keys(Key.Escape);
+  await secondaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await browser.keys(Key.ArrowDown);
+  secondaryActionsMenu = await browser.$(`[data-testid="project-location-actions-${FIXTURE_IDS.secondaryDirectory}"]`);
+  await secondaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await browser.execute(() => document.activeElement?.getAttribute("data-testid")), `project-location-pull-${FIXTURE_IDS.secondaryDirectory}`, "ArrowDown must open the repository menu and focus its first action");
+  await browser.keys(Key.ArrowDown);
+  assert.equal(await browser.execute(() => document.activeElement?.getAttribute("data-testid")), `project-location-push-${FIXTURE_IDS.secondaryDirectory}`, "ArrowDown must navigate between repository actions");
+  await browser.keys(Key.Enter);
+  await secondaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  assert.equal(harness.syncRequests.at(-1), `/api/project-locations/${FIXTURE_IDS.secondaryDirectory}/git/push`, "repository Push must target only its project location");
   const contextLocation = await browser.$(`[data-testid="project-location-${FIXTURE_IDS.attachedDirectory}"]`);
   assert.equal(await contextLocation.$(`[data-testid="project-location-toggle-${FIXTURE_IDS.attachedDirectory}"]`).isExisting(), false, "non-Git context locations must not expose a worktree toggle");
+  await (await contextLocation.$(`[data-testid="project-location-actions-${FIXTURE_IDS.attachedDirectory}-trigger"]`)).click();
+  const contextActionsMenu = await browser.$(`[data-testid="project-location-actions-${FIXTURE_IDS.attachedDirectory}"]`);
+  await contextActionsMenu.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await contextActionsMenu.getText(), "Edit location", "non-Git context menu must not expose Git synchronization actions");
+  await browser.keys(Key.Escape);
+  await contextActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   assert.equal(await browser.$("h2=Git Worktrees").isExisting(), false, "Project pages must not render a separate cross-repository worktree list");
 
   await primaryRepositoryToggle.click();
@@ -552,8 +612,15 @@ try {
   await addDirectoryDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await browser.waitUntil(async () => (await (await browser.$('[data-testid="page-content"]')).getText()).includes("new-api-repository"), { timeout: 3_000, timeoutMsg: "batch-added locations did not refresh the Project" });
   assert.equal((await browser.$$('button[aria-label^="Delete worktree "]')).length, 3, "expanded repositories must expose delete controls for their own non-main worktrees");
-  await (await browser.$("button=Pull all")).click();
-  await browser.$('button[aria-label="Edit fixture-repository"]').click();
+  await (await browser.$('[data-testid="project-repositories-menu-trigger"]')).click();
+  repositoriesMenu = await browser.$('[data-testid="project-repositories-menu"]');
+  await repositoriesMenu.waitForDisplayed({ timeout: 3_000 });
+  await (await repositoriesMenu.$('[data-testid="project-pull-all"]')).click();
+  assert.equal(harness.syncRequests.at(-1), `/api/projects/${FIXTURE_IDS.project}/git/pull-all`, "bulk Pull must target every Project repository");
+  await (await browser.$(`[data-testid="project-location-actions-${FIXTURE_IDS.primaryDirectory}-trigger"]`)).click();
+  primaryActionsMenu = await browser.$(`[data-testid="project-location-actions-${FIXTURE_IDS.primaryDirectory}"]`);
+  await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
+  await (await primaryActionsMenu.$(`[data-testid="project-location-edit-${FIXTURE_IDS.primaryDirectory}"]`)).click();
   const setupCommand = await browser.$('textarea[aria-label="Worktree setup command"]');
   await setupCommand.waitForDisplayed({ timeout: 3_000 });
   await setupCommand.setValue("npm install && npm run prepare");

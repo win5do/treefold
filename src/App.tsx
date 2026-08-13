@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import {
   Archive,
@@ -8,6 +8,8 @@ import {
   ChevronUp,
   CircleAlert,
   CircleCheck,
+  Download,
+  Ellipsis,
   Folder,
   FolderGit2,
   FolderOpen,
@@ -509,6 +511,10 @@ function Workspace() {
     await act(() => api(`/api/${scope}/${id}/git/${action}-all`, { method: "POST" }));
   }
 
+  async function gitSyncProjectLocation(id: string, action: "pull" | "push") {
+    await act(() => api(`/api/project-locations/${id}/git/${action}`, { method: "POST" }));
+  }
+
   async function createShell(stream: WorkspaceDetail | Workspace, directory?: Directory) {
     setSessionMenu(null);
     setBusy(true);
@@ -767,7 +773,7 @@ function Workspace() {
             ) : workspace ? (
               <WorkspaceHome detail={workspace} busy={busy} onOpen={(session) => void openHistorySession(workspace, session)} onOpenFork={(fork) => navigate(`/workspaces/${fork.id}`)} onShell={(directory) => void createShell(workspace, directory)} onCodex={() => void createCodex(workspace)} onFork={() => setCreateForkWorkspace(workspace)} onConfigure={() => setConfigureWorkspace(workspace)} onPull={() => void gitSync("workspaces", workspace.id, "pull")} onPush={() => void gitSync("workspaces", workspace.id, "push")} onReveal={() => void openInFinder(selectedProject!, workspace)} onFinish={() => setFinishWorkspaceDialog(workspace)} />
             ) : selectedProject ? (
-              <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onOpenSession={(session) => void openProjectHistorySession(selectedProject, session)} onCreate={() => setCreateWorkspaceProject(selectedProject)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onDeleteWorktree={(item) => void removeWorktree(item)} onShell={(directory) => void createProjectShell(selectedProject, directory)} onCodex={(directory) => void createProjectCodex(selectedProject, directory)} onPull={() => void gitSync("projects", selectedProject.id, "pull")} onPush={() => void gitSync("projects", selectedProject.id, "push")} />
+              <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onOpenSession={(session) => void openProjectHistorySession(selectedProject, session)} onCreate={() => setCreateWorkspaceProject(selectedProject)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onSyncLocation={(location, action) => void gitSyncProjectLocation(location.id, action)} onDeleteWorktree={(item) => void removeWorktree(item)} onShell={(directory) => void createProjectShell(selectedProject, directory)} onCodex={(directory) => void createProjectCodex(selectedProject, directory)} onPull={() => void gitSync("projects", selectedProject.id, "pull")} onPush={() => void gitSync("projects", selectedProject.id, "push")} />
             ) : (
               <Overview projects={projects} busy={busy} onOpen={(id) => navigate(`/projects/${id}`)} onCreate={() => setCreateProjectOpen(true)} onRestore={(project) => void updateProjectStatus(project, "active")} onDelete={(project) => void permanentlyDeleteProject(project)} />
             )}
@@ -1277,7 +1283,85 @@ function repositoryLabel(remote?: string) {
   return remote.replace(/^git@([^:]+):/, "$1/").replace(/^https?:\/\//, "").replace(/\.git$/, "");
 }
 
-function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, onRefresh, onMakeDefault, onReattach, onDeleteWorktree }: { directory: Directory; worktrees: GitWorktree[]; busy: boolean; onOpen: (id: string) => void; onEdit: () => void; onRefresh: () => void; onMakeDefault: () => void; onReattach: () => void; onDeleteWorktree: (worktree: GitWorktree) => void }) {
+function ActionMenu({ label, testId, disabled, children }: { label: string; testId: string; disabled?: boolean; children: React.ReactNode }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const focusMenuRef = useRef(false);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 8, top: 8 });
+
+  const show = (focusMenu = false) => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    focusMenuRef.current = focusMenu;
+    setPosition({ left: Math.max(8, Math.min(rect.right - 224, window.innerWidth - 232)), top: rect.bottom + 4 });
+    setOpen(true);
+  };
+
+  useLayoutEffect(() => {
+    if (!open || !menuRef.current || !triggerRef.current) return;
+    const menuRect = menuRef.current.getBoundingClientRect();
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const left = Math.max(8, Math.min(triggerRect.right - menuRect.width, window.innerWidth - menuRect.width - 8));
+    const below = triggerRect.bottom + 4;
+    const top = below + menuRect.height <= window.innerHeight - 8 ? below : Math.max(8, triggerRect.top - menuRect.height - 4);
+    setPosition((current) => current.left === left && current.top === top ? current : { left, top });
+    if (focusMenuRef.current) {
+      menuRef.current.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+      focusMenuRef.current = false;
+    }
+  }, [open, position.left, position.top]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeFromPointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node) || triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const closeFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
+    const closeFromViewportChange = () => setOpen(false);
+    document.addEventListener("pointerdown", closeFromPointer);
+    document.addEventListener("keydown", closeFromKeyboard);
+    window.addEventListener("resize", closeFromViewportChange);
+    window.addEventListener("scroll", closeFromViewportChange, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeFromPointer);
+      document.removeEventListener("keydown", closeFromKeyboard);
+      window.removeEventListener("resize", closeFromViewportChange);
+      window.removeEventListener("scroll", closeFromViewportChange, true);
+    };
+  }, [open]);
+
+  const navigateMenu = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Tab") {
+      setOpen(false);
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []);
+    if (items.length === 0) return;
+    event.preventDefault();
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : event.key === "ArrowDown" ? (index + 1) % items.length : (index <= 0 ? items.length : index) - 1;
+    items[next]?.focus();
+  };
+
+  return <>
+    <Button ref={triggerRef} data-testid={`${testId}-trigger`} size="icon" variant="ghost" disabled={disabled} aria-label={label} aria-haspopup="menu" aria-expanded={open} title={label} onClick={() => open ? setOpen(false) : show()} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); open ? menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus() : show(true); } }}><Ellipsis className="size-4" /></Button>
+    {open && createPortal(<div ref={menuRef} data-testid={testId} data-overlay-root="true" role="menu" aria-label={label} className="fixed z-[100] w-56 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={position} onClick={(event) => { if ((event.target as HTMLElement).closest('[role="menuitem"]')) setOpen(false); }} onKeyDown={navigateMenu}>{children}</div>, document.body)}
+  </>;
+}
+
+function ActionMenuItem({ icon, children, disabled, testId, title, onClick }: { icon: React.ReactNode; children: React.ReactNode; disabled?: boolean; testId?: string; title?: string; onClick: () => void }) {
+  return <button type="button" role="menuitem" data-testid={testId} disabled={disabled} title={title} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" onClick={onClick}>{icon}<span className="min-w-0 flex-1 truncate">{children}</span></button>;
+}
+
+function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, onRefresh, onMakeDefault, onReattach, onSync, onDeleteWorktree }: { directory: Directory; worktrees: GitWorktree[]; busy: boolean; onOpen: (id: string) => void; onEdit: () => void; onRefresh: () => void; onMakeDefault: () => void; onReattach: () => void; onSync: (action: "pull" | "push") => void; onDeleteWorktree: (worktree: GitWorktree) => void }) {
   const isRepository = directory.git_status !== "not_git";
   const [expanded, setExpanded] = useState(isRepository && (directory.role === "primary" || directory.git_status !== "ready"));
   const orderedWorktrees = useMemo(() => [...worktrees].sort((left, right) => Number(right.is_main) - Number(left.is_main)), [worktrees]);
@@ -1292,19 +1376,26 @@ function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, on
     <span>{directory.delivery_mode === "local_merge" ? "local merge" : "remote review"}</span>
   </>;
   const locationSummary = <>
-    <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100">{isRepository ? <FolderGit2 className="size-4" /> : <Folder className="size-4" />}</div>
+    <div data-testid={`project-location-icon-${directory.id}`} className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100">{isRepository ? <FolderGit2 className="size-4" /> : <Folder className="size-4" />}</div>
     <div className="min-w-0 flex-1">
       <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-semibold">{directory.name}</h3><Badge>{directory.role}</Badge><Badge variant={directory.git_status === "ready" ? "success" : directory.git_status === "not_git" ? "neutral" : "danger"}>{directory.git_status}</Badge>{directory.worktree_setup_command && <Badge>Setup</Badge>}{isRepository && <span className="text-[10px] text-neutral-400">{worktrees.length} {worktrees.length === 1 ? "worktree" : "worktrees"}</span>}</div>
       <p className="mt-1 text-xs leading-5 text-neutral-500">{directory.description || "No purpose described yet."}</p>
       <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-neutral-400">{isRepository && repositoryDetails}<code className="min-w-0 truncate" title={directory.path}>{directory.path}</code></div>
     </div>
-    {isRepository && (expanded ? <ChevronDown className="mt-3 size-4 shrink-0 text-neutral-400" /> : <ChevronRight className="mt-3 size-4 shrink-0 text-neutral-400" />)}
   </>;
 
   return <article data-testid={`project-location-${directory.id}`}>
     <div className="flex items-start gap-3 p-4">
-      {isRepository ? <button data-testid={`project-location-toggle-${directory.id}`} className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2" aria-expanded={expanded} aria-controls={`project-location-worktrees-${directory.id}`} aria-label={`${expanded ? "Collapse" : "Expand"} repository ${directory.name}`} onClick={() => setExpanded((value) => !value)}>{locationSummary}</button> : <div className="flex min-w-0 flex-1 items-start gap-3">{locationSummary}</div>}
-      <div className="flex shrink-0 gap-1"><Button size="sm" variant="ghost" disabled={busy} onClick={onRefresh}>Refresh</Button>{directory.git_status === "ready" && directory.role !== "primary" && <Button size="sm" variant="ghost" disabled={busy} onClick={onMakeDefault}>Make default</Button>}{["missing", "broken", "mismatch"].includes(directory.git_status) && <Button size="sm" variant="ghost" disabled={busy} onClick={onReattach}>Reattach</Button>}<button className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-800" aria-label={`Edit ${directory.name}`} onClick={onEdit}><Pencil className="size-3.5" /></button></div>
+      {isRepository ? <button data-testid={`project-location-toggle-${directory.id}`} className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2" aria-expanded={expanded} aria-controls={`project-location-worktrees-${directory.id}`} aria-label={`${expanded ? "Collapse" : "Expand"} repository ${directory.name}`} onClick={() => setExpanded((value) => !value)}><span data-testid={`project-location-chevron-${directory.id}`} className="mt-1 grid size-8 shrink-0 place-items-center rounded-md text-neutral-400">{expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}</span>{locationSummary}</button> : <div className="flex min-w-0 flex-1 items-start gap-3">{locationSummary}</div>}
+      <div className="flex shrink-0 gap-1">
+        <Button data-testid={`project-location-refresh-${directory.id}`} size="icon" variant="ghost" disabled={busy} aria-label={`Refresh ${directory.name}`} title={`Refresh ${directory.name}`} onClick={onRefresh}><RefreshCw className="size-4" /></Button>
+        <ActionMenu label={`Actions for ${directory.name}`} testId={`project-location-actions-${directory.id}`} disabled={busy}>
+          {isRepository && directory.git_status === "ready" && <><ActionMenuItem icon={<Download className="size-3.5" />} disabled={busy} testId={`project-location-pull-${directory.id}`} title={`Pull ${directory.base_branch || "base branch"}`} onClick={() => onSync("pull")}>Pull {directory.base_branch || "base branch"}</ActionMenuItem><ActionMenuItem icon={<Upload className="size-3.5" />} disabled={busy} testId={`project-location-push-${directory.id}`} title={`Push ${directory.base_branch || "base branch"}`} onClick={() => onSync("push")}>Push {directory.base_branch || "base branch"}</ActionMenuItem><div role="separator" className="my-1 border-t border-neutral-100" /></>}
+          {directory.git_status === "ready" && directory.role !== "primary" && <ActionMenuItem icon={<FolderGit2 className="size-3.5" />} disabled={busy} onClick={onMakeDefault}>Make default</ActionMenuItem>}
+          {["missing", "broken", "mismatch"].includes(directory.git_status) && <ActionMenuItem icon={<RefreshCw className="size-3.5" />} disabled={busy} onClick={onReattach}>Reattach</ActionMenuItem>}
+          <ActionMenuItem icon={<Pencil className="size-3.5" />} disabled={busy} testId={`project-location-edit-${directory.id}`} onClick={onEdit}>Edit location</ActionMenuItem>
+        </ActionMenu>
+      </div>
     </div>
     {isRepository && expanded && <div id={`project-location-worktrees-${directory.id}`} data-testid={`project-location-worktrees-${directory.id}`} role="group" aria-label={`Worktrees for ${directory.name}`} className="border-t border-neutral-100 bg-neutral-50/60 px-4 py-2">
       <div className="ml-5 divide-y divide-neutral-200 border-l border-neutral-200">
@@ -1319,15 +1410,14 @@ function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, on
   </article>;
 }
 
-function ProjectHome({ project, busy, onOpen, onOpenSession, onCreate, onAddDirectory, onEditDirectory, onRefreshLocation, onMakeDefault, onReattach, onDeleteWorktree, onShell, onCodex, onPull, onPush }: { project: ProjectDetail; busy: boolean; onOpen: (id: string) => void; onOpenSession: (session: Session) => void; onCreate: () => void; onAddDirectory: () => void; onEditDirectory: (directory: Directory) => void; onRefreshLocation: (directory: Directory) => void; onMakeDefault: (directory: Directory) => void; onReattach: (directory: Directory) => void; onDeleteWorktree: (worktree: GitWorktree) => void; onShell: (directory?: Directory) => void; onCodex: (directory?: Directory) => void; onPull: () => void; onPush: () => void }) {
+function ProjectHome({ project, busy, onOpen, onOpenSession, onCreate, onAddDirectory, onEditDirectory, onRefreshLocation, onMakeDefault, onReattach, onSyncLocation, onDeleteWorktree, onShell, onCodex, onPull, onPush }: { project: ProjectDetail; busy: boolean; onOpen: (id: string) => void; onOpenSession: (session: Session) => void; onCreate: () => void; onAddDirectory: () => void; onEditDirectory: (directory: Directory) => void; onRefreshLocation: (directory: Directory) => void; onMakeDefault: (directory: Directory) => void; onReattach: (directory: Directory) => void; onSyncLocation: (directory: Directory, action: "pull" | "push") => void; onDeleteWorktree: (worktree: GitWorktree) => void; onShell: (directory?: Directory) => void; onCodex: (directory?: Directory) => void; onPull: () => void; onPush: () => void }) {
   const hasGitRepository = project.directories.some((directory) => directory.is_git);
   const primary = project.directories.find((directory) => directory.id === project.primary_directory_id) ?? project.directories.find((directory) => directory.role === "primary");
   const rootWorkspaces = project.workspaces.filter((stream) => !stream.parent_workspace_id);
   return <div data-testid="page-scroll" className="h-full overflow-y-auto p-5 [scrollbar-gutter:stable] sm:p-8 lg:p-12"><div data-testid="page-content" className="mx-auto max-w-6xl">
     <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-neutral-400">Project · multi-repository locations</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{project.name}</h1><p className="mt-2 text-sm text-neutral-500">{project.description}</p></div><div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={busy || !primary} onClick={() => onShell(primary)}><Shell className="size-4" />New Shell</Button><Button variant="secondary" disabled={busy || primary?.git_status !== "ready"} onClick={() => onCodex(primary)}><Bot className="size-4" />New Codex</Button><Button disabled={busy || primary?.git_status !== "ready"} onClick={onCreate}><Plus className="size-4" />New Workspace</Button></div></div>
-    <section className="mt-8 rounded-xl border border-neutral-200 bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Repository synchronization</h2><p className="mt-1 text-xs text-neutral-400">Best effort across every Git location · failures do not roll back successful repositories.</p></div><div className="flex gap-2"><Button size="sm" variant="secondary" disabled={busy || !hasGitRepository} onClick={onPull}><RefreshCw className="size-3.5" />Pull all</Button><Button size="sm" variant="secondary" disabled={busy || !hasGitRepository} onClick={onPush}><Upload className="size-3.5" />Push all</Button></div></div></section>
-    <section className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Repositories</h2><p className="mt-1 text-xs text-neutral-400">Expand a repository to inspect its worktrees; non-Git locations remain read-only context.</p></div><Button size="sm" variant="secondary" onClick={onAddDirectory}><Plus className="size-3.5" />Add location</Button></div>
-      <div data-testid="project-repository-tree" className="relative z-10 mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.directories.map((directory) => <ProjectLocationTreeRow key={directory.id} directory={directory} worktrees={project.worktrees.filter((item) => item.project_location_id === directory.id)} busy={busy} onOpen={onOpen} onEdit={() => onEditDirectory(directory)} onRefresh={() => onRefreshLocation(directory)} onMakeDefault={() => onMakeDefault(directory)} onReattach={() => onReattach(directory)} onDeleteWorktree={onDeleteWorktree} />)}{project.directories.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">Add a Git location before creating a Workspace.</div>}</div>
+    <section className="mt-10"><div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Repositories</h2><p className="mt-1 text-xs text-neutral-400">Expand a repository to inspect its worktrees; non-Git locations remain read-only context.</p></div><div className="flex shrink-0 items-center gap-1"><Button size="sm" variant="secondary" onClick={onAddDirectory}><Plus className="size-3.5" />Add location</Button><ActionMenu label="Repository actions" testId="project-repositories-menu" disabled={busy || !hasGitRepository}><ActionMenuItem icon={<Download className="size-3.5" />} disabled={busy || !hasGitRepository} testId="project-pull-all" onClick={onPull}>Pull all</ActionMenuItem><ActionMenuItem icon={<Upload className="size-3.5" />} disabled={busy || !hasGitRepository} testId="project-push-all" onClick={onPush}>Push all</ActionMenuItem></ActionMenu></div></div>
+      <div data-testid="project-repository-tree" className="relative z-10 mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.directories.map((directory) => <ProjectLocationTreeRow key={directory.id} directory={directory} worktrees={project.worktrees.filter((item) => item.project_location_id === directory.id)} busy={busy} onOpen={onOpen} onEdit={() => onEditDirectory(directory)} onRefresh={() => onRefreshLocation(directory)} onMakeDefault={() => onMakeDefault(directory)} onReattach={() => onReattach(directory)} onSync={(action) => onSyncLocation(directory, action)} onDeleteWorktree={onDeleteWorktree} />)}{project.directories.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">Add a Git location before creating a Workspace.</div>}</div>
     </section>
     <section data-testid="project-sessions-section" className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Project Sessions</h2><p className="mt-1 text-xs text-amber-600">These Sessions operate directly in Project locations. Shell records disappear when closed; Codex history is retained.</p></div><span className="text-[11px] text-neutral-400">{project.sessions.length}</span></div><div className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.sessions.map((session) => <div key={session.id} data-testid={`project-session-${session.id}`} className="flex items-center gap-3 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100">{session.kind === "codex" ? <Bot className="size-4 text-neutral-500" /> : <TerminalSquare className="size-4 text-neutral-500" />}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{session.name}</p><Badge>{session.kind === "codex" ? "Codex" : "Shell"}</Badge><Badge variant={session.status === "running" ? "success" : "neutral"}>{session.sidebar_visible ? session.status : "history"}</Badge></div><code className="mt-1 block truncate text-[10px] text-neutral-400" title={session.cwd}>{session.cwd}</code></div><Button size="sm" variant="secondary" disabled={busy || (session.kind === "codex" && !session.codex_session_id)} onClick={() => onOpenSession(session)}>{session.sidebar_visible ? "Open" : "Resume"}</Button></div>)}{project.sessions.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">No active Shell or saved Codex Sessions</div>}</div></section>
     <section className="mt-10"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Workspaces</h2><span className="text-[11px] text-neutral-400">{rootWorkspaces.length}</span></div><div className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{rootWorkspaces.map((stream) => <button key={stream.id} onClick={() => onOpen(stream.id)} className="flex w-full items-center gap-3 p-4 text-left hover:bg-neutral-50"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100"><Workflow className="size-4 text-neutral-500" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{stream.name}</p>{stream.status === "archived" && <Badge>archived</Badge>}</div><p className="mt-1 truncate text-xs text-neutral-500">{stream.description || stream.checkout_path}</p></div><ChevronRight className="size-4 shrink-0 text-neutral-300" /></button>)}{rootWorkspaces.length === 0 && <div className="py-12 text-center text-xs text-neutral-400">No Workspaces yet</div>}</div></section>

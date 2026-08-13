@@ -25,6 +25,7 @@ async function readJson(request) {
 async function startFixtureApi() {
   const fixture = createSidebarCoreFixture();
   const unexpectedRequests = [];
+  const syncRequests = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -195,8 +196,16 @@ async function startFixtureApi() {
       }
     }
 
+    const projectLocationSyncMatch = pathname.match(/^\/api\/project-locations\/([^/]+)\/git\/(pull|push)$/);
+    if (request.method === "POST" && projectLocationSyncMatch) {
+      syncRequests.push(pathname);
+      sendJson(response, 200, { scope: "project_location", action: projectLocationSyncMatch[2], branch: "main", remote: "origin", remote_branch: "main", status: "up_to_date", message: "up to date" });
+      return;
+    }
+
     const syncMatch = pathname.match(/^\/api\/(projects|workspaces)\/([^/]+)\/git\/(pull|push)(-all)?$/);
     if (request.method === "POST" && syncMatch) {
+      syncRequests.push(pathname);
       sendJson(response, 200, [{ project_location_id: fixture.projectDetails[FIXTURE_IDS.project].default_location_id, location_name: "fixture-repository", status: "success", result: { scope: syncMatch[1] === "projects" ? "project_location" : "workspace_location", action: syncMatch[3], branch: "main", remote: "origin", remote_branch: "main", status: "up_to_date", message: "up to date" } }]);
       return;
     }
@@ -375,6 +384,7 @@ async function startFixtureApi() {
 
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
+    syncRequests,
     unexpectedRequests,
     async close() {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -386,6 +396,7 @@ export async function startUiHarness() {
   if (process.env.TREEFOLD_UI_URL) {
     return {
       baseUrl: process.env.TREEFOLD_UI_URL,
+      syncRequests: [],
       assertNoUnexpectedRequests() {},
       async close() {},
     };
@@ -422,6 +433,7 @@ export async function startUiHarness() {
 
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
+    syncRequests: fixtureApi.syncRequests,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {
         throw new Error(`Unexpected UI fixture requests: ${fixtureApi.unexpectedRequests.join(", ")}`);
