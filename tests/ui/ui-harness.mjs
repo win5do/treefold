@@ -241,21 +241,27 @@ async function startFixtureApi() {
       }
       if (request.method === "POST") {
         const input = await readJson(request);
+        const kind = input.kind || "shell";
+        if (kind === "codex" && ["name", "initial_prompt", "yolo"].some((field) => Object.hasOwn(input, field))) {
+          sendJson(response, 400, { error: "Codex creation must use backend defaults" });
+          return;
+        }
+        const createdId = `session-created-${kind}-ui-fixture`;
         const created = {
           ...detail.sessions[0],
-          id: "session-created-shell-ui-fixture",
+          id: createdId,
           workspace_id: detail.id,
-          process_id: "session-created-shell-ui-fixture",
-          process_name: "shell-created-ui-fixture",
-          name: input.name || "shell",
-          kind: input.kind || "shell",
+          process_id: createdId,
+          process_name: `${kind}-created-ui-fixture`,
+          name: kind,
+          kind,
           cwd: input.project_directory_id
             ? detail.directories.find((directory) => directory.id === input.project_directory_id)?.checkout_path || detail.checkout_path
             : detail.checkout_path,
           original_cwd: detail.checkout_path,
-          initial_prompt: input.initial_prompt || "",
+          initial_prompt: "",
           codex_session_id: undefined,
-          yolo: Boolean(input.yolo),
+          yolo: kind === "codex" && fixture.settings.agents.codex.extra_args.includes("--dangerously-bypass-approvals-and-sandbox"),
           status: "running",
           pid: 4242,
           process_group_id: 4242,

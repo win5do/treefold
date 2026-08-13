@@ -4850,7 +4850,6 @@ struct CreateSession {
     kind: Option<String>,
     project_directory_id: Option<String>,
     initial_prompt: Option<String>,
-    yolo: Option<bool>,
 }
 async fn create_session(
     State(state): State<AppState>,
@@ -4944,12 +4943,7 @@ async fn create_session_for_workspace(
     } else {
         vec![]
     };
-    let yolo = kind == "codex"
-        && input.yolo.unwrap_or_else(|| {
-            codex_extra_args
-                .iter()
-                .any(|argument| argument == CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG)
-        });
+    let yolo = session_yolo_from_settings(&kind, &codex_extra_args);
     let session_id = id();
     let timestamp = now();
     let mut name = trimmed(input.name)
@@ -5017,6 +5011,13 @@ async fn create_session_for_workspace(
         }
     }
     Ok((StatusCode::CREATED, Json(session)))
+}
+
+fn session_yolo_from_settings(kind: &str, codex_extra_args: &[String]) -> bool {
+    kind == "codex"
+        && codex_extra_args
+            .iter()
+            .any(|argument| argument == CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG)
 }
 
 async fn get_session(
@@ -6169,15 +6170,15 @@ mod current_workspace_tests {
     use super::{
         app, apple_script_string, command_output, create_delivery_preflight_impl, create_directory,
         create_fork, create_project, create_workspace, finish_workspace_impl, pull_workspace,
-        push_workspace, refresh_project_location, shell_quote, update_workspace, ApiJson, AppState,
-        CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject, CreateWorkspace,
-        FinishWorkspace, UpdateWorkspace,
+        push_workspace, refresh_project_location, session_yolo_from_settings, shell_quote,
+        update_workspace, ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork,
+        CreateProject, CreateWorkspace, FinishWorkspace, UpdateWorkspace,
     };
     use crate::{
         model::Todo,
         settings::SettingsStore,
         store::{now, Store},
-        terminal::TerminalManager,
+        terminal::{TerminalManager, CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG},
     };
 
     fn test_state(root: &Path) -> AppState {
@@ -6213,6 +6214,18 @@ mod current_workspace_tests {
             apple_script_string(" && codex \"now\""),
             "\" && codex \\\"now\\\"\""
         );
+    }
+
+    #[test]
+    fn codex_yolo_is_derived_only_from_global_extra_args() {
+        let configured = vec![
+            "--search".into(),
+            CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG.into(),
+        ];
+
+        assert!(session_yolo_from_settings("codex", &configured));
+        assert!(!session_yolo_from_settings("codex", &["--search".into()]));
+        assert!(!session_yolo_from_settings("shell", &configured));
     }
 
     #[tokio::test]
@@ -6988,7 +7001,6 @@ mod tests {
                 kind: Some("shell".into()),
                 project_directory_id: None,
                 initial_prompt: None,
-                yolo: None,
             }),
         )
         .await
@@ -8247,7 +8259,6 @@ mod tests {
                 kind: Some("shell".into()),
                 project_directory_id: None,
                 initial_prompt: None,
-                yolo: None,
             }),
         )
         .await
