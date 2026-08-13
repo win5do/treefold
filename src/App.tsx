@@ -97,7 +97,6 @@ type Session = {
   original_cwd: string;
   initial_prompt: string;
   codex_session_id?: string;
-  yolo: boolean;
   sidebar_visible: boolean;
   hidden_at?: string;
   evicted_at?: string;
@@ -1165,10 +1164,10 @@ function WorkspaceInspector({ open, project, workspace, session }: { open: boole
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
     {tab === "history" ? <GitHistoryPanel history={history} error={historyError} /> : tab === "operations" ? <GitOperationsPanel operations={operations} error={operationsError} /> : session ? <div className="space-y-6 p-4">
-      <div><div className="flex items-center gap-2"><div className="grid size-9 place-items-center rounded-lg bg-neutral-100">{session.kind === "codex" ? <Bot className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{session.name}</p><div className="mt-1 flex items-center gap-2"><Badge>{session.kind}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "danger" : "neutral"}>{session.status}</Badge>{session.yolo && <Badge variant="danger">YOLO</Badge>}</div></div></div></div>
+      <div><div className="flex items-center gap-2"><div className="grid size-9 place-items-center rounded-lg bg-neutral-100">{session.kind === "codex" ? <Bot className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{session.name}</p><div className="mt-1 flex items-center gap-2"><Badge>{session.kind}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "danger" : "neutral"}>{session.status}</Badge></div></div></div></div>
       <InspectorGroup title="Process"><InspectorRow label="Name" value={session.process_name} /><InspectorRow label="Process ID" value={session.process_id} mono /><InspectorRow label="PID" value={session.pid ? String(session.pid) : "—"} /><InspectorRow label="PGID" value={session.process_group_id ? String(session.process_group_id) : "—"} /><InspectorRow label="Exit" value={session.exit_code === undefined ? "—" : `${session.exit_code}${session.exit_signal ? ` · ${session.exit_signal}` : ""}`} /></InspectorGroup>
       <InspectorGroup title={workspace ? "Workspace" : "Project Session"}>{workspace && <><InspectorRow label="Workspace" value={workspace.name} /><InspectorRow label="Runtime" value={workspace.runtime_name} /><InspectorRow label="Workspace ID" value={workspace.runtime_id} mono /></>}<InspectorRow label="Workdir" value={session.cwd} mono />{session.original_cwd !== session.cwd && <InspectorRow label="Original" value={session.original_cwd} mono />}</InspectorGroup>
-      {session.kind === "codex" && <InspectorGroup title="Codex"><InspectorRow label="Session ID" value={session.codex_session_id || "Capturing…"} mono /><InspectorRow label="Autonomy" value={session.yolo ? "Bypass approvals & sandbox" : "Use Codex defaults"} />{session.initial_prompt && <div className="mt-3 rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-600">{session.initial_prompt}</div>}</InspectorGroup>}
+      {session.kind === "codex" && <InspectorGroup title="Codex"><InspectorRow label="Session ID" value={session.codex_session_id || "Capturing…"} mono />{session.initial_prompt && <div className="mt-3 rounded-lg bg-neutral-50 p-3 text-xs leading-5 text-neutral-600">{session.initial_prompt}</div>}</InspectorGroup>}
       <InspectorGroup title="Command"><code className="block break-all rounded-lg bg-neutral-950 p-3 text-[10px] leading-5 text-neutral-300">{session.command?.join(" ") || "—"}</code></InspectorGroup>
     </div> : workspace ? <div className="space-y-6 p-4">
       <div><p className="truncate text-sm font-semibold" title={workspace.name}>{workspace.name}</p><div className="mt-2 flex gap-2"><Badge>{workspace.kind}</Badge><Badge variant={workspace.status === "active" ? "success" : "neutral"}>{workspace.status}</Badge></div></div>

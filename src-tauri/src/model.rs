@@ -160,7 +160,6 @@ pub struct Session {
     pub initial_prompt: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_session_id: Option<String>,
-    pub yolo: bool,
     pub sidebar_visible: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hidden_at: Option<String>,

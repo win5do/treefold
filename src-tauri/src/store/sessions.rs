@@ -43,8 +43,8 @@ impl Store {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         tx.execute(
-            "INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,yolo,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at)
-             VALUES(:id,:workspace_id,:name,:kind,:cwd,:original_cwd,:initial_prompt,:codex_session_id,:yolo,:sidebar_visible,:hidden_at,:evicted_at,:process_id,:process_name,:status,:pid,:process_group_id,:exit_code,:exit_signal,:command,:launch_started_at,:last_attached_at,:created_at,:updated_at)",
+            "INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at)
+             VALUES(:id,:workspace_id,:name,:kind,:cwd,:original_cwd,:initial_prompt,:codex_session_id,:sidebar_visible,:hidden_at,:evicted_at,:process_id,:process_name,:status,:pid,:process_group_id,:exit_code,:exit_signal,:command,:launch_started_at,:last_attached_at,:created_at,:updated_at)",
             named_params! {
                 ":id": s.id,
                 ":workspace_id": s.workspace_id,
@@ -54,7 +54,6 @@ impl Store {
                 ":original_cwd": s.original_cwd,
                 ":initial_prompt": s.initial_prompt,
                 ":codex_session_id": s.codex_session_id,
-                ":yolo": s.yolo,
                 ":sidebar_visible": s.sidebar_visible,
                 ":hidden_at": s.hidden_at,
                 ":evicted_at": s.evicted_at,
@@ -217,7 +216,7 @@ impl Store {
     }
 }
 
-const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,yolo,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
+const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
 fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
     let command: String = r.get("command")?;
     Ok(Session {
@@ -229,7 +228,6 @@ fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
         original_cwd: r.get("original_cwd")?,
         initial_prompt: r.get("initial_prompt")?,
         codex_session_id: r.get("codex_session_id")?,
-        yolo: r.get("yolo")?,
         sidebar_visible: r.get("sidebar_visible")?,
         hidden_at: r.get("hidden_at")?,
         evicted_at: r.get("evicted_at")?,

@@ -359,12 +359,7 @@ try {
     timeout: 3_000,
     timeoutMsg: "Codex Session inspector did not open",
   });
-  await browser.waitUntil(async () => (await codexInspector.getText()).includes("YOLO"), {
-    timeout: 3_000,
-    timeoutMsg: "Codex Session inspector did not finish opening with the global autonomy state",
-  });
-  assert.match(await codexInspector.getText(), /YOLO/, "Codex creation must reflect the global extra-args setting");
-  assert.match(await codexInspector.getText(), /Bypass approvals & sandbox/, "Codex autonomy must come from the global extra-args setting");
+  assert.equal((await codexInspector.getText()).includes("Autonomy"), false, "Codex Session inspector must not expose launch-mode state");
   await (await browser.$('button[aria-label="Hide right sidebar"]')).click();
   await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
   baseSection = await browser.$('[data-testid="workspace-locations-section"]');

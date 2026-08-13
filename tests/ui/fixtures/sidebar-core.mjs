@@ -137,7 +137,6 @@ function session({ id, workspaceId, name, kind, cwd, status, codexSessionId, sid
     original_cwd: cwd,
     initial_prompt: kind === "codex" ? "Verify the deterministic UI fixture." : "",
     codex_session_id: codexSessionId,
-    yolo: false,
     sidebar_visible: sidebarVisible,
     process_id: id,
     process_name: `${kind}-fixture`,

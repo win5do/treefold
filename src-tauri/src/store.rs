@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS sessions (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  name TEXT NOT NULL, kind TEXT NOT NULL, cwd TEXT NOT NULL, original_cwd TEXT NOT NULL,
  initial_prompt TEXT NOT NULL DEFAULT '',
- codex_session_id TEXT, yolo INTEGER NOT NULL DEFAULT 0, sidebar_visible INTEGER NOT NULL DEFAULT 1,
+ codex_session_id TEXT, sidebar_visible INTEGER NOT NULL DEFAULT 1,
  hidden_at TEXT, evicted_at TEXT, process_id TEXT NOT NULL DEFAULT '',
  process_name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, pid INTEGER NOT NULL DEFAULT 0,
  process_group_id INTEGER NOT NULL DEFAULT 0, exit_code INTEGER, exit_signal TEXT NOT NULL DEFAULT '',
@@ -169,6 +169,11 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
                 [],
             )?;
         }
+        if table_exists(connection, "sessions")?
+            && table_has_column(connection, "sessions", "yolo")?
+        {
+            connection.execute("ALTER TABLE sessions DROP COLUMN yolo", [])?;
+        }
         return Ok(());
     }
 
@@ -247,8 +252,44 @@ mod workspace_schema_tests {
         assert!(table_exists(&connection, "project_locations").unwrap());
         assert!(table_has_column(&connection, "project_locations", "delivery_mode").unwrap());
         assert!(table_exists(&connection, "workspace_locations").unwrap());
+        assert!(!table_has_column(&connection, "sessions", "yolo").unwrap());
         assert!(
             table_has_column(&connection, "delivery_operations", "workspace_location_id").unwrap()
+        );
+        drop(connection);
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[test]
+    fn removes_session_launch_mode_column_without_losing_session_history() {
+        let (root, path) = temporary_database("session-launch-mode-migration");
+        let store = Store::open(&path).expect("create current database");
+        drop(store);
+
+        let connection = Connection::open(&path).expect("open current database");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys=OFF;
+                 ALTER TABLE sessions ADD COLUMN yolo INTEGER NOT NULL DEFAULT 0;
+                 INSERT INTO sessions(
+                   id,workspace_id,name,kind,cwd,original_cwd,status,
+                   launch_started_at,created_at,updated_at,yolo
+                 ) VALUES(
+                   'session-1','workspace-1','Saved Codex','codex','/tmp/worktree',
+                   '/tmp/worktree','closed','now','now','now',1
+                 );
+                 PRAGMA foreign_keys=ON;",
+            )
+            .expect("seed legacy Session launch mode");
+        drop(connection);
+
+        let store = Store::open(&path).expect("migrate current database");
+        let connection = Connection::open(&path).expect("inspect migrated database");
+        assert!(!table_has_column(&connection, "sessions", "yolo").unwrap());
+        assert_eq!(
+            store.session("session-1").expect("preserve Session").name,
+            "Saved Codex"
         );
         drop(connection);
         drop(store);
@@ -426,12 +467,12 @@ mod tests {
                    'treefold/work',NULL,'none',NULL,NULL,NULL,'','','now','now'
                  );
                  INSERT INTO sessions(
-                   id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,yolo,
+                   id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,
                    sidebar_visible,process_id,process_name,status,pid,process_group_id,
                    exit_signal,command,launch_started_at,created_at,updated_at
                  ) VALUES(
                    'session-1','workspace-1','Codex','codex','/tmp/worktree',
-                   '/tmp/worktree','',0,1,'','','closed',0,0,'','[]','now','now','now'
+                   '/tmp/worktree','',1,'','','closed',0,0,'','[]','now','now','now'
                  );
                  INSERT INTO session_context_paths VALUES('session-1','/tmp/legacy-attached');
                  INSERT INTO delivery_operations(

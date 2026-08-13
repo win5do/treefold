@@ -165,7 +165,7 @@ async function startFixtureApi() {
       if (request.method === "POST") {
         const input = await readJson(request);
         const kind = input.kind || "shell";
-        if (kind === "codex" && ["name", "initial_prompt", "yolo"].some((field) => Object.hasOwn(input, field))) {
+        if (kind === "codex" && Object.keys(input).some((field) => !["kind", "project_directory_id"].includes(field))) {
           sendJson(response, 400, { error: "Codex creation must use backend defaults" });
           return;
         }
@@ -182,7 +182,6 @@ async function startFixtureApi() {
           original_cwd: directory.path,
           initial_prompt: "",
           codex_session_id: kind === "codex" ? "codex-created-project-ui-fixture" : undefined,
-          yolo: kind === "codex" && fixture.settings.agents.codex.extra_args.includes("--dangerously-bypass-approvals-and-sandbox"),
           sidebar_visible: true,
           status: "running",
           pid: 4343,
@@ -280,7 +279,7 @@ async function startFixtureApi() {
       if (request.method === "POST") {
         const input = await readJson(request);
         const kind = input.kind || "shell";
-        if (kind === "codex" && ["name", "initial_prompt", "yolo"].some((field) => Object.hasOwn(input, field))) {
+        if (kind === "codex" && Object.keys(input).some((field) => !["kind", "project_directory_id"].includes(field))) {
           sendJson(response, 400, { error: "Codex creation must use backend defaults" });
           return;
         }
@@ -299,7 +298,6 @@ async function startFixtureApi() {
           original_cwd: detail.checkout_path,
           initial_prompt: "",
           codex_session_id: undefined,
-          yolo: kind === "codex" && fixture.settings.agents.codex.extra_args.includes("--dangerously-bypass-approvals-and-sandbox"),
           status: "running",
           pid: 4242,
           process_group_id: 4242,

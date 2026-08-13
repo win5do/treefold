@@ -14,8 +14,6 @@ use tokio_tungstenite::WebSocketStream;
 
 use crate::model::Session;
 
-pub const CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG: &str =
-    "--dangerously-bypass-approvals-and-sandbox";
 const REPLAY_BYTES: usize = 64 * 1024;
 
 #[derive(Clone)]
@@ -277,14 +275,7 @@ fn codex_arguments(
     developer_instructions: Option<&str>,
     extra_args: &[String],
 ) -> Vec<String> {
-    let mut arguments = extra_args
-        .iter()
-        .filter(|argument| argument.as_str() != CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG)
-        .cloned()
-        .collect::<Vec<_>>();
-    if session.yolo {
-        arguments.push(CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG.into());
-    }
+    let mut arguments = extra_args.to_vec();
     arguments.extend(["-C".into(), session.cwd.clone()]);
     for path in &session.additional_directories {
         arguments.extend(["--add-dir".into(), path.clone()]);
@@ -317,7 +308,6 @@ mod tests {
             original_cwd: "/tmp/primary worktree".into(),
             initial_prompt: "Implement the feature".into(),
             codex_session_id: None,
-            yolo: false,
             sidebar_visible: true,
             hidden_at: None,
             evicted_at: None,
@@ -388,31 +378,15 @@ mod tests {
     }
 
     #[test]
-    fn session_yolo_overrides_the_global_bypass_argument_without_duplicates() {
-        let mut session = session();
+    fn passes_global_extra_args_through_unchanged() {
+        let session = session();
         let configured = vec![
             "--search".into(),
-            super::CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG.into(),
-            super::CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG.into(),
+            "--dangerously-bypass-approvals-and-sandbox".into(),
         ];
 
-        let safe_arguments = codex_arguments(&session, None, &configured);
-        assert!(!safe_arguments
-            .iter()
-            .any(|argument| argument == super::CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG));
-        assert_eq!(safe_arguments[0], "--search");
-
-        session.yolo = true;
-        let yolo_arguments = codex_arguments(&session, None, &configured);
-        assert_eq!(
-            yolo_arguments
-                .iter()
-                .filter(|argument| {
-                    argument.as_str() == super::CODEX_BYPASS_APPROVALS_AND_SANDBOX_ARG
-                })
-                .count(),
-            1
-        );
+        let arguments = codex_arguments(&session, None, &configured);
+        assert_eq!(&arguments[..configured.len()], configured);
     }
 
     #[test]
