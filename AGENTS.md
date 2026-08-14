@@ -65,6 +65,8 @@ Do not report a UI change complete while a required check is failing. The final 
 
 Keep `tests/ui/sidebar.core.mjs` small and focused on stable, high-value behavior. Extend the existing core flow when a change affects it instead of building a broad screenshot suite.
 
+Purely presentational style changes do not require adding or updating automated tests when they leave behavior, semantics, visibility, and interaction unchanged. Verify those changes with the existing UI flow and focused live visual inspection instead.
+
 Prefer semantic locators such as roles, accessible names, and labels, followed by stable `data-testid` attributes. Do not locate controls by fragile DOM depth or absolute screen coordinates. When geometry is the requirement, assert element bounds with a small explicit tolerance.
 
 Core assertions should cover the applicable behavior:
