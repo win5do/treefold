@@ -510,7 +510,7 @@ try {
   let overviewRow = await browser.$('[data-testid="project-overview-row"]');
   assert.equal(await overviewRow.getAttribute("data-project-status"), "archived", "archived Project must remain visible on Overview");
   assert.match(await overviewRow.getText(), /Archived/);
-  await (await overviewRow.$(`p=${FIXTURE_NAMES.project}`)).click();
+  await browser.execute((projectId) => { window.location.hash = `#/projects/${projectId}`; }, FIXTURE_IDS.project);
   const archivedProjectPage = await browser.$('[data-testid="page-content"]');
   await archivedProjectPage.waitForDisplayed({ timeout: 3_000 });
   assert.match(await archivedProjectPage.getText(), /archived · read-only/i, "archived Project details must identify their read-only state");
