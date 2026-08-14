@@ -1,20 +1,32 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use amux::{
     client::Client,
     config::Config,
     daemon::Daemon,
-    model::{CreateWorkspaceRequest, IoMode, Process, ProcessState, RunRequest, StopRequest},
+    model::{
+        CreateWorkspaceRequest, IoMode, Process, ProcessEvent, ProcessSnapshot, ProcessState,
+        ProcessView, RunRequest, StopRequest,
+    },
     protocol::Response,
 };
 use anyhow::{anyhow, bail, Context};
 use http::Method;
+use http_body_util::BodyExt;
 use tokio::sync::Mutex;
 use tokio_tungstenite::WebSocketStream;
 
 use crate::model::Session;
 
 const REPLAY_BYTES: usize = 64 * 1024;
+type ProcessStateMap = Arc<tokio::sync::RwLock<BTreeMap<String, (ProcessView, Option<String>)>>>;
 const SETUP_SHELL_WRAPPER: &str = r#"set +e
 "$SHELL" -lc "$TREEFOLD_SETUP_COMMAND"
 treefold_setup_status=$?
@@ -25,16 +37,37 @@ exec "$SHELL" -l"#;
 #[derive(Clone)]
 pub struct TerminalManager {
     client: Client,
+    daemon_name: Arc<String>,
     daemon_start: Arc<Mutex<()>>,
     embedded_shims: bool,
+    bridge_started: Arc<AtomicBool>,
+    process_events: tokio::sync::broadcast::Sender<TreefoldProcessEvent>,
+    process_state: ProcessStateMap,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct TreefoldProcessEvent {
+    pub event: ProcessEvent,
+    pub session_id: Option<String>,
 }
 
 impl TerminalManager {
+    #[allow(dead_code)]
     pub fn new(config: Config) -> Self {
+        Self::new_named(config, amux::config::daemon_name())
+    }
+
+    pub fn new_named(config: Config, daemon_name: String) -> Self {
+        let (process_events, _) = tokio::sync::broadcast::channel(1024);
         Self {
-            client: Client::new(config),
+            client: Client::named(config, &daemon_name),
+            daemon_name: Arc::new(daemon_name),
             daemon_start: Arc::new(Mutex::new(())),
             embedded_shims: false,
+            bridge_started: Arc::new(AtomicBool::new(false)),
+            process_events,
+            process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
         }
     }
 
@@ -46,20 +79,18 @@ impl TerminalManager {
         if self.client.ready().await {
             return Ok(());
         }
-        let daemon = if self.embedded_shims {
-            Daemon::with_embedded_shims(self.client.config.clone())?
+        if self.embedded_shims {
+            let daemon = Daemon::with_embedded_shims(self.client.config.clone())?;
+            tokio::spawn(async move {
+                if let Err(error) = daemon.serve(None).await {
+                    log::error!("embedded amux daemon stopped: {error:#}");
+                }
+            });
         } else {
-            Daemon::with_shim_command(
-                self.client.config.clone(),
-                std::env::current_exe()?,
-                vec!["--amux-shim".into()],
-            )?
-        };
-        tokio::spawn(async move {
-            if let Err(error) = daemon.serve(None).await {
-                log::error!("embedded amux daemon stopped: {error:#}");
-            }
-        });
+            self.client
+                .ensure_daemon_with(std::env::current_exe()?, vec!["--amux-daemon".into()])
+                .await?;
+        }
         for _ in 0..100 {
             if self.client.ready().await {
                 return Ok(());
@@ -67,6 +98,36 @@ impl TerminalManager {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
         bail!("amux daemon did not become ready")
+    }
+
+    pub async fn connect_existing(&self) {
+        if self.client.ready().await {
+            self.start_event_bridge();
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn subscribe_process_events(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<TreefoldProcessEvent> {
+        self.process_events.subscribe()
+    }
+
+    #[allow(dead_code)]
+    pub async fn process_snapshot(&self) -> Vec<(ProcessView, Option<String>)> {
+        self.process_state.read().await.values().cloned().collect()
+    }
+
+    fn start_event_bridge(&self) {
+        if self.bridge_started.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let client = self.client.clone();
+        let sender = self.process_events.clone();
+        let state = self.process_state.clone();
+        tokio::spawn(async move {
+            process_event_bridge(client, sender, state).await;
+        });
     }
 
     async fn ensure_workspace(&self, workspace: &str, root_dir: &str) -> anyhow::Result<()> {
@@ -101,6 +162,7 @@ impl TerminalManager {
         codex_extra_args: &[String],
     ) -> anyhow::Result<Process> {
         self.ensure_runtime().await?;
+        self.start_event_bridge();
         let workspace = Self::workspace_name(&session.cwd);
         self.ensure_workspace(&workspace, &session.cwd).await?;
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
@@ -123,14 +185,8 @@ impl TerminalManager {
             ("TREEFOLD_API_URL".into(), "http://127.0.0.1:7331".into()),
             ("TREEFOLD_WORKSPACE_ID".into(), session.workspace_id.clone()),
             ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
-            (
-                "AMUX_STATE_DIR".into(),
-                self.client.config.state_dir.to_string_lossy().into_owned(),
-            ),
-            (
-                "AMUX_SOCKET".into(),
-                self.client.config.socket.to_string_lossy().into_owned(),
-            ),
+            ("AMUX_DAEMON".into(), self.daemon_name.as_ref().clone()),
+            ("AMUX_WORKSPACE".into(), workspace.clone()),
         ]);
         if session.kind == "shell" && !session.initial_prompt.trim().is_empty() {
             env.insert("SHELL".into(), shell);
@@ -146,6 +202,7 @@ impl TerminalManager {
                 &format!("/v1/workspaces/{workspace}/processes"),
                 Some(&RunRequest {
                     name: session.id.clone(),
+                    parent_process_id: None,
                     command,
                     cwd: session.cwd.clone(),
                     env,
@@ -260,12 +317,19 @@ impl Default for TerminalManager {
             &uuid::Uuid::new_v4().simple().to_string()[..10]
         ));
         Self {
-            client: Client::new(Config {
-                state_dir: root.join("state"),
-                socket: root.join("amuxd.sock"),
-            }),
+            client: Client::named(
+                Config {
+                    state_dir: root.join("state"),
+                    socket: root.join("amuxd.sock"),
+                },
+                "treefold-test",
+            ),
+            daemon_name: Arc::new("treefold-test".into()),
             daemon_start: Arc::new(Mutex::new(())),
             embedded_shims: true,
+            bridge_started: Arc::new(AtomicBool::new(false)),
+            process_events: tokio::sync::broadcast::channel(1024).0,
+            process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
         }
     }
 }
@@ -287,6 +351,103 @@ fn response_process(bytes: &[u8]) -> anyhow::Result<Process> {
         .map(|view| view.process)
         .ok_or_else(|| anyhow!("amux response did not include a process"))
         .context("decode amux process response")
+}
+
+async fn process_event_bridge(
+    client: Client,
+    sender: tokio::sync::broadcast::Sender<TreefoldProcessEvent>,
+    state: ProcessStateMap,
+) {
+    loop {
+        let snapshot = match client
+            .do_empty(Method::GET, "/v1/processes/snapshot")
+            .await
+            .and_then(|bytes| serde_json::from_slice::<ProcessSnapshot>(&bytes).map_err(Into::into))
+        {
+            Ok(value) => value,
+            Err(_) => {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            }
+        };
+        let mut views = snapshot
+            .processes
+            .into_iter()
+            .map(|v| (v.process.id.clone(), v))
+            .collect::<BTreeMap<_, _>>();
+        {
+            let mut current = state.write().await;
+            current.clear();
+            for view in views.values() {
+                current.insert(
+                    view.process.id.clone(),
+                    (view.clone(), resolve_session(&view.process.id, &views)),
+                );
+            }
+        }
+        let path = format!(
+            "/v1/processes/events?after={}&instance={}",
+            snapshot.sequence, snapshot.daemon_instance_id
+        );
+        let Ok(mut body) = client.stream(&path).await else {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            continue;
+        };
+        let mut pending = Vec::new();
+        let mut disconnected = false;
+        while let Some(frame) = body.frame().await {
+            let data = match frame {
+                Ok(value) => value.into_data().unwrap_or_default(),
+                Err(_) => {
+                    disconnected = true;
+                    break;
+                }
+            };
+            pending.extend_from_slice(&data);
+            while let Some(index) = pending.iter().position(|v| *v == b'\n') {
+                let line = pending.drain(..=index).collect::<Vec<_>>();
+                let Ok(event) = serde_json::from_slice::<ProcessEvent>(&line) else {
+                    continue;
+                };
+                views.insert(event.process_id.clone(), event.process.clone());
+                let session_id = resolve_session(&event.process_id, &views);
+                {
+                    let mut current = state.write().await;
+                    if matches!(event.kind, amux::model::ProcessEventKind::ProcessRemoved) {
+                        current.remove(&event.process_id);
+                    } else {
+                        current.insert(
+                            event.process_id.clone(),
+                            (event.process.clone(), session_id.clone()),
+                        );
+                    }
+                }
+                let _ = sender.send(TreefoldProcessEvent { event, session_id });
+            }
+        }
+        if !disconnected {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+}
+
+fn resolve_session(process_id: &str, views: &BTreeMap<String, ProcessView>) -> Option<String> {
+    let mut current = views.get(process_id);
+    for _ in 0..128 {
+        let process = &current?.process;
+        if let Some(session) = process
+            .env
+            .get("TREEFOLD_SESSION_ID")
+            .filter(|v| !v.is_empty())
+        {
+            return Some(session.clone());
+        }
+        current = process
+            .parent_process_id
+            .as_deref()
+            .and_then(|id| views.get(id));
+    }
+    None
 }
 
 fn codex_arguments(

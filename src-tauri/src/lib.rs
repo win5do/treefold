@@ -7,32 +7,35 @@ mod store;
 mod terminal;
 
 use anyhow::Context;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
 use tauri::Manager;
 
-fn amux_config(home: &std::path::Path) -> amux::config::Config {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    home.hash(&mut hasher);
-    amux::config::Config {
-        state_dir: home.join("data/amux"),
-        socket: std::path::PathBuf::from("/tmp")
-            .join(format!("treefold-amux-{:016x}", hasher.finish()))
-            .join("amuxd.sock"),
-    }
+fn amux_identity(home: &std::path::Path) -> anyhow::Result<(String, amux::config::Config)> {
+    let normalized = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    let digest = Sha256::digest(normalized.to_string_lossy().as_bytes());
+    let name = format!(
+        "treefold-{}",
+        digest[..16]
+            .iter()
+            .map(|v| format!("{v:02x}"))
+            .collect::<String>()
+    );
+    let config = amux::config::Config::named(amux::config::state_root()?, &name)?;
+    Ok((name, config))
 }
 
-pub fn run_amux_shim() -> anyhow::Result<()> {
-    let mut process_dir = None;
+pub fn run_amux_group_shim() -> anyhow::Result<()> {
+    let mut workspace_dir = None;
     let mut socket = None;
     let mut args = std::env::args().skip(2);
     while let Some(argument) = args.next() {
         match argument.as_str() {
-            "--process-dir" => process_dir = args.next().map(std::path::PathBuf::from),
+            "--workspace-dir" => workspace_dir = args.next().map(std::path::PathBuf::from),
             "--socket" => socket = args.next().map(std::path::PathBuf::from),
             _ => anyhow::bail!("unknown amux shim argument: {argument}"),
         }
     }
-    let process_dir = process_dir.context("missing --process-dir")?;
+    let workspace_dir = workspace_dir.context("missing --workspace-dir")?;
     let socket = socket.context("missing --socket")?;
     let ready_fd = std::env::var("AMUX_SHIM_READY_FD")
         .ok()
@@ -40,7 +43,30 @@ pub fn run_amux_shim() -> anyhow::Result<()> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?
-        .block_on(amux::shim::Shim::load(process_dir, socket)?.serve(ready_fd))
+        .block_on(
+            amux::shim::GroupShim::load(workspace_dir, socket)?.serve(
+                ready_fd,
+                std::env::var("AMUX_SHIM_LIFECYCLE_FD")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+            ),
+        )
+}
+
+pub fn run_amux_daemon() -> anyhow::Result<()> {
+    let ready_fd = std::env::var("AMUX_DAEMON_READY_FD")
+        .ok()
+        .and_then(|v| v.parse().ok());
+    let config = amux::config::Config::load()?;
+    let daemon = amux::daemon::Daemon::with_shim_command(
+        config,
+        std::env::current_exe()?,
+        vec!["--amux-group-shim".into()],
+    )?;
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(daemon.serve(ready_fd))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -62,10 +88,16 @@ pub fn run() {
             let settings = settings::SettingsStore::open(&home, &user_home)?;
             let store = store::Store::open(&home.join("data/treefold.db"))
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+            let (daemon_name, daemon_config) = amux_identity(&home)?;
+            let terminals = terminal::TerminalManager::new_named(daemon_config, daemon_name);
+            let reconnect = terminals.clone();
+            tauri::async_runtime::spawn(async move {
+                reconnect.connect_existing().await;
+            });
             let state = server::AppState {
                 store,
                 settings,
-                terminals: terminal::TerminalManager::new(amux_config(&home)),
+                terminals,
             };
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = server::serve(state).await {

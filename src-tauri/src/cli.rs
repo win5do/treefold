@@ -243,12 +243,24 @@ fn run_doctor(json_output: bool) -> Result<(), CliError> {
     for name in [
         "TREEFOLD_SESSION_ID",
         "TREEFOLD_WORKSPACE_ID",
-        "AMUX_SOCKET",
+        "AMUX_DAEMON",
         "AMUX_WORKSPACE",
+        "AMUX_PROCESS_ID",
     ] {
         let value = env::var(name).ok().filter(|value| !value.trim().is_empty());
         checks.push(json!({"name":name.to_ascii_lowercase(), "ok":value.is_some(), "value":value}));
     }
+    let daemon = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .ok()
+        .and_then(|runtime| {
+            amux::config::Config::load()
+                .ok()
+                .map(|config| runtime.block_on(amux::client::Client::new(config).ready()))
+        })
+        .unwrap_or(false);
+    checks.push(json!({"name":"amux_daemon_connectivity", "ok":daemon, "value":env::var("AMUX_DAEMON").ok()}));
     let ok = checks.iter().all(|check| check["ok"] == true);
     let value = json!({"ok":ok, "checks":checks});
     if json_output {

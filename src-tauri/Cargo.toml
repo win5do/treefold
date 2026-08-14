@@ -25,6 +25,7 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
 http = "1"
+http-body-util = "0.1"
 parking_lot = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }
 rusqlite = { version = "=0.40.1", features = ["bundled"] }
@@ -42,6 +43,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "proces
 tokio-tungstenite = "0.27"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 uuid = { version = "1", features = ["v4"] }
+sha2 = "0.10"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
