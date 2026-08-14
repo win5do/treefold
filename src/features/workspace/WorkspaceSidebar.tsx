@@ -246,7 +246,7 @@ function SidebarNodeActions({ menuLabel, createLabel, createTestId, onMenu, onCr
   onCreate: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   return <div className="flex shrink-0 items-center gap-0.5">
-    <Button data-testid="sidebar-node-menu-trigger" size="icon" variant="ghost" aria-label={menuLabel} title={menuLabel} onClick={(event) => { event.stopPropagation(); onMenu(event); }}><Ellipsis data-icon="inline-start" /></Button>
+    <Button data-testid="sidebar-node-menu-trigger" size="icon" variant="ghost" className="pointer-events-none opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100" aria-label={menuLabel} title={menuLabel} onClick={(event) => { event.stopPropagation(); onMenu(event); }}><Ellipsis data-icon="inline-start" /></Button>
     <Button data-testid={createTestId} data-sidebar-row-action="true" size="icon" variant="ghost" aria-label={createLabel} title={createLabel} onClick={(event) => { event.stopPropagation(); onCreate(event); }}><Plus data-icon="inline-start" /></Button>
   </div>;
 }

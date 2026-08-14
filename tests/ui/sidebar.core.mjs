@@ -47,6 +47,7 @@ async function createSessionFromSidebar(browser, ownerSelector, directoryId, kin
 
 async function renameNode(browser, nodeSelector, name, description) {
   const node = await browser.$(nodeSelector);
+  await node.moveTo();
   await (await node.$('[data-testid="sidebar-node-menu-trigger"]')).click();
   const menu = await browser.$('[data-testid="directory-session-context-menu"]');
   await menu.waitForDisplayed({ timeout: 3_000 });
@@ -325,7 +326,9 @@ try {
   await (await setUpstreamDialog.$('input[name="remote_branch"]')).setValue("feature/ui-fixture");
   await (await setUpstreamDialog.$("button=Save upstream")).click();
   await setUpstreamDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
-  const workspaceNodeMenuTrigger = await (await browser.$('[data-testid="sidebar-workspace-node"]')).$('[data-testid="sidebar-node-menu-trigger"]');
+  const workspaceNode = await browser.$('[data-testid="sidebar-workspace-node"]');
+  await workspaceNode.moveTo();
+  const workspaceNodeMenuTrigger = await workspaceNode.$('[data-testid="sidebar-node-menu-trigger"]');
   await workspaceNodeMenuTrigger.click();
   let workspaceNodeMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await workspaceNodeMenu.waitForDisplayed({ timeout: 3_000 });
@@ -335,6 +338,7 @@ try {
   assert.match(await workspaceGitSubmenu.getText(), /Pull All[\s\S]*fixture-repository/, "Workspace Pull submenu must offer all and individual repositories");
   await (await workspaceGitSubmenu.$(`[data-testid="sidebar-pull-${FIXTURE_IDS.workspacePrimaryLocation}"]`)).click();
   assert.equal(harness.syncRequests.at(-1), `/api/workspace-locations/${FIXTURE_IDS.workspacePrimaryLocation}/git/pull`, "Workspace repository Pull must target only its location");
+  await workspaceNode.moveTo();
   await workspaceNodeMenuTrigger.click();
   workspaceNodeMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await workspaceNodeMenu.waitForDisplayed({ timeout: 3_000 });
@@ -343,6 +347,7 @@ try {
   await workspaceGitSubmenu.waitForDisplayed({ timeout: 3_000 });
   await (await workspaceGitSubmenu.$('[data-testid="sidebar-pull-all"]')).click();
   assert.equal(harness.syncRequests.at(-1), `/api/workspaces/${FIXTURE_IDS.workspace}/git/pull-all`, "Workspace bulk Pull must target every configured repository");
+  await workspaceNode.moveTo();
   await workspaceNodeMenuTrigger.click();
   workspaceNodeMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await workspaceNodeMenu.waitForDisplayed({ timeout: 3_000 });
@@ -730,7 +735,9 @@ try {
   await blockedWorktreeAlert.waitForDisplayed({ timeout: 3_000 });
   assert.match(await blockedWorktreeAlert.getText(), /belongs to active Workspace/, "blocked worktree deletion must explain the active Workspace association");
   await (await blockedWorktreeAlert.$('button[aria-label="Dismiss error"]')).click();
-  const projectNodeMenuTrigger = await (await browser.$('[data-testid="sidebar-project-node"]')).$('[data-testid="sidebar-node-menu-trigger"]');
+  const projectNode = await browser.$('[data-testid="sidebar-project-node"]');
+  await projectNode.moveTo();
+  const projectNodeMenuTrigger = await projectNode.$('[data-testid="sidebar-node-menu-trigger"]');
   await projectNodeMenuTrigger.click();
   let projectNodeMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await projectNodeMenu.waitForDisplayed({ timeout: 3_000 });
@@ -741,6 +748,7 @@ try {
   assert.match(await projectGitSubmenu.getText(), /Pull All[\s\S]*fixture-repository[\s\S]*fixture-api-repository/, "Project Pull submenu must offer all and individual repositories");
   await (await projectGitSubmenu.$('[data-testid="sidebar-pull-all"]')).click();
   assert.equal(harness.syncRequests.at(-1), `/api/projects/${FIXTURE_IDS.project}/git/pull-all`, "bulk Pull must target every Project repository");
+  await projectNode.moveTo();
   await projectNodeMenuTrigger.click();
   projectNodeMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await projectNodeMenu.waitForDisplayed({ timeout: 3_000 });
@@ -793,7 +801,9 @@ try {
   assert.equal(await (await browser.$("button=New Codex")).isExisting(), false, "Fork details must rely on the sidebar plus menu for Codex creation");
   assert.equal(await (await browser.$('[data-testid="workspace-repositories-menu-trigger"]')).isExisting(), false, "Fork must not expose Workspace repository synchronization");
   assert.equal((await browser.$$('[data-testid^="workspace-location-actions-"][data-testid$="-trigger"]')).length, 0, "Fork locations must not expose upstream actions");
-  await (await (await browser.$('[data-testid="sidebar-fork-node"]')).$('[data-testid="sidebar-node-menu-trigger"]')).click();
+  const forkNode = await browser.$('[data-testid="sidebar-fork-node"]');
+  await forkNode.moveTo();
+  await (await forkNode.$('[data-testid="sidebar-node-menu-trigger"]')).click();
   const forkNodeMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await forkNodeMenu.waitForDisplayed({ timeout: 3_000 });
   assert.match(await forkNodeMenu.getText(), /Open in Finder[\s\S]*Rename…[\s\S]*Finish Fork…/, "Fork Rename must sit above its lifecycle action");
@@ -803,7 +813,9 @@ try {
   assert.equal(await (await browser.$('[data-testid="sidebar-fork-node"] [data-testid="sidebar-node-name"]')).getText(), "Renamed Fork", "Fork Rename must refresh the sidebar");
   assert.deepEqual(harness.renameRequests.at(-1), { kind: "fork", id: FIXTURE_IDS.fork, name: "Renamed Fork", description: "Updated Fork description" });
   await renameNode(browser, '[data-testid="sidebar-fork-node"]', FIXTURE_NAMES.fork, "Active Fork with a long label.");
-  const renamedForkNodeMenuTrigger = await (await browser.$('[data-testid="sidebar-fork-node"]')).$('[data-testid="sidebar-node-menu-trigger"]');
+  const renamedForkNode = await browser.$('[data-testid="sidebar-fork-node"]');
+  await renamedForkNode.moveTo();
+  const renamedForkNodeMenuTrigger = await renamedForkNode.$('[data-testid="sidebar-node-menu-trigger"]');
   await renamedForkNodeMenuTrigger.click();
   const restoredForkNodeMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await restoredForkNodeMenu.waitForDisplayed({ timeout: 3_000 });
@@ -828,7 +840,9 @@ try {
   assert.match(await operationRecords[0].getText(), /reset/);
   assert.match(await operationRecords[0].getText(), /restored/);
   assert.match(await operationRecords[0].getText(), /refs\/treefold\/recovery\/reset-ui-fixture/);
-  await (await (await browser.$('[data-testid="sidebar-fork-node"]')).$('[data-testid="sidebar-node-menu-trigger"]')).click();
+  const restoredForkNode = await browser.$('[data-testid="sidebar-fork-node"]');
+  await restoredForkNode.moveTo();
+  await (await restoredForkNode.$('[data-testid="sidebar-node-menu-trigger"]')).click();
   const reopenedForkNodeMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await reopenedForkNodeMenu.waitForDisplayed({ timeout: 3_000 });
   await (await reopenedForkNodeMenu.$('[data-testid="finish-workspace-action"]')).click();
