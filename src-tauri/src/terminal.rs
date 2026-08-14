@@ -280,6 +280,14 @@ fn codex_arguments(
     for path in &session.additional_directories {
         arguments.extend(["--add-dir".into(), path.clone()]);
     }
+    if !arguments
+        .iter()
+        .any(|argument| argument == "--no-alt-screen")
+    {
+        // Treefold already owns the terminal viewport and scrollback. Codex's alternate-screen
+        // UI adds a second viewport boundary beside xterm's scrollbar in this embedded context.
+        arguments.push("--no-alt-screen".into());
+    }
     if let Some(instructions) = developer_instructions {
         let encoded = serde_json::to_string(instructions)
             .expect("serializing developer instructions cannot fail");
@@ -387,6 +395,30 @@ mod tests {
 
         let arguments = codex_arguments(&session, None, &configured);
         assert_eq!(&arguments[..configured.len()], configured);
+    }
+
+    #[test]
+    fn uses_inline_mode_for_the_embedded_terminal_without_duplicate_flags() {
+        let session = session();
+
+        let arguments = codex_arguments(&session, None, &[]);
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| argument.as_str() == "--no-alt-screen")
+                .count(),
+            1
+        );
+
+        let configured = vec!["--no-alt-screen".into(), "--search".into()];
+        let arguments = codex_arguments(&session, None, &configured);
+        assert_eq!(
+            arguments
+                .iter()
+                .filter(|argument| argument.as_str() == "--no-alt-screen")
+                .count(),
+            1
+        );
     }
 
     #[test]
