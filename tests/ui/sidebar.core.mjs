@@ -241,6 +241,12 @@ try {
   });
   let baseSection = await browser.$('[data-testid="workspace-locations-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
+  const newForkButton = await browser.$('[data-testid="new-fork-action"]');
+  const finishWorkspaceButton = await browser.$('[data-testid="finish-workspace-action"]');
+  assert.equal(await newForkButton.getText(), "New Fork", "Workspace creation action must use the New Fork label");
+  assert.match(await newForkButton.getAttribute("class"), /bg-primary/, "New Fork must use the primary button treatment");
+  assert.equal(await finishWorkspaceButton.getText(), "Finish Workspace…", "Workspace finish action must name its lifecycle target");
+  assert.match(await finishWorkspaceButton.getAttribute("class"), /text-destructive/, "Workspace finish must use destructive styling");
   const workspaceRepositoriesMenuTrigger = await browser.$('[data-testid="workspace-repositories-menu-trigger"]');
   await workspaceRepositoriesMenuTrigger.click();
   let workspaceRepositoriesMenu = await browser.$('[data-testid="workspace-repositories-menu"]');
@@ -605,6 +611,10 @@ try {
 
   await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.fork}`);
   await browser.$('[data-testid="workspace-locations-section"]').waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await (await browser.$('[data-testid="new-fork-action"]')).isExisting(), false, "Fork details must not offer nested Fork creation");
+  const finishForkButton = await browser.$('[data-testid="finish-workspace-action"]');
+  assert.equal(await finishForkButton.getText(), "Finish Fork…", "Fork finish action must name its lifecycle target");
+  assert.match(await finishForkButton.getAttribute("class"), /text-destructive/, "Fork finish must match Workspace destructive styling");
   assert.equal(await (await browser.$("button=New Shell")).isExisting(), false, "Fork details must rely on the sidebar plus menu for Shell creation");
   assert.equal(await (await browser.$("button=New Codex")).isExisting(), false, "Fork details must rely on the sidebar plus menu for Codex creation");
   assert.equal(await (await browser.$('[data-testid="workspace-repositories-menu-trigger"]')).isExisting(), false, "Fork must not expose Workspace repository synchronization");
@@ -624,9 +634,7 @@ try {
   assert.match(await operationRecords[0].getText(), /reset/);
   assert.match(await operationRecords[0].getText(), /restored/);
   assert.match(await operationRecords[0].getText(), /refs\/treefold\/recovery\/reset-ui-fixture/);
-  const finishWorkspace = await browser.$("button*=Finish…");
-  await finishWorkspace.waitForDisplayed({ timeout: 3_000 });
-  await finishWorkspace.click();
+  await finishForkButton.click();
   const preflight = await browser.$('[data-testid="delivery-preflight"]');
   await preflight.waitForDisplayed({ timeout: 3_000 });
   assert.match(await preflight.getText(), /2 ahead/);
@@ -634,6 +642,7 @@ try {
   assert.match(await preflight.getText(), /source is 1 commit/);
   const finishButton = await browser.$("button*=Finish fixture-repository");
   assert.equal(await finishButton.isEnabled(), true, "a ready preflight must unlock Finish");
+  assert.match(await finishButton.getAttribute("class"), /text-destructive/, "Finish confirmation must retain destructive styling");
   const finishDialog = await browser.$('[role="dialog"]');
   assert.match(await finishDialog.getText(), /REPOSITORY[\s\S]*fixture-repository/, "Finish must select one repository at a time");
   await browser.keys(Key.Escape);
