@@ -27,6 +27,7 @@ async function startFixtureApi() {
   const unexpectedRequests = [];
   const syncRequests = [];
   const workspaceLocationUpdates = [];
+  const locationRequests = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -63,6 +64,31 @@ async function startFixtureApi() {
       sendJson(response, 200, fixture.projects);
       return;
     }
+    if (request.method === "POST" && pathname === "/api/projects") {
+      const input = await readJson(request);
+      const created = {
+        id: "project-created-primary-requirement",
+        name: input.name,
+        description: input.description ?? "",
+        status: "active",
+        default_base_branch: "main",
+        default_delivery_mode: "remote_review",
+        created_at: "2026-08-10T08:30:00.000Z",
+        updated_at: "2026-08-10T08:30:00.000Z",
+      };
+      const locations = [];
+      fixture.projects.push(created);
+      fixture.projectDetails[created.id] = {
+        ...created,
+        locations,
+        directories: locations,
+        sessions: [],
+        workspaces: [],
+        worktrees: [],
+      };
+      sendJson(response, 201, created);
+      return;
+    }
 
     const projectMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
     if (request.method === "GET" && projectMatch && fixture.projectDetails[projectMatch[1]]) {
@@ -92,8 +118,13 @@ async function startFixtureApi() {
       const cleanPath = String(input.path ?? "").replace(/\/+$/, "");
       const name = cleanPath.split("/").filter(Boolean).at(-1) || cleanPath;
       const isGit = input.base_branch != null;
+      const detail = fixture.projectDetails[projectLocationsMatch[1]];
+      if (!detail.default_location_id && !isGit) {
+        sendJson(response, 400, { error: { code: "BAD_REQUEST", message: "a Project's first location must be a ready Git repository" } });
+        return;
+      }
       const location = {
-        id: `location-added-${fixture.projectDetails[projectLocationsMatch[1]].locations.length}`,
+        id: `location-added-${detail.locations.length}`,
         project_id: projectLocationsMatch[1],
         name,
         description: input.description ?? "",
@@ -105,12 +136,18 @@ async function startFixtureApi() {
         delivery_mode: isGit ? input.delivery_mode : undefined,
         git_common_dir: isGit ? `${cleanPath}/.git` : undefined,
         git_status: isGit ? "ready" : "not_git",
-        role: "attached",
+        role: !detail.default_location_id && isGit ? "primary" : "attached",
         is_git: isGit,
         dirty: false,
         created_at: "2026-08-10T08:20:00.000Z",
       };
-      fixture.projectDetails[projectLocationsMatch[1]].locations.push(location);
+      detail.locations.push(location);
+      locationRequests.push({ projectId: projectLocationsMatch[1], path: cleanPath, isGit });
+      if (!detail.default_location_id && isGit) {
+        detail.default_location_id = location.id;
+        const project = fixture.projects.find((item) => item.id === projectLocationsMatch[1]);
+        project.default_location_id = location.id;
+      }
       sendJson(response, 201, location);
       return;
     }
@@ -405,6 +442,7 @@ async function startFixtureApi() {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests,
+    locationRequests,
     workspaceLocationUpdates,
     unexpectedRequests,
     async close() {
@@ -418,6 +456,7 @@ export async function startUiHarness() {
     return {
       baseUrl: process.env.TREEFOLD_UI_URL,
       syncRequests: [],
+      locationRequests: [],
       workspaceLocationUpdates: [],
       assertNoUnexpectedRequests() {},
       async close() {},
@@ -456,6 +495,7 @@ export async function startUiHarness() {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests: fixtureApi.syncRequests,
+    locationRequests: fixtureApi.locationRequests,
     workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {

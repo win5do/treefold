@@ -665,6 +665,38 @@ try {
   const finishDialog = await browser.$('[role="dialog"]');
   assert.match(await finishDialog.getText(), /REPOSITORY[\s\S]*fixture-repository/, "Finish must select one repository at a time");
   await browser.keys(Key.Escape);
+
+  await browser.url(harness.baseUrl);
+  await (await browser.$('button[aria-label="New Project"]')).click();
+  const primaryProjectDialog = await browser.$('[role="dialog"]');
+  await primaryProjectDialog.waitForDisplayed({ timeout: 3_000 });
+  await (await primaryProjectDialog.$('input[name="name"]')).setValue("Primary requirement fixture");
+  await (await primaryProjectDialog.$("button=Create Project")).click();
+  await primaryProjectDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  const primaryLocationDialog = await browser.$('[role="dialog"]');
+  await primaryLocationDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await (await primaryLocationDialog.$('[data-testid="primary-git-location-requirement"]')).getText(), /at least one Git repository/, "an empty Project must explain its primary Git requirement");
+  let primaryLocationRows = await primaryLocationDialog.$$('[data-testid="location-draft-row"]');
+  await (await primaryLocationRows[0].$('input[aria-label="Location 1 path"]')).setValue("/tmp/treefold-ui-fixture/first-reference-context");
+  await (await primaryLocationRows[0].$("button=Check")).click();
+  const addPrimaryLocations = await primaryLocationDialog.$("button=Add 1 location");
+  assert.equal(await addPrimaryLocations.isEnabled(), false, "a non-Git-only first batch must not be submittable");
+  await (await primaryLocationDialog.$("button=Add another")).click();
+  primaryLocationRows = await primaryLocationDialog.$$('[data-testid="location-draft-row"]');
+  await (await primaryLocationRows[1].$('input[aria-label="Location 2 path"]')).setValue("/tmp/treefold-ui-fixture/primary-repository");
+  await (await primaryLocationRows[1].$("button=Check")).click();
+  const addMixedLocations = await primaryLocationDialog.$("button=Add 2 locations");
+  await browser.waitUntil(() => addMixedLocations.isEnabled(), { timeout: 3_000, timeoutMsg: "a mixed first batch did not become submittable" });
+  await addMixedLocations.click();
+  await primaryLocationDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  assert.deepEqual(
+    harness.locationRequests.slice(-2).map((request) => ({ path: request.path, isGit: request.isGit })),
+    [
+      { path: "/tmp/treefold-ui-fixture/primary-repository", isGit: true },
+      { path: "/tmp/treefold-ui-fixture/first-reference-context", isGit: false },
+    ],
+    "a mixed first batch must create its primary Git repository before context locations",
+  );
   harness.assertNoUnexpectedRequests();
 
   console.log("✓ deterministic fixture, Directory setup, sidebar flows, Project lifecycle, inspector, and settlement preflight passed");

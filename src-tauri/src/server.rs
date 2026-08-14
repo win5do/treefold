@@ -565,6 +565,20 @@ async fn create_project(
             "default_delivery_mode must be remote_review or local_merge".into(),
         ));
     }
+    let inspected_path = input
+        .path
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(|path| {
+            let inspected = inspect_path(path)?;
+            if !inspected.1 {
+                return Err(AppError::BadRequest(
+                    "a Project's first location must be a ready Git repository".into(),
+                ));
+            }
+            Ok(inspected)
+        })
+        .transpose()?;
     let project = Project {
         id: project_id.clone(),
         name,
@@ -581,12 +595,7 @@ async fn create_project(
         default_target_branch: default_base_branch,
     };
     state.store.create_empty_project(&project)?;
-    if let Some(path) = input
-        .path
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        let (path, is_git) = inspect_path(path)?;
+    if let Some((path, is_git)) = inspected_path {
         let mut location = ProjectLocation {
             id: id(),
             project_id: project_id.clone(),
@@ -637,6 +646,20 @@ async fn update_project(
         return Err(AppError::BadRequest(
             "Project status must be active or archived".into(),
         ));
+    }
+    if let Some(default_id) = input.default_location_id.as_deref() {
+        let mut location = state.store.directory(default_id)?;
+        if location.project_id != id {
+            return Err(AppError::BadRequest(
+                "primary location must belong to this Project".into(),
+            ));
+        }
+        refresh_location_observation(&mut location)?;
+        if location.git_status != "ready" {
+            return Err(AppError::BadRequest(
+                "primary location must be a ready Git repository".into(),
+            ));
+        }
     }
     if status == "archived" && current.status != "archived" {
         for workspace in state.store.workspaces(&id)? {
@@ -1236,8 +1259,13 @@ async fn create_directory(
     AxumPath(project_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDirectory>,
 ) -> Result<(StatusCode, Json<Directory>)> {
-    state.store.project(&project_id)?;
+    let project = state.store.project(&project_id)?;
     let (path, is_git) = inspect_path(&input.path)?;
+    if project.default_location_id.is_none() && !is_git {
+        return Err(AppError::BadRequest(
+            "a Project's first location must be a ready Git repository".into(),
+        ));
+    }
     let name = basename(&path);
     let requested_delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
     if let Some(mode) = requested_delivery_mode.as_deref() {
@@ -1285,6 +1313,11 @@ async fn create_directory(
     };
     let mut directory = directory;
     refresh_location_observation(&mut directory)?;
+    if project.default_location_id.is_none() && directory.git_status != "ready" {
+        return Err(AppError::BadRequest(
+            "a Project's first location must be a ready Git repository".into(),
+        ));
+    }
     if directory.git_status == "ready" && directory.delivery_mode.is_none() {
         directory.delivery_mode = Some("remote_review".into());
     }
@@ -1415,6 +1448,11 @@ async fn delete_project_location(
     let location = state.store.directory(&id)?;
     let project = state.store.project(&location.project_id)?;
     if project.default_location_id.as_deref() == Some(&id) {
+        if state.store.directories(&project.id)?.len() > 1 {
+            return Err(AppError::BadRequest(
+                "choose another primary Git repository before deleting this location".into(),
+            ));
+        }
         state.store.update_project_defaults(
             &project.id,
             None,
@@ -6436,10 +6474,10 @@ mod current_workspace_tests {
     use super::{
         app, close_session, command_output, create_delivery_preflight_impl, create_directory,
         create_fork, create_project, create_project_session, create_session, create_workspace,
-        finish_workspace_impl, get_project, pull_workspace, push_workspace,
-        refresh_project_location, update_workspace_location, ApiJson, AppState,
-        CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject, CreateSession,
-        CreateWorkspace, FinishWorkspace, UpdateWorkspaceLocation,
+        delete_project_location, finish_workspace_impl, get_project, pull_workspace,
+        push_workspace, refresh_project_location, update_project, update_workspace_location,
+        ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject,
+        CreateSession, CreateWorkspace, FinishWorkspace, UpdateProject, UpdateWorkspaceLocation,
     };
     use crate::{
         model::{Session, Todo},
@@ -6471,6 +6509,143 @@ mod current_workspace_tests {
         std::fs::write(repository.join("README.md"), "# fixture\n").expect("write fixture");
         command_output(repository, "git", &["add", "."]).expect("stage fixture");
         command_output(repository, "git", &["commit", "-m", "initial"]).expect("commit fixture");
+    }
+
+    #[tokio::test]
+    async fn project_requires_a_primary_git_location_before_context_locations() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-primary-location-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        let context = root.join("reference-context");
+        std::fs::create_dir_all(&context).expect("create context directory");
+        let state = test_state(&root);
+
+        let error = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Invalid context Project".into()),
+                description: None,
+                path: Some(context.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_base_branch: None,
+                default_target_branch: None,
+                default_delivery_mode: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect_err("a combined Project creation must reject a non-Git first location");
+        assert_eq!(
+            error.to_string(),
+            "a Project's first location must be a ready Git repository"
+        );
+        assert!(state.store.projects().expect("list Projects").is_empty());
+
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Primary repository Project".into()),
+                description: None,
+                path: None,
+                preferred_remote: None,
+                default_base_branch: None,
+                default_target_branch: None,
+                default_delivery_mode: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create empty Project");
+        let error = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: None,
+                path: context.to_string_lossy().into_owned(),
+                base_branch: None,
+                delivery_mode: None,
+            }),
+        )
+        .await
+        .expect_err("a context location cannot precede the primary Git repository");
+        assert_eq!(
+            error.to_string(),
+            "a Project's first location must be a ready Git repository"
+        );
+
+        initialize_repository(&repository);
+        let (_, Json(primary)) = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: None,
+                path: repository.to_string_lossy().into_owned(),
+                base_branch: Some("main".into()),
+                delivery_mode: Some("local_merge".into()),
+            }),
+        )
+        .await
+        .expect("add primary Git repository");
+        assert_eq!(
+            state
+                .store
+                .project(&project.id)
+                .unwrap()
+                .default_location_id,
+            Some(primary.id.clone())
+        );
+
+        let _ = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: None,
+                path: context.to_string_lossy().into_owned(),
+                base_branch: None,
+                delivery_mode: None,
+            }),
+        )
+        .await
+        .expect("add context after primary Git repository");
+        let context_location = state
+            .store
+            .directories(&project.id)
+            .unwrap()
+            .into_iter()
+            .find(|location| location.git_status == "not_git")
+            .expect("find context location");
+        let error = update_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(UpdateProject {
+                status: None,
+                default_location_id: Some(context_location.id),
+                default_base_branch: None,
+                default_delivery_mode: None,
+            }),
+        )
+        .await
+        .expect_err("a context location cannot become primary");
+        assert_eq!(
+            error.to_string(),
+            "primary location must be a ready Git repository"
+        );
+        let error = delete_project_location(State(state.clone()), axum::extract::Path(primary.id))
+            .await
+            .expect_err("primary cannot be deleted while other locations remain");
+        assert_eq!(
+            error.to_string(),
+            "choose another primary Git repository before deleting this location"
+        );
+
+        std::fs::remove_dir_all(root).expect("remove primary location fixture");
     }
 
     #[tokio::test]

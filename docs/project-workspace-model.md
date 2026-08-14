@@ -18,8 +18,9 @@ Project
 
 ## Project and ProjectLocation
 
-A Project is an organizing record and may initially have no locations. Creating
-one only asks for its name and description. A ProjectLocation is a local path
+A Project is an organizing record and may temporarily have no locations while
+it is being created. Its first saved location must be a ready Git repository,
+which becomes the primary location. A ProjectLocation is a local path
 whose name is always derived from the directory basename. It also stores a
 description and observed Git identity. Its dynamic status is one of `ready`,
 `not_git`, `missing`, `broken`, or `mismatch`.
@@ -29,11 +30,12 @@ Git ProjectLocation. Non-Git locations do not carry Git settings and are used as
 read-only context. The add-locations flow accepts multiple paths in one dialog,
 checks each path, and only exposes Git settings for rows detected as repositories.
 
-The first ready Git location becomes the default. Creating a Workspace requires
-that default to be ready and also blocks when any additional location previously
-identified as Git is unavailable. Non-Git locations do not block creation.
-Refreshing a non-Git location after `git init` gives future Workspaces Git
-capability; existing Workspace snapshots are unchanged.
+Additional non-Git context locations may be added after the primary Git
+location exists. Creating a Workspace requires that primary to be ready and
+also blocks when any additional location previously identified as Git is
+unavailable. Non-Git locations do not block creation. Refreshing a non-Git
+location after `git init` gives future Workspaces Git capability; existing
+Workspace snapshots are unchanged.
 
 Project Pull All and Push All operate each Git location independently. Pull is
 fast-forward only and requires the user's main directory to already be clean and
