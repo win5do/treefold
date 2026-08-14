@@ -97,7 +97,7 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
       <button data-testid="sidebar-projects-link" aria-current={projectsActive ? "page" : undefined} className={cn("flex h-8 min-w-0 flex-1 items-center rounded-md px-2 text-left text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:bg-background/60 focus-visible:text-foreground focus-visible:outline-none", projectsActive && "bg-background/70 text-foreground")} onClick={() => onNavigate("/")}><span className="truncate font-semibold">{t("sidebar.projects")}</span></button>
       <Button data-sidebar-row-action="true" size="icon" variant="ghost" aria-label={t("sidebar.newProject")} title={t("sidebar.newProject")} onClick={onCreateProject}><Plus data-icon="inline-start" /></Button>
     </div>
-    <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
+    <div className="min-h-0 flex-1 overflow-y-auto px-2">
       {projects.filter((project) => project.status === "active").map((project) => {
         const projectOpen = expandedProjects.has(project.id);
         const activeRootWorkspaces = project.workspaces.filter((item) => item.status === "active" && !item.parent_workspace_id);
