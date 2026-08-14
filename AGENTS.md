@@ -35,7 +35,7 @@ hard storage boundary.
 
 ## UI verification workflow
 
-Every user-visible frontend change must be verified with a small WebdriverIO core flow and a focused Codex UI exploration pass. These checks complement each other and neither may replace the other.
+Every user-visible frontend change must be verified by running the existing WebdriverIO core flow and completing a focused Codex UI exploration pass. Running the existing suite is required; adding or changing automated coverage is not. New UI tests must pass the admission gate below.
 
 ### Required checks
 
@@ -63,31 +63,46 @@ Do not report a UI change complete while a required check is failing. The final 
 
 ### WebdriverIO core flow
 
-Keep `tests/ui/sidebar.core.mjs` small and focused on stable, high-value behavior. Extend the existing core flow when a change affects it instead of building a broad screenshot suite.
+Keep `tests/ui/sidebar.core.mjs` small and focused on stable, high-value behavior. Do not add a new feature domain to this core flow. Split or replace legacy cross-domain coverage before extending it, and do not treat existing broad coverage as precedent for appending more scenarios.
 
-Purely presentational style changes do not require adding or updating automated tests when they leave behavior, semantics, visibility, and interaction unchanged. Verify those changes with the existing UI flow and focused live visual inspection instead.
+#### Automated UI-test admission gate
 
-Prefer semantic locators such as roles, accessible names, and labels, followed by stable `data-testid` attributes. Do not locate controls by fragile DOM depth or absolute screen coordinates. When geometry is the requirement, assert element bounds with a small explicit tolerance.
+Add or update an automated UI test only when the regression would change at least one of these durable contracts:
+
+- navigation, persisted state, or an API side effect;
+- permissions, availability, disabled state, or contextual visibility;
+- creation, update, deletion, or lifecycle behavior;
+- keyboard behavior or another accessibility semantic;
+- shared overlay reachability or occlusion behavior covered under the representative-overlay rules below.
+
+Do not add or update automated tests for presentation-only changes, including spacing, alignment, centering, dimensions, colors, typography, icon placement, animation names, static copy, or visual hierarchy. A useful test must survive a pure CSS refactor that preserves behavior and accessibility. Verify presentation changes by running the existing suite and inspecting the live UI instead.
+
+Outside the representative overlay helper, automated tests must not assert exact pixels, element coordinates, computed CSS properties, DOM sibling order, or animation implementation details. Do not use `getLocation`, `getSize`, `getCSSProperty`, or `compareDocumentPosition` to encode visual design. Functional resize limits may assert the resulting persisted value, but not incidental page offsets.
+
+Do not retain permanent "tombstone" assertions that merely prove a removed label, field, or control is absent. Keep a negative assertion only when absence enforces a current permission, data-ownership, safety, or contextual-visibility contract. Remove transitional assertions once the migration they protect is complete.
+
+Before adding a UI assertion, identify the concrete user-visible failure it detects and confirm that existing coverage does not already detect it. Cover shared components and interaction models once with a representative stress case; usage sites should assert only their distinct business behavior. Prefer unit, API, or contract tests when a browser is not required.
+
+Prefer semantic locators such as roles, accessible names, and labels, followed by stable `data-testid` attributes. Do not locate controls by fragile DOM depth or absolute screen coordinates.
 
 Core assertions should cover the applicable behavior:
 
 - controls appear only in the correct Project, Workspace, or Session context;
-- sidebar show, hide, resize, minimum size, tree nesting, and content offsets;
-- long labels do not hide or misalign row actions;
-- toolbar titles align with page content;
+- sidebar controls perform show, hide, resize, and tree expansion actions;
+- long labels preserve accessible names and do not make required actions unreachable;
 - contextual panels and primary navigation open and close correctly;
 - archived records stay out of active navigation while retained history remains available where intended.
 
 ### Floating overlay verification
 
-Menus, popovers, tooltips, combobox lists, and other floating overlays require interaction and visual-occlusion coverage; DOM presence or `isDisplayed()` alone is insufficient.
+Add or extend automated overlay coverage only when a shared overlay implementation changes or a regression can make actions clipped, occluded, or unreachable. Test one representative stress instance per shared overlay implementation or distinct interaction model; do not repeat the same geometry and pointer trajectory for every menu usage.
 
-- Exercise complete pointer and keyboard trajectories, including moving between sibling triggers, moving from a trigger into its child overlay, moving from an overlay item to a non-overlay action, leaving the whole overlay, outside click, and Escape. Assert both what appears and what must disappear after every transition.
+- Exercise the pointer and keyboard trajectories relevant to that shared interaction model, including applicable child-overlay movement, outside click, Escape, and keyboard navigation. Do not duplicate the same trajectory across usage sites.
 - Render overlays that must escape scroll containers or stacking contexts through a document-level portal. Do not rely on a larger `z-index` to escape an ancestor's `overflow`, transform, containment, or stacking context.
-- At representative minimum/maximum container sizes and viewport-edge positions, assert overlay bounds remain inside the viewport. Include nested and near-bottom triggers when the UI supports them.
+- At one representative viewport-edge stress position, assert overlay bounds remain inside the viewport. Add another geometry case only for a distinct positioning algorithm.
 - Verify actual paint-order reachability with `document.elementFromPoint()` at the center and inset corners of each overlay surface. The expected overlay must own every sampled hit; this catches clipping and occlusion that visibility APIs miss.
 - Capture and inspect screenshots whenever the risk involves clipping, overlap, alignment, stacking, animation, or hierarchy. A DOM snapshot may complement but cannot replace the screenshot for these risks.
-- Prefer small reusable geometry/hit-test helpers and stable overlay test IDs so the same acceptance checks apply to future floating UI instead of one specific menu.
+- Keep geometry and hit-testing inside a small reusable overlay helper so the same acceptance checks apply to future overlays without spreading coordinate assertions through feature tests.
 
 The WebdriverIO session and all harness services must always be closed. Save a failure screenshot under `/tmp` when practical.
 
@@ -102,7 +117,7 @@ After WebdriverIO passes, use the running app to inspect the change as a user wo
 - confirm contextual controls do not leak into unrelated routes;
 - inspect browser console errors before finishing.
 
-If exploration reveals a stable and mechanically testable regression risk, add the smallest corresponding WebdriverIO assertion and rerun the core flow.
+If exploration reveals a stable and mechanically testable regression risk, add automated coverage only when it passes the admission gate above. Presentation regressions remain part of focused live visual inspection and must not be converted into pixel or CSS assertions.
 
 ### Tauri-specific changes
 
