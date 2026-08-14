@@ -79,7 +79,12 @@ export const zhCN = {
     permanentlyDelete: "永久删除",
     permanentlyDeleteProject: "永久删除 {{name}}",
     deleteConfirmation: "确定永久删除“{{name}}”吗？\n\n这会删除其中的会话、工作流和保留的历史记录，且无法撤销。",
-    archivedActions: "已归档 {{type}} {{name}} 的操作",
+    recordActions: "{{type}} {{name}} 的操作",
+    deleteBlocked: {
+      project: "请先归档项目“{{name}}”，然后再永久删除。",
+      workspace: "请先 Finish 工作区“{{name}}”，然后再永久删除。",
+      fork: "请先 Finish Fork“{{name}}”，然后再永久删除。",
+    },
     deleteTitle: "永久删除 {{type}}“{{name}}”？",
     deleteRecordConfirmation: "这会从 SQLite 中删除该 {{type}} 及其在 Treefold 中保留的历史，但不会修改源码目录、分支或 worktree。此操作无法撤销。",
     empty: "暂无项目",

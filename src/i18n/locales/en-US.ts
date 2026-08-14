@@ -77,7 +77,12 @@ export const enUS = {
     permanentlyDelete: "Permanently delete",
     permanentlyDeleteProject: "Permanently delete {{name}}",
     deleteConfirmation: "Permanently delete “{{name}}”?\n\nThis removes its Sessions, Workspaces, and retained history. This action cannot be undone.",
-    archivedActions: "Actions for archived {{type}} {{name}}",
+    recordActions: "Actions for {{type}} {{name}}",
+    deleteBlocked: {
+      project: "Archive Project “{{name}}” before permanently deleting it.",
+      workspace: "Finish Workspace “{{name}}” before permanently deleting it.",
+      fork: "Finish Fork “{{name}}” before permanently deleting it.",
+    },
     deleteTitle: "Permanently delete {{type}} “{{name}}”?",
     deleteRecordConfirmation: "This removes the {{type}} and its retained Treefold history from SQLite. Source directories, branches, and worktrees are not changed. This action cannot be undone.",
     empty: "No Projects yet",

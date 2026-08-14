@@ -433,9 +433,23 @@ try {
     timeout: 3_000,
     timeoutMsg: "closed Workspace Shell remained in Session history",
   });
+  const activeForkRow = await browser.$(`[data-testid="fork-list-row-${FIXTURE_IDS.fork}"]`);
+  const activeForkActions = await activeForkRow.$('[data-testid="fork-actions-trigger"]');
+  assert.equal(await activeForkActions.isExisting(), true, "active Fork must keep its list action menu visible");
+  await activeForkActions.click();
+  const activeForkMenu = await browser.$('[data-testid="fork-actions"]');
+  await activeForkMenu.waitForDisplayed({ timeout: 3_000 });
+  const blockedForkDelete = await activeForkMenu.$('[data-testid="delete-fork-action"]');
+  assert.equal(await blockedForkDelete.getAttribute("data-blocked"), "true", "active Fork deletion must appear unavailable");
+  await blockedForkDelete.click();
+  let deleteBlockedAlert = await browser.$('[role="alert"]');
+  await deleteBlockedAlert.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await deleteBlockedAlert.getText(), /Finish Fork/i, "active Fork deletion must explain how to make deletion available");
+  await (await deleteBlockedAlert.$('button[aria-label="Dismiss error"]')).click();
+
   const archivedForkRow = await browser.$(`[data-testid="fork-list-row-${FIXTURE_IDS.archivedFork}"]`);
-  await (await archivedForkRow.$('[data-testid="fork-archived-actions-trigger"]')).click();
-  const archivedForkMenu = await browser.$('[data-testid="fork-archived-actions"]');
+  await (await archivedForkRow.$('[data-testid="fork-actions-trigger"]')).click();
+  const archivedForkMenu = await browser.$('[data-testid="fork-actions"]');
   await archivedForkMenu.waitForDisplayed({ timeout: 3_000 });
   await (await archivedForkMenu.$('[data-testid="delete-fork-action"]')).click();
   const deleteForkDialog = await browser.$('[data-testid="delete-record-dialog"]');
@@ -520,10 +534,10 @@ try {
   await (await browser.$('[data-testid="breadcrumb-projects"]')).click();
   overviewRow = await browser.$('[data-testid="project-overview-row"]');
   await overviewRow.waitForDisplayed({ timeout: 3_000 });
-  const archivedProjectActions = await overviewRow.$('[data-testid="project-archived-actions-trigger"]');
+  const archivedProjectActions = await overviewRow.$('[data-testid="project-actions-trigger"]');
   assert.equal(await archivedProjectActions.isExisting(), true, "archived Project must expose lifecycle actions from its list row");
   await archivedProjectActions.click();
-  const archivedProjectMenu = await browser.$('[data-testid="project-archived-actions"]');
+  const archivedProjectMenu = await browser.$('[data-testid="project-actions"]');
   await archivedProjectMenu.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await archivedProjectMenu.$('[data-testid="restore-project-action"]')).isExisting(), true, "archived Project must expose Restore to sidebar");
   assert.equal(await (await archivedProjectMenu.$('[data-testid="delete-project-action"]')).isExisting(), true, "archived Project must expose permanent deletion");
@@ -537,6 +551,18 @@ try {
   overviewRow = await browser.$('[data-testid="project-overview-row"]');
   assert.equal(await overviewRow.getAttribute("data-project-status"), "active", "restored Project must become active on Overview");
   assert.equal(await (await overviewRow.$('[data-testid="restore-project-action"]')).isExisting(), false, "active Project must not expose Restore to sidebar");
+  const activeProjectActions = await overviewRow.$('[data-testid="project-actions-trigger"]');
+  assert.equal(await activeProjectActions.isExisting(), true, "active Project must keep its list action menu visible");
+  await activeProjectActions.click();
+  const activeProjectMenu = await browser.$('[data-testid="project-actions"]');
+  await activeProjectMenu.waitForDisplayed({ timeout: 3_000 });
+  const blockedProjectDelete = await activeProjectMenu.$('[data-testid="delete-project-action"]');
+  assert.equal(await blockedProjectDelete.getAttribute("data-blocked"), "true", "active Project deletion must appear unavailable");
+  await blockedProjectDelete.click();
+  deleteBlockedAlert = await browser.$('[role="alert"]');
+  await deleteBlockedAlert.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await deleteBlockedAlert.getText(), /Archive Project/i, "active Project deletion must explain how to make deletion available");
+  await (await deleteBlockedAlert.$('button[aria-label="Dismiss error"]')).click();
   await restoredProjectLink.click();
   await browser.waitUntil(async () => (await browser.getUrl()).includes(`#/projects/${FIXTURE_IDS.project}`), {
     timeout: 3_000,
@@ -544,10 +570,24 @@ try {
   });
   const projectContent = await browser.$('[data-testid="page-content"]');
   assert.match(await projectContent.getText(), /fixture-documentation/, "attached Directory must remain visible on the Project page");
+  const activeWorkspaceRow = await browser.$(`[data-testid="workspace-list-row-${FIXTURE_IDS.workspace}"]`);
+  const activeWorkspaceActions = await activeWorkspaceRow.$('[data-testid="workspace-actions-trigger"]');
+  assert.equal(await activeWorkspaceActions.isExisting(), true, "active Workspace must keep its list action menu visible");
+  await activeWorkspaceActions.click();
+  const activeWorkspaceMenu = await browser.$('[data-testid="workspace-actions"]');
+  await activeWorkspaceMenu.waitForDisplayed({ timeout: 3_000 });
+  const blockedWorkspaceDelete = await activeWorkspaceMenu.$('[data-testid="delete-workspace-action"]');
+  assert.equal(await blockedWorkspaceDelete.getAttribute("data-blocked"), "true", "active Workspace deletion must appear unavailable");
+  await blockedWorkspaceDelete.click();
+  deleteBlockedAlert = await browser.$('[role="alert"]');
+  await deleteBlockedAlert.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await deleteBlockedAlert.getText(), /Finish Workspace/i, "active Workspace deletion must explain how to make deletion available");
+  await (await deleteBlockedAlert.$('button[aria-label="Dismiss error"]')).click();
+
   const archivedWorkspaceRow = await browser.$(`[data-testid="workspace-list-row-${FIXTURE_IDS.archivedWorkspace}"]`);
-  const archivedWorkspaceActions = await archivedWorkspaceRow.$('[data-testid="workspace-archived-actions-trigger"]');
+  const archivedWorkspaceActions = await archivedWorkspaceRow.$('[data-testid="workspace-actions-trigger"]');
   await archivedWorkspaceActions.click();
-  const archivedWorkspaceMenu = await browser.$('[data-testid="workspace-archived-actions"]');
+  const archivedWorkspaceMenu = await browser.$('[data-testid="workspace-actions"]');
   await archivedWorkspaceMenu.waitForDisplayed({ timeout: 3_000 });
   await (await archivedWorkspaceMenu.$('[data-testid="delete-workspace-action"]')).click();
   const deleteWorkspaceDialog = await browser.$('[data-testid="delete-record-dialog"]');
