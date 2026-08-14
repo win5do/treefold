@@ -93,11 +93,11 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
   }, [contextOwner, onSessionMenu, sessionMenu]);
   const projectsActive = !selectedProjectId && !selectedWorkspaceId && !selectedSessionId;
   return <aside data-testid="workspace-sidebar" className={cn("absolute inset-y-0 left-0 z-40 flex w-[var(--sidebar-width)] min-w-[240px] max-w-[calc(100vw-2rem)] flex-col border-r border-neutral-200 bg-[#ecece8] md:max-w-[520px]", !resizing && "transition-transform duration-200", mobileOpen ? "translate-x-0" : "-translate-x-full", hidden ? "md:-translate-x-full" : "md:translate-x-0")}>
-    <div className="flex h-12 items-center gap-1 border-b border-border/70 px-2 text-[13px]">
+    <div className="flex h-10 items-center gap-1 border-b border-border/70 px-2 text-[13px]">
       <button data-testid="sidebar-projects-link" aria-current={projectsActive ? "page" : undefined} className={cn("flex h-8 min-w-0 flex-1 items-center rounded-md px-2 text-left text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-visible:bg-background/60 focus-visible:text-foreground focus-visible:outline-none", projectsActive && "bg-background/70 text-foreground")} onClick={() => onNavigate("/")}><span className="truncate font-semibold">{t("sidebar.projects")}</span></button>
       <Button data-sidebar-row-action="true" size="icon" variant="ghost" aria-label={t("sidebar.newProject")} title={t("sidebar.newProject")} onClick={onCreateProject}><Plus data-icon="inline-start" /></Button>
     </div>
-    <div className="min-h-0 flex-1 overflow-y-auto p-2">
+    <div className="min-h-0 flex-1 overflow-y-auto px-2 py-1">
       {projects.filter((project) => project.status === "active").map((project) => {
         const projectOpen = expandedProjects.has(project.id);
         const activeRootWorkspaces = project.workspaces.filter((item) => item.status === "active" && !item.parent_workspace_id);

@@ -507,7 +507,7 @@ function Workspace() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-[#f4f4f1] text-neutral-900" style={{ "--sidebar-width": `${sidebarWidth}px`, "--toolbar-left-width": `${sidebarHidden ? 48 : sidebarWidth}px` } as React.CSSProperties}>
-      <header data-testid="app-toolbar" className="relative z-50 flex h-12 shrink-0 items-center border-b border-neutral-200 bg-white">
+      <header data-testid="app-toolbar" className="relative z-50 flex h-10 shrink-0 items-center border-b border-neutral-200 bg-white">
         <div data-testid="toolbar-left-rail" className={cn("flex h-full w-12 shrink-0 items-center px-2", !resizingSidebar && "transition-[width] duration-200", "md:w-[var(--toolbar-left-width)]")}>
           <Button className="md:hidden" size="icon" variant="ghost" aria-label={t("workspace.openMobileNavigation")} onClick={() => setMobileSidebar(true)}><Menu data-icon="inline-start" /></Button>
           <Button className="hidden md:inline-flex" size="icon" variant={sidebarHidden ? "secondary" : "ghost"} aria-label={t(sidebarHidden ? "workspace.showLeftSidebar" : "workspace.hideLeftSidebar")} onClick={() => setSidebarHidden((value) => !value)}>{sidebarHidden ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}</Button>
