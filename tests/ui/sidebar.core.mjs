@@ -487,7 +487,7 @@ try {
   await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   assert.equal(harness.syncRequests.at(-1), `/api/project-locations/${FIXTURE_IDS.primaryDirectory}/git/pull`, "repository Pull must target only its project location");
   let primaryWorktrees = await primaryLocation.$(`[data-testid="project-location-worktrees-${FIXTURE_IDS.primaryDirectory}"]`);
-  assert.equal((await primaryWorktrees.$$('[data-testid="project-worktree-row"]')).length, 3, "primary worktrees must be grouped below their repository");
+  assert.equal((await primaryWorktrees.$$('[data-testid="project-worktree-row"]')).length, 4, "primary worktrees must be grouped below their repository");
   assert.match(await primaryWorktrees.getText(), /Main checkout[\s\S]*Workspace with an intentionally long name/);
 
   const secondaryLocation = await browser.$(`[data-testid="project-location-${FIXTURE_IDS.secondaryDirectory}"]`);
@@ -555,7 +555,17 @@ try {
   await (await addDirectoryDialog.$("button=Add 2 locations")).click();
   await addDirectoryDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await browser.waitUntil(async () => (await (await browser.$('[data-testid="page-content"]')).getText()).includes("new-api-repository"), { timeout: 3_000, timeoutMsg: "batch-added locations did not refresh the Project" });
-  assert.equal((await browser.$$('button[aria-label^="Delete worktree "]')).length, 3, "expanded repositories must expose delete controls for their own non-main worktrees");
+  const blockedWorktreeDeletes = await browser.$$('button[data-worktree-delete-state="blocked"]');
+  const availableWorktreeDeletes = await browser.$$('button[data-worktree-delete-state="available"]');
+  assert.equal(blockedWorktreeDeletes.length, 3, "active Workspace worktrees must expose blocked delete controls");
+  assert.equal(availableWorktreeDeletes.length, 1, "unmanaged worktrees must expose an available delete control");
+  assert.equal(await blockedWorktreeDeletes[0].getAttribute("aria-disabled"), "true", "active Workspace delete controls must announce their unavailable state");
+  assert.match(await availableWorktreeDeletes[0].getAttribute("class"), /text-destructive/, "available worktree delete controls must use destructive styling");
+  await blockedWorktreeDeletes[0].click();
+  const blockedWorktreeAlert = await browser.$('[role="alert"]');
+  await blockedWorktreeAlert.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await blockedWorktreeAlert.getText(), /belongs to active Workspace/, "blocked worktree deletion must explain the active Workspace association");
+  await (await blockedWorktreeAlert.$('button[aria-label="Dismiss error"]')).click();
   await (await browser.$('[data-testid="project-repositories-menu-trigger"]')).click();
   repositoriesMenu = await browser.$('[data-testid="project-repositories-menu"]');
   await repositoriesMenu.waitForDisplayed({ timeout: 3_000 });

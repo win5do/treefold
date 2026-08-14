@@ -342,6 +342,14 @@ const projectDetail = {
       workspace_name: FIXTURE_NAMES.fork,
     },
     {
+      project_location_id: FIXTURE_IDS.primaryDirectory,
+      location_name: "fixture-repository",
+      path: "/tmp/treefold-ui-fixture/worktrees/unmanaged-worktree",
+      branch: "fix/unmanaged-worktree",
+      head_commit: "fedcba9876543210",
+      is_main: false,
+    },
+    {
       project_location_id: FIXTURE_IDS.secondaryDirectory,
       location_name: "fixture-api-repository",
       path: secondaryPath,

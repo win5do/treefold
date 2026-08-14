@@ -626,8 +626,11 @@ function Workspace() {
   }
 
   async function removeWorktree(worktree: GitWorktree) {
-    const association = worktree.workspace_name ? `，并归档 Workspace “${worktree.workspace_name}”` : "";
-    if (!window.confirm(`确定删除 worktree？\n\n${worktree.path}${association}\n\n未提交的改动会被丢弃。`)) return;
+    if (worktree.workspace_id) {
+      setError(`Worktree belongs to active Workspace “${worktree.workspace_name || worktree.workspace_id}”; use Finish Workspace.`);
+      return;
+    }
+    if (!window.confirm(`确定删除 worktree？\n\n${worktree.path}\n\n未提交的改动会被丢弃。`)) return;
     await act(() => api(`/api/project-directories/${worktree.project_location_id}/worktrees`, {
       method: "DELETE",
       body: JSON.stringify({ path: worktree.path }),
@@ -1414,7 +1417,7 @@ function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, on
         {orderedWorktrees.map((item) => <div key={`${item.project_location_id}:${item.path}`} data-testid="project-worktree-row" data-project-location-id={directory.id} className="flex min-w-0 items-center gap-3 py-3 pl-5">
           <GitBranch className="size-4 shrink-0 text-neutral-400" />
           <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold">{item.branch || "detached"}</span>{item.is_main && <Badge>Main checkout</Badge>}{item.workspace_id && <button className="min-w-0 truncate text-xs font-medium text-blue-600 hover:underline" onClick={() => onOpen(item.workspace_id!)}>{item.workspace_name}</button>}</div><div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-neutral-400">{item.head_commit && <><span className="font-mono">{item.head_commit.slice(0, 10)}</span><span>·</span></>}<code className="min-w-0 truncate" title={item.path}>{item.path}</code></div></div>
-          {!item.is_main && <Button size="icon" variant="ghost" disabled={busy} aria-label={`Delete worktree ${item.path}`} onClick={() => onDeleteWorktree(item)}><Trash2 data-icon="inline-start" /></Button>}
+          {!item.is_main && <Button size="icon" variant={item.workspace_id ? "muted" : "destructive"} disabled={busy} aria-disabled={Boolean(item.workspace_id)} data-worktree-delete-state={item.workspace_id ? "blocked" : "available"} aria-label={item.workspace_id ? `Cannot delete worktree ${item.path}: active Workspace ${item.workspace_name || item.workspace_id}` : `Delete worktree ${item.path}`} title={item.workspace_id ? `Finish Workspace “${item.workspace_name || item.workspace_id}” before deleting this worktree` : `Delete worktree ${item.path}`} onClick={() => onDeleteWorktree(item)}><Trash2 data-icon="inline-start" /></Button>}
         </div>)}
         {orderedWorktrees.length === 0 && <div className="py-5 pl-5 text-xs text-neutral-400">No worktrees found for this repository.</div>}
       </div>
