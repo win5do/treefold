@@ -75,6 +75,24 @@ async function renameSession(browser, sessionId, name) {
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
 }
 
+async function pointerDragSession(browser, source, target, expectedPosition) {
+  const sourceLocation = await source.getLocation();
+  const sourceSize = await source.getSize();
+  const targetLocation = await target.getLocation();
+  const targetSize = await target.getSize();
+  await browser.action("pointer")
+    .move({ x: Math.round(sourceLocation.x + sourceSize.width / 2), y: Math.round(sourceLocation.y + sourceSize.height / 2) })
+    .down({ button: 0 })
+    .pause(50)
+    .move({ duration: 250, x: Math.round(targetLocation.x + targetSize.width / 2), y: Math.round(targetLocation.y + targetSize.height / 2) })
+    .perform(true);
+  try {
+    await browser.waitUntil(async () => (await target.getAttribute("data-drop-position")) === expectedPosition, { timeout: 3_000, timeoutMsg: `Session drag did not show its ${expectedPosition} insertion line` });
+  } finally {
+    await browser.releaseActions();
+  }
+}
+
 const harness = await startUiHarness();
 let browser;
 
@@ -370,7 +388,7 @@ try {
   const workspaceChildren = await browser.$('[data-testid="sidebar-workspace-children"]');
   const workspaceCodexRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceCodex}"]`);
   const workspaceShellRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceShell}"]`);
-  await workspaceCodexRow.dragAndDrop(workspaceShellRow, { duration: 250 });
+  await pointerDragSession(browser, workspaceCodexRow, workspaceShellRow, "before");
   await browser.waitUntil(() => harness.sessionOrderRequests.length > 0, { timeout: 3_000, timeoutMsg: "Session drag did not persist its order" });
   assert.deepEqual(harness.sessionOrderRequests.at(-1), { workspaceId: FIXTURE_IDS.workspace, session_ids: [FIXTURE_IDS.workspaceCodex, FIXTURE_IDS.workspaceShell] }, "Session order must stay scoped to its Workspace");
   const reorderedWorkspaceRows = await workspaceChildren.$$('[data-testid^="sidebar-session-"]');
@@ -379,7 +397,7 @@ try {
   assert.deepEqual(reorderedWorkspaceIds.slice(0, 2), [`sidebar-session-${FIXTURE_IDS.workspaceCodex}`, `sidebar-session-${FIXTURE_IDS.workspaceShell}`], "dragged Session tabs must update immediately");
   const reorderedWorkspaceCodexRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceCodex}"]`);
   const reorderedWorkspaceShellRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceShell}"]`);
-  await reorderedWorkspaceCodexRow.dragAndDrop(reorderedWorkspaceShellRow, { duration: 250 });
+  await pointerDragSession(browser, reorderedWorkspaceCodexRow, reorderedWorkspaceShellRow, "after");
   await browser.waitUntil(() => harness.sessionOrderRequests.length > 1, { timeout: 3_000, timeoutMsg: "Downward Session drag did not persist its order" });
   assert.deepEqual(harness.sessionOrderRequests.at(-1), { workspaceId: FIXTURE_IDS.workspace, session_ids: [FIXTURE_IDS.workspaceShell, FIXTURE_IDS.workspaceCodex] }, "Session drag must support moving a tab downward");
   const restoredWorkspaceRows = await workspaceChildren.$$('[data-testid^="sidebar-session-"]');

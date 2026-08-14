@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type * as React from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -354,52 +354,96 @@ function SidebarSessions({ stream, selectedSessionId, closingSessionIds, onNavig
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ sessionId: string; position: SessionDropPosition } | null>(null);
   const sessions = stream.sessions?.filter((session) => session.sidebar_visible && !closingSessionIds.has(session.id)) ?? [];
+  const pointerDrag = useRef<{
+    pointerId: number;
+    sourceId: string;
+    startX: number;
+    startY: number;
+    active: boolean;
+    target: { sessionId: string; position: SessionDropPosition } | null;
+  } | null>(null);
+  const suppressClick = useRef(false);
+
+  const clearPointerDrag = () => {
+    pointerDrag.current = null;
+    setDraggingSessionId(null);
+    setDropTarget(null);
+  };
+
+  const beginPointerDrag = (sessionId: string, event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || (event.target instanceof Element && event.target.closest("[data-session-close]"))) return;
+    pointerDrag.current = {
+      pointerId: event.pointerId,
+      sourceId: sessionId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      target: null,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const movePointerDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = pointerDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.active) {
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
+      drag.active = true;
+      suppressClick.current = true;
+      setDraggingSessionId(drag.sourceId);
+    }
+    event.preventDefault();
+    const targetRow = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-session-reorder-id]");
+    const targetId = targetRow?.dataset.sessionReorderId;
+    if (!targetRow || targetRow.dataset.sessionOwnerId !== stream.id || !targetId || targetId === drag.sourceId) {
+      drag.target = null;
+      setDropTarget(null);
+      return;
+    }
+    const sourceIndex = sessions.findIndex((item) => item.id === drag.sourceId);
+    const targetIndex = sessions.findIndex((item) => item.id === targetId);
+    const position = resolveSessionDropPosition(event.clientY, targetRow.getBoundingClientRect(), sourceIndex, targetIndex);
+    drag.target = { sessionId: targetId, position };
+    setDropTarget((current) => current?.sessionId === targetId && current.position === position ? current : { sessionId: targetId, position });
+  };
+
+  const finishPointerDrag = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = pointerDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const target = drag.target;
+    const active = drag.active;
+    pointerDrag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    setDraggingSessionId(null);
+    setDropTarget(null);
+    if (active && target) onReorderSessions(stream, drag.sourceId, target.sessionId, target.position);
+    window.setTimeout(() => { suppressClick.current = false; }, 0);
+  };
+
   return sessions.map((session) => {
     const dropPosition = dropTarget?.sessionId === session.id ? dropTarget.position : null;
     return <ContextMenu key={session.id}><ContextMenuTrigger
       data-testid={`sidebar-session-${session.id}`}
+      data-session-reorder-id={session.id}
+      data-session-owner-id={stream.id}
       data-drop-position={dropPosition ?? undefined}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/treefold-session", session.id);
-        event.dataTransfer.setData("text/plain", session.id);
-        setDraggingSessionId(session.id);
-        setDropTarget(null);
+      onPointerDown={(event) => beginPointerDrag(session.id, event)}
+      onPointerMove={movePointerDrag}
+      onPointerUp={finishPointerDrag}
+      onPointerCancel={(event) => {
+        if (pointerDrag.current?.pointerId !== event.pointerId) return;
+        clearPointerDrag();
+        window.setTimeout(() => { suppressClick.current = false; }, 0);
       }}
-      onDragOver={(event) => {
-        if (!draggingSessionId || draggingSessionId === session.id) return;
+      onClickCapture={(event) => {
+        if (!suppressClick.current) return;
         event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        const rect = event.currentTarget.getBoundingClientRect();
-        const sourceIndex = sessions.findIndex((item) => item.id === draggingSessionId);
-        const targetIndex = sessions.findIndex((item) => item.id === session.id);
-        const position = resolveSessionDropPosition(event.clientY, rect, sourceIndex, targetIndex);
-        setDropTarget((current) => current?.sessionId === session.id && current.position === position ? current : { sessionId: session.id, position });
-      }}
-      onDragLeave={(event) => {
-        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
-        setDropTarget((current) => current?.sessionId === session.id ? null : current);
-      }}
-      onDrop={(event) => {
-        event.preventDefault();
-        const sourceId = draggingSessionId || event.dataTransfer.getData("text/treefold-session");
-        const sourceIndex = sessions.findIndex((item) => item.id === sourceId);
-        const targetIndex = sessions.findIndex((item) => item.id === session.id);
-        const position = dropTarget?.sessionId === session.id
-          ? dropTarget.position
-          : resolveSessionDropPosition(event.clientY, event.currentTarget.getBoundingClientRect(), sourceIndex, targetIndex);
-        setDraggingSessionId(null);
-        setDropTarget(null);
-        if (sourceId && sourceId !== session.id) onReorderSessions(stream, sourceId, session.id, position);
-      }}
-      onDragEnd={() => {
-        setDraggingSessionId(null);
-        setDropTarget(null);
+        event.stopPropagation();
+        suppressClick.current = false;
       }}
       className={cn(
         sidebarSessionRowClass,
-        "relative cursor-grab active:cursor-grabbing",
+        "relative cursor-grab select-none active:cursor-grabbing",
         draggingSessionId === session.id && "opacity-50",
         dropPosition === "before" && "before:pointer-events-none before:absolute before:inset-x-1 before:top-0 before:h-0.5 before:-translate-y-1/2 before:rounded-full before:bg-primary",
         dropPosition === "after" && "after:pointer-events-none after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:translate-y-1/2 after:rounded-full after:bg-primary",
@@ -407,7 +451,7 @@ function SidebarSessions({ stream, selectedSessionId, closingSessionIds, onNavig
       )}
     >
       <button className="flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden px-2 text-left focus-visible:outline-none" title={session.name} onClick={() => onNavigate(`/workspaces/${stream.id}/sessions/${session.id}`)}>{session.kind === "codex" ? <Bot className={sidebarTreeIconClass} /> : <TerminalSquare className={sidebarTreeIconClass} />}<span className="min-w-0 flex-1 truncate">{session.name}</span><StatusDot status={session.status} /></button>
-      <Button size="icon-sm" variant="ghost" className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible" title={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} aria-label={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} onClick={(event) => { event.stopPropagation(); onCloseSession(stream, session); }}><X data-icon="inline-start" /></Button>
+      <Button data-session-close="true" size="icon-sm" variant="ghost" className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible" title={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} aria-label={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} onClick={(event) => { event.stopPropagation(); onCloseSession(stream, session); }}><X data-icon="inline-start" /></Button>
     </ContextMenuTrigger><ContextMenuContent data-testid="session-context-menu" className="w-52"><ContextMenuGroup><ContextMenuItem data-testid="rename-session-action" onClick={() => onRenameSession(session)}><Pencil />{t("sidebar.rename")}</ContextMenuItem></ContextMenuGroup></ContextMenuContent></ContextMenu>;
   }) ?? null;
 }
