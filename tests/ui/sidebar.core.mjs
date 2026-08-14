@@ -190,7 +190,7 @@ try {
   const forkToggle = await browser.$(`button[aria-label="Expand Fork ${FIXTURE_NAMES.fork}"]`);
   await forkToggle.waitForDisplayed({ timeout: 3_000 });
   await forkToggle.click();
-  await browser.$(`button[title="Fork Shell Session"]`).waitForExist({ timeout: 3_000 });
+  await browser.$(`button[title="setup · fixture-repository"]`).waitForExist({ timeout: 3_000 });
 
   nodeNames = await browser.$$('[data-testid="sidebar-node-name"]');
   assert.equal(nodeNames.length, 2, "expected the fixture Workspace and its active Fork");
@@ -297,6 +297,17 @@ try {
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await sessionMenu.$('[data-testid="create-fork-action"]')).isExisting(), false, "Fork plus menu must not offer a nested Fork");
   assert.match(await sessionMenu.getText(), /NEW SESSION[\s\S]*Shell[\s\S]*Agent/, "Fork plus menu must retain Session creation");
+  await (await sessionMenu.$('[data-testid="session-kind-shell"]')).moveTo();
+  const forkShellSubmenu = await sessionMenu.$('[data-testid="directory-session-submenu"]');
+  assert.match(await forkShellSubmenu.getText(), /Shell[\s\S]*fixture-repository[\s\S]*fixture-api-repository/i, "Fork Shell creation must list its repository worktrees");
+  await main.click();
+  await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await actionButtons[1].click();
+  sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
+  await sessionMenu.waitForDisplayed({ timeout: 3_000 });
+  await (await sessionMenu.$('[data-testid="session-kind-codex"]')).moveTo();
+  const forkAgentSubmenu = await sessionMenu.$('[data-testid="directory-session-submenu"]');
+  assert.match(await forkAgentSubmenu.getText(), /Agent[\s\S]*fixture-repository[\s\S]*fixture-api-repository/i, "Fork Agent creation must list its repository worktrees");
   await browser.keys(Key.Escape);
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
 

@@ -95,13 +95,18 @@ function Workspace() {
     : null;
   const projects = useMemo(() => {
     const values = [...(sidebar.data ?? [])];
-    if (!projectDetail.data) return values;
-    const detail = { ...projectDetail.data, sessions: projectSessions.data ?? projectDetail.data.sessions };
-    const index = values.findIndex((project) => project.id === detail.id);
-    if (index < 0) return [...values, detail];
-    values[index] = detail;
+    if (!workspace) return values;
+    const projectIndex = values.findIndex((project) => project.id === workspace.project.id);
+    if (projectIndex < 0) return values;
+    const project = values[projectIndex];
+    values[projectIndex] = {
+      ...project,
+      workspaces: project.workspaces.map((stream) => stream.id === workspace.id
+        ? { ...stream, ...workspace, forks: (stream as SidebarStream).forks ?? workspace.forks }
+        : stream),
+    };
     return values;
-  }, [projectDetail.data, projectSessions.data, sidebar.data]);
+  }, [sidebar.data, workspace]);
   const loading = params.workspaceId
     ? workspaceDetail.isPending
     : params.projectId
@@ -183,7 +188,12 @@ function Workspace() {
   }, [resizingSidebar]);
   useEffect(() => { window.localStorage.setItem("treefold.sidebar.width", String(sidebarWidth)); }, [sidebarWidth]);
 
-  const selectedProject = useMemo(() => projects.find((project) => project.id === params.projectId || project.id === workspace?.project.id) ?? null, [params.projectId, projects, workspace]);
+  const selectedProject = useMemo(() => {
+    if (params.projectId && projectDetail.data?.id === params.projectId) {
+      return { ...projectDetail.data, sessions: projectSessions.data ?? projectDetail.data.sessions };
+    }
+    return projects.find((project) => project.id === workspace?.project.id) ?? null;
+  }, [params.projectId, projectDetail.data, projectSessions.data, projects, workspace?.project.id]);
   const selectedSession = workspace?.sessions.find((session) => session.id === params.sessionId) ?? selectedProject?.sessions.find((session) => session.id === params.sessionId) ?? null;
   const parentWorkspace = workspace?.parent_workspace_id ? selectedProject?.workspaces.find((item) => item.id === workspace.parent_workspace_id) ?? null : null;
 
@@ -323,11 +333,18 @@ function Workspace() {
 
   async function rename(target: RenameTarget, name: string, description?: string) {
     const payload = target.kind === "session" ? { name } : { name, description: description ?? "" };
-    const ok = await act(() => target.kind === "project"
-      ? projectsApi.update(target.value.id, payload)
-      : target.kind === "session"
-        ? sessionsApi.update(target.value.id, payload)
-        : workspacesApi.update(target.value.id, payload));
+    let updatedSession: Session | null = null;
+    const ok = await act(async () => {
+      if (target.kind === "project") await projectsApi.update(target.value.id, payload);
+      else if (target.kind === "session") updatedSession = await sessionsApi.update(target.value.id, payload);
+      else await workspacesApi.update(target.value.id, payload);
+    });
+    if (ok && updatedSession) {
+      const session = updatedSession as Session;
+      queryClient.setQueryData<Session[]>(workspaceKeys.sessions(session.workspace_id), (current = []) => upsertSession(current, session));
+      queryClient.setQueryData<ProjectDetail[]>(projectKeys.sidebar, (current = []) => updateProjectWorkspaceSessions(current, session.workspace_id, upsertSession((current.flatMap((project) => project.workspaces).find((stream) => stream.id === session.workspace_id) as SidebarStream | undefined)?.sessions ?? [], session)));
+      if (params.projectId) queryClient.setQueryData<Session[]>(projectKeys.sessions(params.projectId), (current = []) => upsertSession(current, session));
+    }
     if (ok) setRenameTarget(null);
   }
 

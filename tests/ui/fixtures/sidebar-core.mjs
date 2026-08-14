@@ -270,7 +270,7 @@ const forkSessions = [
   session({
     id: FIXTURE_IDS.forkShell,
     workspaceId: FIXTURE_IDS.fork,
-    name: "Fork Shell Session",
+    name: "setup · fixture-repository",
     kind: "shell",
     cwd: forkPath,
     status: "running",
