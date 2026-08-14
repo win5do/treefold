@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS workspace_locations (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  project_location_id TEXT NOT NULL REFERENCES project_locations(id),
  location_name TEXT NOT NULL, source_path TEXT NOT NULL, access_mode TEXT NOT NULL,
- git_status TEXT NOT NULL, worktree_id TEXT, checkout_path TEXT, branch TEXT,
+ git_status TEXT NOT NULL, creation_error TEXT, worktree_id TEXT, checkout_path TEXT, branch TEXT,
  base_branch TEXT, start_commit TEXT, forked_from_commit TEXT,
  remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL DEFAULT 'managed',
  delivery_mode TEXT NOT NULL DEFAULT 'remote_review', delivery_status TEXT NOT NULL DEFAULT 'active',
@@ -169,6 +169,12 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
                 [],
             )?;
         }
+        if !table_has_column(connection, "workspace_locations", "creation_error")? {
+            connection.execute(
+                "ALTER TABLE workspace_locations ADD COLUMN creation_error TEXT",
+                [],
+            )?;
+        }
         if table_exists(connection, "sessions")?
             && table_has_column(connection, "sessions", "yolo")?
         {
@@ -252,6 +258,7 @@ mod workspace_schema_tests {
         assert!(table_exists(&connection, "project_locations").unwrap());
         assert!(table_has_column(&connection, "project_locations", "delivery_mode").unwrap());
         assert!(table_exists(&connection, "workspace_locations").unwrap());
+        assert!(table_has_column(&connection, "workspace_locations", "creation_error").unwrap());
         assert!(!table_has_column(&connection, "sessions", "yolo").unwrap());
         assert!(
             table_has_column(&connection, "delivery_operations", "workspace_location_id").unwrap()

@@ -15,6 +15,12 @@ use tokio_tungstenite::WebSocketStream;
 use crate::model::Session;
 
 const REPLAY_BYTES: usize = 64 * 1024;
+const SETUP_SHELL_WRAPPER: &str = r#"set +e
+"$SHELL" -lc "$TREEFOLD_SETUP_COMMAND"
+treefold_setup_status=$?
+printf '\n[Treefold setup exited with status %s]\n' "$treefold_setup_status"
+unset TREEFOLD_SETUP_COMMAND treefold_setup_status
+exec "$SHELL" -l"#;
 
 #[derive(Clone)]
 pub struct TerminalManager {
@@ -97,11 +103,9 @@ impl TerminalManager {
         self.ensure_runtime().await?;
         let workspace = Self::workspace_name(&session.cwd);
         self.ensure_workspace(&workspace, &session.cwd).await?;
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
         let command = if session.kind == "shell" {
-            vec![
-                std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into()),
-                "-l".into(),
-            ]
+            shell_command(&shell, &session.initial_prompt)
         } else {
             let mut command = vec!["codex".into()];
             command.extend(codex_arguments(
@@ -111,7 +115,7 @@ impl TerminalManager {
             ));
             command
         };
-        let env = BTreeMap::from([
+        let mut env = BTreeMap::from([
             ("TERM".into(), "xterm-256color".into()),
             ("COLORTERM".into(), "truecolor".into()),
             ("TREEFOLD_SESSION_ID".into(), session.id.clone()),
@@ -128,6 +132,13 @@ impl TerminalManager {
                 self.client.config.socket.to_string_lossy().into_owned(),
             ),
         ]);
+        if session.kind == "shell" && !session.initial_prompt.trim().is_empty() {
+            env.insert("SHELL".into(), shell);
+            env.insert(
+                "TREEFOLD_SETUP_COMMAND".into(),
+                session.initial_prompt.clone(),
+            );
+        }
         let bytes = self
             .client
             .do_json(
@@ -230,6 +241,14 @@ impl TerminalManager {
                 process_path(id, "attach")
             ))
             .await
+    }
+}
+
+fn shell_command(shell: &str, initial_command: &str) -> Vec<String> {
+    if initial_command.trim().is_empty() {
+        vec![shell.into(), "-l".into()]
+    } else {
+        vec![shell.into(), "-lc".into(), SETUP_SHELL_WRAPPER.into()]
     }
 }
 
@@ -430,5 +449,16 @@ mod tests {
         assert_eq!(first, again);
         assert_ne!(first, other);
         assert!(first.starts_with("treefold-ws-"));
+    }
+
+    #[test]
+    fn setup_shell_runs_the_command_then_stays_interactive() {
+        assert_eq!(super::shell_command("/bin/zsh", ""), ["/bin/zsh", "-l"]);
+        assert_eq!(
+            super::shell_command("/bin/zsh", "rush install"),
+            ["/bin/zsh", "-lc", super::SETUP_SHELL_WRAPPER]
+        );
+        assert!(super::SETUP_SHELL_WRAPPER.contains("Treefold setup exited with status"));
+        assert!(super::SETUP_SHELL_WRAPPER.ends_with("exec \"$SHELL\" -l"));
     }
 }

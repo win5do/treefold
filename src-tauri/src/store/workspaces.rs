@@ -130,6 +130,40 @@ impl Store {
         )?)
     }
 
+    pub fn set_workspace_location_creation_result(
+        &self,
+        id: &str,
+        git_status: &str,
+        checkout_path: Option<&str>,
+        start_commit: Option<&str>,
+        creation_error: Option<&str>,
+    ) -> Result<()> {
+        let delivery_status = if git_status == "failed" {
+            "discarded"
+        } else {
+            "active"
+        };
+        let changed = self.0.lock().execute(
+            "UPDATE workspace_locations SET git_status=?,checkout_path=?,start_commit=?,creation_error=?,delivery_status=?,updated_at=? WHERE id=?",
+            params![git_status, checkout_path, start_commit, creation_error, delivery_status, now(), id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn set_workspace_location_creation_error(&self, id: &str, error: &str) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE workspace_locations SET creation_error=?,updated_at=? WHERE id=?",
+            params![error, now(), id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn workspace_locations_for_project_location(
         &self,
         project_location_id: &str,
@@ -144,7 +178,7 @@ impl Store {
 
     pub fn default_workspace_location(&self, workspace_id: &str) -> Result<WorkspaceLocation> {
         let db = self.0.lock();
-        Ok(db.query_row(&format!("SELECT {WORKSPACE_LOCATION_JOIN_COLUMNS} FROM workspace_locations wl JOIN workspaces w ON w.id=wl.workspace_id JOIN projects p ON p.id=w.project_id WHERE wl.workspace_id=? ORDER BY wl.project_location_id=p.default_location_id DESC LIMIT 1"), [workspace_id], workspace_location_row)?)
+        Ok(db.query_row(&format!("SELECT {WORKSPACE_LOCATION_JOIN_COLUMNS} FROM workspace_locations wl JOIN workspaces w ON w.id=wl.workspace_id JOIN projects p ON p.id=w.project_id WHERE wl.workspace_id=? ORDER BY wl.git_status='ready' DESC,wl.project_location_id=p.default_location_id DESC LIMIT 1"), [workspace_id], workspace_location_row)?)
     }
 
     pub(super) fn resolve_workspace_location_id(
@@ -162,7 +196,7 @@ impl Store {
         {
             return Ok(id);
         }
-        Ok(db.query_row("SELECT wl.id AS id FROM workspace_locations wl JOIN workspaces w ON w.id=wl.workspace_id JOIN projects p ON p.id=w.project_id WHERE wl.workspace_id=? ORDER BY wl.project_location_id=p.default_location_id DESC LIMIT 1", [workspace_or_location_id], |r| r.get("id"))?)
+        Ok(db.query_row("SELECT wl.id AS id FROM workspace_locations wl JOIN workspaces w ON w.id=wl.workspace_id JOIN projects p ON p.id=w.project_id WHERE wl.workspace_id=? ORDER BY wl.git_status='ready' DESC,wl.project_location_id=p.default_location_id DESC LIMIT 1", [workspace_or_location_id], |r| r.get("id"))?)
     }
 
     pub(crate) fn forks(&self, workspace_id: &str) -> Result<Vec<Workspace>> {
@@ -279,8 +313,8 @@ fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
     })
 }
 
-const WORKSPACE_LOCATION_COLUMNS: &str = "id,workspace_id,project_location_id,location_name,source_path,access_mode,git_status,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
-const WORKSPACE_LOCATION_JOIN_COLUMNS: &str = "wl.id,wl.workspace_id,wl.project_location_id,wl.location_name,wl.source_path,wl.access_mode,wl.git_status,wl.worktree_id,wl.checkout_path,wl.branch,wl.base_branch,wl.start_commit,wl.forked_from_commit,wl.remote_name,wl.remote_branch,wl.branch_ownership,wl.delivery_mode,wl.delivery_status,wl.close_outcome,wl.integrated_commit,wl.closed_at,wl.created_at,wl.updated_at";
+const WORKSPACE_LOCATION_COLUMNS: &str = "id,workspace_id,project_location_id,location_name,source_path,access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
+const WORKSPACE_LOCATION_JOIN_COLUMNS: &str = "wl.id,wl.workspace_id,wl.project_location_id,wl.location_name,wl.source_path,wl.access_mode,wl.git_status,wl.creation_error,wl.worktree_id,wl.checkout_path,wl.branch,wl.base_branch,wl.start_commit,wl.forked_from_commit,wl.remote_name,wl.remote_branch,wl.branch_ownership,wl.delivery_mode,wl.delivery_status,wl.close_outcome,wl.integrated_commit,wl.closed_at,wl.created_at,wl.updated_at";
 
 fn workspace_location_row(r: &Row<'_>) -> rusqlite::Result<WorkspaceLocation> {
     Ok(WorkspaceLocation {
@@ -291,6 +325,7 @@ fn workspace_location_row(r: &Row<'_>) -> rusqlite::Result<WorkspaceLocation> {
         source_path: r.get("source_path")?,
         access_mode: r.get("access_mode")?,
         git_status: r.get("git_status")?,
+        creation_error: r.get("creation_error")?,
         worktree_id: r.get("worktree_id")?,
         checkout_path: r.get("checkout_path")?,
         branch: r.get("branch")?,
@@ -316,7 +351,7 @@ fn hydrate_workspace_compat(db: &Connection, workspace: &mut Workspace) -> rusql
         workspace.branch_ownership = "user".into();
     }
     let location = db.query_row(
-        &format!("SELECT {WORKSPACE_LOCATION_JOIN_COLUMNS} FROM workspace_locations wl JOIN projects p ON p.id=? WHERE wl.workspace_id=? ORDER BY wl.project_location_id=p.default_location_id DESC LIMIT 1"),
+        &format!("SELECT {WORKSPACE_LOCATION_JOIN_COLUMNS} FROM workspace_locations wl JOIN projects p ON p.id=? WHERE wl.workspace_id=? ORDER BY wl.git_status='ready' DESC,wl.project_location_id=p.default_location_id DESC LIMIT 1"),
         params![workspace.project_id, workspace.id], workspace_location_row,
     ).optional()?;
     if let Some(location) = location {
@@ -351,7 +386,7 @@ fn insert_workspace_location(
     l: &WorkspaceLocation,
 ) -> rusqlite::Result<()> {
     tx.execute(
-        &format!("INSERT INTO workspace_locations({WORKSPACE_LOCATION_COLUMNS}) VALUES(:id,:workspace_id,:project_location_id,:location_name,:source_path,:access_mode,:git_status,:worktree_id,:checkout_path,:branch,:base_branch,:start_commit,:forked_from_commit,:remote_name,:remote_branch,:branch_ownership,:delivery_mode,:delivery_status,:close_outcome,:integrated_commit,:closed_at,:created_at,:updated_at)"),
+        &format!("INSERT INTO workspace_locations({WORKSPACE_LOCATION_COLUMNS}) VALUES(:id,:workspace_id,:project_location_id,:location_name,:source_path,:access_mode,:git_status,:creation_error,:worktree_id,:checkout_path,:branch,:base_branch,:start_commit,:forked_from_commit,:remote_name,:remote_branch,:branch_ownership,:delivery_mode,:delivery_status,:close_outcome,:integrated_commit,:closed_at,:created_at,:updated_at)"),
         named_params! {
             ":id": l.id,
             ":workspace_id": l.workspace_id,
@@ -360,6 +395,7 @@ fn insert_workspace_location(
             ":source_path": l.source_path,
             ":access_mode": l.access_mode,
             ":git_status": l.git_status,
+            ":creation_error": l.creation_error,
             ":worktree_id": l.worktree_id,
             ":checkout_path": l.checkout_path,
             ":branch": l.branch,

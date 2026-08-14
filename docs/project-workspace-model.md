@@ -47,14 +47,20 @@ and archive status. Repository-specific state belongs to WorkspaceLocation.
 At creation time every ProjectLocation is snapshotted:
 
 - every ready Git location gets a managed worktree and the same generated
-  feature branch name;
+  feature branch name; independent repositories are created in parallel;
 - a non-Git location keeps its original path with `read_only` access;
 - base branch, start commit, upstream, and delivery state are stored per Git
   location.
 
-Branch conflicts are checked across all repositories before creation. If any
-worktree or setup command fails, created worktrees are removed best-effort and
-no Workspace rows are committed.
+Branch conflicts are checked across all repositories before creation. A failed
+worktree is retained as a `failed` WorkspaceLocation with its Git error and an
+already-terminal `discarded` delivery status. Successful worktrees and the
+Workspace remain available; Treefold does not roll them back.
+
+After creation, each configured worktree setup command starts asynchronously in
+a visible `setup · <location>` Shell rooted at that worktree. Its output and exit
+status remain in the terminal, and the Shell stays interactive so setup failure
+does not reject or delay Workspace creation.
 
 Workspace Pull All and Push All are best-effort. Their result contains a
 `success`, `skipped`, or `failed` item for every location, and successful repos

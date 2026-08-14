@@ -298,6 +298,13 @@ try {
   assert.equal(await readonlyWorkspaceLocation.$(`[data-testid="workspace-location-actions-${FIXTURE_IDS.workspaceReadonlyLocation}-trigger"]`).isExisting(), false, "read-only context locations must not expose Git actions");
   assert.equal(await (await browser.$("button=New Shell")).isExisting(), false, "Workspace details must rely on the sidebar plus menu for Shell creation");
   assert.equal(await (await browser.$("button=New Codex")).isExisting(), false, "Workspace details must rely on the sidebar plus menu for Codex creation");
+  const creationError = await baseSection.$(`[data-testid="workspace-location-error-${FIXTURE_IDS.workspaceSecondaryLocation}"]`);
+  assert.equal(await creationError.getAttribute("role"), "alert", "worktree creation failures must be announced");
+  assert.match(await creationError.getText(), /simulated fixture failure/, "worktree creation failure details must remain visible");
+  const forksSection = await browser.$('[data-testid="workspace-forks-section"]');
+  const todosSection = await browser.$('[data-testid="workspace-todos-section"]');
+  assert.ok((await baseSection.getLocation("y")) < (await forksSection.getLocation("y")), "Locations section must appear above Forks");
+  assert.ok((await forksSection.getLocation("y")) < (await todosSection.getLocation("y")), "Forks must remain above Todos");
 
   await createSessionFromSidebar(browser, '[data-testid="sidebar-workspace-node"]', FIXTURE_IDS.primaryDirectory, "Codex");
   await browser.waitUntil(async () => (await browser.getUrl()).includes(`#/workspaces/${FIXTURE_IDS.workspace}/sessions/session-created-codex-ui-fixture`), {

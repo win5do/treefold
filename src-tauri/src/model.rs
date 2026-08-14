@@ -121,6 +121,8 @@ pub struct WorkspaceLocation {
     pub access_mode: String,
     pub git_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub creation_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkout_path: Option<String>,

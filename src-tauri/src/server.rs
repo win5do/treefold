@@ -1583,19 +1583,59 @@ struct CreateWorkspace {
     remote_name: Option<String>,
     remote_branch: Option<String>,
 }
+
+#[derive(Clone)]
+struct WorkspaceWorktreePlan {
+    location: ProjectLocation,
+    workspace_location_id: String,
+    checkout_path: String,
+    branch: String,
+    start_ref: String,
+}
+
+struct WorkspaceWorktreeOutcome {
+    plan: WorkspaceWorktreePlan,
+    start_commit: Option<String>,
+    error: Option<String>,
+}
+
+struct WorkspaceSetupShell {
+    workspace_location_id: String,
+    project_location_id: String,
+    location_name: String,
+    command: String,
+}
+
+struct CreatedWorkspace {
+    workspace: Workspace,
+    setup_shells: Vec<WorkspaceSetupShell>,
+}
+
 async fn create_workspace(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateWorkspace>,
 ) -> Result<(StatusCode, Json<Workspace>)> {
-    blocking_git_operation(move || create_workspace_impl(state, project_id, input)).await
+    let operation_state = state.clone();
+    let created =
+        blocking_git_operation(move || create_workspace_impl(operation_state, project_id, input))
+            .await?;
+    spawn_workspace_setup_shells(
+        state.clone(),
+        created.workspace.clone(),
+        created.setup_shells,
+    );
+    Ok((
+        StatusCode::CREATED,
+        Json(state.store.workspace(&created.workspace.id)?),
+    ))
 }
 
 fn create_workspace_impl(
     state: AppState,
     project_id: String,
     input: CreateWorkspace,
-) -> Result<(StatusCode, Json<Workspace>)> {
+) -> Result<CreatedWorkspace> {
     if input.name.trim().is_empty() {
         return Err(AppError::BadRequest("workspace name is required".into()));
     }
@@ -1645,7 +1685,7 @@ fn create_workspace_impl(
         .join(branch.replace('/', "-"));
     let timestamp = now();
     let mut snapshots = Vec::new();
-    let mut created = Vec::<(String, String)>::new();
+    let mut plans = Vec::new();
     for location in &locations {
         if location.git_status != "ready" {
             snapshots.push(read_only_workspace_location(
@@ -1663,50 +1703,10 @@ fn create_workspace_impl(
             .delivery_mode
             .clone()
             .unwrap_or_else(|| "remote_review".into());
-        let start_commit = match command_output(
-            Path::new(&location.path),
-            "git",
-            &["rev-parse", "--verify", &base_branch],
-        ) {
-            Ok(value) => value,
-            Err(_) => {
-                rollback_created_worktrees(&created);
-                return Err(AppError::BadRequest(format!(
-                    "base branch '{}' was not found in {}",
-                    base_branch, location.name
-                )));
-            }
-        };
         let checkout_path = root
             .join(format!("{}-{}", slug(&location.name), &location.id[..6]))
             .to_string_lossy()
             .into_owned();
-        if let Some(parent) = Path::new(&checkout_path).parent() {
-            std::fs::create_dir_all(parent).map_err(anyhow::Error::from)?;
-        }
-        if let Err(error) = command_output(
-            Path::new(&location.path),
-            "git",
-            &[
-                "worktree",
-                "add",
-                "-b",
-                &branch,
-                &checkout_path,
-                &base_branch,
-            ],
-        ) {
-            rollback_created_worktrees(&created);
-            return Err(AppError::BadRequest(format!(
-                "create worktree for {}: {error}",
-                location.name
-            )));
-        }
-        created.push((location.path.clone(), checkout_path.clone()));
-        if let Err(error) = run_worktree_setup_command(location, &checkout_path) {
-            rollback_created_worktrees(&created);
-            return Err(error);
-        }
         let remote_name = if location.id == default_id {
             trimmed(input.remote_name.clone())
                 .filter(|v| !v.is_empty())
@@ -1719,19 +1719,29 @@ fn create_workspace_impl(
         } else {
             None
         };
-        snapshots.push(git_workspace_location(
+        let mut snapshot = git_workspace_location(
             &workspace_id,
             location,
             &timestamp,
-            checkout_path,
+            checkout_path.clone(),
             branch.clone(),
-            base_branch,
-            start_commit,
+            base_branch.clone(),
+            String::new(),
             None,
             remote_name,
             remote_branch,
             location_delivery_mode,
-        ));
+        );
+        snapshot.git_status = "creating".into();
+        snapshot.start_commit = None;
+        plans.push(WorkspaceWorktreePlan {
+            location: location.clone(),
+            workspace_location_id: snapshot.id.clone(),
+            checkout_path,
+            branch: branch.clone(),
+            start_ref: base_branch.clone(),
+        });
+        snapshots.push(snapshot);
     }
     let workspace = Workspace {
         id: workspace_id.clone(),
@@ -1762,17 +1772,163 @@ fn create_workspace_impl(
         integrated_commit: None,
         closed_at: None,
     };
-    if let Err(error) = state
+    state
         .store
-        .create_workspace_with_locations(&workspace, &snapshots)
-    {
-        rollback_created_worktrees(&created);
-        return Err(error);
+        .create_workspace_with_locations(&workspace, &snapshots)?;
+
+    let outcomes = create_workspace_worktrees(plans);
+    let setup_shells = record_workspace_worktree_outcomes(&state.store, outcomes)?;
+
+    Ok(CreatedWorkspace {
+        workspace: state.store.workspace(&workspace.id)?,
+        setup_shells,
+    })
+}
+
+fn create_workspace_worktrees(plans: Vec<WorkspaceWorktreePlan>) -> Vec<WorkspaceWorktreeOutcome> {
+    std::thread::scope(|scope| {
+        let handles = plans
+            .into_iter()
+            .map(|plan| {
+                let fallback = plan.clone();
+                let handle = scope.spawn(move || create_workspace_worktree(plan));
+                (fallback, handle)
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|(fallback, handle)| {
+                handle.join().unwrap_or_else(|_| WorkspaceWorktreeOutcome {
+                    plan: fallback,
+                    start_commit: None,
+                    error: Some("worktree creation worker stopped unexpectedly".into()),
+                })
+            })
+            .collect::<Vec<_>>()
+    })
+}
+
+fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> WorkspaceWorktreeOutcome {
+    let result = (|| {
+        let start_commit = command_output(
+            Path::new(&plan.location.path),
+            "git",
+            &["rev-parse", "--verify", &plan.start_ref],
+        )
+        .map_err(|_| {
+            format!(
+                "base branch '{}' was not found in {}",
+                plan.start_ref, plan.location.name
+            )
+        })?;
+        if let Some(parent) = Path::new(&plan.checkout_path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("create worktree directory: {error}"))?;
+        }
+        command_output(
+            Path::new(&plan.location.path),
+            "git",
+            &[
+                "worktree",
+                "add",
+                "-b",
+                &plan.branch,
+                &plan.checkout_path,
+                &plan.start_ref,
+            ],
+        )
+        .map_err(|error| format!("create worktree for {}: {error}", plan.location.name))?;
+        Ok::<_, String>(start_commit)
+    })();
+
+    match result {
+        Ok(start_commit) => WorkspaceWorktreeOutcome {
+            plan,
+            start_commit: Some(start_commit),
+            error: None,
+        },
+        Err(error) => WorkspaceWorktreeOutcome {
+            plan,
+            start_commit: None,
+            error: Some(error),
+        },
     }
-    Ok((
-        StatusCode::CREATED,
-        Json(state.store.workspace(&workspace.id)?),
-    ))
+}
+
+fn record_workspace_worktree_outcomes(
+    store: &Store,
+    outcomes: Vec<WorkspaceWorktreeOutcome>,
+) -> Result<Vec<WorkspaceSetupShell>> {
+    let mut setup_shells = Vec::new();
+    for outcome in outcomes {
+        if let Some(error) = outcome.error.as_deref() {
+            store.set_workspace_location_creation_result(
+                &outcome.plan.workspace_location_id,
+                "failed",
+                None,
+                outcome.start_commit.as_deref(),
+                Some(error),
+            )?;
+            continue;
+        }
+        store.set_workspace_location_creation_result(
+            &outcome.plan.workspace_location_id,
+            "ready",
+            Some(&outcome.plan.checkout_path),
+            outcome.start_commit.as_deref(),
+            None,
+        )?;
+        let command = outcome.plan.location.worktree_setup_command.trim();
+        if !command.is_empty() {
+            setup_shells.push(WorkspaceSetupShell {
+                workspace_location_id: outcome.plan.workspace_location_id,
+                project_location_id: outcome.plan.location.id,
+                location_name: outcome.plan.location.name,
+                command: command.into(),
+            });
+        }
+    }
+    Ok(setup_shells)
+}
+
+async fn start_workspace_setup_shells(
+    state: &AppState,
+    workspace: &Workspace,
+    setup_shells: Vec<WorkspaceSetupShell>,
+) {
+    for setup in setup_shells {
+        let result = create_session_for_workspace(
+            state,
+            workspace.clone(),
+            CreateSession {
+                name: Some(format!("setup · {}", setup.location_name)),
+                kind: Some("shell".into()),
+                project_directory_id: Some(setup.project_location_id),
+                initial_prompt: Some(setup.command),
+            },
+        )
+        .await;
+        if let Err(error) = result {
+            let message = format!("could not start setup shell: {error}");
+            let _ = state
+                .store
+                .set_workspace_location_creation_error(&setup.workspace_location_id, &message);
+            log::error!("{message}");
+        }
+    }
+}
+
+fn spawn_workspace_setup_shells(
+    state: AppState,
+    workspace: Workspace,
+    setup_shells: Vec<WorkspaceSetupShell>,
+) {
+    if setup_shells.is_empty() {
+        return;
+    }
+    tokio::spawn(async move {
+        start_workspace_setup_shells(&state, &workspace, setup_shells).await;
+    });
 }
 
 #[derive(Deserialize)]
@@ -1786,14 +1942,25 @@ async fn create_fork(
     AxumPath(parent_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateFork>,
 ) -> Result<(StatusCode, Json<Workspace>)> {
-    blocking_git_operation(move || create_fork_impl(state, parent_id, input)).await
+    let operation_state = state.clone();
+    let created =
+        blocking_git_operation(move || create_fork_impl(operation_state, parent_id, input)).await?;
+    spawn_workspace_setup_shells(
+        state.clone(),
+        created.workspace.clone(),
+        created.setup_shells,
+    );
+    Ok((
+        StatusCode::CREATED,
+        Json(state.store.workspace(&created.workspace.id)?),
+    ))
 }
 
 fn create_fork_impl(
     state: AppState,
     parent_id: String,
     input: CreateFork,
-) -> Result<(StatusCode, Json<Workspace>)> {
+) -> Result<CreatedWorkspace> {
     if input.name.trim().is_empty() {
         return Err(AppError::BadRequest("fork name is required".into()));
     }
@@ -1830,7 +1997,7 @@ fn create_fork_impl(
         .join(branch.replace('/', "-"));
     let timestamp = now();
     let mut snapshots = Vec::new();
-    let mut created = Vec::<(String, String)>::new();
+    let mut plans = Vec::new();
     for parent_location in &parent_locations {
         let project_location = state
             .store
@@ -1843,14 +2010,6 @@ fn create_fork_impl(
             ));
             continue;
         }
-        let parent_path = parent_location.checkout_path.as_deref().ok_or_else(|| {
-            AppError::BadRequest(format!(
-                "parent location '{}' has no worktree",
-                parent_location.location_name
-            ))
-        })?;
-        ensure_clean_workspace(parent_path, "parent Workspace location")?;
-        let start_commit = git_head(parent_path)?;
         let checkout_path = root
             .join(format!(
                 "{}-{}",
@@ -1859,45 +2018,67 @@ fn create_fork_impl(
             ))
             .to_string_lossy()
             .into_owned();
-        if let Some(dir) = Path::new(&checkout_path).parent() {
-            std::fs::create_dir_all(dir).map_err(anyhow::Error::from)?;
-        }
-        if let Err(error) = command_output(
-            Path::new(&project_location.path),
-            "git",
-            &[
-                "worktree",
-                "add",
-                "-b",
-                &branch,
-                &checkout_path,
-                &start_commit,
-            ],
-        ) {
-            rollback_created_worktrees(&created);
-            return Err(AppError::BadRequest(format!(
-                "create Fork worktree for {}: {error}",
-                parent_location.location_name
-            )));
-        }
-        created.push((project_location.path.clone(), checkout_path.clone()));
-        if let Err(error) = run_worktree_setup_command(&project_location, &checkout_path) {
-            rollback_created_worktrees(&created);
-            return Err(error);
-        }
-        snapshots.push(git_workspace_location(
+        let base_branch = parent_location.branch.clone().unwrap_or_default();
+        let mut snapshot = git_workspace_location(
             &fork_id,
             &project_location,
             &timestamp,
-            checkout_path,
+            checkout_path.clone(),
             branch.clone(),
-            parent_location.branch.clone().unwrap_or_default(),
-            start_commit.clone(),
-            Some(start_commit),
+            base_branch.clone(),
+            String::new(),
+            parent_location.start_commit.clone(),
             None,
             None,
             "local_merge".into(),
-        ));
+        );
+        snapshot.git_status = "creating".into();
+        snapshot.start_commit = None;
+
+        let Some(parent_path) = parent_location.checkout_path.as_deref() else {
+            snapshot.git_status = "failed".into();
+            snapshot.checkout_path = None;
+            snapshot.delivery_status = "discarded".into();
+            snapshot.creation_error = Some(format!(
+                "parent location '{}' has no worktree{}",
+                parent_location.location_name,
+                parent_location
+                    .creation_error
+                    .as_deref()
+                    .map(|error| format!(": {error}"))
+                    .unwrap_or_default()
+            ));
+            snapshots.push(snapshot);
+            continue;
+        };
+        if let Err(error) = ensure_clean_workspace(parent_path, "parent Workspace location") {
+            snapshot.git_status = "failed".into();
+            snapshot.checkout_path = None;
+            snapshot.delivery_status = "discarded".into();
+            snapshot.creation_error = Some(error.to_string());
+            snapshots.push(snapshot);
+            continue;
+        }
+        let start_commit = match git_head(parent_path) {
+            Ok(value) => value,
+            Err(error) => {
+                snapshot.git_status = "failed".into();
+                snapshot.checkout_path = None;
+                snapshot.delivery_status = "discarded".into();
+                snapshot.creation_error = Some(error.to_string());
+                snapshots.push(snapshot);
+                continue;
+            }
+        };
+        snapshot.forked_from_commit = Some(start_commit.clone());
+        plans.push(WorkspaceWorktreePlan {
+            location: project_location,
+            workspace_location_id: snapshot.id.clone(),
+            checkout_path,
+            branch: branch.clone(),
+            start_ref: start_commit,
+        });
+        snapshots.push(snapshot);
     }
     let fork = Workspace {
         id: fork_id.clone(),
@@ -1928,14 +2109,16 @@ fn create_fork_impl(
         integrated_commit: None,
         closed_at: None,
     };
-    if let Err(error) = state
+    state
         .store
-        .create_workspace_with_locations(&fork, &snapshots)
-    {
-        rollback_created_worktrees(&created);
-        return Err(error);
-    }
-    Ok((StatusCode::CREATED, Json(state.store.workspace(&fork.id)?)))
+        .create_workspace_with_locations(&fork, &snapshots)?;
+
+    let outcomes = create_workspace_worktrees(plans);
+    let setup_shells = record_workspace_worktree_outcomes(&state.store, outcomes)?;
+    Ok(CreatedWorkspace {
+        workspace: state.store.workspace(&fork.id)?,
+        setup_shells,
+    })
 }
 
 async fn get_workspace(
@@ -4877,6 +5060,7 @@ fn project_session_location(
         }
         .into(),
         git_status: location.git_status.clone(),
+        creation_error: None,
         worktree_id: None,
         checkout_path: tracked_git.then(|| location.path.clone()),
         branch: location.branch.clone(),
@@ -4951,6 +5135,7 @@ async fn create_session_for_workspace(
             .find(|location| {
                 project.default_location_id.as_deref()
                     == Some(location.project_location_id.as_str())
+                    && (location.access_mode == "read_only" || location.git_status == "ready")
             })
             .or_else(|| {
                 locations.iter().find(|location| {
@@ -4964,10 +5149,17 @@ async fn create_session_for_workspace(
             })
             .ok_or_else(|| AppError::BadRequest("Workspace has no usable location".into()))?
     };
-    if kind == "codex"
-        && (selected_location.access_mode != "read_write"
-            || selected_location.git_status != "ready")
-    {
+    if selected_location.access_mode == "read_write" && selected_location.git_status != "ready" {
+        return Err(AppError::BadRequest(format!(
+            "Workspace location '{}' is unavailable: {}",
+            selected_location.location_name,
+            selected_location
+                .creation_error
+                .as_deref()
+                .unwrap_or(&selected_location.git_status)
+        )));
+    }
+    if kind == "codex" && selected_location.access_mode != "read_write" {
         return Err(AppError::BadRequest(
             "Codex must start in an available Git location; non-Git locations are read-only context"
                 .into(),
@@ -5525,53 +5717,6 @@ where
     git::blocking(operation)
         .await
         .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
-}
-
-fn run_worktree_setup_command(directory: &Directory, checkout_path: &str) -> Result<()> {
-    let setup_command = directory.worktree_setup_command.trim();
-    if setup_command.is_empty() {
-        return Ok(());
-    }
-    let configured_shell = std::env::var("SHELL")
-        .ok()
-        .filter(|value| !value.trim().is_empty() && Path::new(value).is_file());
-    let shell = configured_shell.unwrap_or_else(|| {
-        if cfg!(target_os = "macos") {
-            "/bin/zsh".into()
-        } else {
-            "/bin/sh".into()
-        }
-    });
-    let output = Command::new(&shell)
-        .args(["-lc", setup_command])
-        .current_dir(checkout_path)
-        .output()
-        .map_err(|error| {
-            AppError::BadRequest(format!(
-                "start Worktree setup command with {shell}: {error}"
-            ))
-        })?;
-    if output.status.success() {
-        return Ok(());
-    }
-    let combined = format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let detail = combined.trim().chars().take(8192).collect::<String>();
-    let status = output
-        .status
-        .code()
-        .map_or_else(|| "terminated by signal".into(), |code| code.to_string());
-    Err(AppError::BadRequest(format!(
-        "Worktree setup command failed with status {status} using {shell}{}",
-        if detail.is_empty() {
-            String::new()
-        } else {
-            format!(":\n{detail}")
-        }
-    )))
 }
 
 fn treefold_runtime_snapshot(
@@ -6207,6 +6352,7 @@ fn read_only_workspace_location(
         source_path: location.path.clone(),
         access_mode: "read_only".into(),
         git_status: "not_git".into(),
+        creation_error: None,
         worktree_id: None,
         checkout_path: None,
         branch: None,
@@ -6248,6 +6394,7 @@ fn git_workspace_location(
         source_path: location.path.clone(),
         access_mode: "read_write".into(),
         git_status: "ready".into(),
+        creation_error: None,
         worktree_id: None,
         checkout_path: Some(checkout_path),
         branch: Some(branch),
@@ -6267,14 +6414,6 @@ fn git_workspace_location(
     }
 }
 
-fn rollback_created_worktrees(created: &[(String, String)]) {
-    for (repository, checkout_path) in created.iter().rev() {
-        let _ = git::output(
-            Path::new(repository),
-            &["worktree", "remove", "--force", checkout_path],
-        );
-    }
-}
 fn cleanup_worktree(repository: &str, workspace: &Workspace) {
     let _ = git::output(
         Path::new(repository),
@@ -6296,7 +6435,7 @@ mod current_workspace_tests {
 
     use super::{
         app, close_session, command_output, create_delivery_preflight_impl, create_directory,
-        create_fork, create_project, create_project_session, create_workspace,
+        create_fork, create_project, create_project_session, create_session, create_workspace,
         finish_workspace_impl, get_project, pull_workspace, push_workspace,
         refresh_project_location, update_workspace_location, ApiJson, AppState,
         CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject, CreateSession,
@@ -6792,9 +6931,9 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
-    async fn failed_multi_location_setup_rolls_back_created_worktrees_and_database_rows() {
+    async fn multi_location_setup_runs_in_a_visible_shell_without_blocking_creation() {
         let root = std::env::temp_dir().join(format!(
-            "treefold-location-rollback-test-{}",
+            "treefold-location-setup-shell-test-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let first = root.join("repo-a");
@@ -6805,7 +6944,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
-                name: Some("Rollback".into()),
+                name: Some("Setup shell".into()),
                 description: None,
                 path: Some(first.to_string_lossy().into_owned()),
                 preferred_remote: None,
@@ -6818,7 +6957,7 @@ mod current_workspace_tests {
         )
         .await
         .unwrap();
-        let _ = create_directory(
+        let (_, Json(second_location)) = create_directory(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateDirectory {
@@ -6831,11 +6970,11 @@ mod current_workspace_tests {
         )
         .await
         .unwrap();
-        let error = create_workspace(
+        let (_, Json(workspace)) = create_workspace(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
-                name: "Must rollback".into(),
+                name: "Keep setup output".into(),
                 description: None,
                 branch: None,
                 remote_name: None,
@@ -6843,12 +6982,170 @@ mod current_workspace_tests {
             }),
         )
         .await
-        .expect_err("setup must fail");
-        assert!(error.to_string().contains("setup command failed"));
-        assert!(state.store.workspaces(&project.id).unwrap().is_empty());
+        .expect("setup command must not block Workspace creation");
+        assert_eq!(state.store.workspaces(&project.id).unwrap().len(), 1);
         assert_eq!(
             super::git_worktrees(first.to_str().unwrap()).unwrap().len(),
+            2
+        );
+        assert_eq!(
+            super::git_worktrees(second.to_str().unwrap())
+                .unwrap()
+                .len(),
+            2
+        );
+        let mut setup_shell = None;
+        for _ in 0..100 {
+            setup_shell = state
+                .store
+                .sessions(&workspace.id)
+                .unwrap()
+                .into_iter()
+                .find(|session| {
+                    session.name == "setup · repo-z"
+                        && session.command.iter().any(|value| value == "-lc")
+                });
+            if setup_shell.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let setup_shell = setup_shell.expect("create a visible setup Shell");
+        assert_eq!(setup_shell.kind, "shell");
+        assert_eq!(setup_shell.initial_prompt, "exit 7");
+        assert_eq!(
+            setup_shell.cwd,
+            state
+                .store
+                .workspace_locations(&workspace.id)
+                .unwrap()
+                .into_iter()
+                .find(|location| location.project_location_id == second_location.id)
+                .unwrap()
+                .checkout_path
+                .unwrap()
+        );
+        assert!(setup_shell.command.iter().any(|value| value == "-lc"));
+        assert!(state.terminals.is_running(&setup_shell.id).await);
+
+        let _ = close_session(State(state.clone()), axum::extract::Path(setup_shell.id))
+            .await
+            .expect("close setup Shell");
+        for location in state.store.workspace_locations(&workspace.id).unwrap() {
+            if let Some(checkout_path) = location.checkout_path {
+                let repository = state
+                    .store
+                    .directory(&location.project_location_id)
+                    .unwrap()
+                    .path;
+                command_output(
+                    Path::new(&repository),
+                    "git",
+                    &["worktree", "remove", "--force", &checkout_path],
+                )
+                .expect("remove test worktree");
+            }
+        }
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn failed_location_is_retained_without_rolling_back_successful_worktrees() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-location-partial-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let first = root.join("repo-a");
+        let second = root.join("repo-z");
+        initialize_repository(&first);
+        initialize_repository(&second);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Partial Workspace".into()),
+                description: None,
+                path: Some(first.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_base_branch: Some("main".into()),
+                default_target_branch: None,
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let (_, Json(second_location)) = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: None,
+                path: second.to_string_lossy().into_owned(),
+                base_branch: Some("main".into()),
+                delivery_mode: Some("local_merge".into()),
+            }),
+        )
+        .await
+        .unwrap();
+        state
+            .store
+            .update_directory(
+                &second_location.id,
+                "",
+                "",
+                Some("missing-base"),
+                Some("local_merge"),
+            )
+            .unwrap();
+        state
+            .store
+            .update_project_defaults(
+                &project.id,
+                Some(&second_location.id),
+                "main",
+                "local_merge",
+            )
+            .unwrap();
+
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Partial result".into(),
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("retain a partially created Workspace");
+        let locations = state.store.workspace_locations(&workspace.id).unwrap();
+        let failed = locations
+            .iter()
+            .find(|location| location.project_location_id == second_location.id)
+            .unwrap();
+        assert_eq!(failed.git_status, "failed");
+        assert_eq!(failed.delivery_status, "discarded");
+        assert!(failed.checkout_path.is_none());
+        assert!(failed
+            .creation_error
+            .as_deref()
+            .unwrap()
+            .contains("missing-base"));
+        assert_eq!(
+            locations
+                .iter()
+                .filter(|location| location.git_status == "ready")
+                .count(),
             1
+        );
+        assert_eq!(
+            super::git_worktrees(first.to_str().unwrap()).unwrap().len(),
+            2
         );
         assert_eq!(
             super::git_worktrees(second.to_str().unwrap())
@@ -6856,6 +7153,83 @@ mod current_workspace_tests {
                 .len(),
             1
         );
+
+        let ready = locations
+            .into_iter()
+            .find(|location| location.git_status == "ready")
+            .unwrap();
+        assert_eq!(
+            workspace.checkout_path,
+            ready.checkout_path.as_deref().unwrap()
+        );
+        let (_, Json(codex)) = create_session(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateSession {
+                name: Some("Fallback Codex".into()),
+                kind: Some("codex".into()),
+                project_directory_id: None,
+                initial_prompt: None,
+            }),
+        )
+        .await
+        .expect("fall back to the successful non-default worktree");
+        assert_eq!(codex.cwd, ready.checkout_path.as_deref().unwrap());
+        let _ = close_session(State(state.clone()), axum::extract::Path(codex.id))
+            .await
+            .expect("close fallback Codex");
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateFork {
+                name: "Partial fork".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect("retain the same partial location set in a Fork");
+        let fork_locations = state.store.workspace_locations(&fork.id).unwrap();
+        assert_eq!(
+            fork_locations
+                .iter()
+                .filter(|location| location.git_status == "ready")
+                .count(),
+            1
+        );
+        assert_eq!(
+            fork_locations
+                .iter()
+                .filter(|location| location.git_status == "failed")
+                .count(),
+            1
+        );
+        let fork_ready = fork_locations
+            .into_iter()
+            .find(|location| location.git_status == "ready")
+            .unwrap();
+        command_output(
+            &first,
+            "git",
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                fork_ready.checkout_path.as_deref().unwrap(),
+            ],
+        )
+        .expect("remove successful Fork test worktree");
+        command_output(
+            &first,
+            "git",
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                ready.checkout_path.as_deref().unwrap(),
+            ],
+        )
+        .expect("remove successful test worktree");
+        drop(state);
         std::fs::remove_dir_all(root).expect("remove fixture");
     }
 }

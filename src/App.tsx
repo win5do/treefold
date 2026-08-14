@@ -84,7 +84,7 @@ type Directory = {
   base_branch?: string;
   delivery_mode?: "remote_review" | "local_merge";
   git_common_dir?: string;
-  git_status: "ready" | "not_git" | "missing" | "broken" | "mismatch";
+  git_status: "creating" | "ready" | "failed" | "not_git" | "missing" | "broken" | "mismatch";
   checkout_path?: string;
   role: "primary" | "attached";
   is_git: boolean;
@@ -159,7 +159,8 @@ type WorkspaceLocation = {
   location_name: string;
   source_path: string;
   access_mode: "read_write" | "read_only";
-  git_status: "ready" | "not_git" | "missing" | "broken" | "mismatch";
+  git_status: "creating" | "ready" | "failed" | "not_git" | "missing" | "broken" | "mismatch";
+  creation_error?: string;
   checkout_path?: string;
   branch?: string;
   base_branch?: string;
@@ -289,7 +290,7 @@ function normalizeProject(value: ProjectDetail): ProjectDetail {
 
 function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
   const locations = value.locations ?? (value.directories ?? []).map((directory) => ({ id: `workspace-location-${directory.id}`, workspace_id: value.id, project_location_id: directory.id, location_name: directory.name, source_path: directory.path, access_mode: directory.is_git ? "read_write" as const : "read_only" as const, git_status: directory.git_status ?? (directory.is_git ? "ready" as const : "not_git" as const), checkout_path: directory.checkout_path, branch: value.branch, base_branch: value.target_branch, start_commit: value.start_commit, remote_name: value.remote_name, remote_branch: value.remote_branch, delivery_mode: value.delivery_mode, delivery_status: value.delivery_status }));
-  const primary = locations.find((location) => value.project.default_location_id === location.project_location_id) ?? locations.find((location) => location.access_mode === "read_write");
+  const primary = locations.find((location) => value.project.default_location_id === location.project_location_id && location.git_status === "ready") ?? locations.find((location) => location.access_mode === "read_write" && location.git_status === "ready") ?? locations.find((location) => value.project.default_location_id === location.project_location_id) ?? locations.find((location) => location.access_mode === "read_write");
   const directories = locations.map((location) => ({ id: location.project_location_id, project_id: value.project.id, name: location.location_name, description: "", worktree_setup_command: "", path: location.source_path, checkout_path: location.checkout_path, role: value.project.default_location_id === location.project_location_id ? "primary" as const : "attached" as const, is_git: location.access_mode === "read_write", git_status: location.git_status, dirty: false }));
   return {
     ...value,
@@ -1440,7 +1441,7 @@ function WorkspaceLocationRow({ location, busy, actionsEnabled, onSync, onConfig
   const upstream = location.remote_name && location.remote_branch ? `${location.remote_name}/${location.remote_branch}` : "";
   return <article data-testid={`workspace-location-${location.id}`} className="rounded-xl border border-neutral-200 bg-white p-4">
     <div className="flex min-w-0 items-start gap-2">
-      <div className="min-w-0 flex-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><h3 className="min-w-0 flex-1 truncate text-sm font-semibold">{location.location_name}</h3><Badge variant={location.git_status === "ready" ? "success" : location.git_status === "not_git" ? "secondary" : "destructive"}>{location.git_status}</Badge><Badge>{location.access_mode}</Badge><Badge>{location.delivery_status}</Badge></div><code className="mt-2 block truncate text-[10px] text-neutral-500" title={location.checkout_path ?? location.source_path}>{location.checkout_path ?? location.source_path}</code>{location.access_mode === "read_write" && <div className="mt-2 flex flex-wrap gap-x-4 text-[11px] text-neutral-500"><span>branch <code>{location.branch}</code></span><span>base <code>{location.base_branch}</code></span><span>upstream <code>{upstream || "—"}</code></span><span>delivery <code>{location.delivery_mode}</code></span></div>}</div>
+      <div className="min-w-0 flex-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><h3 className="min-w-0 flex-1 truncate text-sm font-semibold">{location.location_name}</h3><Badge variant={location.git_status === "ready" ? "success" : location.git_status === "not_git" ? "secondary" : "destructive"}>{location.git_status}</Badge><Badge>{location.access_mode}</Badge><Badge>{location.delivery_status}</Badge></div><code className="mt-2 block truncate text-[10px] text-neutral-500" title={location.checkout_path ?? location.source_path}>{location.checkout_path ?? location.source_path}</code>{location.creation_error && <Alert role="alert" data-testid={`workspace-location-error-${location.id}`} variant="destructive" className="mt-3"><CircleAlert /><AlertDescription className="font-mono text-[11px]">{location.creation_error}</AlertDescription></Alert>}{location.access_mode === "read_write" && <div className="mt-2 flex flex-wrap gap-x-4 text-[11px] text-neutral-500"><span>branch <code>{location.branch}</code></span><span>base <code>{location.base_branch}</code></span><span>upstream <code>{upstream || "—"}</code></span><span>delivery <code>{location.delivery_mode}</code></span></div>}</div>
       {actionsEnabled && writableGit && <div className="-mt-2 self-start"><ActionMenu label={`Actions for ${location.location_name}`} testId={`workspace-location-actions-${location.id}`} disabled={busy}>
         <ActionMenuItem icon={<Download className="size-3.5" />} disabled={busy || !upstream} testId={`workspace-location-pull-${location.id}`} title={upstream ? `Pull ${upstream}` : "Set an upstream before pulling"} onClick={() => onSync("pull")}>{upstream ? `Pull ${upstream}` : "Pull (set upstream first)"}</ActionMenuItem>
         <ActionMenuItem icon={<Upload className="size-3.5" />} disabled={busy || !upstream} testId={`workspace-location-push-${location.id}`} title={upstream ? `Push ${upstream}` : "Set an upstream before pushing"} onClick={() => onSync("push")}>{upstream ? `Push ${upstream}` : "Push (set upstream first)"}</ActionMenuItem>
@@ -1494,7 +1495,7 @@ function WorktreeSetupField({ defaultValue }: { defaultValue?: string }) {
   return <Field>
     <FieldLabel htmlFor="worktree-setup-command">Worktree setup command <span className="text-muted-foreground">(optional)</span></FieldLabel>
     <Textarea id="worktree-setup-command" className="font-mono" name="worktree_setup_command" aria-label="Worktree setup command" defaultValue={defaultValue} placeholder="npm install" />
-    <FieldDescription>Runs in each new managed worktree using your login shell.</FieldDescription>
+    <FieldDescription>Starts after worktree creation in a visible setup Shell.</FieldDescription>
   </Field>;
 }
 
