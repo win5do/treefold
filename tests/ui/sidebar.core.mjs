@@ -415,7 +415,16 @@ try {
   });
   assert.equal((await codexInspector.getText()).includes("Autonomy"), false, "Codex Session inspector must not expose launch-mode state");
   await (await browser.$('button[aria-label="Hide right sidebar"]')).click();
-  await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+  const createdCodexSidebarRow = await browser.$('[data-testid="sidebar-session-session-created-codex-ui-fixture"]');
+  await createdCodexSidebarRow.moveTo();
+  const createdCodexClose = await createdCodexSidebarRow.$('button[aria-label="Remove from sidebar"]');
+  assert.equal(await createdCodexClose.isEnabled(), true, "Codex must remain closable while its resumable Session ID is being captured");
+  await createdCodexClose.click();
+  await browser.waitUntil(async () => (await browser.getUrl()).endsWith(`#/workspaces/${FIXTURE_IDS.workspace}`), {
+    timeout: 3_000,
+    timeoutMsg: "closing a newly created Codex did not return to the Workspace",
+  });
+  await createdCodexSidebarRow.waitForExist({ reverse: true, timeout: 3_000 });
   baseSection = await browser.$('[data-testid="workspace-locations-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
 
