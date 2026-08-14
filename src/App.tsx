@@ -540,6 +540,7 @@ function Workspace() {
         <WorkspaceSidebar
           projects={projects}
           busy={busy}
+          selectedProjectId={params.projectId}
           selectedWorkspaceId={workspace?.id}
           selectedSessionId={selectedSession?.id}
           hidden={sidebarHidden}

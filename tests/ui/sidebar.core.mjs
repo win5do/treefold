@@ -95,8 +95,10 @@ try {
   const toolbar = await browser.$('[data-testid="app-toolbar"]');
   await toolbar.waitForDisplayed({ timeout: 3_000 });
   const projectsBreadcrumb = await browser.$('[data-testid="breadcrumb-projects"]');
+  const sidebarProjectsLink = await browser.$('[data-testid="sidebar-projects-link"]');
   assert.equal(await projectsBreadcrumb.getAttribute("aria-label"), "All Projects", "breadcrumb root must expose the Project list destination");
   assert.equal(await projectsBreadcrumb.getAttribute("aria-current"), "page", "Project overview must mark the root breadcrumb as current");
+  assert.equal(await sidebarProjectsLink.getAttribute("aria-current"), "page", "Project overview must highlight the Sidebar Projects entry");
   assert.equal(await (await browser.$('button[aria-label="Show right sidebar"]')).isExisting(), false, "right sidebar control must stay hidden outside a Project");
 
   await (await browser.$('button[aria-label="New Project"]')).click();
@@ -283,6 +285,7 @@ try {
   });
   await browser.$('[data-testid="breadcrumb-workspace"]').waitForDisplayed({ timeout: 3_000 });
   assert.equal(await projectsBreadcrumb.getAttribute("aria-current"), null, "Workspace routes must make the Project list breadcrumb navigable");
+  assert.equal(await sidebarProjectsLink.getAttribute("aria-current"), null, "Workspace routes must remove the Sidebar Projects highlight");
   assert.equal(await (await browser.$('[data-testid="breadcrumb-project"]')).getText(), FIXTURE_NAMES.project, "Workspace breadcrumb must include its Project");
   assert.equal(await (await browser.$('[data-testid="breadcrumb-workspace"]')).getText(), FIXTURE_NAMES.workspace, "Workspace breadcrumb must identify the current Workspace");
   assert.equal(await (await browser.$('[data-testid="breadcrumb-workspace"]')).getAttribute("aria-current"), "page", "Workspace must be the current breadcrumb");
