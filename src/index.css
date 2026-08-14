@@ -58,6 +58,8 @@ code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: #d4d4d4; background-clip: padding-box; }
+.xterm-viewport::-webkit-scrollbar-track { background: #111315; }
+.xterm-viewport::-webkit-scrollbar-thumb { border-color: #111315; background: #3f3f46; }
 
 .location-list-dialog { max-width: min(94vw, 51.25rem); }
 
