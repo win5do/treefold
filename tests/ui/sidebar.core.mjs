@@ -377,6 +377,15 @@ try {
   const reorderedWorkspaceIds = [];
   for (const row of reorderedWorkspaceRows) reorderedWorkspaceIds.push(await row.getAttribute("data-testid"));
   assert.deepEqual(reorderedWorkspaceIds.slice(0, 2), [`sidebar-session-${FIXTURE_IDS.workspaceCodex}`, `sidebar-session-${FIXTURE_IDS.workspaceShell}`], "dragged Session tabs must update immediately");
+  const reorderedWorkspaceCodexRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceCodex}"]`);
+  const reorderedWorkspaceShellRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceShell}"]`);
+  await reorderedWorkspaceCodexRow.dragAndDrop(reorderedWorkspaceShellRow, { duration: 250 });
+  await browser.waitUntil(() => harness.sessionOrderRequests.length > 1, { timeout: 3_000, timeoutMsg: "Downward Session drag did not persist its order" });
+  assert.deepEqual(harness.sessionOrderRequests.at(-1), { workspaceId: FIXTURE_IDS.workspace, session_ids: [FIXTURE_IDS.workspaceShell, FIXTURE_IDS.workspaceCodex] }, "Session drag must support moving a tab downward");
+  const restoredWorkspaceRows = await workspaceChildren.$$('[data-testid^="sidebar-session-"]');
+  const restoredWorkspaceIds = [];
+  for (const row of restoredWorkspaceRows) restoredWorkspaceIds.push(await row.getAttribute("data-testid"));
+  assert.deepEqual(restoredWorkspaceIds.slice(0, 2), [`sidebar-session-${FIXTURE_IDS.workspaceShell}`, `sidebar-session-${FIXTURE_IDS.workspaceCodex}`], "downward Session drag must update immediately");
   const readonlyWorkspaceLocation = await baseSection.$(`[data-testid="workspace-location-${FIXTURE_IDS.workspaceReadonlyLocation}"]`);
   assert.equal(await readonlyWorkspaceLocation.$(`[data-testid="workspace-location-actions-${FIXTURE_IDS.workspaceReadonlyLocation}-trigger"]`).isExisting(), false, "read-only context locations must not expose Git actions");
   assert.equal(await (await browser.$("button=New Shell")).isExisting(), false, "Workspace details must rely on the sidebar plus menu for Shell creation");

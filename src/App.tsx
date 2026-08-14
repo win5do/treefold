@@ -47,7 +47,7 @@ import { cn } from "@/lib/utils";
 import { applyLanguage, type LanguagePreference } from "@/i18n";
 import type { AppSettings, Directory, LocationDraft, Project, ProjectDetail, ProjectLocationInspection, RenameTarget, Session, SessionMenuState, SystemStatus, Workspace, WorkspaceDetail, WorkspaceLocation, GitWorktree } from "@/domain/types";
 import { normalizeProject, normalizeWorkspace, updateProjectWorkspaceSessions, upsertSession } from "@/features/workspace/model";
-import { WorkspaceSidebar, type SidebarStream } from "@/features/workspace/WorkspaceSidebar";
+import { WorkspaceSidebar, type SessionDropPosition, type SidebarStream } from "@/features/workspace/WorkspaceSidebar";
 import { SessionWorkspace } from "@/features/terminal/SessionWorkspace";
 import { WorkspaceInspector } from "@/features/review/WorkspaceInspector";
 import { FinishWorkspaceDialog } from "@/features/delivery/FinishWorkspaceDialog";
@@ -359,7 +359,7 @@ function Workspace() {
     if (ok) setRenameTarget(null);
   }
 
-  async function reorderSessions(stream: Workspace, sourceId: string, targetId: string) {
+  async function reorderSessions(stream: Workspace, sourceId: string, targetId: string, position: SessionDropPosition) {
     const allSessions = (stream as SidebarStream).sessions ?? [];
     const sessions = allSessions.filter((session) => session.sidebar_visible);
     const source = sessions.find((session) => session.id === sourceId);
@@ -367,7 +367,8 @@ function Workspace() {
     const reordered = sessions.filter((session) => session.id !== sourceId);
     const targetIndex = reordered.findIndex((session) => session.id === targetId);
     if (targetIndex < 0) return;
-    reordered.splice(targetIndex, 0, source);
+    reordered.splice(targetIndex + (position === "after" ? 1 : 0), 0, source);
+    if (reordered.every((session, index) => session.id === sessions[index]?.id)) return;
     const nextSessions = [...reordered, ...allSessions.filter((session) => !session.sidebar_visible)];
     setProjects((current) => updateProjectWorkspaceSessions(current, stream.id, nextSessions));
     setWorkspace((current) => current?.id === stream.id ? { ...current, sessions: nextSessions } : current);
@@ -570,7 +571,7 @@ function Workspace() {
           onRenameProject={(project) => setRenameTarget({ kind: "project", value: project })}
           onRenameWorkspace={(stream) => setRenameTarget({ kind: stream.kind, value: stream })}
           onRenameSession={(session) => setRenameTarget({ kind: "session", value: session })}
-          onReorderSessions={(stream, sourceId, targetId) => void reorderSessions(stream, sourceId, targetId)}
+          onReorderSessions={(stream, sourceId, targetId, position) => void reorderSessions(stream, sourceId, targetId, position)}
           onArchiveProject={(project) => void updateProjectStatus(project, "archived")}
           onCloseSession={(stream, session) => void closeSidebarSession(stream, session)}
           onCloseProjectSession={(project, session) => void closeProjectSession(project, session)}

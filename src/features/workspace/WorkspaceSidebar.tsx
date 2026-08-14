@@ -42,7 +42,7 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
   onRenameProject: (project: ProjectDetail) => void;
   onRenameWorkspace: (stream: Workspace) => void;
   onRenameSession: (session: Session) => void;
-  onReorderSessions: (stream: Workspace, sourceId: string, targetId: string) => void;
+  onReorderSessions: (stream: Workspace, sourceId: string, targetId: string, position: SessionDropPosition) => void;
   onArchiveProject: (project: ProjectDetail) => void;
   onCloseSession: (stream: Workspace, session: Session) => void;
   onCloseProjectSession: (project: ProjectDetail, session: Session) => void;
@@ -187,6 +187,7 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
 }
 
 export type SidebarStream = Workspace & { sessions?: Session[]; directories?: Directory[]; locations?: WorkspaceLocation[]; forks?: Workspace[] };
+export type SessionDropPosition = "before" | "after";
 
 function SidebarOwnerContextMenu({ project, stream, busy, children, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onOpenInFinder, onSync, onRename, onFinish }: {
   project: ProjectDetail;
@@ -286,13 +287,19 @@ type SidebarNodeProps = {
   onOpenContext: (event: React.MouseEvent, stream: SidebarStream) => void;
   renderOwnerContext: (stream: SidebarStream, trigger: React.ReactNode) => React.ReactNode;
   onRenameSession: (session: Session) => void;
-  onReorderSessions: (stream: Workspace, sourceId: string, targetId: string) => void;
+  onReorderSessions: (stream: Workspace, sourceId: string, targetId: string, position: SessionDropPosition) => void;
   onCloseSession: (stream: Workspace, session: Session) => void;
 };
 
 type SidebarSyncTarget = { id: string; name: string };
 type SidebarSessionKind = "shell" | "codex";
 type SidebarSubmenu = { kind: "session"; sessionKind: SidebarSessionKind } | { kind: "sync"; action: "pull" | "push" };
+
+function resolveSessionDropPosition(pointerY: number, rect: Pick<DOMRect, "top" | "height">, sourceIndex: number, targetIndex: number): SessionDropPosition {
+  const midpoint = rect.top + rect.height / 2;
+  if (Math.abs(pointerY - midpoint) < 1) return sourceIndex < targetIndex ? "after" : "before";
+  return pointerY < midpoint ? "before" : "after";
+}
 
 function SessionDirectoryMenu({ directories, testId, position, primaryAction, syncTargets, busy = false, footer, footerRows = 1, onSync, onShell, onCodex }: {
   directories: Directory[];
@@ -344,8 +351,61 @@ function SidebarCreateSessionMenu({ stream, menu, onSessionMenu, onCreateShell, 
 
 function SidebarSessions({ stream, selectedSessionId, closingSessionIds, onNavigate, onRenameSession, onReorderSessions, onCloseSession }: Pick<SidebarNodeProps, "stream" | "selectedSessionId" | "closingSessionIds" | "onNavigate" | "onRenameSession" | "onReorderSessions" | "onCloseSession">) {
   const { t } = useTranslation();
-  return stream.sessions?.filter((session) => session.sidebar_visible && !closingSessionIds.has(session.id)).map((session) => {
-    return <ContextMenu key={session.id}><ContextMenuTrigger data-testid={`sidebar-session-${session.id}`} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/treefold-session", session.id); }} onDragOver={(event) => { if (event.dataTransfer.types.includes("text/treefold-session")) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }} onDrop={(event) => { event.preventDefault(); const sourceId = event.dataTransfer.getData("text/treefold-session"); if (sourceId && sourceId !== session.id) onReorderSessions(stream, sourceId, session.id); }} className={cn(sidebarSessionRowClass, selectedSessionId === session.id && sidebarSelectedRowClass)}>
+  const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<{ sessionId: string; position: SessionDropPosition } | null>(null);
+  const sessions = stream.sessions?.filter((session) => session.sidebar_visible && !closingSessionIds.has(session.id)) ?? [];
+  return sessions.map((session) => {
+    const dropPosition = dropTarget?.sessionId === session.id ? dropTarget.position : null;
+    return <ContextMenu key={session.id}><ContextMenuTrigger
+      data-testid={`sidebar-session-${session.id}`}
+      data-drop-position={dropPosition ?? undefined}
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/treefold-session", session.id);
+        event.dataTransfer.setData("text/plain", session.id);
+        setDraggingSessionId(session.id);
+        setDropTarget(null);
+      }}
+      onDragOver={(event) => {
+        if (!draggingSessionId || draggingSessionId === session.id) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const rect = event.currentTarget.getBoundingClientRect();
+        const sourceIndex = sessions.findIndex((item) => item.id === draggingSessionId);
+        const targetIndex = sessions.findIndex((item) => item.id === session.id);
+        const position = resolveSessionDropPosition(event.clientY, rect, sourceIndex, targetIndex);
+        setDropTarget((current) => current?.sessionId === session.id && current.position === position ? current : { sessionId: session.id, position });
+      }}
+      onDragLeave={(event) => {
+        if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+        setDropTarget((current) => current?.sessionId === session.id ? null : current);
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        const sourceId = draggingSessionId || event.dataTransfer.getData("text/treefold-session");
+        const sourceIndex = sessions.findIndex((item) => item.id === sourceId);
+        const targetIndex = sessions.findIndex((item) => item.id === session.id);
+        const position = dropTarget?.sessionId === session.id
+          ? dropTarget.position
+          : resolveSessionDropPosition(event.clientY, event.currentTarget.getBoundingClientRect(), sourceIndex, targetIndex);
+        setDraggingSessionId(null);
+        setDropTarget(null);
+        if (sourceId && sourceId !== session.id) onReorderSessions(stream, sourceId, session.id, position);
+      }}
+      onDragEnd={() => {
+        setDraggingSessionId(null);
+        setDropTarget(null);
+      }}
+      className={cn(
+        sidebarSessionRowClass,
+        "relative cursor-grab active:cursor-grabbing",
+        draggingSessionId === session.id && "opacity-50",
+        dropPosition === "before" && "before:pointer-events-none before:absolute before:inset-x-1 before:top-0 before:h-0.5 before:-translate-y-1/2 before:rounded-full before:bg-primary",
+        dropPosition === "after" && "after:pointer-events-none after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:translate-y-1/2 after:rounded-full after:bg-primary",
+        selectedSessionId === session.id && sidebarSelectedRowClass,
+      )}
+    >
       <button className="flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden px-2 text-left focus-visible:outline-none" title={session.name} onClick={() => onNavigate(`/workspaces/${stream.id}/sessions/${session.id}`)}>{session.kind === "codex" ? <Bot className={sidebarTreeIconClass} /> : <TerminalSquare className={sidebarTreeIconClass} />}<span className="min-w-0 flex-1 truncate">{session.name}</span><StatusDot status={session.status} /></button>
       <Button size="icon-sm" variant="ghost" className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible" title={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} aria-label={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} onClick={(event) => { event.stopPropagation(); onCloseSession(stream, session); }}><X data-icon="inline-start" /></Button>
     </ContextMenuTrigger><ContextMenuContent data-testid="session-context-menu" className="w-52"><ContextMenuGroup><ContextMenuItem data-testid="rename-session-action" onClick={() => onRenameSession(session)}><Pencil />{t("sidebar.rename")}</ContextMenuItem></ContextMenuGroup></ContextMenuContent></ContextMenu>;
