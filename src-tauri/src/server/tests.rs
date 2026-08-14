@@ -1,0 +1,2903 @@
+#[cfg(test)]
+mod current_workspace_tests {
+    use std::path::Path;
+
+    use axum::{
+        body::Body,
+        extract::State,
+        http::{Request, StatusCode},
+        Json,
+    };
+    use tower::ServiceExt;
+
+    use super::{
+        app, close_session, command_output, create_delivery_preflight_impl, create_directory,
+        create_fork, create_project, create_project_session, create_session, create_workspace,
+        delete_project_location, finish_workspace_impl, get_project, pull_workspace,
+        push_workspace, refresh_project_location, update_project, update_workspace_location,
+        ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject,
+        CreateSession, CreateWorkspace, FinishWorkspace, UpdateProject, UpdateWorkspaceLocation,
+    };
+    use crate::{
+        model::{Session, Todo},
+        settings::SettingsStore,
+        store::{now, Store},
+        terminal::TerminalManager,
+    };
+
+    fn test_state(root: &Path) -> AppState {
+        let home = root.join("home");
+        AppState {
+            store: Store::open(&home.join("data/treefold.db")).expect("open test Store"),
+            settings: SettingsStore::open(&home, root).expect("open test Settings"),
+            terminals: TerminalManager::default(),
+        }
+    }
+
+    fn initialize_repository(repository: &Path) {
+        std::fs::create_dir_all(repository).expect("create repository");
+        command_output(repository, "git", &["init", "-b", "main"]).expect("initialize Git");
+        command_output(
+            repository,
+            "git",
+            &["config", "user.email", "treefold@example.test"],
+        )
+        .expect("configure Git email");
+        command_output(repository, "git", &["config", "user.name", "Treefold Test"])
+            .expect("configure Git name");
+        std::fs::write(repository.join("README.md"), "# fixture\n").expect("write fixture");
+        command_output(repository, "git", &["add", "."]).expect("stage fixture");
+        command_output(repository, "git", &["commit", "-m", "initial"]).expect("commit fixture");
+    }
+
+    #[tokio::test]
+    async fn project_requires_a_primary_git_location_before_context_locations() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-primary-location-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        let context = root.join("reference-context");
+        std::fs::create_dir_all(&context).expect("create context directory");
+        let state = test_state(&root);
+
+        let error = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Invalid context Project".into()),
+                description: None,
+                path: Some(context.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_base_branch: None,
+                default_target_branch: None,
+                default_delivery_mode: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect_err("a combined Project creation must reject a non-Git first location");
+        assert_eq!(
+            error.to_string(),
+            "a Project's first location must be a ready Git repository"
+        );
+        assert!(state.store.projects().expect("list Projects").is_empty());
+
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Primary repository Project".into()),
+                description: None,
+                path: None,
+                preferred_remote: None,
+                default_base_branch: None,
+                default_target_branch: None,
+                default_delivery_mode: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create empty Project");
+        let error = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: None,
+                path: context.to_string_lossy().into_owned(),
+                base_branch: None,
+                delivery_mode: None,
+            }),
+        )
+        .await
+        .expect_err("a context location cannot precede the primary Git repository");
+        assert_eq!(
+            error.to_string(),
+            "a Project's first location must be a ready Git repository"
+        );
+
+        initialize_repository(&repository);
+        let (_, Json(primary)) = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: None,
+                path: repository.to_string_lossy().into_owned(),
+                base_branch: Some("main".into()),
+                delivery_mode: Some("local_merge".into()),
+            }),
+        )
+        .await
+        .expect("add primary Git repository");
+        assert_eq!(
+            state
+                .store
+                .project(&project.id)
+                .unwrap()
+                .default_location_id,
+            Some(primary.id.clone())
+        );
+
+        let _ = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: None,
+                path: context.to_string_lossy().into_owned(),
+                base_branch: None,
+                delivery_mode: None,
+            }),
+        )
+        .await
+        .expect("add context after primary Git repository");
+        let context_location = state
+            .store
+            .directories(&project.id)
+            .unwrap()
+            .into_iter()
+            .find(|location| location.git_status == "not_git")
+            .expect("find context location");
+        let error = update_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(UpdateProject {
+                name: None,
+                description: None,
+                status: None,
+                default_location_id: Some(context_location.id),
+                default_base_branch: None,
+                default_delivery_mode: None,
+            }),
+        )
+        .await
+        .expect_err("a context location cannot become primary");
+        assert_eq!(
+            error.to_string(),
+            "primary location must be a ready Git repository"
+        );
+        let error = delete_project_location(State(state.clone()), axum::extract::Path(primary.id))
+            .await
+            .expect_err("primary cannot be deleted while other locations remain");
+        assert_eq!(
+            error.to_string(),
+            "choose another primary Git repository before deleting this location"
+        );
+
+        std::fs::remove_dir_all(root).expect("remove primary location fixture");
+    }
+
+    #[tokio::test]
+    async fn project_shell_is_managed_but_deleted_on_close_while_codex_is_retained() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-project-session-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        initialize_repository(&repository);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Managed Project Sessions".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_target_branch: Some("main".into()),
+                default_base_branch: Some("main".into()),
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create Project");
+        let (_, Json(shell)) = create_project_session(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateSession {
+                name: None,
+                kind: Some("shell".into()),
+                project_directory_id: project.default_location_id.clone(),
+                initial_prompt: None,
+            }),
+        )
+        .await
+        .expect("create managed Project Shell");
+        assert_eq!(
+            state.store.workspace(&shell.workspace_id).unwrap().kind,
+            "base"
+        );
+        assert_eq!(state.store.project_sessions(&project.id).unwrap().len(), 1);
+        assert!(state.terminals.is_running(&shell.id).await);
+
+        let _ = close_session(State(state.clone()), axum::extract::Path(shell.id.clone()))
+            .await
+            .expect("close Project Shell");
+        assert!(state.store.session(&shell.id).is_err());
+        assert!(!state.terminals.is_running(&shell.id).await);
+
+        let timestamp = now();
+        let codex = Session {
+            id: "saved-project-codex".into(),
+            workspace_id: shell.workspace_id,
+            name: "Saved Project Codex".into(),
+            kind: "codex".into(),
+            cwd: repository.to_string_lossy().into_owned(),
+            original_cwd: repository.to_string_lossy().into_owned(),
+            initial_prompt: "Keep this context".into(),
+            codex_session_id: Some("codex-session-id".into()),
+            sidebar_visible: true,
+            hidden_at: None,
+            evicted_at: None,
+            process_id: "saved-project-codex".into(),
+            process_name: "codex-history".into(),
+            status: "exited".into(),
+            pid: 0,
+            process_group_id: 0,
+            exit_code: Some(0),
+            exit_signal: String::new(),
+            command: vec!["codex".into()],
+            launch_started_at: timestamp.clone(),
+            last_attached_at: None,
+            created_at: timestamp.clone(),
+            updated_at: timestamp,
+            additional_directories: vec![],
+        };
+        state.store.create_session(&codex).unwrap();
+        let _ = close_session(State(state.clone()), axum::extract::Path(codex.id.clone()))
+            .await
+            .expect("hide saved Project Codex");
+        let saved = state
+            .store
+            .session(&codex.id)
+            .expect("retain Codex history");
+        assert!(!saved.sidebar_visible);
+        assert_eq!(state.store.project_sessions(&project.id).unwrap().len(), 1);
+
+        let mut finalized_shell = codex.clone();
+        finalized_shell.id = "finalized-shell".into();
+        finalized_shell.name = "Finalized Shell".into();
+        finalized_shell.kind = "shell".into();
+        finalized_shell.codex_session_id = None;
+        finalized_shell.sidebar_visible = true;
+        state.store.create_session(&finalized_shell).unwrap();
+        state
+            .store
+            .finalize_sessions(&codex.workspace_id, &codex.cwd, true)
+            .expect("finalize Session history");
+        assert!(state.store.session(&finalized_shell.id).is_err());
+        assert_eq!(
+            state.store.session(&codex.id).unwrap().status,
+            "closed",
+            "Codex remains resumable while Shell history is removed"
+        );
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove Project Session fixture");
+    }
+
+    #[tokio::test]
+    async fn fork_lifecycle_is_local_and_carries_todos_to_parent() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-current-fork-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        initialize_repository(&repository);
+        let state = test_state(&root);
+
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Fork lifecycle".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_target_branch: Some("main".into()),
+                default_base_branch: Some("main".into()),
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create Project");
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Feature".into(),
+                description: None,
+                branch: Some("feature/current-fork-test".into()),
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("create Workspace");
+        let sessions = app(state.clone())
+            .oneshot(
+                Request::get(format!("/api/workspaces/{}/sessions", workspace.id))
+                    .body(Body::empty())
+                    .expect("build Session list request"),
+            )
+            .await
+            .expect("list Workspace Sessions");
+        assert_eq!(sessions.status(), StatusCode::OK);
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateFork {
+                name: "Parallel work".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect("create Fork");
+
+        assert!(create_fork(
+            State(state.clone()),
+            axum::extract::Path(fork.id.clone()),
+            ApiJson(CreateFork {
+                name: "Nested".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect_err("Forks cannot nest")
+        .to_string()
+        .contains("cannot create another Fork"));
+        assert!(
+            pull_workspace(State(state.clone()), axum::extract::Path(fork.id.clone()))
+                .await
+                .expect_err("Fork has no Pull")
+                .to_string()
+                .contains("root Workspace")
+        );
+        assert!(
+            push_workspace(State(state.clone()), axum::extract::Path(fork.id.clone()))
+                .await
+                .expect_err("Fork has no Push")
+                .to_string()
+                .contains("no remote branch")
+        );
+        let fork_location = state
+            .store
+            .default_workspace_location(&fork.id)
+            .expect("get Fork location");
+        assert!(update_workspace_location(
+            State(state.clone()),
+            axum::extract::Path(fork_location.id),
+            ApiJson(UpdateWorkspaceLocation {
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect_err("Fork location has no remote settings")
+        .to_string()
+        .contains("root Workspace"));
+
+        let timestamp = now();
+        state
+            .store
+            .create_todo(&Todo {
+                id: "fork-todo".into(),
+                workspace_id: fork.id.clone(),
+                title: "Finish parallel work".into(),
+                description: String::new(),
+                status: "blocked".into(),
+                session_id: None,
+                blocked_reason: Some("waiting".into()),
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+            })
+            .expect("create Fork Todo");
+        std::fs::write(
+            Path::new(&fork.checkout_path).join("fork.txt"),
+            "fork work\n",
+        )
+        .expect("write Fork change");
+        let preflight = create_delivery_preflight_impl(
+            &state,
+            &fork.id,
+            &CreateDeliveryPreflight {
+                code_action: "local_merge".into(),
+            },
+        )
+        .expect("create Fork preflight");
+        assert!(preflight.blockers.is_empty());
+        let finished = finish_workspace_impl(
+            &state,
+            &fork.id,
+            &FinishWorkspace {
+                code_action: "local_merge".into(),
+                todo_action: "carry".into(),
+                push_after_merge: false,
+                keep_session_history: true,
+                delete_worktree: true,
+                delete_branch: true,
+                commit_message: Some("finish parallel work".into()),
+                preflight_id: Some(preflight.id),
+            },
+            None,
+        )
+        .await
+        .expect("finish Fork");
+
+        assert_eq!(finished.status, "archived");
+        assert!(Path::new(&workspace.checkout_path)
+            .join("fork.txt")
+            .exists());
+        assert!(!Path::new(&fork.checkout_path).exists());
+        assert!(state.store.todos(&fork.id).expect("Fork Todos").is_empty());
+        let carried = state.store.todos(&workspace.id).expect("parent Todos");
+        assert_eq!(carried.len(), 1);
+        assert_eq!(carried[0].status, "pending");
+        assert!(carried[0].session_id.is_none());
+        assert!(carried[0].blocked_reason.is_none());
+        assert!(
+            command_output(&repository, "git", &["branch", "--list", &fork.branch])
+                .expect("list Fork branch")
+                .is_empty()
+        );
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove test fixture");
+    }
+
+    #[tokio::test]
+    async fn workspace_snapshots_all_git_and_read_only_locations() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-multi-location-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let first = root.join("repo-z-primary");
+        let second = root.join("repo-a-second");
+        let context = root.join("reference-third");
+        initialize_repository(&first);
+        initialize_repository(&second);
+        std::fs::create_dir_all(&context).expect("create context");
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Multi location".into()),
+                description: None,
+                path: None,
+                preferred_remote: None,
+                default_base_branch: Some("main".into()),
+                default_target_branch: None,
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create empty Project");
+        let mut ids = Vec::new();
+        for path in [&first, &second, &context] {
+            let (_, Json(location)) = create_directory(
+                State(state.clone()),
+                axum::extract::Path(project.id.clone()),
+                ApiJson(CreateDirectory {
+                    description: None,
+                    worktree_setup_command: None,
+                    path: path.to_string_lossy().into_owned(),
+                    base_branch: path.join(".git").exists().then(|| "main".into()),
+                    delivery_mode: path.join(".git").exists().then(|| "local_merge".into()),
+                }),
+            )
+            .await
+            .expect("create Project location");
+            ids.push(location.id);
+        }
+        assert_eq!(
+            state
+                .store
+                .directories(&project.id)
+                .expect("list ordered Project locations")
+                .iter()
+                .map(|location| location.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["repo-z-primary", "repo-a-second", "reference-third"],
+            "the primary location stays first and the rest keep insertion order"
+        );
+        state
+            .store
+            .update_project_defaults(&project.id, Some(&ids[1]), "main", "local_merge")
+            .expect("switch primary location");
+        assert_eq!(
+            state
+                .store
+                .directories(&project.id)
+                .expect("list reordered Project locations")
+                .iter()
+                .map(|location| location.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["repo-a-second", "repo-z-primary", "reference-third"],
+            "switching primary moves only that location to the front"
+        );
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Coordinated change".into(),
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("create multi-location Workspace");
+        let snapshots = state
+            .store
+            .workspace_locations(&workspace.id)
+            .expect("list Workspace locations");
+        assert_eq!(snapshots.len(), 3);
+        let writable = snapshots
+            .iter()
+            .filter(|item| item.access_mode == "read_write")
+            .collect::<Vec<_>>();
+        assert_eq!(writable.len(), 2);
+        assert!(writable
+            .iter()
+            .all(|item| item.delivery_mode == "local_merge"));
+        assert_eq!(
+            writable[0].branch, writable[1].branch,
+            "all repositories share one branch name"
+        );
+        assert!(writable.iter().all(|item| item
+            .checkout_path
+            .as_deref()
+            .is_some_and(|path| Path::new(path).is_dir())));
+        let Json(project_detail) = get_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+        )
+        .await
+        .expect("get Project worktrees");
+        let associated_worktrees = project_detail
+            .worktrees
+            .iter()
+            .filter(|item| item.workspace_id.as_deref() == Some(workspace.id.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            associated_worktrees.len(),
+            writable.len(),
+            "every writable repository worktree must be associated with the Workspace"
+        );
+        assert!(writable.iter().all(|location| associated_worktrees
+            .iter()
+            .any(|worktree| worktree.project_location_id == location.project_location_id)));
+        let Json(updated_location) = update_workspace_location(
+            State(state.clone()),
+            axum::extract::Path(writable[0].id.clone()),
+            ApiJson(UpdateWorkspaceLocation {
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("clear Workspace location upstream");
+        assert_eq!(updated_location.delivery_mode, "local_merge");
+        assert!(updated_location.remote_name.is_none());
+        assert!(updated_location.remote_branch.is_none());
+        assert_eq!(
+            snapshots
+                .iter()
+                .filter(|item| item.access_mode == "read_only")
+                .count(),
+            1
+        );
+
+        command_output(&context, "git", &["init", "-b", "main"]).expect("turn context into Git");
+        command_output(
+            &context,
+            "git",
+            &["config", "user.email", "treefold@example.test"],
+        )
+        .unwrap();
+        command_output(&context, "git", &["config", "user.name", "Treefold Test"]).unwrap();
+        std::fs::write(context.join("README.md"), "context\n").unwrap();
+        command_output(&context, "git", &["add", "."]).unwrap();
+        command_output(&context, "git", &["commit", "-m", "initial"]).unwrap();
+        let Json(refreshed) =
+            refresh_project_location(State(state.clone()), axum::extract::Path(ids[2].clone()))
+                .await
+                .expect("refresh promoted location");
+        assert_eq!(refreshed.git_status, "ready");
+        assert_eq!(
+            state
+                .store
+                .workspace_locations(&workspace.id)
+                .unwrap()
+                .iter()
+                .find(|item| item.project_location_id == ids[2])
+                .unwrap()
+                .access_mode,
+            "read_only",
+            "existing Workspace snapshot must not change"
+        );
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn multi_location_setup_runs_in_a_visible_shell_without_blocking_creation() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-location-setup-shell-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let first = root.join("repo-a");
+        let second = root.join("repo-z");
+        initialize_repository(&first);
+        initialize_repository(&second);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Setup shell".into()),
+                description: None,
+                path: Some(first.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_base_branch: Some("main".into()),
+                default_target_branch: None,
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let (_, Json(second_location)) = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: Some("exit 7".into()),
+                path: second.to_string_lossy().into_owned(),
+                base_branch: Some("main".into()),
+                delivery_mode: Some("local_merge".into()),
+            }),
+        )
+        .await
+        .unwrap();
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Keep setup output".into(),
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("setup command must not block Workspace creation");
+        assert_eq!(state.store.workspaces(&project.id).unwrap().len(), 1);
+        assert_eq!(
+            super::git_worktrees(first.to_str().unwrap()).unwrap().len(),
+            2
+        );
+        assert_eq!(
+            super::git_worktrees(second.to_str().unwrap())
+                .unwrap()
+                .len(),
+            2
+        );
+        let mut setup_shell = None;
+        for _ in 0..100 {
+            setup_shell = state
+                .store
+                .sessions(&workspace.id)
+                .unwrap()
+                .into_iter()
+                .find(|session| {
+                    session.name == "setup · repo-z"
+                        && session.command.iter().any(|value| value == "-lc")
+                });
+            if setup_shell.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let setup_shell = setup_shell.expect("create a visible setup Shell");
+        assert_eq!(setup_shell.kind, "shell");
+        assert_eq!(setup_shell.initial_prompt, "exit 7");
+        assert_eq!(
+            setup_shell.cwd,
+            state
+                .store
+                .workspace_locations(&workspace.id)
+                .unwrap()
+                .into_iter()
+                .find(|location| location.project_location_id == second_location.id)
+                .unwrap()
+                .checkout_path
+                .unwrap()
+        );
+        assert!(setup_shell.command.iter().any(|value| value == "-lc"));
+        assert!(state.terminals.is_running(&setup_shell.id).await);
+
+        let _ = close_session(State(state.clone()), axum::extract::Path(setup_shell.id))
+            .await
+            .expect("close setup Shell");
+        for location in state.store.workspace_locations(&workspace.id).unwrap() {
+            if let Some(checkout_path) = location.checkout_path {
+                let repository = state
+                    .store
+                    .directory(&location.project_location_id)
+                    .unwrap()
+                    .path;
+                command_output(
+                    Path::new(&repository),
+                    "git",
+                    &["worktree", "remove", "--force", &checkout_path],
+                )
+                .expect("remove test worktree");
+            }
+        }
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn failed_location_is_retained_without_rolling_back_successful_worktrees() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-location-partial-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let first = root.join("repo-a");
+        let second = root.join("repo-z");
+        initialize_repository(&first);
+        initialize_repository(&second);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Partial Workspace".into()),
+                description: None,
+                path: Some(first.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_base_branch: Some("main".into()),
+                default_target_branch: None,
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let (_, Json(second_location)) = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                description: None,
+                worktree_setup_command: None,
+                path: second.to_string_lossy().into_owned(),
+                base_branch: Some("main".into()),
+                delivery_mode: Some("local_merge".into()),
+            }),
+        )
+        .await
+        .unwrap();
+        state
+            .store
+            .update_directory(
+                &second_location.id,
+                "",
+                "",
+                Some("missing-base"),
+                Some("local_merge"),
+            )
+            .unwrap();
+        state
+            .store
+            .update_project_defaults(
+                &project.id,
+                Some(&second_location.id),
+                "main",
+                "local_merge",
+            )
+            .unwrap();
+
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Partial result".into(),
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("retain a partially created Workspace");
+        let locations = state.store.workspace_locations(&workspace.id).unwrap();
+        let failed = locations
+            .iter()
+            .find(|location| location.project_location_id == second_location.id)
+            .unwrap();
+        assert_eq!(failed.git_status, "failed");
+        assert_eq!(failed.delivery_status, "discarded");
+        assert!(failed.checkout_path.is_none());
+        assert!(failed
+            .creation_error
+            .as_deref()
+            .unwrap()
+            .contains("missing-base"));
+        assert_eq!(
+            locations
+                .iter()
+                .filter(|location| location.git_status == "ready")
+                .count(),
+            1
+        );
+        assert_eq!(
+            super::git_worktrees(first.to_str().unwrap()).unwrap().len(),
+            2
+        );
+        assert_eq!(
+            super::git_worktrees(second.to_str().unwrap())
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let ready = locations
+            .into_iter()
+            .find(|location| location.git_status == "ready")
+            .unwrap();
+        assert_eq!(
+            workspace.checkout_path,
+            ready.checkout_path.as_deref().unwrap()
+        );
+        let (_, Json(codex)) = create_session(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateSession {
+                name: Some("Fallback Codex".into()),
+                kind: Some("codex".into()),
+                project_directory_id: None,
+                initial_prompt: None,
+            }),
+        )
+        .await
+        .expect("fall back to the successful non-default worktree");
+        assert_eq!(codex.cwd, ready.checkout_path.as_deref().unwrap());
+        let _ = close_session(State(state.clone()), axum::extract::Path(codex.id))
+            .await
+            .expect("close fallback Codex");
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateFork {
+                name: "Partial fork".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect("retain the same partial location set in a Fork");
+        let fork_locations = state.store.workspace_locations(&fork.id).unwrap();
+        assert_eq!(
+            fork_locations
+                .iter()
+                .filter(|location| location.git_status == "ready")
+                .count(),
+            1
+        );
+        assert_eq!(
+            fork_locations
+                .iter()
+                .filter(|location| location.git_status == "failed")
+                .count(),
+            1
+        );
+        let fork_ready = fork_locations
+            .into_iter()
+            .find(|location| location.git_status == "ready")
+            .unwrap();
+        command_output(
+            &first,
+            "git",
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                fork_ready.checkout_path.as_deref().unwrap(),
+            ],
+        )
+        .expect("remove successful Fork test worktree");
+        command_output(
+            &first,
+            "git",
+            &[
+                "worktree",
+                "remove",
+                "--force",
+                ready.checkout_path.as_deref().unwrap(),
+            ],
+        )
+        .expect("remove successful test worktree");
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+}
+
+#[cfg(any())]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use axum::{
+        body::{to_bytes, Body},
+        extract::State,
+        http::{Request, StatusCode},
+        Json,
+    };
+    use tower::ServiceExt;
+
+    use super::{
+        abort_rebase, app, command_output, continue_rebase, create_delivery_preflight_impl,
+        create_fork, create_project, create_project_session, create_session, create_todo,
+        create_workspace, delete_project, finish_workspace, finish_workspace_impl, git_head,
+        git_is_ancestor, git_operation_history, git_worktrees, id_for_operation, normalized_path,
+        parse_git_history, parse_git_worktrees, rebase_in_progress, rebase_status_impl,
+        reconcile_project, repair_project_impl, reset_status_impl, restore_reset,
+        reveal_in_file_manager, slug, start_rebase, start_reset, treefold_developer_instructions,
+        update_project, ApiJson, AppState, CreateDeliveryPreflight, CreateFork, CreateProject,
+        CreateSession, CreateTodo, CreateWorkspace, FinishWorkspace, ParsedGitWorktree,
+        RepairProject, ResetWorkspace, RestoreReset, UpdateProject,
+    };
+
+    use crate::{
+        model::{Directory, ResetOperation, Session, Workspace},
+        settings::{AgentsSettingsPatch, CodexAgentSettingsPatch, SettingsPatch, SettingsStore},
+        store::{now, Store},
+        terminal::TerminalManager,
+    };
+
+    fn test_settings(home: &Path) -> SettingsStore {
+        SettingsStore::open(home, home.parent().unwrap_or(home)).expect("open test settings")
+    }
+
+    async fn agent_api_fixture() -> (PathBuf, AppState, Session, Session) {
+        let root =
+            std::env::temp_dir().join(format!("treefold-agent-api-test-{}", uuid::Uuid::new_v4()));
+        let repository = root.join("repository");
+        let home = root.join("home");
+        std::fs::create_dir_all(&repository).expect("create agent API repository");
+        let state = AppState {
+            store: Store::open(&home.join("data/treefold.db")).expect("open agent API store"),
+            settings: test_settings(&home),
+            terminals: TerminalManager::default(),
+        };
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Agent API".into()),
+                description: None,
+                path: repository.to_string_lossy().into_owned(),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create agent API Project");
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateWorkspace {
+                name: "Managed work".into(),
+                description: None,
+                checkout_mode: Some("in_place".into()),
+                target_branch: None,
+            }),
+        )
+        .await
+        .expect("create agent API Workspace");
+        let make_session = |name: &str| {
+            let timestamp = now();
+            Session {
+                id: uuid::Uuid::new_v4().simple().to_string(),
+                workspace_id: workspace.id.clone(),
+                name: name.into(),
+                kind: "codex".into(),
+                cwd: workspace.checkout_path.clone(),
+                original_cwd: workspace.checkout_path.clone(),
+                initial_prompt: String::new(),
+                codex_session_id: None,
+                sidebar_visible: true,
+                hidden_at: None,
+                evicted_at: None,
+                process_id: String::new(),
+                process_name: String::new(),
+                status: "running".into(),
+                pid: 0,
+                process_group_id: 0,
+                exit_code: None,
+                exit_signal: String::new(),
+                command: vec![],
+                launch_started_at: timestamp.clone(),
+                last_attached_at: None,
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+                additional_directories: vec![],
+            }
+        };
+        let first = make_session("first");
+        let second = make_session("second");
+        state
+            .store
+            .create_session(&first)
+            .expect("create first Session");
+        state
+            .store
+            .create_session(&second)
+            .expect("create second Session");
+        (root, state, first, second)
+    }
+
+    fn agent_request(
+        method: &str,
+        path: &str,
+        session: Option<&Session>,
+        body: Option<serde_json::Value>,
+    ) -> Request<Body> {
+        let mut request = Request::builder().method(method).uri(path);
+        if let Some(session) = session {
+            request = request.header("authorization", format!("Bearer {}", session.id));
+        }
+        if body.is_some() {
+            request = request.header("content-type", "application/json");
+        }
+        request
+            .body(Body::from(
+                body.map_or_else(String::new, |value| value.to_string()),
+            ))
+            .expect("build agent API request")
+    }
+
+    #[tokio::test]
+    async fn agent_api_requires_session_capability_and_returns_current_context() {
+        let (root, state, first, _) = agent_api_fixture().await;
+        let router = app(state.clone());
+        let unauthorized = router
+            .clone()
+            .oneshot(agent_request("GET", "/api/v1/agent/current", None, None))
+            .await
+            .expect("request unauthorized context");
+        assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+        let response = router
+            .oneshot(agent_request(
+                "GET",
+                "/api/v1/agent/current",
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("request current context");
+        assert_eq!(response.status(), StatusCode::OK);
+        let value: serde_json::Value = serde_json::from_slice(
+            &to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("read current context"),
+        )
+        .expect("decode current context");
+        assert_eq!(value["session"]["id"], first.id);
+        assert_eq!(value["workspace"]["path"], first.cwd);
+        assert_eq!(value["runtime"]["type"], "amux");
+        assert!(value["runtime"]["workspace"]
+            .as_str()
+            .is_some_and(|name| name.starts_with("treefold-ws-")));
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove agent API fixture");
+    }
+
+    #[tokio::test]
+    async fn agent_todo_api_supports_crud_and_atomic_claims() {
+        let (root, state, first, second) = agent_api_fixture().await;
+        let router = app(state.clone());
+        let created = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                "/api/v1/agent/todos",
+                Some(&first),
+                Some(serde_json::json!({"title":"Implement CLI","description":"MVP"})),
+            ))
+            .await
+            .expect("create Todo");
+        assert_eq!(created.status(), StatusCode::CREATED);
+        let created: serde_json::Value = serde_json::from_slice(
+            &to_bytes(created.into_body(), usize::MAX)
+                .await
+                .expect("read created Todo"),
+        )
+        .expect("decode created Todo");
+        let todo_id = created["id"].as_str().expect("created Todo ID");
+
+        let listed = router
+            .clone()
+            .oneshot(agent_request(
+                "GET",
+                "/api/v1/agent/todos",
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("list Todos");
+        let listed: serde_json::Value = serde_json::from_slice(
+            &to_bytes(listed.into_body(), usize::MAX)
+                .await
+                .expect("read Todo list"),
+        )
+        .expect("decode Todo list");
+        assert_eq!(listed.as_array().expect("Todo list").len(), 1);
+
+        let edited = router
+            .clone()
+            .oneshot(agent_request(
+                "PATCH",
+                &format!("/api/v1/agent/todos/{todo_id}"),
+                Some(&first),
+                Some(serde_json::json!({"title":"Implement Treefold CLI"})),
+            ))
+            .await
+            .expect("edit Todo");
+        assert_eq!(edited.status(), StatusCode::OK);
+
+        let claimed = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/claim"),
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("claim Todo");
+        assert_eq!(claimed.status(), StatusCode::OK);
+
+        let conflict = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/claim"),
+                Some(&second),
+                None,
+            ))
+            .await
+            .expect("conflicting Todo claim");
+        assert_eq!(conflict.status(), StatusCode::CONFLICT);
+
+        let released = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/release"),
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("release Todo");
+        assert_eq!(released.status(), StatusCode::OK);
+
+        let claimed_by_second = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/claim"),
+                Some(&second),
+                None,
+            ))
+            .await
+            .expect("claim released Todo");
+        assert_eq!(claimed_by_second.status(), StatusCode::OK);
+
+        let blocked = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/block"),
+                Some(&second),
+                Some(serde_json::json!({"reason":"missing fixture"})),
+            ))
+            .await
+            .expect("block Todo");
+        assert_eq!(blocked.status(), StatusCode::OK);
+        let blocked: serde_json::Value = serde_json::from_slice(
+            &to_bytes(blocked.into_body(), usize::MAX)
+                .await
+                .expect("read blocked Todo"),
+        )
+        .expect("decode blocked Todo");
+        assert_eq!(blocked["blocked_reason"], "missing fixture");
+
+        let done = router
+            .clone()
+            .oneshot(agent_request(
+                "POST",
+                &format!("/api/v1/agent/todos/{todo_id}/done"),
+                Some(&second),
+                None,
+            ))
+            .await
+            .expect("complete Todo");
+        assert_eq!(done.status(), StatusCode::OK);
+        let shown = router
+            .clone()
+            .oneshot(agent_request(
+                "GET",
+                &format!("/api/v1/agent/todos/{todo_id}"),
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("show completed Todo");
+        let shown: serde_json::Value = serde_json::from_slice(
+            &to_bytes(shown.into_body(), usize::MAX)
+                .await
+                .expect("read completed Todo"),
+        )
+        .expect("decode completed Todo");
+        assert_eq!(shown["title"], "Implement Treefold CLI");
+        assert_eq!(shown["status"], "done");
+        assert!(shown.get("blocked_reason").is_none());
+
+        let removed = router
+            .oneshot(agent_request(
+                "DELETE",
+                &format!("/api/v1/agent/todos/{todo_id}"),
+                Some(&first),
+                None,
+            ))
+            .await
+            .expect("remove Todo");
+        assert_eq!(removed.status(), StatusCode::OK);
+        assert!(matches!(
+            state.store.todo(todo_id),
+            Err(crate::error::AppError::NotFound)
+        ));
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove agent Todo fixture");
+    }
+
+    #[test]
+    fn reveal_rejects_a_missing_path() {
+        let path =
+            std::env::temp_dir().join(format!("treefold-missing-reveal-{}", uuid::Uuid::new_v4()));
+        assert!(reveal_in_file_manager(&path.to_string_lossy()).is_err());
+    }
+
+    #[tokio::test]
+    async fn project_archive_closes_sessions_and_is_required_before_delete() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-project-archive-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let repository = root.join("repository");
+        let home = root.join("home");
+        std::fs::create_dir_all(&repository).expect("create Project directory");
+        let state = AppState {
+            store: Store::open(&home.join("data/treefold.db")).expect("open store"),
+            settings: test_settings(&home),
+            terminals: TerminalManager::default(),
+        };
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Archive lifecycle".into()),
+                description: None,
+                path: repository.to_string_lossy().into_owned(),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create Project");
+        let (_, Json(shell)) = create_project_session(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateSession {
+                name: Some("Archive shell".into()),
+                kind: Some("shell".into()),
+                project_directory_id: None,
+                initial_prompt: None,
+            }),
+        )
+        .await
+        .expect("create Shell Session");
+        assert!(state.terminals.is_running(&shell.id).await);
+
+        let mut codex = shell.clone();
+        codex.id = uuid::Uuid::new_v4().simple().to_string();
+        codex.name = "Archive Codex".into();
+        codex.kind = "codex".into();
+        codex.codex_session_id = Some("archive-codex-session".into());
+        codex.process_id = codex.id.clone();
+        codex.process_name = "codex-history".into();
+        codex.status = "exited".into();
+        codex.pid = 0;
+        codex.process_group_id = 0;
+        codex.exit_code = Some(0);
+        codex.command.clear();
+        state
+            .store
+            .create_session(&codex)
+            .expect("create retained Codex Session");
+
+        let Json(archived) = update_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(UpdateProject {
+                name: None,
+                description: None,
+                status: Some("archived".into()),
+                default_location_id: None,
+                default_base_branch: None,
+                default_delivery_mode: None,
+            }),
+        )
+        .await
+        .expect("archive Project");
+        assert_eq!(archived.status, "archived");
+        assert!(!state.terminals.is_running(&shell.id).await);
+        assert!(
+            !state
+                .store
+                .session(&shell.id)
+                .expect("read Shell")
+                .sidebar_visible
+        );
+        assert!(
+            !state
+                .store
+                .session(&codex.id)
+                .expect("read Codex")
+                .sidebar_visible
+        );
+
+        let Json(restored) = update_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(UpdateProject {
+                name: None,
+                description: None,
+                status: Some("active".into()),
+                default_location_id: None,
+                default_base_branch: None,
+                default_delivery_mode: None,
+            }),
+        )
+        .await
+        .expect("restore Project");
+        assert_eq!(restored.status, "active");
+        assert!(
+            !state
+                .store
+                .session(&shell.id)
+                .expect("read Shell")
+                .sidebar_visible
+        );
+        assert!(delete_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone())
+        )
+        .await
+        .is_err());
+
+        let Json(_) = update_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(UpdateProject {
+                name: None,
+                description: None,
+                status: Some("archived".into()),
+                default_location_id: None,
+                default_base_branch: None,
+                default_delivery_mode: None,
+            }),
+        )
+        .await
+        .expect("archive Project before delete");
+        delete_project(State(state.clone()), axum::extract::Path(project.id))
+            .await
+            .expect("delete archived Project");
+        assert!(state.store.projects().expect("list Projects").is_empty());
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove archive fixture");
+    }
+
+    struct RebaseFixture {
+        root: PathBuf,
+        repository: PathBuf,
+        home: PathBuf,
+        state: AppState,
+        workspace: Workspace,
+        fork: Workspace,
+    }
+
+    async fn rebase_fixture(label: &str) -> RebaseFixture {
+        let root =
+            std::env::temp_dir().join(format!("treefold-rebase-{label}-{}", uuid::Uuid::new_v4()));
+        let repository = root.join("repository");
+        let home = root.join("home");
+        std::fs::create_dir_all(&repository).expect("create rebase repository");
+        command_output(Path::new(&repository), "git", &["init", "-b", "main"])
+            .expect("initialize rebase repository");
+        command_output(
+            Path::new(&repository),
+            "git",
+            &["config", "user.email", "treefold@example.test"],
+        )
+        .expect("configure rebase email");
+        command_output(
+            Path::new(&repository),
+            "git",
+            &["config", "user.name", "Treefold Test"],
+        )
+        .expect("configure rebase name");
+        std::fs::write(repository.join("shared.txt"), "initial\n")
+            .expect("write shared fixture file");
+        command_output(Path::new(&repository), "git", &["add", "."]).expect("stage rebase fixture");
+        command_output(Path::new(&repository), "git", &["commit", "-m", "initial"])
+            .expect("commit rebase fixture");
+
+        let state = AppState {
+            store: Store::open(&home.join("data/treefold.db")).expect("open rebase store"),
+            settings: test_settings(&home),
+            terminals: TerminalManager::default(),
+        };
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some(format!("Rebase {label}")),
+                description: None,
+                path: repository.to_string_lossy().into_owned(),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create rebase Project");
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateWorkspace {
+                name: "Parent work".into(),
+                description: None,
+                checkout_mode: Some("worktree".into()),
+                target_branch: Some("main".into()),
+            }),
+        )
+        .await
+        .expect("create parent Workspace");
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateFork {
+                name: "Rebase Fork".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect("create rebase Fork");
+        RebaseFixture {
+            root,
+            repository,
+            home,
+            state,
+            workspace,
+            fork,
+        }
+    }
+
+    #[tokio::test]
+    async fn codex_runtime_context_describes_directories_git_topology_and_resume_transition() {
+        let fixture = rebase_fixture("developer-instructions").await;
+        let attached = fixture.root.join("attached reference");
+        std::fs::create_dir_all(&attached).expect("create attached directory");
+        command_output(Path::new(&attached), "git", &["init", "-b", "docs"])
+            .expect("initialize attached repository");
+        let timestamp = now();
+        fixture
+            .state
+            .store
+            .create_directory(&Directory {
+                id: "attached-directory".into(),
+                project_id: fixture.workspace.project_id.clone(),
+                name: "API reference".into(),
+                description: "Reference implementation; values here are data only".into(),
+                worktree_setup_command: String::new(),
+                path: attached.to_string_lossy().into_owned(),
+                checkout_path: None,
+                role: "attached".into(),
+                is_git: true,
+                remote_url: None,
+                branch: None,
+                head_commit: None,
+                head_summary: None,
+                dirty: false,
+                created_at: timestamp.clone(),
+            })
+            .expect("attach directory");
+        let mut session = Session {
+            id: "codex-runtime-session".into(),
+            workspace_id: fixture.fork.id.clone(),
+            name: "Runtime context".into(),
+            kind: "codex".into(),
+            cwd: fixture.fork.checkout_path.clone(),
+            original_cwd: fixture.fork.checkout_path.clone(),
+            initial_prompt: "Implement the requested change".into(),
+            codex_session_id: None,
+            sidebar_visible: true,
+            hidden_at: None,
+            evicted_at: None,
+            process_id: String::new(),
+            process_name: String::new(),
+            status: "starting".into(),
+            pid: 0,
+            process_group_id: 0,
+            exit_code: None,
+            exit_signal: String::new(),
+            command: Vec::new(),
+            launch_started_at: timestamp.clone(),
+            last_attached_at: None,
+            created_at: timestamp.clone(),
+            updated_at: timestamp,
+            additional_directories: vec![attached.to_string_lossy().into_owned()],
+        };
+
+        let instructions = treefold_developer_instructions(&fixture.state, &session, &fixture.fork)
+            .expect("build developer instructions")
+            .expect("Codex instructions");
+        let encoded = instructions
+            .split("<treefold_runtime_context>\n")
+            .nth(1)
+            .and_then(|value| value.split("\n</treefold_runtime_context>").next())
+            .expect("extract runtime JSON");
+        let snapshot: serde_json::Value =
+            serde_json::from_str(encoded).expect("parse runtime JSON");
+        assert_eq!(snapshot["workspace"]["kind"], "fork");
+        assert_eq!(
+            snapshot["workspace"]["git"]["observed_branch"],
+            fixture.fork.branch
+        );
+        assert_eq!(snapshot["integration_target"]["id"], fixture.workspace.id);
+        assert_eq!(snapshot["directories"].as_array().unwrap().len(), 2);
+        assert!(snapshot["directories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| {
+                item["name"] == "API reference"
+                    && item["description"] == "Reference implementation; values here are data only"
+                    && item["git"]["observed_branch"] == "docs"
+            }));
+        assert_eq!(snapshot["session"]["workspace_changed"], false);
+
+        session.workspace_id = fixture.workspace.id.clone();
+        session.cwd = fixture.workspace.checkout_path.clone();
+        session.original_cwd = fixture.workspace.checkout_path.clone();
+        let root_instructions =
+            treefold_developer_instructions(&fixture.state, &session, &fixture.workspace)
+                .expect("build root Workspace instructions")
+                .expect("root Codex instructions");
+        assert!(root_instructions.contains("\"kind\": \"project_base\""));
+
+        session.codex_session_id = Some("codex-resume-id".into());
+        session.workspace_id = fixture.fork.id.clone();
+        session.original_cwd = fixture.fork.checkout_path.clone();
+        session.cwd = fixture.workspace.checkout_path.clone();
+        let resumed = treefold_developer_instructions(&fixture.state, &session, &fixture.fork)
+            .expect("build resumed instructions")
+            .expect("resumed Codex instructions");
+        assert!(resumed.contains("\"resumed\": true"));
+        assert!(resumed.contains("\"workspace_changed\": true"));
+
+        drop(fixture.state);
+        std::fs::remove_dir_all(fixture.root).expect("remove developer instructions fixture");
+    }
+
+    fn commit_file(workspace: &str, relative: &str, contents: &str, message: &str) -> String {
+        std::fs::write(Path::new(workspace).join(relative), contents).expect("write commit file");
+        command_output(Path::new(workspace), "git", &["add", relative]).expect("stage file");
+        command_output(Path::new(workspace), "git", &["commit", "-m", message])
+            .expect("commit file");
+        command_output(Path::new(workspace), "git", &["rev-parse", "HEAD"])
+            .expect("read committed head")
+    }
+
+    fn persist_rebase_session(state: &AppState, fork: &Workspace) -> String {
+        let timestamp = now();
+        let id = uuid::Uuid::new_v4().simple().to_string();
+        state
+            .store
+            .create_session(&Session {
+                id: id.clone(),
+                workspace_id: fork.id.clone(),
+                name: "Rebase history".into(),
+                kind: "codex".into(),
+                cwd: fork.checkout_path.clone(),
+                original_cwd: fork.checkout_path.clone(),
+                initial_prompt: "Keep this session".into(),
+                codex_session_id: Some("rebase-session-id".into()),
+                sidebar_visible: false,
+                hidden_at: Some(timestamp.clone()),
+                evicted_at: None,
+                process_id: String::new(),
+                process_name: String::new(),
+                status: "closed".into(),
+                pid: 0,
+                process_group_id: 0,
+                exit_code: Some(0),
+                exit_signal: String::new(),
+                command: vec!["codex".into()],
+                launch_started_at: timestamp.clone(),
+                last_attached_at: None,
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+                additional_directories: Vec::new(),
+            })
+            .expect("persist rebase Session");
+        id
+    }
+
+    fn recovery_ref_exists(repository: &Path, recovery_ref: &str) -> bool {
+        command_output(repository, "git", &["show-ref", "--verify", recovery_ref]).is_ok()
+    }
+
+    #[test]
+    fn slug_is_safe_for_worktree_paths() {
+        assert_eq!(slug("Desktop Migration / Rust"), "desktop-migration-rust");
+        assert_eq!(slug("你好"), "workspace");
+        assert!(slug(&"a".repeat(80)).len() <= 32);
+    }
+
+    #[test]
+    fn parses_git_worktree_porcelain_output() {
+        let output = "worktree /repo\nHEAD 1234567890abcdef\nbranch refs/heads/main\n\nworktree /repo-feature\nHEAD abcdef1234567890\ndetached";
+        assert_eq!(
+            parse_git_worktrees(output),
+            vec![
+                ParsedGitWorktree {
+                    path: "/repo".into(),
+                    branch: "main".into(),
+                    head_commit: "1234567890".into(),
+                    is_main: true,
+                },
+                ParsedGitWorktree {
+                    path: "/repo-feature".into(),
+                    branch: "detached HEAD".into(),
+                    head_commit: "abcdef1234".into(),
+                    is_main: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_git_history_records() {
+        let output = "f5377ee123456789\x1ff5377ee\x1fwin5do\x1f2026-08-07T11:17:00+08:00\x1fReplace Makefile with Justfile\x1e\n3cddb0b123456789\x1f3cddb0b\x1fwin5do\x1f2026-08-07T10:42:00+08:00\x1fReimplement amux runtime in Rust\x1e";
+        let commits = parse_git_history(output);
+        assert_eq!(commits.len(), 2);
+        assert_eq!(commits[0].short_hash, "f5377ee");
+        assert_eq!(commits[0].subject, "Replace Makefile with Justfile");
+        assert_eq!(commits[1].author, "win5do");
+        assert_eq!(commits[1].authored_at, "2026-08-07T10:42:00+08:00");
+    }
+
+    #[tokio::test]
+    async fn reconciliation_reports_and_repairs_stale_managed_worktree_registration() {
+        let fixture = rebase_fixture("reconciliation").await;
+        let healthy = reconcile_project(&fixture.state, &fixture.workspace.project_id)
+            .expect("reconcile healthy Project");
+        assert!(healthy.issues.is_empty());
+
+        std::fs::remove_dir_all(&fixture.fork.checkout_path)
+            .expect("remove managed worktree directory outside Treefold");
+        let broken = reconcile_project(&fixture.state, &fixture.workspace.project_id)
+            .expect("detect stale registration");
+        let issue = broken
+            .issues
+            .iter()
+            .find(|issue| {
+                issue.kind == "managed_worktree_directory_missing"
+                    && issue.workspace_id.as_deref() == Some(fixture.fork.id.as_str())
+            })
+            .expect("missing managed worktree issue");
+        assert_eq!(issue.actions, vec!["prune_stale_registration"]);
+
+        let repaired = repair_project_impl(
+            &fixture.state,
+            &fixture.workspace.project_id,
+            &RepairProject {
+                issue_id: issue.id.clone(),
+                action: "prune_stale_registration".into(),
+            },
+        )
+        .expect("prune stale registration");
+        assert!(repaired.changed);
+        let remaining = repaired
+            .report
+            .issues
+            .iter()
+            .find(|candidate| candidate.id == issue.id)
+            .expect("missing directory remains visible");
+        assert!(remaining.actions.is_empty());
+        assert!(!git_worktrees(&fixture.repository.to_string_lossy())
+            .expect("list repaired worktrees")
+            .iter()
+            .any(|worktree| normalized_path(&worktree.path)
+                == normalized_path(&fixture.fork.checkout_path)));
+
+        let repeated = repair_project_impl(
+            &fixture.state,
+            &fixture.workspace.project_id,
+            &RepairProject {
+                issue_id: issue.id.clone(),
+                action: "prune_stale_registration".into(),
+            },
+        )
+        .expect_err("repeated repair must not silently claim an action is still applicable");
+        assert!(repeated.to_string().contains("not allowed"));
+
+        let root = fixture.root.clone();
+        drop(fixture);
+        std::fs::remove_dir_all(root).expect("remove reconciliation fixture");
+    }
+
+    #[tokio::test]
+    async fn delivery_preflight_records_delivery_snapshot_and_rejects_stale_git_state() {
+        let fixture = rebase_fixture("delivery-preflight").await;
+        commit_file(
+            &fixture.fork.checkout_path,
+            "feature.txt",
+            "feature\n",
+            "feature commit",
+        );
+        let preflight = create_delivery_preflight_impl(
+            &fixture.state,
+            &fixture.fork.id,
+            &CreateDeliveryPreflight {
+                code_action: "merge".into(),
+            },
+        )
+        .expect("create delivery preflight");
+        assert_eq!(preflight.ahead, 1);
+        assert_eq!(preflight.commits.len(), 1);
+        assert_eq!(
+            fixture
+                .state
+                .store
+                .delivery_preflight(&preflight.id)
+                .expect("reload persisted preflight"),
+            preflight
+        );
+
+        commit_file(
+            &fixture.workspace.checkout_path,
+            "parent-after-preflight.txt",
+            "parent moved\n",
+            "move target after preflight",
+        );
+        let stale = finish_workspace_impl(
+            &fixture.state,
+            &fixture.fork.id,
+            &FinishWorkspace {
+                code_action: "merge".into(),
+                todo_action: "carry".into(),
+                keep_session_history: true,
+                delete_worktree: true,
+                delete_branch: true,
+                commit_message: None,
+                preflight_id: Some(preflight.id),
+            },
+            None,
+        )
+        .await
+        .expect_err("stale preflight must not settle");
+        assert!(stale.to_string().contains("preflight is stale"));
+        assert_eq!(
+            fixture
+                .state
+                .store
+                .workspace(&fixture.fork.id)
+                .expect("Fork remains active")
+                .status,
+            "active"
+        );
+
+        let root = fixture.root.clone();
+        drop(fixture);
+        std::fs::remove_dir_all(root).expect("remove delivery preflight fixture");
+    }
+
+    #[tokio::test]
+    async fn semantic_reset_persists_recovery_history_and_restores_exact_head() {
+        let fixture = rebase_fixture("semantic-reset").await;
+        let creation_head = fixture
+            .fork
+            .forked_from_commit
+            .clone()
+            .expect("Fork creation commit");
+        let target_head = commit_file(
+            &fixture.workspace.checkout_path,
+            "parent-reset.txt",
+            "parent target\n",
+            "parent reset target",
+        );
+        let before_head = commit_file(
+            &fixture.fork.checkout_path,
+            "fork-reset.txt",
+            "Fork work\n",
+            "Fork work before reset",
+        );
+
+        let unconfirmed = start_reset(
+            &fixture.state,
+            &fixture.fork.id,
+            &ResetWorkspace {
+                mode: "creation".into(),
+                commit: None,
+                confirm: false,
+            },
+        )
+        .expect_err("reset requires confirmation");
+        assert!(unconfirmed.to_string().contains("explicit confirmation"));
+        let dirty_path = Path::new(&fixture.fork.checkout_path).join("dirty-reset.txt");
+        std::fs::write(&dirty_path, "do not lose this\n").expect("create dirty reset file");
+        let dirty = start_reset(
+            &fixture.state,
+            &fixture.fork.id,
+            &ResetWorkspace {
+                mode: "creation".into(),
+                commit: None,
+                confirm: true,
+            },
+        )
+        .expect_err("reset rejects dirty workspace");
+        assert!(dirty.to_string().contains("uncommitted changes"));
+        std::fs::remove_file(dirty_path).expect("clean reset fixture");
+
+        let parent_reset = start_reset(
+            &fixture.state,
+            &fixture.fork.id,
+            &ResetWorkspace {
+                mode: "parent".into(),
+                commit: None,
+                confirm: true,
+            },
+        )
+        .expect("reset to parent HEAD");
+        assert_eq!(parent_reset.status, "completed");
+        assert_eq!(parent_reset.before_head, before_head);
+        assert_eq!(parent_reset.target_head, target_head);
+        assert_eq!(
+            git_head(&fixture.fork.checkout_path).expect("HEAD after parent reset"),
+            target_head
+        );
+        assert!(recovery_ref_exists(
+            Path::new(&fixture.repository),
+            &parent_reset.recovery_ref
+        ));
+
+        let restarted = AppState {
+            store: Store::open(&fixture.home.join("data/treefold.db")).expect("reopen reset store"),
+            settings: test_settings(&fixture.home),
+            terminals: TerminalManager::default(),
+        };
+        let restored = restore_reset(
+            &restarted,
+            &fixture.fork.id,
+            &RestoreReset {
+                operation_id: parent_reset.id.clone(),
+                confirm: true,
+            },
+        )
+        .expect("restore reset after restart");
+        assert_eq!(restored.status, "restored");
+        assert_eq!(
+            git_head(&fixture.fork.checkout_path).expect("restored HEAD"),
+            before_head
+        );
+        assert!(!recovery_ref_exists(
+            Path::new(&fixture.repository),
+            &parent_reset.recovery_ref
+        ));
+        assert_eq!(
+            restore_reset(
+                &restarted,
+                &fixture.fork.id,
+                &RestoreReset {
+                    operation_id: parent_reset.id,
+                    confirm: true,
+                },
+            )
+            .expect("repeat restored reset")
+            .status,
+            "restored"
+        );
+
+        let creation_reset = start_reset(
+            &restarted,
+            &fixture.fork.id,
+            &ResetWorkspace {
+                mode: "creation".into(),
+                commit: None,
+                confirm: true,
+            },
+        )
+        .expect("reset to creation point");
+        assert_eq!(creation_reset.target_head, creation_head);
+        restore_reset(
+            &restarted,
+            &fixture.fork.id,
+            &RestoreReset {
+                operation_id: creation_reset.id,
+                confirm: true,
+            },
+        )
+        .expect("restore creation reset");
+
+        let custom_reset = start_reset(
+            &restarted,
+            &fixture.fork.id,
+            &ResetWorkspace {
+                mode: "commit".into(),
+                commit: Some(target_head.clone()),
+                confirm: true,
+            },
+        )
+        .expect("reset to explicit commit");
+        assert_eq!(custom_reset.target_head, target_head);
+        assert_eq!(
+            git_operation_history(&restarted, &fixture.fork.id)
+                .expect("Git operation history")
+                .into_iter()
+                .filter(|record| record.kind == "reset")
+                .count(),
+            3
+        );
+        commit_file(
+            &fixture.fork.checkout_path,
+            "after-reset.txt",
+            "new work\n",
+            "work after reset",
+        );
+        let moved = restore_reset(
+            &restarted,
+            &fixture.fork.id,
+            &RestoreReset {
+                operation_id: custom_reset.id,
+                confirm: true,
+            },
+        )
+        .expect_err("restore must preserve work created after reset");
+        assert!(moved.to_string().contains("HEAD moved"));
+
+        drop(restarted);
+        let root = fixture.root.clone();
+        drop(fixture);
+        std::fs::remove_dir_all(root).expect("remove semantic reset fixture");
+    }
+
+    #[tokio::test]
+    async fn reset_status_reconciles_crashes_before_and_after_git_moves() {
+        let fixture = rebase_fixture("reset-crash-recovery").await;
+        let target_head = fixture
+            .fork
+            .forked_from_commit
+            .clone()
+            .expect("Fork creation point");
+        let before_head = commit_file(
+            &fixture.fork.checkout_path,
+            "recover-reset.txt",
+            "recover me\n",
+            "reset crash recovery source",
+        );
+        let operation_id = id_for_operation();
+        let recovery_ref = format!("refs/treefold/recovery/reset-{operation_id}");
+        command_output(
+            Path::new(&fixture.repository),
+            "git",
+            &["update-ref", &recovery_ref, &before_head],
+        )
+        .expect("create crash recovery ref");
+        let timestamp = now();
+        fixture
+            .state
+            .store
+            .create_reset_operation(&ResetOperation {
+                id: operation_id.clone(),
+                workspace_id: fixture.fork.id.clone(),
+                status: "active".into(),
+                mode: "creation".into(),
+                before_head: before_head.clone(),
+                target_head: target_head.clone(),
+                result_head: None,
+                recovery_ref: recovery_ref.clone(),
+                error: String::new(),
+                started_at: timestamp.clone(),
+                updated_at: timestamp,
+                completed_at: None,
+            })
+            .expect("persist active reset before simulated crash");
+        command_output(
+            Path::new(&fixture.fork.checkout_path),
+            "git",
+            &["reset", "--hard", &target_head],
+        )
+        .expect("simulate Git reset before process crash");
+
+        let reconciled = reset_status_impl(&fixture.state, &fixture.fork.id)
+            .expect("reconcile completed Git move")
+            .expect("reset status");
+        assert_eq!(reconciled.status, "completed");
+        assert_eq!(
+            reconciled.result_head.as_deref(),
+            Some(target_head.as_str())
+        );
+
+        command_output(
+            Path::new(&fixture.fork.checkout_path),
+            "git",
+            &["reset", "--hard", &before_head],
+        )
+        .expect("simulate restore before process crash");
+        let restored = restore_reset(
+            &fixture.state,
+            &fixture.fork.id,
+            &RestoreReset {
+                operation_id,
+                confirm: true,
+            },
+        )
+        .expect("reconcile already restored HEAD");
+        assert_eq!(restored.status, "restored");
+        assert!(!recovery_ref_exists(
+            Path::new(&fixture.repository),
+            &recovery_ref
+        ));
+
+        let interrupted_id = id_for_operation();
+        let interrupted_ref = format!("refs/treefold/recovery/reset-{interrupted_id}");
+        command_output(
+            Path::new(&fixture.repository),
+            "git",
+            &["update-ref", &interrupted_ref, &before_head],
+        )
+        .expect("create pre-move recovery ref");
+        let timestamp = now();
+        fixture
+            .state
+            .store
+            .create_reset_operation(&ResetOperation {
+                id: interrupted_id,
+                workspace_id: fixture.fork.id.clone(),
+                status: "active".into(),
+                mode: "creation".into(),
+                before_head: before_head.clone(),
+                target_head,
+                result_head: None,
+                recovery_ref: interrupted_ref.clone(),
+                error: String::new(),
+                started_at: timestamp.clone(),
+                updated_at: timestamp,
+                completed_at: None,
+            })
+            .expect("persist reset interrupted before Git move");
+        let failed = reset_status_impl(&fixture.state, &fixture.fork.id)
+            .expect("reconcile reset before Git move")
+            .expect("failed reset status");
+        assert_eq!(failed.status, "failed");
+        assert!(failed.error.contains("before changing HEAD"));
+        assert!(recovery_ref_exists(
+            Path::new(&fixture.repository),
+            &interrupted_ref
+        ));
+
+        let retried = start_reset(
+            &fixture.state,
+            &fixture.fork.id,
+            &ResetWorkspace {
+                mode: "creation".into(),
+                commit: None,
+                confirm: true,
+            },
+        )
+        .expect("retry reset after interrupted pre-move operation");
+        assert_eq!(retried.status, "completed");
+
+        let root = fixture.root.clone();
+        drop(fixture);
+        std::fs::remove_dir_all(root).expect("remove reset crash recovery fixture");
+    }
+
+    #[tokio::test]
+    async fn fork_rebase_succeeds_persists_and_keeps_sessions() {
+        let fixture = rebase_fixture("success").await;
+        assert!(start_rebase(&fixture.state, &fixture.workspace.id).is_err());
+
+        let dirty_fork_path = Path::new(&fixture.fork.checkout_path).join("dirty.tmp");
+        std::fs::write(&dirty_fork_path, "dirty\n").expect("dirty Fork");
+        assert!(start_rebase(&fixture.state, &fixture.fork.id)
+            .expect_err("reject dirty Fork")
+            .to_string()
+            .contains("uncommitted changes"));
+        std::fs::remove_file(&dirty_fork_path).expect("clean Fork fixture");
+
+        let before_head = commit_file(
+            &fixture.fork.checkout_path,
+            "fork.txt",
+            "fork\n",
+            "fork change",
+        );
+        let dirty_parent_path = Path::new(&fixture.workspace.checkout_path).join("dirty.tmp");
+        std::fs::write(&dirty_parent_path, "dirty\n").expect("dirty parent");
+        assert!(start_rebase(&fixture.state, &fixture.fork.id)
+            .expect_err("reject dirty parent")
+            .to_string()
+            .contains("uncommitted changes"));
+        std::fs::remove_file(&dirty_parent_path).expect("clean parent fixture");
+        let target_head = commit_file(
+            &fixture.workspace.checkout_path,
+            "parent.txt",
+            "parent\n",
+            "parent change",
+        );
+        let session_id = persist_rebase_session(&fixture.state, &fixture.fork);
+
+        let completed = start_rebase(&fixture.state, &fixture.fork.id).expect("start rebase");
+        assert_eq!(completed.status, "completed");
+        assert_eq!(completed.phase, "completed");
+        assert_eq!(completed.before_head, before_head);
+        assert_eq!(completed.target_head, target_head);
+        let rebased_head = completed.rebased_head.clone().expect("rebased head");
+        assert_ne!(rebased_head, before_head);
+        assert!(
+            git_is_ancestor(&fixture.fork.checkout_path, &target_head, &rebased_head)
+                .expect("verify parent ancestry")
+        );
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&fixture.fork.checkout_path).join("parent.txt"))
+                .expect("read rebased parent file"),
+            "parent\n"
+        );
+        assert!(!recovery_ref_exists(
+            Path::new(&fixture.repository),
+            &completed.recovery_ref
+        ));
+
+        let session = fixture
+            .state
+            .store
+            .session(&session_id)
+            .expect("Session survives rebase");
+        assert_eq!(
+            session.codex_session_id.as_deref(),
+            Some("rebase-session-id")
+        );
+        assert_eq!(session.workspace_id, fixture.fork.id);
+        assert_eq!(session.status, "closed");
+
+        let reopened =
+            Store::open(&fixture.home.join("data/treefold.db")).expect("reopen rebase store");
+        assert_eq!(
+            reopened
+                .latest_rebase_operation(&fixture.fork.id)
+                .expect("reload rebase operation")
+                .expect("persist rebase operation")
+                .status,
+            "completed"
+        );
+        drop(reopened);
+
+        let commit_count = command_output(
+            Path::new(&fixture.fork.checkout_path),
+            "git",
+            &["rev-list", "--count", "HEAD"],
+        )
+        .expect("count rebased commits");
+        for operation in [
+            rebase_status_impl(&fixture.state, &fixture.fork.id)
+                .expect("repeat status")
+                .expect("completed status"),
+            continue_rebase(&fixture.state, &fixture.fork.id).expect("repeat continue"),
+            abort_rebase(&fixture.state, &fixture.fork.id).expect("abort completed rebase"),
+        ] {
+            assert_eq!(operation.status, "completed");
+            assert_eq!(
+                operation.rebased_head.as_deref(),
+                Some(rebased_head.as_str())
+            );
+        }
+        assert_eq!(
+            command_output(
+                Path::new(&fixture.fork.checkout_path),
+                "git",
+                &["rev-list", "--count", "HEAD"]
+            )
+            .expect("count commits after repeated actions"),
+            commit_count
+        );
+
+        let root = fixture.root.clone();
+        drop(fixture);
+        std::fs::remove_dir_all(root).expect("remove successful rebase fixture");
+    }
+
+    #[tokio::test]
+    async fn conflicted_fork_rebase_survives_restart_and_aborts_exactly() {
+        let fixture = rebase_fixture("abort").await;
+        let before_head = commit_file(
+            &fixture.fork.checkout_path,
+            "shared.txt",
+            "fork version\n",
+            "fork conflict",
+        );
+        let target_head = commit_file(
+            &fixture.workspace.checkout_path,
+            "shared.txt",
+            "parent version\n",
+            "parent conflict",
+        );
+        let session_id = persist_rebase_session(&fixture.state, &fixture.fork);
+
+        let conflicted = start_rebase(&fixture.state, &fixture.fork.id).expect("start conflict");
+        assert_eq!(conflicted.status, "conflicted");
+        assert_eq!(conflicted.before_head, before_head);
+        assert_eq!(conflicted.target_head, target_head);
+        assert!(rebase_in_progress(&fixture.fork.checkout_path).expect("rebase state"));
+        assert!(Path::new(&fixture.fork.checkout_path).exists());
+        assert!(command_output(
+            Path::new(&fixture.repository),
+            "git",
+            &["branch", "--list", &fixture.fork.branch]
+        )
+        .expect("Fork branch after conflict")
+        .contains(&fixture.fork.branch));
+        assert!(recovery_ref_exists(
+            Path::new(&fixture.repository),
+            &conflicted.recovery_ref
+        ));
+
+        let restarted = AppState {
+            store: Store::open(&fixture.home.join("data/treefold.db"))
+                .expect("reopen conflicted store"),
+            settings: test_settings(&fixture.home),
+            terminals: TerminalManager::default(),
+        };
+        assert_eq!(
+            rebase_status_impl(&restarted, &fixture.fork.id)
+                .expect("status after restart")
+                .expect("conflicted operation")
+                .status,
+            "conflicted"
+        );
+        let settle_error = finish_workspace_impl(
+            &restarted,
+            &fixture.fork.id,
+            &FinishWorkspace {
+                code_action: "merge".into(),
+                todo_action: "carry".into(),
+                keep_session_history: true,
+                delete_worktree: true,
+                delete_branch: true,
+                commit_message: None,
+                preflight_id: None,
+            },
+            None,
+        )
+        .await
+        .expect_err("delivery must wait for rebase");
+        assert!(settle_error.to_string().contains("cannot settle"));
+
+        let aborted = abort_rebase(&restarted, &fixture.fork.id).expect("abort rebase");
+        assert_eq!(aborted.status, "aborted");
+        assert_eq!(
+            command_output(
+                Path::new(&fixture.fork.checkout_path),
+                "git",
+                &["rev-parse", "HEAD"]
+            )
+            .expect("HEAD after abort"),
+            before_head
+        );
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&fixture.fork.checkout_path).join("shared.txt"))
+                .expect("read restored conflict file"),
+            "fork version\n"
+        );
+        assert!(!rebase_in_progress(&fixture.fork.checkout_path).expect("aborted Git state"));
+        assert!(!recovery_ref_exists(
+            Path::new(&fixture.repository),
+            &aborted.recovery_ref
+        ));
+        assert_eq!(
+            restarted
+                .store
+                .session(&session_id)
+                .expect("Session after abort")
+                .codex_session_id
+                .as_deref(),
+            Some("rebase-session-id")
+        );
+        for repeated in [
+            abort_rebase(&restarted, &fixture.fork.id).expect("repeat abort"),
+            continue_rebase(&restarted, &fixture.fork.id).expect("continue aborted operation"),
+            rebase_status_impl(&restarted, &fixture.fork.id)
+                .expect("repeat aborted status")
+                .expect("aborted status"),
+        ] {
+            assert_eq!(repeated.status, "aborted");
+        }
+
+        drop(restarted);
+        let root = fixture.root.clone();
+        drop(fixture);
+        std::fs::remove_dir_all(root).expect("remove aborted rebase fixture");
+    }
+
+    #[tokio::test]
+    async fn conflicted_fork_rebase_continues_after_resolution() {
+        let fixture = rebase_fixture("continue").await;
+        let before_head = commit_file(
+            &fixture.fork.checkout_path,
+            "shared.txt",
+            "fork version\n",
+            "fork conflict",
+        );
+        let target_head = commit_file(
+            &fixture.workspace.checkout_path,
+            "shared.txt",
+            "parent version\n",
+            "parent conflict",
+        );
+
+        let conflicted = start_rebase(&fixture.state, &fixture.fork.id).expect("start conflict");
+        assert_eq!(conflicted.status, "conflicted");
+        let moved_target_head = commit_file(
+            &fixture.workspace.checkout_path,
+            "later-parent.txt",
+            "later parent change\n",
+            "parent moves after rebase starts",
+        );
+        assert_ne!(moved_target_head, target_head);
+        std::fs::write(
+            Path::new(&fixture.fork.checkout_path).join("shared.txt"),
+            "resolved version\n",
+        )
+        .expect("resolve rebase conflict");
+        command_output(
+            Path::new(&fixture.fork.checkout_path),
+            "git",
+            &["add", "shared.txt"],
+        )
+        .expect("stage rebase resolution");
+
+        let completed =
+            continue_rebase(&fixture.state, &fixture.fork.id).expect("continue resolved rebase");
+        assert_eq!(completed.status, "completed");
+        let rebased_head = completed.rebased_head.clone().expect("continued head");
+        assert_ne!(rebased_head, before_head);
+        assert!(
+            git_is_ancestor(&fixture.fork.checkout_path, &target_head, &rebased_head)
+                .expect("verify continued ancestry")
+        );
+        assert!(!git_is_ancestor(
+            &fixture.fork.checkout_path,
+            &moved_target_head,
+            &rebased_head
+        )
+        .expect("rebase target stays fixed"));
+        assert_eq!(
+            std::fs::read_to_string(Path::new(&fixture.fork.checkout_path).join("shared.txt"))
+                .expect("read resolved file"),
+            "resolved version\n"
+        );
+        assert!(!rebase_in_progress(&fixture.fork.checkout_path).expect("completed Git state"));
+        assert!(!recovery_ref_exists(
+            Path::new(&fixture.repository),
+            &completed.recovery_ref
+        ));
+        let repeated =
+            continue_rebase(&fixture.state, &fixture.fork.id).expect("repeat completed continue");
+        assert_eq!(repeated.status, "completed");
+        assert_eq!(
+            repeated.rebased_head.as_deref(),
+            Some(rebased_head.as_str())
+        );
+
+        let root = fixture.root.clone();
+        drop(fixture);
+        std::fs::remove_dir_all(root).expect("remove continued rebase fixture");
+    }
+
+    #[tokio::test]
+    async fn fork_delivery_merges_code_carries_todos_and_cleans_git_resources() {
+        let root =
+            std::env::temp_dir().join(format!("treefold-fork-flow-test-{}", uuid::Uuid::new_v4()));
+        let repository = root.join("repository");
+        let home = root.join("home");
+        std::fs::create_dir_all(&repository).expect("create repository");
+        command_output(Path::new(&repository), "git", &["init", "-b", "main"])
+            .expect("initialize repository");
+        command_output(
+            Path::new(&repository),
+            "git",
+            &["config", "user.email", "treefold@example.test"],
+        )
+        .expect("configure email");
+        command_output(
+            Path::new(&repository),
+            "git",
+            &["config", "user.name", "Treefold Test"],
+        )
+        .expect("configure name");
+        std::fs::write(repository.join("README.md"), "initial\n").expect("write initial file");
+        command_output(Path::new(&repository), "git", &["add", "."]).expect("stage initial");
+        command_output(Path::new(&repository), "git", &["commit", "-m", "initial"])
+            .expect("commit initial");
+
+        let state = AppState {
+            store: Store::open(&home.join("data/treefold.db")).expect("open store"),
+            settings: test_settings(&home),
+            terminals: TerminalManager::default(),
+        };
+        let configured_worktree_root = root.join("configured-worktrees");
+        state
+            .settings
+            .update(SettingsPatch {
+                worktree_root: Some(configured_worktree_root.to_string_lossy().into_owned()),
+                agents: Some(AgentsSettingsPatch {
+                    codex: Some(CodexAgentSettingsPatch {
+                        extra_args: Some(vec![
+                            "--dangerously-bypass-approvals-and-sandbox".into(),
+                            "--search".into(),
+                        ]),
+                    }),
+                }),
+                ..SettingsPatch::default()
+            })
+            .expect("configure TOML-backed settings");
+        let setup_log = root.join("worktree-setup.log");
+        let setup_command = format!(
+            "test -n \"$PWD\" && printf '%s\\n' \"$PWD\" >> '{}'",
+            setup_log.to_string_lossy()
+        );
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Test Project".into()),
+                description: None,
+                path: repository.to_string_lossy().into_owned(),
+                directory_description: None,
+                directory_worktree_setup_command: Some(setup_command),
+            }),
+        )
+        .await
+        .expect("create project");
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Feature".into(),
+                description: None,
+                checkout_mode: Some("worktree".into()),
+                target_branch: Some("main".into()),
+            }),
+        )
+        .await
+        .expect("create workspace");
+        assert!(Path::new(&workspace.checkout_path).starts_with(&configured_worktree_root));
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateFork {
+                name: "Independent part".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect("create fork");
+        assert_eq!(fork.kind, "fork");
+        assert_eq!(
+            fork.parent_workspace_id.as_deref(),
+            Some(workspace.id.as_str())
+        );
+        let setup_paths = std::fs::read_to_string(&setup_log)
+            .expect("read Worktree setup command output")
+            .lines()
+            .map(normalized_path)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            setup_paths,
+            [
+                normalized_path(&workspace.checkout_path),
+                normalized_path(&fork.checkout_path)
+            ],
+            "Worktree setup command must run in every new managed workspace"
+        );
+        let directory = state
+            .store
+            .directory(&project.primary_directory_id)
+            .expect("read primary Directory");
+        let worktrees_before_failed_setup = git_worktrees(&directory.path)
+            .expect("list worktrees before failed setup")
+            .len();
+        state
+            .store
+            .update_directory(
+                &directory.id,
+                &directory.name,
+                &directory.description,
+                "printf 'setup failed' >&2; exit 23",
+            )
+            .expect("configure failing Worktree setup command");
+        let setup_error = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Failed setup".into(),
+                description: None,
+                checkout_mode: Some("worktree".into()),
+                target_branch: Some("main".into()),
+            }),
+        )
+        .await
+        .expect_err("failed Worktree setup must reject creation");
+        assert!(setup_error.to_string().contains("setup failed"));
+        assert_eq!(
+            git_worktrees(&directory.path)
+                .expect("list worktrees after failed setup")
+                .len(),
+            worktrees_before_failed_setup,
+            "failed Worktree setup must clean its worktree registration"
+        );
+        assert!(create_fork(
+            State(state.clone()),
+            axum::extract::Path(fork.id.clone()),
+            ApiJson(CreateFork {
+                name: "Nested".into(),
+                description: None,
+            }),
+        )
+        .await
+        .is_err());
+
+        let (_, Json(fork_shell)) = create_session(
+            State(state.clone()),
+            axum::extract::Path(fork.id.clone()),
+            ApiJson(CreateSession {
+                name: Some("Fork shell".into()),
+                kind: Some("shell".into()),
+                project_directory_id: None,
+                initial_prompt: None,
+            }),
+        )
+        .await
+        .expect("create Shell Session in Fork");
+        assert_eq!(fork_shell.workspace_id, fork.id);
+        assert_eq!(fork_shell.cwd, fork.checkout_path);
+        assert!(state.terminals.is_running(&fork_shell.id).await);
+
+        let _ = create_todo(
+            State(state.clone()),
+            axum::extract::Path(fork.id.clone()),
+            ApiJson(CreateTodo {
+                title: "Carry me".into(),
+                description: None,
+                session_id: None,
+            }),
+        )
+        .await
+        .expect("create Todo");
+        let timestamp = now();
+        let session = Session {
+            id: uuid::Uuid::new_v4().simple().to_string(),
+            workspace_id: fork.id.clone(),
+            name: "Archived Codex".into(),
+            kind: "codex".into(),
+            cwd: fork.checkout_path.clone(),
+            original_cwd: fork.checkout_path.clone(),
+            initial_prompt: "Continue the independent part".into(),
+            codex_session_id: Some("codex-session-for-resume".into()),
+            sidebar_visible: true,
+            hidden_at: None,
+            evicted_at: None,
+            process_id: String::new(),
+            process_name: String::new(),
+            status: "exited".into(),
+            pid: 0,
+            process_group_id: 0,
+            exit_code: Some(0),
+            exit_signal: String::new(),
+            command: vec!["codex".into()],
+            launch_started_at: timestamp.clone(),
+            last_attached_at: None,
+            created_at: timestamp.clone(),
+            updated_at: timestamp,
+            additional_directories: Vec::new(),
+        };
+        state
+            .store
+            .create_session(&session)
+            .expect("create resumable session history");
+        std::fs::write(
+            Path::new(&fork.checkout_path).join("fork.txt"),
+            "fork work\n",
+        )
+        .expect("write fork change");
+
+        let fork_preflight = create_delivery_preflight_impl(
+            &state,
+            &fork.id,
+            &CreateDeliveryPreflight {
+                code_action: "merge".into(),
+            },
+        )
+        .expect("preflight Fork delivery");
+        assert!(fork_preflight.source_dirty);
+        assert!(fork_preflight
+            .changed_files
+            .iter()
+            .any(|file| file == "fork.txt"));
+        let delivery = FinishWorkspace {
+            code_action: "merge".into(),
+            todo_action: "carry".into(),
+            keep_session_history: true,
+            delete_worktree: true,
+            delete_branch: true,
+            commit_message: Some("complete fork".into()),
+            preflight_id: Some(fork_preflight.id),
+        };
+        let interrupted =
+            finish_workspace_impl(&state, &fork.id, &delivery, Some("code_integrated"))
+                .await
+                .expect_err("inject failure after merge");
+        assert!(interrupted
+            .to_string()
+            .contains("injected delivery failure after code_integrated"));
+        let interrupted_operation = state
+            .store
+            .delivery_operation(&fork.id)
+            .expect("load interrupted delivery")
+            .expect("persist interrupted delivery");
+        assert_eq!(interrupted_operation.phase, "code_integrated");
+        assert!(!interrupted_operation.before_head.is_empty());
+        assert!(!interrupted_operation.source_head.is_empty());
+        assert_eq!(
+            interrupted_operation.target_head,
+            interrupted_operation
+                .integrated_commit
+                .clone()
+                .expect("record integrated commit")
+        );
+        assert!(interrupted_operation
+            .error
+            .contains("injected delivery failure"));
+        assert!(start_rebase(&state, &fork.id)
+            .expect_err("rebase must wait for delivery")
+            .to_string()
+            .contains("delivery is in progress"));
+        let reopened_store =
+            Store::open(&home.join("data/treefold.db")).expect("reopen persistent store");
+        assert_eq!(
+            reopened_store
+                .delivery_operation(&fork.id)
+                .expect("reload interrupted delivery")
+                .expect("delivery survives store reopen")
+                .phase,
+            "code_integrated"
+        );
+        drop(reopened_store);
+        assert_eq!(
+            state.store.workspace(&fork.id).expect("active Fork").status,
+            "active"
+        );
+        assert!(Path::new(&fork.checkout_path).exists());
+        assert!(
+            command_output(Path::new(&repository), "git", &["branch", "--list"])
+                .expect("list branches after interruption")
+                .contains(&fork.branch)
+        );
+        assert!(Path::new(&workspace.checkout_path)
+            .join("fork.txt")
+            .exists());
+        assert_eq!(
+            state
+                .store
+                .todos(&workspace.id)
+                .expect("parent Todos before retry")
+                .len(),
+            0
+        );
+        assert_eq!(
+            state
+                .store
+                .session(&session.id)
+                .expect("unsettled Session")
+                .status,
+            "exited"
+        );
+        let target_head_after_interruption = command_output(
+            Path::new(&workspace.checkout_path),
+            "git",
+            &["rev-parse", "HEAD"],
+        )
+        .expect("parent head after interruption");
+        let parent_commit_count_after_interruption = command_output(
+            Path::new(&workspace.checkout_path),
+            "git",
+            &["rev-list", "--count", "HEAD"],
+        )
+        .expect("parent commit count after interruption");
+
+        let Json(settled) = finish_workspace(
+            State(state.clone()),
+            axum::extract::Path(fork.id.clone()),
+            ApiJson(delivery.clone()),
+        )
+        .await
+        .expect("resume interrupted Fork delivery");
+        assert_eq!(settled.status, "archived");
+        assert_eq!(settled.delivery_status, "merged");
+        assert_eq!(
+            command_output(
+                Path::new(&workspace.checkout_path),
+                "git",
+                &["rev-parse", "HEAD"]
+            )
+            .expect("parent head after retry"),
+            target_head_after_interruption
+        );
+        assert_eq!(
+            command_output(
+                Path::new(&workspace.checkout_path),
+                "git",
+                &["rev-list", "--count", "HEAD"]
+            )
+            .expect("parent commit count after retry"),
+            parent_commit_count_after_interruption
+        );
+        assert!(!Path::new(&fork.checkout_path).exists());
+        assert!(Path::new(&workspace.checkout_path)
+            .join("fork.txt")
+            .exists());
+        assert_eq!(
+            state
+                .store
+                .todos(&workspace.id)
+                .expect("parent Todos")
+                .len(),
+            1
+        );
+        assert_eq!(
+            state
+                .store
+                .todos(&fork.id)
+                .expect("archived Fork Todos")
+                .len(),
+            1
+        );
+        let archived_session = state.store.session(&session.id).expect("session history");
+        assert_eq!(archived_session.status, "closed");
+        assert!(!archived_session.sidebar_visible);
+        assert_eq!(archived_session.cwd, workspace.checkout_path);
+        assert_eq!(archived_session.original_cwd, fork.checkout_path);
+        assert_eq!(
+            archived_session.codex_session_id.as_deref(),
+            Some("codex-session-for-resume")
+        );
+        let archived_shell = state.store.session(&fork_shell.id).expect("Shell history");
+        assert_eq!(archived_shell.status, "closed");
+        assert_eq!(archived_shell.cwd, workspace.checkout_path);
+        let branches = command_output(Path::new(&repository), "git", &["branch", "--list"])
+            .expect("list branches");
+        assert!(!branches.contains(&fork.branch));
+        let completed_operation = state
+            .store
+            .delivery_operation(&fork.id)
+            .expect("load completed delivery")
+            .expect("persist completed delivery");
+        assert_eq!(completed_operation.phase, "archived");
+        assert!(completed_operation.error.is_empty());
+
+        let Json(settled_again) = finish_workspace(
+            State(state.clone()),
+            axum::extract::Path(fork.id.clone()),
+            ApiJson(delivery),
+        )
+        .await
+        .expect("repeat completed Fork delivery");
+        assert_eq!(settled_again.status, "archived");
+        assert_eq!(
+            command_output(
+                Path::new(&workspace.checkout_path),
+                "git",
+                &["rev-parse", "HEAD"]
+            )
+            .expect("parent head after repeated request"),
+            target_head_after_interruption
+        );
+        assert_eq!(
+            state
+                .store
+                .todos(&workspace.id)
+                .expect("parent Todos after repeated request")
+                .len(),
+            1
+        );
+
+        let root_preflight = create_delivery_preflight_impl(
+            &state,
+            &workspace.id,
+            &CreateDeliveryPreflight {
+                code_action: "merge".into(),
+            },
+        )
+        .expect("preflight root Workspace delivery");
+        let Json(settled_root) = finish_workspace(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(FinishWorkspace {
+                code_action: "merge".into(),
+                todo_action: "carry".into(),
+                keep_session_history: true,
+                delete_worktree: true,
+                delete_branch: true,
+                commit_message: None,
+                preflight_id: Some(root_preflight.id),
+            }),
+        )
+        .await
+        .expect("settle root Workspace into Project");
+        assert_eq!(settled_root.status, "archived");
+        assert_eq!(settled_root.delivery_status, "merged");
+        assert!(!Path::new(&workspace.checkout_path).exists());
+        assert!(repository.join("fork.txt").exists());
+        assert_eq!(
+            state
+                .store
+                .project_todos(&project.id)
+                .expect("Project Todos")
+                .len(),
+            1
+        );
+        let branches = command_output(Path::new(&repository), "git", &["branch", "--list"])
+            .expect("list branches after root delivery");
+        assert!(!branches.contains(&workspace.branch));
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove test root");
+    }
+}
+
