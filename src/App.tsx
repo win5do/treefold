@@ -813,8 +813,8 @@ function ActionMenu({ label, testId, disabled, children }: { label: string; test
   </>;
 }
 
-function ActionMenuItem({ icon, children, disabled, testId, title, onClick }: { icon: React.ReactNode; children: React.ReactNode; disabled?: boolean; testId?: string; title?: string; onClick: () => void }) {
-  return <button type="button" role="menuitem" data-testid={testId} disabled={disabled} title={title} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" onClick={onClick}>{icon}<span className="min-w-0 flex-1 truncate">{children}</span></button>;
+function ActionMenuItem({ icon, children, disabled, testId, title, variant = "default", onClick }: { icon: React.ReactNode; children: React.ReactNode; disabled?: boolean; testId?: string; title?: string; variant?: "default" | "destructive"; onClick: () => void }) {
+  return <button type="button" role="menuitem" data-testid={testId} data-variant={variant} disabled={disabled} title={title} className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40", variant === "destructive" ? "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10" : "hover:bg-neutral-100 focus-visible:bg-neutral-100")} onClick={onClick}>{icon}<span className="min-w-0 flex-1 truncate">{children}</span></button>;
 }
 
 function ProjectLocationTreeRow({ directory, worktrees, busy, readOnly, onOpen, onEdit, onRefresh, onMakeDefault, onReattach, onDeleteWorktree }: { directory: Directory; worktrees: GitWorktree[]; busy: boolean; readOnly: boolean; onOpen: (id: string) => void; onEdit: () => void; onRefresh: () => void; onMakeDefault: () => void; onReattach: () => void; onDeleteWorktree: (worktree: GitWorktree) => void }) {
@@ -895,7 +895,7 @@ function ArchivedActionMenu({ kind, name, busy, onRestore, onDelete }: { kind: "
   const { t } = useTranslation();
   return <ActionMenu label={t("overview.archivedActions", { type: kind, name })} testId={`${kind}-archived-actions`} disabled={busy}>
     {onRestore && <ActionMenuItem icon={<RotateCcw className="size-3.5" />} disabled={busy} testId="restore-project-action" onClick={onRestore}>{t("overview.restoreToSidebar")}</ActionMenuItem>}
-    <ActionMenuItem icon={<Trash2 className="size-3.5" />} disabled={busy} testId={`delete-${kind}-action`} onClick={onDelete}>{t("overview.permanentlyDelete")}</ActionMenuItem>
+    <ActionMenuItem icon={<Trash2 className="size-3.5" />} disabled={busy} testId={`delete-${kind}-action`} variant="destructive" onClick={onDelete}>{t("overview.permanentlyDelete")}</ActionMenuItem>
   </ActionMenu>;
 }
 
