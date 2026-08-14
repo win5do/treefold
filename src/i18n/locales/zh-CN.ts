@@ -15,6 +15,8 @@ export const zhCN = {
     closeNavigation: "关闭导航",
     loading: "正在加载工作区…",
     branchNotSwitched: "分支未切换：{{message}}",
+    breadcrumb: "面包屑导航",
+    allProjects: "所有项目",
   },
   sidebar: {
     projects: "项目",

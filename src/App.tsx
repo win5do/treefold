@@ -12,6 +12,7 @@ import {
   Ellipsis,
   Folder,
   FolderGit2,
+  Folders,
   FolderOpen,
   FolderPlus,
   GitBranch,
@@ -479,6 +480,7 @@ function Workspace() {
 
   const selectedProject = useMemo(() => projects.find((project) => project.id === params.projectId || project.id === workspace?.project.id) ?? null, [params.projectId, projects, workspace]);
   const selectedSession = workspace?.sessions.find((session) => session.id === params.sessionId) ?? selectedProject?.sessions.find((session) => session.id === params.sessionId) ?? null;
+  const parentWorkspace = workspace?.parent_workspace_id ? selectedProject?.workspaces.find((item) => item.id === workspace.parent_workspace_id) ?? null : null;
 
   async function act(action: () => Promise<unknown>) {
     setBusy(true);
@@ -727,7 +729,21 @@ function Workspace() {
           <Button className="hidden md:inline-flex" size="icon" variant={sidebarHidden ? "secondary" : "ghost"} aria-label={t(sidebarHidden ? "workspace.showLeftSidebar" : "workspace.hideLeftSidebar")} onClick={() => setSidebarHidden((value) => !value)}>{sidebarHidden ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}</Button>
         </div>
         <div data-testid="toolbar-content-frame" className={cn("min-w-0 flex-1 overflow-y-auto px-5 transition-[margin] duration-200 [scrollbar-gutter:stable] sm:px-8 lg:px-12", selectedProject && inspectorOpen && "lg:mr-[340px]")}>
-          <div data-testid="toolbar-title" className="mx-auto max-w-6xl truncate pr-16 text-xs text-neutral-500" title={workspace ? `${workspace.project.name} / ${workspace.name}` : selectedProject?.name || "Treefold"}>{workspace ? `${workspace.project.name} / ${workspace.name}` : selectedProject?.name || "Treefold"}</div>
+          <nav data-testid="header-breadcrumb" aria-label={t("workspace.breadcrumb")} className="mx-auto flex max-w-6xl min-w-0 items-center gap-0.5 overflow-hidden pr-16">
+            <Button data-testid="breadcrumb-projects" size="icon-sm" variant="ghost" aria-label={t("workspace.allProjects")} title={t("workspace.allProjects")} aria-current={selectedProject ? undefined : "page"} onClick={() => navigate("/")}><Folders data-icon="inline-start" /></Button>
+            {selectedProject && <>
+              <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+              {workspace ? <Button data-testid="breadcrumb-project" size="sm" variant="ghost" className="min-w-0 max-w-48 shrink overflow-hidden px-1.5 text-muted-foreground" title={selectedProject.name} onClick={() => navigate(`/projects/${selectedProject.id}`)}><span className="truncate">{selectedProject.name}</span></Button> : <span data-testid="breadcrumb-project" aria-current="page" className="min-w-0 max-w-48 shrink truncate px-1.5 text-xs font-medium" title={selectedProject.name}>{selectedProject.name}</span>}
+            </>}
+            {parentWorkspace && <>
+              <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+              <Button data-testid="breadcrumb-workspace" size="sm" variant="ghost" className="min-w-0 max-w-48 shrink overflow-hidden px-1.5 text-muted-foreground" title={parentWorkspace.name} onClick={() => navigate(`/workspaces/${parentWorkspace.id}`)}><span className="truncate">{parentWorkspace.name}</span></Button>
+            </>}
+            {workspace && <>
+              <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" aria-hidden="true" />
+              <span data-testid={parentWorkspace ? "breadcrumb-fork" : "breadcrumb-workspace"} aria-current="page" className="min-w-0 max-w-48 shrink truncate px-1.5 text-xs font-medium" title={workspace.name}>{workspace.name}</span>
+            </>}
+          </nav>
         </div>
         <div className="absolute right-2 flex items-center">
           <Button size="icon" variant="ghost" disabled={busy} aria-label={t("workspace.refresh")} onClick={() => void refresh()}><RefreshCw data-icon="inline-start" /></Button>

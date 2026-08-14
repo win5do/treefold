@@ -13,6 +13,8 @@ export const enUS = {
     closeNavigation: "Close navigation",
     loading: "Loading workspace…",
     branchNotSwitched: "Branch not switched: {{message}}",
+    breadcrumb: "Breadcrumb",
+    allProjects: "All Projects",
   },
   sidebar: {
     projects: "Projects",

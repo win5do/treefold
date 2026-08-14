@@ -62,6 +62,9 @@ try {
   await sidebar.waitForDisplayed({ timeout: 10_000 });
   const toolbar = await browser.$('[data-testid="app-toolbar"]');
   await toolbar.waitForDisplayed({ timeout: 3_000 });
+  const projectsBreadcrumb = await browser.$('[data-testid="breadcrumb-projects"]');
+  assert.equal(await projectsBreadcrumb.getAttribute("aria-label"), "All Projects", "breadcrumb root must expose the Project list destination");
+  assert.equal(await projectsBreadcrumb.getAttribute("aria-current"), "page", "Project overview must mark the root breadcrumb as current");
   assert.equal(await (await browser.$('button[aria-label="Show right sidebar"]')).isExisting(), false, "right sidebar control must stay hidden outside a Project");
 
   await (await browser.$('button[aria-label="New Project"]')).click();
@@ -240,6 +243,12 @@ try {
     timeout: 3_000,
     timeoutMsg: "fixture Workspace navigation did not update the route",
   });
+  await browser.$('[data-testid="breadcrumb-workspace"]').waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await projectsBreadcrumb.getAttribute("aria-current"), null, "Workspace routes must make the Project list breadcrumb navigable");
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-project"]')).getText(), FIXTURE_NAMES.project, "Workspace breadcrumb must include its Project");
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-workspace"]')).getText(), FIXTURE_NAMES.workspace, "Workspace breadcrumb must identify the current Workspace");
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-workspace"]')).getAttribute("aria-current"), "page", "Workspace must be the current breadcrumb");
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-fork"]')).isExisting(), false, "Workspace breadcrumb must not invent a Fork level");
   let baseSection = await browser.$('[data-testid="workspace-locations-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
   const newForkButton = await browser.$('[data-testid="new-fork-action"]');
@@ -318,6 +327,10 @@ try {
     timeout: 1_000,
     timeoutMsg: "Codex creation did not navigate directly to the created Session",
   });
+  const workspaceSessionBreadcrumb = await browser.$('[data-testid="header-breadcrumb"]');
+  assert.match(await workspaceSessionBreadcrumb.getText(), new RegExp(`${FIXTURE_NAMES.project}[\\s\\S]*${FIXTURE_NAMES.workspace}`), "Workspace Session must retain its owning breadcrumb hierarchy");
+  assert.equal((await workspaceSessionBreadcrumb.getText()).includes("codex"), false, "Session names must stay out of the breadcrumb hierarchy");
+  assert.equal(await (await workspaceSessionBreadcrumb.$('[data-testid="breadcrumb-workspace"]')).getAttribute("aria-current"), "page", "Workspace must remain the current breadcrumb inside a Session");
   assert.equal(await (await browser.$('[role="dialog"]')).isExisting(), false, "Codex creation must not open a setup dialog");
   assert.match(await main.getText(), /codex[\s\S]*running/i, "the created Codex Session must render from the POST response");
   await (await browser.$('button[aria-label="Show right sidebar"]')).click();
@@ -612,6 +625,11 @@ try {
 
   await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.fork}`);
   await browser.$('[data-testid="workspace-locations-section"]').waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-project"]')).getText(), FIXTURE_NAMES.project, "Fork breadcrumb must retain its Project");
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-workspace"]')).getText(), FIXTURE_NAMES.workspace, "Fork breadcrumb must include its parent Workspace");
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-workspace"]')).getAttribute("aria-current"), null, "parent Workspace breadcrumb must remain navigable from a Fork");
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-fork"]')).getText(), FIXTURE_NAMES.fork, "Fork breadcrumb must identify the current Fork");
+  assert.equal(await (await browser.$('[data-testid="breadcrumb-fork"]')).getAttribute("aria-current"), "page", "Fork must be the current breadcrumb");
   assert.equal(await (await browser.$('[data-testid="new-fork-action"]')).isExisting(), false, "Fork details must not offer nested Fork creation");
   const finishForkButton = await browser.$('[data-testid="finish-workspace-action"]');
   assert.equal(await finishForkButton.getText(), "Finish Fork…", "Fork finish action must name its lifecycle target");
