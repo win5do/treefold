@@ -349,6 +349,52 @@ mod workspace_schema_tests {
     }
 
     #[test]
+    fn deleting_workspace_cascades_only_its_sqlite_history() {
+        let (root, path) = temporary_database("workspace-delete");
+        let store = Store::open(&path).expect("create current database");
+        let connection = Connection::open(&path).expect("seed Workspace history");
+        connection.execute_batch(
+            "PRAGMA foreign_keys=ON;
+             INSERT INTO projects(id,name,description,status,created_at,updated_at)
+             VALUES('p','Project','','active','now','now');
+             INSERT INTO project_locations(id,project_id,name,path,created_at,updated_at)
+             VALUES('l','p','repo','/source','now','now');
+             INSERT INTO workspaces(id,project_id,name,description,status,kind,created_at,updated_at)
+             VALUES('w','p','Archived','','archived','workspace','now','now');
+             INSERT INTO workspace_locations(id,workspace_id,project_location_id,location_name,source_path,access_mode,git_status,created_at,updated_at)
+             VALUES('wl','w','l','repo','/source','read_only','not_git','now','now');
+             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,launch_started_at,created_at,updated_at)
+             VALUES('s','w','History','codex','/source','/source','closed','now','now','now');
+             INSERT INTO todos(id,workspace_id,title,status,created_at,updated_at)
+             VALUES('t','w','History','done','now','now');",
+        ).expect("seed archived Workspace");
+        drop(connection);
+
+        store
+            .delete_workspace("w")
+            .expect("delete Workspace record");
+        let db = store.0.lock();
+        for (table, expected) in [
+            ("workspaces", 0),
+            ("workspace_locations", 0),
+            ("sessions", 0),
+            ("todos", 0),
+            ("projects", 1),
+            ("project_locations", 1),
+        ] {
+            let count: i64 = db
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count records");
+            assert_eq!(count, expected, "unexpected count for {table}");
+        }
+        drop(db);
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[test]
     fn adds_location_delivery_mode_without_clearing_current_business_data() {
         let (root, path) = temporary_database("location-delivery-mode-migration");
         let connection = Connection::open(&path).expect("create current database");

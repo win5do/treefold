@@ -1,5 +1,6 @@
 export const enUS = {
   common: {
+    cancel: "Cancel",
     save: "Save",
     unavailable: "Unavailable",
   },
@@ -76,6 +77,9 @@ export const enUS = {
     permanentlyDelete: "Permanently delete",
     permanentlyDeleteProject: "Permanently delete {{name}}",
     deleteConfirmation: "Permanently delete “{{name}}”?\n\nThis removes its Sessions, Workspaces, and retained history. This action cannot be undone.",
+    archivedActions: "Actions for archived {{type}} {{name}}",
+    deleteTitle: "Permanently delete {{type}} “{{name}}”?",
+    deleteRecordConfirmation: "This removes the {{type}} and its retained Treefold history from SQLite. Source directories, branches, and worktrees are not changed. This action cannot be undone.",
     empty: "No Projects yet",
   },
   settings: {

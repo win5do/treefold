@@ -30,6 +30,7 @@ async function startFixtureApi() {
   const locationRequests = [];
   const renameRequests = [];
   const sessionOrderRequests = [];
+  const deleteRequests = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -160,6 +161,10 @@ async function startFixtureApi() {
         return;
       }
       const project = fixture.projects.find((item) => item.id === projectMatch[1]);
+      if (input.status === "archived" && fixture.projectDetails[projectMatch[1]].workspaces.some((item) => item.kind !== "base" && item.status === "active")) {
+        sendJson(response, 400, { error: { code: "BAD_REQUEST", message: "Finish active Workspaces and Forks before archiving this Project" } });
+        return;
+      }
       if (input.name !== undefined) {
         project.name = input.name;
         fixture.projectDetails[projectMatch[1]].name = input.name;
@@ -349,6 +354,19 @@ async function startFixtureApi() {
       sendJson(response, 200, fixture.workspaceDetails[workspaceMatch[1]]);
       return;
     }
+    if (request.method === "DELETE" && workspaceMatch) {
+      const summary = Object.values(fixture.projectDetails).flatMap((detail) => detail.workspaces).find((item) => item.id === workspaceMatch[1]);
+      if (!summary) return sendJson(response, 404, { error: "Workspace not found" });
+      if (summary.status !== "archived") return sendJson(response, 400, { error: "Finish the Workspace or Fork before permanently deleting it" });
+      const children = Object.values(fixture.projectDetails).flatMap((detail) => detail.workspaces).filter((item) => item.parent_workspace_id === summary.id);
+      if (children.length > 0) return sendJson(response, 400, { error: "Delete this Workspace's Forks before deleting the Workspace" });
+      for (const detail of Object.values(fixture.projectDetails)) detail.workspaces = detail.workspaces.filter((item) => item.id !== summary.id);
+      for (const detail of Object.values(fixture.workspaceDetails)) detail.forks = detail.forks.filter((item) => item.id !== summary.id);
+      delete fixture.workspaceDetails[summary.id];
+      deleteRequests.push({ kind: summary.kind, id: summary.id });
+      sendJson(response, 204, null);
+      return;
+    }
 
     const workspaceSessionsMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/sessions$/);
     if (workspaceSessionsMatch && fixture.workspaceDetails[workspaceSessionsMatch[1]]) {
@@ -490,6 +508,23 @@ async function startFixtureApi() {
     workspaceLocationUpdates,
     renameRequests,
     sessionOrderRequests,
+    deleteRequests,
+    archiveAllStreams() {
+      for (const detail of Object.values(fixture.projectDetails)) detail.workspaces.forEach((item) => { if (item.kind !== "base") item.status = "archived"; });
+      for (const detail of Object.values(fixture.workspaceDetails)) {
+        detail.status = "archived";
+        detail.forks.forEach((item) => { item.status = "archived"; });
+      }
+    },
+    restoreActiveStreams() {
+      for (const detail of Object.values(fixture.projectDetails)) detail.workspaces.forEach((item) => {
+        if (item.id === FIXTURE_IDS.workspace || item.id === FIXTURE_IDS.fork) item.status = "active";
+      });
+      for (const detail of Object.values(fixture.workspaceDetails)) {
+        if (detail.id === FIXTURE_IDS.workspace || detail.id === FIXTURE_IDS.fork) detail.status = "active";
+        detail.forks.forEach((item) => { if (item.id === FIXTURE_IDS.fork) item.status = "active"; });
+      }
+    },
     unexpectedRequests,
     async close() {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -506,6 +541,9 @@ export async function startUiHarness() {
       workspaceLocationUpdates: [],
       renameRequests: [],
       sessionOrderRequests: [],
+      deleteRequests: [],
+      archiveAllStreams() {},
+      restoreActiveStreams() {},
       assertNoUnexpectedRequests() {},
       async close() {},
     };
@@ -547,6 +585,9 @@ export async function startUiHarness() {
     workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,
     renameRequests: fixtureApi.renameRequests,
     sessionOrderRequests: fixtureApi.sessionOrderRequests,
+    deleteRequests: fixtureApi.deleteRequests,
+    archiveAllStreams: fixtureApi.archiveAllStreams,
+    restoreActiveStreams: fixtureApi.restoreActiveStreams,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {
         throw new Error(`Unexpected UI fixture requests: ${fixtureApi.unexpectedRequests.join(", ")}`);

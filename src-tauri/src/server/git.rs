@@ -47,6 +47,7 @@ async fn pull_project_location(
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.directory(&id)?;
     let project = state.store.project(&location.project_id)?;
+    ensure_active_project(&project)?;
     Ok(Json(
         sync_project_location(&location, &project, "pull").await?,
     ))
@@ -58,6 +59,7 @@ async fn push_project_location(
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.directory(&id)?;
     let project = state.store.project(&location.project_id)?;
+    ensure_active_project(&project)?;
     Ok(Json(
         sync_project_location(&location, &project, "push").await?,
     ))
@@ -68,6 +70,7 @@ async fn pull_workspace_location(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.workspace_location(&id)?;
+    ensure_active_workspace(&state.store.workspace(&location.workspace_id)?)?;
     Ok(Json(sync_workspace_location(&location, "pull").await?))
 }
 
@@ -76,6 +79,7 @@ async fn push_workspace_location(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.workspace_location(&id)?;
+    ensure_active_workspace(&state.store.workspace(&location.workspace_id)?)?;
     Ok(Json(sync_workspace_location(&location, "push").await?))
 }
 
@@ -97,6 +101,7 @@ async fn sync_all_project_locations(
     action: &str,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
     let project = state.store.project(project_id)?;
+    ensure_active_project(&project)?;
     let mut results = Vec::new();
     for location in state.store.directories(project_id)? {
         if location.git_common_dir.is_none() {
@@ -149,7 +154,7 @@ async fn sync_all_workspace_locations(
     workspace_id: &str,
     action: &str,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    state.store.workspace(workspace_id)?;
+    ensure_active_workspace(&state.store.workspace(workspace_id)?)?;
     let mut results = Vec::new();
     for location in state.store.workspace_locations(workspace_id)? {
         if location.access_mode != "read_write" {
@@ -1226,11 +1231,4 @@ fn git_workspace_location(
         created_at: timestamp.into(),
         updated_at: timestamp.into(),
     }
-}
-
-fn cleanup_worktree(repository: &str, workspace: &Workspace) {
-    let _ = git::output(
-        Path::new(repository),
-        &["worktree", "remove", "--force", &workspace.checkout_path],
-    );
 }

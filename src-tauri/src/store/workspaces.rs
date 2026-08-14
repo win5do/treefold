@@ -123,6 +123,17 @@ impl Store {
         Ok(())
     }
 
+    pub fn delete_workspace(&self, id: &str) -> Result<()> {
+        let changed = self
+            .0
+            .lock()
+            .execute("DELETE FROM workspaces WHERE id=?", [id])?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn workspace_locations(&self, workspace_id: &str) -> Result<Vec<WorkspaceLocation>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!("SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_locations WHERE workspace_id=? ORDER BY location_name"))?;

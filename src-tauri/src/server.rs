@@ -150,7 +150,9 @@ fn app(state: AppState) -> Router {
         .route("/api/workspaces/{id}/forks", post(create_fork))
         .route(
             "/api/workspaces/{id}",
-            get(get_workspace).patch(update_workspace),
+            get(get_workspace)
+                .patch(update_workspace)
+                .delete(delete_workspace),
         )
         .route(
             "/api/workspaces/{id}/git-history",

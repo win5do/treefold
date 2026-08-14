@@ -433,6 +433,17 @@ try {
     timeout: 3_000,
     timeoutMsg: "closed Workspace Shell remained in Session history",
   });
+  const archivedForkRow = await browser.$(`[data-testid="fork-list-row-${FIXTURE_IDS.archivedFork}"]`);
+  await (await archivedForkRow.$('[data-testid="fork-archived-actions-trigger"]')).click();
+  const archivedForkMenu = await browser.$('[data-testid="fork-archived-actions"]');
+  await archivedForkMenu.waitForDisplayed({ timeout: 3_000 });
+  await (await archivedForkMenu.$('[data-testid="delete-fork-action"]')).click();
+  const deleteForkDialog = await browser.$('[data-testid="delete-record-dialog"]');
+  await deleteForkDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await deleteForkDialog.getText(), /Permanently delete fork/i, "archived Fork deletion must require explicit confirmation");
+  await (await deleteForkDialog.$('button=Permanently delete')).click();
+  await archivedForkRow.waitForExist({ reverse: true, timeout: 3_000 });
+  assert.deepEqual(harness.deleteRequests.at(-1), { kind: "fork", id: FIXTURE_IDS.archivedFork }, "Fork deletion must stay scoped to its parent Workspace list");
 
   await browser.$('button[aria-label="Hide left sidebar"]').click();
   const showSidebar = await browser.$('button[aria-label="Show left sidebar"]');
@@ -479,6 +490,15 @@ try {
   await archiveProject.moveTo();
   assert.equal(await browser.execute(() => !document.querySelector('[data-testid="directory-session-submenu"]')), true, "Archive Project must remain reachable without an open directory submenu");
   await archiveProject.click();
+  const archiveBlockedAlert = await browser.$('[role="alert"]');
+  await archiveBlockedAlert.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await archiveBlockedAlert.getText(), /Finish active Workspaces and Forks/i, "Project archive must be blocked while child work remains active");
+  harness.archiveAllStreams();
+  await (await archiveBlockedAlert.$('button[aria-label="Dismiss error"]')).click();
+  await renamedBackProjectLink.click({ button: "right" });
+  const archiveReadyMenu = await browser.$('[data-testid="directory-session-context-menu"]');
+  await archiveReadyMenu.waitForDisplayed({ timeout: 3_000 });
+  await (await archiveReadyMenu.$('[data-testid="archive-project-action"]')).click();
   await browser.waitUntil(async () => !(await (await browser.$('[data-testid="sidebar-project-link"]')).isExisting()), {
     timeout: 3_000,
     timeoutMsg: "archived Project remained in the sidebar",
@@ -490,9 +510,25 @@ try {
   let overviewRow = await browser.$('[data-testid="project-overview-row"]');
   assert.equal(await overviewRow.getAttribute("data-project-status"), "archived", "archived Project must remain visible on Overview");
   assert.match(await overviewRow.getText(), /Archived/);
-  assert.equal(await (await overviewRow.$('[data-testid="restore-project-action"]')).isExisting(), true, "archived Project must expose Restore to sidebar");
-  assert.equal(await (await overviewRow.$('[data-testid="delete-project-action"]')).isExisting(), true, "archived Project must expose permanent deletion");
-  await (await overviewRow.$('[data-testid="restore-project-action"]')).click();
+  await (await overviewRow.$(`p=${FIXTURE_NAMES.project}`)).click();
+  const archivedProjectPage = await browser.$('[data-testid="page-content"]');
+  await archivedProjectPage.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await archivedProjectPage.getText(), /archived · read-only/i, "archived Project details must identify their read-only state");
+  assert.equal(await (await archivedProjectPage.$('[data-testid="project-add-location"]')).isExisting(), false, "archived Project details must not expose location creation");
+  assert.equal(await (await archivedProjectPage.$('[data-testid^="project-location-actions-"]')).isExisting(), false, "archived Project details must not expose location edits");
+  assert.equal(await (await archivedProjectPage.$('button=Resume')).isExisting(), false, "archived Project details must not resume Sessions");
+  await (await browser.$('[data-testid="breadcrumb-projects"]')).click();
+  overviewRow = await browser.$('[data-testid="project-overview-row"]');
+  await overviewRow.waitForDisplayed({ timeout: 3_000 });
+  const archivedProjectActions = await overviewRow.$('[data-testid="project-archived-actions-trigger"]');
+  assert.equal(await archivedProjectActions.isExisting(), true, "archived Project must expose lifecycle actions from its list row");
+  await archivedProjectActions.click();
+  const archivedProjectMenu = await browser.$('[data-testid="project-archived-actions"]');
+  await archivedProjectMenu.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await (await archivedProjectMenu.$('[data-testid="restore-project-action"]')).isExisting(), true, "archived Project must expose Restore to sidebar");
+  assert.equal(await (await archivedProjectMenu.$('[data-testid="delete-project-action"]')).isExisting(), true, "archived Project must expose permanent deletion");
+  harness.restoreActiveStreams();
+  await (await archivedProjectMenu.$('[data-testid="restore-project-action"]')).click();
   const restoredProjectLink = await browser.$('[data-testid="sidebar-project-link"]');
   await restoredProjectLink.waitForDisplayed({ timeout: 3_000 });
   await browser.$(`button[aria-label="Expand Project ${FIXTURE_NAMES.project}"]`).click();
@@ -508,6 +544,18 @@ try {
   });
   const projectContent = await browser.$('[data-testid="page-content"]');
   assert.match(await projectContent.getText(), /fixture-documentation/, "attached Directory must remain visible on the Project page");
+  const archivedWorkspaceRow = await browser.$(`[data-testid="workspace-list-row-${FIXTURE_IDS.archivedWorkspace}"]`);
+  const archivedWorkspaceActions = await archivedWorkspaceRow.$('[data-testid="workspace-archived-actions-trigger"]');
+  await archivedWorkspaceActions.click();
+  const archivedWorkspaceMenu = await browser.$('[data-testid="workspace-archived-actions"]');
+  await archivedWorkspaceMenu.waitForDisplayed({ timeout: 3_000 });
+  await (await archivedWorkspaceMenu.$('[data-testid="delete-workspace-action"]')).click();
+  const deleteWorkspaceDialog = await browser.$('[data-testid="delete-record-dialog"]');
+  await deleteWorkspaceDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await deleteWorkspaceDialog.getText(), /Permanently delete workspace/i, "archived Workspace deletion must require explicit confirmation");
+  await (await deleteWorkspaceDialog.$('button=Permanently delete')).click();
+  await archivedWorkspaceRow.waitForExist({ reverse: true, timeout: 3_000 });
+  assert.deepEqual(harness.deleteRequests.at(-1), { kind: "workspace", id: FIXTURE_IDS.archivedWorkspace }, "Workspace deletion must stay scoped to its archived list record");
   const projectSessionsSection = await browser.$('[data-testid="project-sessions-section"]');
   assert.match(await projectSessionsSection.getText(), /Saved Project Codex Session/, "saved Project Codex history must remain available after archiving and restoring");
   assert.equal(await (await browser.$("button=New Shell")).isExisting(), false, "Project details must rely on the sidebar plus menu for Shell creation");

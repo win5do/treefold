@@ -114,6 +114,19 @@ async fn update_project(
     ApiJson(input): ApiJson<UpdateProject>,
 ) -> Result<Json<Project>> {
     let current = state.store.project(&id)?;
+    if current.status == "archived" {
+        let restoring = input.status.as_deref() == Some("active")
+            && input.name.is_none()
+            && input.description.is_none()
+            && input.default_location_id.is_none()
+            && input.default_base_branch.is_none()
+            && input.default_delivery_mode.is_none();
+        if !restoring {
+            return Err(AppError::BadRequest(
+                "Archived Projects are read-only; restore the Project before editing it".into(),
+            ));
+        }
+    }
     let status = input.status.as_deref().unwrap_or(&current.status);
     if status != "active" && status != "archived" {
         return Err(AppError::BadRequest(
@@ -147,6 +160,19 @@ async fn update_project(
         state.store.rename_project(&id, name, description)?;
     }
     if status == "archived" && current.status != "archived" {
+        let active = state
+            .store
+            .workspaces(&id)?
+            .into_iter()
+            .filter(|workspace| workspace.kind != "base" && workspace.status == "active")
+            .map(|workspace| workspace.name)
+            .collect::<Vec<_>>();
+        if !active.is_empty() {
+            return Err(AppError::BadRequest(format!(
+                "Finish active Workspaces and Forks before archiving this Project: {}",
+                active.join(", ")
+            )));
+        }
         for workspace in state.store.workspaces(&id)? {
             for mut session in state.store.sessions(&workspace.id)? {
                 capture_codex_session_id(&state.store, &mut session)?;
@@ -575,6 +601,7 @@ fn delete_worktree_impl(
     input: DeleteWorktree,
 ) -> Result<StatusCode> {
     let directory = state.store.directory(&directory_id)?;
+    ensure_active_project(&state.store.project(&directory.project_id)?)?;
     if !directory.is_git {
         return Err(AppError::BadRequest(
             "directory is not a Git repository".into(),
@@ -637,20 +664,12 @@ async fn delete_project(
             "Archive the Project before permanently deleting it".into(),
         ));
     }
-    for workspace in state.store.workspaces(&id)? {
-        for session in state.store.sessions(&workspace.id)? {
-            let _ = state.terminals.remove(&session.id).await;
-        }
-        if workspace.checkout_mode == "worktree" {
-            if let Ok(directory) = state.store.directory(&workspace.project_directory_id) {
-                let repository = directory.path;
-                blocking_git_operation(move || {
-                    cleanup_worktree(&repository, &workspace);
-                    Ok(())
-                })
-                .await?;
-            }
-        }
+    if state.store.workspaces(&id)?.iter().any(|workspace| {
+        workspace.kind != "base" && workspace.status == "active"
+    }) {
+        return Err(AppError::BadRequest(
+            "Finish active Workspaces and Forks before deleting this Project".into(),
+        ));
     }
     state.store.delete_project(&id)?;
     Ok(StatusCode::NO_CONTENT)
@@ -745,6 +764,7 @@ async fn create_directory(
     ApiJson(input): ApiJson<CreateDirectory>,
 ) -> Result<(StatusCode, Json<Directory>)> {
     let project = state.store.project(&project_id)?;
+    ensure_active_project(&project)?;
     let (path, is_git) = inspect_path(&input.path)?;
     if project.default_location_id.is_none() && !is_git {
         return Err(AppError::BadRequest(
@@ -815,6 +835,7 @@ async fn refresh_project_location(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectLocation>> {
     let mut location = state.store.directory(&id)?;
+    ensure_active_project(&state.store.project(&location.project_id)?)?;
     let was_git = location.git_common_dir.is_some();
     refresh_location_observation(&mut location)?;
     if location.git_status == "ready" {
@@ -843,6 +864,7 @@ async fn reattach_project_location(
     ApiJson(input): ApiJson<ReattachProjectLocation>,
 ) -> Result<Json<ProjectLocation>> {
     let current = state.store.directory(&id)?;
+    ensure_active_project(&state.store.project(&current.project_id)?)?;
     if current.git_common_dir.is_none() {
         return Err(AppError::BadRequest(
             "only a previously identified Git location can be reattached".into(),
@@ -932,6 +954,7 @@ async fn delete_project_location(
 ) -> Result<StatusCode> {
     let location = state.store.directory(&id)?;
     let project = state.store.project(&location.project_id)?;
+    ensure_active_project(&project)?;
     if project.default_location_id.as_deref() == Some(&id) {
         if state.store.directories(&project.id)?.len() > 1 {
             return Err(AppError::BadRequest(
@@ -962,6 +985,7 @@ async fn update_directory(
     ApiJson(input): ApiJson<UpdateDirectory>,
 ) -> Result<Json<Directory>> {
     let current = state.store.directory(&id)?;
+    ensure_active_project(&state.store.project(&current.project_id)?)?;
     let base_branch = trimmed(input.base_branch).filter(|value| !value.is_empty());
     let delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
     if current.git_common_dir.is_none() && (base_branch.is_some() || delivery_mode.is_some()) {
@@ -1046,6 +1070,7 @@ fn checkout_directory_branch_impl(
     input: CheckoutDirectoryBranch,
 ) -> Result<Json<Directory>> {
     let mut directory = state.store.directory(&id)?;
+    ensure_active_project(&state.store.project(&directory.project_id)?)?;
     ensure_git_directory(&directory)?;
     let branches = directory_branches(&directory.path)?;
     match input.kind.as_str() {
@@ -1499,6 +1524,7 @@ async fn update_workspace(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateWorkspace>,
 ) -> Result<Json<Workspace>> {
+    ensure_active_workspace(&state.store.workspace(&id)?)?;
     let name = input.name.trim();
     if name.is_empty() {
         return Err(AppError::BadRequest(
@@ -1509,6 +1535,41 @@ async fn update_workspace(
         .store
         .rename_workspace(&id, name, &input.description)?;
     Ok(Json(state.store.workspace(&id)?))
+}
+
+async fn delete_workspace(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<StatusCode> {
+    let workspace = state.store.workspace(&id)?;
+    if workspace.kind == "base" || workspace.status != "archived" {
+        return Err(AppError::BadRequest(
+            "Finish the Workspace or Fork before permanently deleting it".into(),
+        ));
+    }
+    if !state.store.forks(&id)?.is_empty() {
+        return Err(AppError::BadRequest(
+            "Delete this Workspace's Forks before deleting the Workspace".into(),
+        ));
+    }
+    for session in state.store.sessions(&id)? {
+        if state.terminals.is_running(&session.id).await {
+            return Err(AppError::BadRequest(
+                "Close all running Sessions before deleting this Workspace".into(),
+            ));
+        }
+    }
+    state.store.delete_workspace(&id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn ensure_active_project(project: &Project) -> Result<()> {
+    if project.status != "active" {
+        return Err(AppError::BadRequest(
+            "Archived Projects are read-only".into(),
+        ));
+    }
+    Ok(())
 }
 
 

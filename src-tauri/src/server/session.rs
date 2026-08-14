@@ -150,7 +150,7 @@ async fn reorder_sessions(
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<ReorderSessions>,
 ) -> Result<Json<Vec<Session>>> {
-    state.store.workspace(&workspace_id)?;
+    ensure_active_workspace(&state.store.workspace(&workspace_id)?)?;
     let unique = input
         .session_ids
         .iter()
@@ -365,6 +365,7 @@ async fn update_session(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateSession>,
 ) -> Result<Json<Session>> {
+    ensure_session_owner_active(&state, &state.store.session(&id)?)?;
     let name = input.name.trim();
     if name.is_empty() {
         return Err(AppError::BadRequest("Session name cannot be empty".into()));
@@ -390,6 +391,7 @@ async fn restart_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id)?;
+    ensure_session_owner_active(&state, &session)?;
     capture_codex_session_id(&state.store, &mut session)?;
     state
         .terminals
@@ -472,6 +474,7 @@ async fn open_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
+    ensure_session_owner_active(&state, &state.store.session(&id)?)?;
     state.store.set_session_visible(&id, true)?;
     get_session(State(state), AxumPath(id)).await
 }
@@ -495,7 +498,7 @@ async fn create_todo(
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateTodo>,
 ) -> Result<(StatusCode, Json<Todo>)> {
-    state.store.workspace(&workspace_id)?;
+    ensure_active_workspace(&state.store.workspace(&workspace_id)?)?;
     if input.title.trim().is_empty() {
         return Err(AppError::BadRequest("title is required".into()));
     }
@@ -531,11 +534,22 @@ async fn update_todo(
     if !["pending", "assigned", "done"].contains(&input.status.as_str()) {
         return Err(AppError::BadRequest("invalid todo status".into()));
     }
-    let _ = state.store.todo(&id)?;
+    let todo = state.store.todo(&id)?;
+    ensure_active_workspace(&state.store.workspace(&todo.workspace_id)?)?;
     state
         .store
         .update_todo(&id, &input.status, input.session_id.as_deref())?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn ensure_session_owner_active(state: &AppState, session: &Session) -> Result<()> {
+    let workspace = state.store.workspace(&session.workspace_id)?;
+    if workspace.status != "active" || state.store.project(&workspace.project_id)?.status != "active" {
+        return Err(AppError::BadRequest(
+            "Archived Projects, Workspaces, and Forks are read-only".into(),
+        ));
+    }
+    Ok(())
 }
 async fn get_settings(State(state): State<AppState>) -> Result<Json<crate::settings::Settings>> {
     Ok(Json(state.settings.load()?))

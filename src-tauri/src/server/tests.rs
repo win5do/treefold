@@ -1383,6 +1383,20 @@ mod tests {
                 .expect("read Codex")
                 .sidebar_visible
         );
+        assert!(update_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(UpdateProject {
+                name: Some("Archived edit".into()),
+                description: None,
+                status: None,
+                default_location_id: None,
+                default_base_branch: None,
+                default_delivery_mode: None,
+            }),
+        )
+        .await
+        .is_err());
 
         let Json(restored) = update_project(
             State(state.clone()),
@@ -2900,4 +2914,3 @@ mod tests {
         std::fs::remove_dir_all(root).expect("remove test root");
     }
 }
-
