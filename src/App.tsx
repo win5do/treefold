@@ -532,6 +532,22 @@ function Workspace() {
     await act(() => api(`/api/workspace-locations/${location.id}`, { method: "PATCH", body: JSON.stringify({ remote_name: "", remote_branch: "" }) }));
   }
 
+  async function openFinishWorkspace(stream: Workspace) {
+    if (workspace?.id === stream.id) {
+      setFinishWorkspaceDialog(workspace);
+      return;
+    }
+    setBusy(true);
+    try {
+      setFinishWorkspaceDialog(normalizeWorkspace(await api<WorkspaceDetail>(`/api/workspaces/${stream.id}`)));
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Workspace 加载失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function createShell(stream: WorkspaceDetail | Workspace, directory?: Directory) {
     setSessionMenu(null);
     setBusy(true);
@@ -755,6 +771,7 @@ function Workspace() {
         {mobileSidebar && <button className="absolute inset-0 z-30 bg-black/30 md:hidden" onClick={() => setMobileSidebar(false)} aria-label={t("workspace.closeNavigation")} />}
         <WorkspaceSidebar
           projects={projects}
+          busy={busy}
           selectedWorkspaceId={workspace?.id}
           selectedSessionId={selectedSession?.id}
           hidden={sidebarHidden}
@@ -776,6 +793,11 @@ function Workspace() {
           onCreateBaseShell={(project, directory) => void createProjectShell(project, directory)}
           onCreateBaseCodex={(project, directory) => void createProjectCodex(project, directory)}
           onOpenInFinder={(project, stream) => void openInFinder(project, stream)}
+          onSyncProject={(project, action) => void gitSync("projects", project.id, action)}
+          onSyncProjectLocation={(location, action) => void gitSyncProjectLocation(location.id, action)}
+          onSyncWorkspace={(stream, action) => void gitSync("workspaces", stream.id, action)}
+          onSyncWorkspaceLocation={(location, action) => void gitSyncWorkspaceLocation(location.id, action)}
+          onFinishWorkspace={(stream) => void openFinishWorkspace(stream)}
           onArchiveProject={(project) => void updateProjectStatus(project, "archived")}
           onCloseSession={(stream, session) => void closeSidebarSession(stream, session)}
           onCloseProjectSession={(project, session) => void closeProjectSession(project, session)}
@@ -805,9 +827,9 @@ function Workspace() {
                 }}
               />
             ) : workspace ? (
-              <WorkspaceHome detail={workspace} busy={busy} onOpen={(session) => void openHistorySession(workspace, session)} onOpenFork={(fork) => navigate(`/workspaces/${fork.id}`)} onFork={() => setCreateForkWorkspace(workspace)} onSyncLocation={(location, action) => void gitSyncWorkspaceLocation(location.id, action)} onConfigureUpstream={setConfigureWorkspaceLocation} onClearUpstream={(location) => void clearWorkspaceLocationUpstream(location)} onPull={() => void gitSync("workspaces", workspace.id, "pull")} onPush={() => void gitSync("workspaces", workspace.id, "push")} onFinish={() => setFinishWorkspaceDialog(workspace)} />
+              <WorkspaceHome detail={workspace} busy={busy} onOpen={(session) => void openHistorySession(workspace, session)} onOpenFork={(fork) => navigate(`/workspaces/${fork.id}`)} onConfigureUpstream={setConfigureWorkspaceLocation} onClearUpstream={(location) => void clearWorkspaceLocationUpstream(location)} />
             ) : selectedProject ? (
-              <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onOpenSession={(session) => void openProjectHistorySession(selectedProject, session)} onCreate={() => setCreateWorkspaceProject(selectedProject)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onSyncLocation={(location, action) => void gitSyncProjectLocation(location.id, action)} onDeleteWorktree={(item) => void removeWorktree(item)} onPull={() => void gitSync("projects", selectedProject.id, "pull")} onPush={() => void gitSync("projects", selectedProject.id, "push")} />
+              <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onOpenSession={(session) => void openProjectHistorySession(selectedProject, session)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onDeleteWorktree={(item) => void removeWorktree(item)} />
             ) : (
               <Overview projects={projects} busy={busy} onOpen={(id) => navigate(`/projects/${id}`)} onCreate={() => setCreateProjectOpen(true)} onRestore={(project) => void updateProjectStatus(project, "active")} onDelete={(project) => void permanentlyDeleteProject(project)} />
             )}
@@ -889,8 +911,9 @@ function Workspace() {
   );
 }
 
-function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings }: {
+function WorkspaceSidebar({ projects, busy, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onSyncProject, onSyncProjectLocation, onSyncWorkspace, onSyncWorkspaceLocation, onFinishWorkspace, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings }: {
   projects: ProjectDetail[];
+  busy: boolean;
   selectedWorkspaceId?: string;
   selectedSessionId?: string;
   hidden: boolean;
@@ -912,6 +935,11 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
   onCreateBaseShell: (project: ProjectDetail, directory?: Directory) => void;
   onCreateBaseCodex: (project: ProjectDetail, directory?: Directory) => void;
   onOpenInFinder: (project: ProjectDetail, stream?: Workspace) => void;
+  onSyncProject: (project: ProjectDetail, action: "pull" | "push") => void;
+  onSyncProjectLocation: (location: Directory, action: "pull" | "push") => void;
+  onSyncWorkspace: (stream: Workspace, action: "pull" | "push") => void;
+  onSyncWorkspaceLocation: (location: WorkspaceLocation, action: "pull" | "push") => void;
+  onFinishWorkspace: (stream: Workspace) => void;
   onArchiveProject: (project: ProjectDetail) => void;
   onCloseSession: (stream: Workspace, session: Session) => void;
   onCloseProjectSession: (project: ProjectDetail, session: Session) => void;
@@ -921,6 +949,15 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
 }) {
   const { t } = useTranslation();
   const [contextOwner, setContextOwner] = useState<{ project: ProjectDetail; stream?: SidebarStream; x: number; y: number } | null>(null);
+  const openContextMenu = (event: React.MouseEvent, project: ProjectDetail, stream?: SidebarStream) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onSessionMenu(null);
+    const position = event.type === "contextmenu"
+      ? { x: event.clientX, y: event.clientY }
+      : (() => { const rect = event.currentTarget.getBoundingClientRect(); return { x: rect.left, y: rect.bottom + 4 }; })();
+    setContextOwner((current) => current?.project.id === project.id && current.stream?.id === stream?.id ? null : { project, stream, ...position });
+  };
   useEffect(() => {
     if (!contextOwner && !sessionMenu) return;
     const close = () => { setContextOwner(null); onSessionMenu(null); };
@@ -940,12 +977,18 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
         const projectOpen = expandedProjects.has(project.id);
         const activeRootWorkspaces = project.workspaces.filter((item) => item.status === "active" && !item.parent_workspace_id);
         return <div key={project.id} className="relative mb-1">
-          <div data-testid="sidebar-project-node" className="group flex min-w-0 items-center" onContextMenu={(event) => { event.preventDefault(); onSessionMenu(null); setContextOwner({ project, x: event.clientX, y: event.clientY }); }}>
+          <div data-testid="sidebar-project-node" className="group flex min-w-0 items-center" onContextMenu={(event) => openContextMenu(event, project)}>
             <button data-testid="sidebar-tree-toggle" className={sidebarTreeToggleClass} aria-label={t(projectOpen ? "sidebar.collapseProject" : "sidebar.expandProject", { name: project.name })} aria-expanded={projectOpen} onClick={() => onToggleProject(project.id)}>{projectOpen ? <ChevronDown data-testid="sidebar-tree-chevron" className="size-3.5" /> : <ChevronRight data-testid="sidebar-tree-chevron" className="size-3.5" />}</button>
             <button data-testid="sidebar-project-link" className={cn(sidebarTreeLinkClass, "text-xs font-medium")} title={project.name} onClick={() => onNavigate(`/projects/${project.id}`)}><FolderGit2 data-testid="sidebar-tree-icon" className={sidebarTreeIconClass} /><span data-sidebar-tree-label="true" className="min-w-0 flex-1 truncate">{project.name}</span></button>
-            <button data-testid="sidebar-project-action" data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center rounded-md text-neutral-500 hover:bg-white" aria-label={t("sidebar.newInProject", { name: project.name })} onClick={(event) => { event.stopPropagation(); setContextOwner(null); const id = `project:${project.id}`; const rect = event.currentTarget.getBoundingClientRect(); onSessionMenu(sessionMenu?.id === id ? null : { id, x: rect.left, y: rect.bottom + 4 }); }}><Plus className="size-3.5" /></button>
+            <SidebarNodeActions
+              menuLabel={t("sidebar.projectActions", { name: project.name })}
+              createLabel={t("sidebar.newInProject", { name: project.name })}
+              createTestId="sidebar-project-action"
+              onMenu={(event) => openContextMenu(event, project)}
+              onCreate={(event) => { setContextOwner(null); const id = `project:${project.id}`; const rect = event.currentTarget.getBoundingClientRect(); onSessionMenu(sessionMenu?.id === id ? null : { id, x: rect.left, y: rect.bottom + 4 }); }}
+            />
           </div>
-          {sessionMenu?.id === `project:${project.id}` && <SessionDirectoryMenu testId="sidebar-session-menu" directories={project.directories} position={sessionMenu} primaryAction={<button data-testid="create-workspace-action" className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium hover:bg-neutral-100" onClick={() => { onSessionMenu(null); onCreateWorkspace(project); }}><Workflow className="size-3.5" />{t("sidebar.newWorkspace")}</button>} onShell={(directory) => { onSessionMenu(null); onCreateBaseShell(project, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateBaseCodex(project, directory); }} />}
+          {sessionMenu?.id === `project:${project.id}` && <SessionDirectoryMenu testId="sidebar-session-menu" directories={project.directories} position={sessionMenu} primaryAction={<SidebarMenuButton testId="create-workspace-action" icon={<Workflow />} onClick={() => { onSessionMenu(null); onCreateWorkspace(project); }}>{t("sidebar.newWorkspace")}</SidebarMenuButton>} onShell={(directory) => { onSessionMenu(null); onCreateBaseShell(project, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateBaseCodex(project, directory); }} />}
           {projectOpen && <div data-testid="sidebar-project-children" className="ml-3.5 border-l border-neutral-300 pl-1">
             <SidebarProjectSessions project={project} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} onNavigate={onNavigate} onCloseSession={onCloseProjectSession} />
             {activeRootWorkspaces.map((stream) => <SidebarWorkspaceNode
@@ -963,7 +1006,7 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
               onCreateShell={onCreateShell}
               onCreateCodex={onCreateCodex}
               onCreateFork={onCreateFork}
-              onOpenContext={(event, stream) => { event.preventDefault(); onSessionMenu(null); setContextOwner({ project, stream, x: event.clientX, y: event.clientY }); }}
+              onOpenContext={(event, stream) => openContextMenu(event, project, stream)}
               onCloseSession={onCloseSession}
             />)}
             {activeRootWorkspaces.length === 0 && <p className="px-3 py-2 text-[11px] text-neutral-400">{t("sidebar.noWorkspaces")}</p>}
@@ -971,17 +1014,76 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
         </div>;
       })}
     </div>
-    {contextOwner && <SessionDirectoryMenu testId="directory-session-context-menu" directories={contextOwner.stream?.directories ?? contextOwner.project.directories} position={contextOwner} footerRows={contextOwner.stream ? 1 : 2} onShell={(directory) => { const owner = contextOwner; setContextOwner(null); owner.stream ? onCreateShell(owner.stream, directory) : onCreateBaseShell(owner.project, directory); }} onCodex={(directory) => { const owner = contextOwner; setContextOwner(null); owner.stream ? onCreateCodex(owner.stream, directory) : onCreateBaseCodex(owner.project, directory); }} footer={<><button className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs hover:bg-neutral-100" onClick={() => { const owner = contextOwner; setContextOwner(null); onOpenInFinder(owner.project, owner.stream); }}><FolderOpen className="size-3.5" />{t("sidebar.openInFinder")}</button>{!contextOwner.stream && <button data-testid="archive-project-action" className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs text-amber-700 hover:bg-amber-50" onClick={() => { const owner = contextOwner; setContextOwner(null); onArchiveProject(owner.project); }}><Archive className="size-3.5" />{t("sidebar.archiveProject")}</button>}</>} />}
+    {contextOwner && <SessionDirectoryMenu
+      testId="directory-session-context-menu"
+      directories={contextOwner.stream?.directories ?? contextOwner.project.directories}
+      position={contextOwner}
+      primaryAction={!contextOwner.stream
+        ? <SidebarMenuButton testId="create-workspace-action" icon={<Workflow />} onClick={() => { const owner = contextOwner; setContextOwner(null); onCreateWorkspace(owner.project); }}>{t("sidebar.newWorkspace")}</SidebarMenuButton>
+        : contextOwner.stream.kind === "workspace"
+          ? <SidebarMenuButton testId="create-fork-action" icon={<GitBranch />} onClick={() => { const owner = contextOwner; setContextOwner(null); onCreateFork(owner.stream!); }}>{t("sidebar.newFork")}</SidebarMenuButton>
+          : undefined}
+      syncTargets={!contextOwner.stream
+        ? contextOwner.project.directories.filter((directory) => directory.is_git && directory.git_status === "ready").map((directory) => ({ id: directory.id, name: directory.name }))
+        : contextOwner.stream.kind === "workspace"
+          ? (contextOwner.stream.locations ?? []).filter((location) => location.access_mode === "read_write" && location.git_status === "ready").map((location) => ({ id: location.id, name: location.location_name }))
+          : undefined}
+      busy={busy}
+      footerRows={2}
+      onSync={(targetId, action) => {
+        const owner = contextOwner;
+        setContextOwner(null);
+        if (!owner.stream) {
+          const location = owner.project.directories.find((item) => item.id === targetId);
+          location ? onSyncProjectLocation(location, action) : onSyncProject(owner.project, action);
+          return;
+        }
+        const location = owner.stream.locations?.find((item) => item.id === targetId);
+        location ? onSyncWorkspaceLocation(location, action) : onSyncWorkspace(owner.stream, action);
+      }}
+      onShell={(directory) => { const owner = contextOwner; setContextOwner(null); owner.stream ? onCreateShell(owner.stream, directory) : onCreateBaseShell(owner.project, directory); }}
+      onCodex={(directory) => { const owner = contextOwner; setContextOwner(null); owner.stream ? onCreateCodex(owner.stream, directory) : onCreateBaseCodex(owner.project, directory); }}
+      footer={<>
+        <SidebarMenuButton icon={<FolderOpen />} onClick={() => { const owner = contextOwner; setContextOwner(null); onOpenInFinder(owner.project, owner.stream); }}>{t("sidebar.openInFinder")}</SidebarMenuButton>
+        {contextOwner.stream
+          ? <SidebarMenuButton testId="finish-workspace-action" destructive icon={<X />} onClick={() => { const owner = contextOwner; setContextOwner(null); onFinishWorkspace(owner.stream!); }}>{t(contextOwner.stream.kind === "fork" ? "sidebar.finishFork" : "sidebar.finishWorkspace")}</SidebarMenuButton>
+          : <SidebarMenuButton testId="archive-project-action" destructive icon={<Archive />} onClick={() => { const owner = contextOwner; setContextOwner(null); onArchiveProject(owner.project); }}>{t("sidebar.archiveProject")}</SidebarMenuButton>}
+      </>}
+    />}
     <div className="border-t border-neutral-200 p-2"><button data-testid="open-settings" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-neutral-600 hover:bg-white/70" onClick={onSettings}><Settings2 className="size-4 shrink-0" />{t("sidebar.settings")}</button></div>
     <div data-testid="sidebar-resize-handle" role="separator" aria-label={t("sidebar.resize")} aria-orientation="vertical" tabIndex={0} className="absolute inset-y-0 right-0 hidden w-1 translate-x-1/2 cursor-col-resize touch-none hover:bg-blue-400/50 focus:bg-blue-400/50 md:block" onPointerDown={(event) => { event.preventDefault(); onResizeStart(); }} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); onResizeKeyboard(-16); } else if (event.key === "ArrowRight") { event.preventDefault(); onResizeKeyboard(16); } }} />
   </aside>;
 }
 
-type SidebarStream = Workspace & { sessions?: Session[]; directories?: Directory[]; forks?: Workspace[] };
+type SidebarStream = Workspace & { sessions?: Session[]; directories?: Directory[]; locations?: WorkspaceLocation[]; forks?: Workspace[] };
 
 const sidebarTreeToggleClass = "grid size-6 shrink-0 place-items-center rounded-md text-neutral-400 hover:bg-white/70 hover:text-neutral-700";
 const sidebarTreeLinkClass = "flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden rounded-md py-1.5 text-left hover:bg-white/70";
 const sidebarTreeIconClass = "size-3.5 shrink-0 text-neutral-500";
+
+function SidebarNodeActions({ menuLabel, createLabel, createTestId, onMenu, onCreate }: {
+  menuLabel: string;
+  createLabel: string;
+  createTestId: string;
+  onMenu: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  onCreate: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}) {
+  return <div className="flex shrink-0 items-center gap-0.5">
+    <Button data-testid="sidebar-node-menu-trigger" size="icon" variant="ghost" aria-label={menuLabel} title={menuLabel} onClick={(event) => { event.stopPropagation(); onMenu(event); }}><Ellipsis data-icon="inline-start" /></Button>
+    <Button data-testid={createTestId} data-sidebar-row-action="true" size="icon" variant="ghost" aria-label={createLabel} title={createLabel} onClick={(event) => { event.stopPropagation(); onCreate(event); }}><Plus data-icon="inline-start" /></Button>
+  </div>;
+}
+
+function SidebarMenuButton({ icon, children, testId, destructive = false, disabled, onClick }: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  testId?: string;
+  destructive?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return <button type="button" role="menuitem" data-testid={testId} disabled={disabled} className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40 [&_svg]:size-3.5 [&_svg]:shrink-0", destructive && "text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10")} onClick={onClick}>{icon}<span className="min-w-0 flex-1 truncate">{children}</span></button>;
+}
 
 type SidebarNodeProps = {
   stream: SidebarStream;
@@ -1000,31 +1102,52 @@ type SidebarNodeProps = {
   onCloseSession: (stream: Workspace, session: Session) => void;
 };
 
-function SessionDirectoryMenu({ directories, testId, position, primaryAction, footer, footerRows = 1, onShell, onCodex }: { directories: Directory[]; testId: string; position: { x: number; y: number }; primaryAction?: React.ReactNode; footer?: React.ReactNode; footerRows?: number; onShell: (directory: Directory) => void; onCodex: (directory: Directory) => void }) {
+type SidebarSyncTarget = { id: string; name: string };
+type SidebarSubmenu = { kind: "session"; directory: Directory } | { kind: "sync"; action: "pull" | "push" };
+
+function SessionDirectoryMenu({ directories, testId, position, primaryAction, syncTargets, busy = false, footer, footerRows = 1, onSync, onShell, onCodex }: {
+  directories: Directory[];
+  testId: string;
+  position: { x: number; y: number };
+  primaryAction?: React.ReactNode;
+  syncTargets?: SidebarSyncTarget[];
+  busy?: boolean;
+  footer?: React.ReactNode;
+  footerRows?: number;
+  onSync?: (targetId: string | null, action: "pull" | "push") => void;
+  onShell: (directory: Directory) => void;
+  onCodex: (directory: Directory) => void;
+}) {
   const { t } = useTranslation();
-  const [directory, setDirectory] = useState<Directory | null>(null);
+  const [submenu, setSubmenu] = useState<SidebarSubmenu | null>(null);
   const [submenuTop, setSubmenuTop] = useState(0);
-  const activate = (item: Directory, element: HTMLButtonElement) => {
+  const activate = (next: SidebarSubmenu, element: HTMLButtonElement, submenuHeight: number) => {
     const menuTop = element.closest<HTMLElement>(`[data-testid="${testId}"]`)?.getBoundingClientRect().top ?? 0;
-    const availableTop = window.innerHeight - menuTop - 124;
-    setDirectory(item);
+    const availableTop = window.innerHeight - menuTop - submenuHeight - 8;
+    setSubmenu(next);
     setSubmenuTop(Math.max(0, Math.min(element.offsetTop, availableTop)));
   };
-  const menuHeight = 36 + directories.length * 40 + (primaryAction ? 42 : 0) + (footer ? 42 * footerRows : 0);
+  const menuHeight = 36 + directories.length * 40 + (primaryAction ? 42 : 0) + (syncTargets ? 82 : 0) + (footer ? 42 * footerRows : 0);
   const left = Math.max(8, Math.min(position.x, window.innerWidth - 208 - 160 - 8));
   const top = Math.max(8, Math.min(position.y, window.innerHeight - menuHeight - 8));
-  return createPortal(<div data-testid={testId} className="fixed z-[100] w-52 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={{ left, top }} onClick={(event) => event.stopPropagation()} onMouseLeave={() => setDirectory(null)}>
-    {primaryAction && <div data-testid="session-menu-primary-action" className="mb-1 border-b border-neutral-100 pb-1" onMouseEnter={() => setDirectory(null)} onFocus={() => setDirectory(null)}>{primaryAction}</div>}
-    <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400">{t("sidebar.newSessionIn")}</p>{directories.map((item) => <button key={item.id} data-testid={`session-directory-${item.id}`} aria-expanded={directory?.id === item.id} className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100", directory?.id === item.id && "bg-neutral-100 text-neutral-950")} onMouseEnter={(event) => activate(item, event.currentTarget)} onFocus={(event) => activate(item, event.currentTarget)}>{item.is_git ? <FolderGit2 className="size-3.5" /> : <Folder className="size-3.5" />}<span className="min-w-0 flex-1 truncate">{item.name}</span>{item.role === "primary" && <span className="text-[9px] text-neutral-400">{t("sidebar.primary")}</span>}<ChevronRight className={cn("size-3 transition-transform", directory?.id === item.id && "translate-x-0.5")} /></button>)}
-    {directory && <div key={directory.id} data-testid="directory-session-submenu" className="directory-session-submenu absolute left-full w-40 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={{ top: submenuTop }}><p className="truncate px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400" title={directory.name}>{directory.name}</p><button className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-neutral-100" onClick={() => onShell(directory)}><Shell className="size-3.5" />Shell</button><button className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-xs hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={!directory.is_git || directory.git_status !== "ready"} title={!directory.is_git ? "Non-Git locations are read-only Codex context" : undefined} onClick={() => onCodex(directory)}><Bot className="size-3.5" />Codex</button></div>}
-    {footer && <div data-testid="session-menu-footer" className="mt-1 border-t border-neutral-100 pt-1" onMouseEnter={() => setDirectory(null)} onMouseMove={() => setDirectory(null)} onFocus={() => setDirectory(null)}>{footer}</div>}
+  const activeDirectory = submenu?.kind === "session" ? submenu.directory : null;
+  const activeSync = submenu?.kind === "sync" ? submenu.action : null;
+  return createPortal(<div data-testid={testId} role="menu" className="fixed z-[100] w-52 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={{ left, top }} onClick={(event) => event.stopPropagation()} onMouseLeave={() => setSubmenu(null)}>
+    {primaryAction && <div data-testid="session-menu-primary-action" className="mb-1 border-b border-neutral-100 pb-1" onMouseEnter={() => setSubmenu(null)} onFocus={() => setSubmenu(null)}>{primaryAction}</div>}
+    <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400">{t("sidebar.newSessionIn")}</p>{directories.map((item) => <button key={item.id} type="button" role="menuitem" data-testid={`session-directory-${item.id}`} aria-haspopup="menu" aria-expanded={activeDirectory?.id === item.id} className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100", activeDirectory?.id === item.id && "bg-neutral-100 text-neutral-950")} onMouseEnter={(event) => activate({ kind: "session", directory: item }, event.currentTarget, 124)} onFocus={(event) => activate({ kind: "session", directory: item }, event.currentTarget, 124)}>{item.is_git ? <FolderGit2 className="size-3.5" /> : <Folder className="size-3.5" />}<span className="min-w-0 flex-1 truncate">{item.name}</span>{item.role === "primary" && <span className="text-[9px] text-neutral-400">{t("sidebar.primary")}</span>}<ChevronRight className={cn("size-3 transition-transform", activeDirectory?.id === item.id && "translate-x-0.5")} /></button>)}
+    {syncTargets && <div data-testid="sidebar-git-actions" className="mt-1 border-t border-neutral-100 pt-1">
+      {(["pull", "push"] as const).map((action) => <button key={action} type="button" role="menuitem" data-testid={`sidebar-${action}-menu`} disabled={busy || syncTargets.length === 0} aria-haspopup="menu" aria-expanded={activeSync === action} className={cn("flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40", activeSync === action && "bg-neutral-100 text-neutral-950")} onMouseEnter={(event) => activate({ kind: "sync", action }, event.currentTarget, 42 + (syncTargets.length + 1) * 36)} onFocus={(event) => activate({ kind: "sync", action }, event.currentTarget, 42 + (syncTargets.length + 1) * 36)}>{action === "pull" ? <Download className="size-3.5" /> : <Upload className="size-3.5" />}<span className="min-w-0 flex-1 truncate">{t(`sidebar.${action}`)}</span><ChevronRight className="size-3" /></button>)}
+    </div>}
+    {activeDirectory && <div key={activeDirectory.id} data-testid="directory-session-submenu" role="menu" className="directory-session-submenu absolute left-full w-40 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={{ top: submenuTop }}><p className="truncate px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400" title={activeDirectory.name}>{activeDirectory.name}</p><SidebarMenuButton icon={<Shell />} onClick={() => onShell(activeDirectory)}>Shell</SidebarMenuButton><SidebarMenuButton icon={<Bot />} disabled={!activeDirectory.is_git || activeDirectory.git_status !== "ready"} onClick={() => onCodex(activeDirectory)}>Codex</SidebarMenuButton></div>}
+    {activeSync && <div key={activeSync} data-testid="sidebar-git-submenu" role="menu" aria-label={t(`sidebar.${activeSync}`)} className="absolute left-full w-44 rounded-lg border border-neutral-200 bg-white p-1 shadow-xl" style={{ top: submenuTop }}><p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-neutral-400">{t(`sidebar.${activeSync}`)}</p><SidebarMenuButton testId={`sidebar-${activeSync}-all`} icon={activeSync === "pull" ? <Download /> : <Upload />} disabled={busy} onClick={() => onSync?.(null, activeSync)}>{t(`sidebar.${activeSync}All`)}</SidebarMenuButton>{(syncTargets ?? []).map((target) => <SidebarMenuButton key={target.id} testId={`sidebar-${activeSync}-${target.id}`} icon={<FolderGit2 />} disabled={busy} onClick={() => onSync?.(target.id, activeSync)}>{target.name}</SidebarMenuButton>)}</div>}
+    {footer && <div data-testid="session-menu-footer" className="mt-1 border-t border-neutral-100 pt-1" onMouseEnter={() => setSubmenu(null)} onMouseMove={() => setSubmenu(null)} onFocus={() => setSubmenu(null)}>{footer}</div>}
   </div>, document.body);
 }
 
 function SidebarCreateSessionMenu({ stream, menu, onSessionMenu, onCreateShell, onCreateCodex, onCreateFork, allowFork = false }: Pick<SidebarNodeProps, "stream" | "onSessionMenu" | "onCreateShell" | "onCreateCodex" | "onCreateFork"> & { menu: SessionMenuState | null; allowFork?: boolean }) {
   const { t } = useTranslation();
   if (!menu) return null;
-  return <SessionDirectoryMenu testId="sidebar-session-menu" directories={stream.directories ?? []} position={menu} primaryAction={allowFork ? <button data-testid="create-fork-action" className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium hover:bg-neutral-100" onClick={() => { onSessionMenu(null); onCreateFork(stream); }}><GitBranch className="size-3.5" />{t("sidebar.newFork")}</button> : undefined} onShell={(directory) => { onSessionMenu(null); onCreateShell(stream, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateCodex(stream, directory); }} />;
+  return <SessionDirectoryMenu testId="sidebar-session-menu" directories={stream.directories ?? []} position={menu} primaryAction={allowFork ? <SidebarMenuButton testId="create-fork-action" icon={<GitBranch />} onClick={() => { onSessionMenu(null); onCreateFork(stream); }}>{t("sidebar.newFork")}</SidebarMenuButton> : undefined} onShell={(directory) => { onSessionMenu(null); onCreateShell(stream, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateCodex(stream, directory); }} />;
 }
 
 function SidebarSessions({ stream, selectedSessionId, closingSessionIds, onNavigate, onCloseSession }: Pick<SidebarNodeProps, "stream" | "selectedSessionId" | "closingSessionIds" | "onNavigate" | "onCloseSession">) {
@@ -1046,13 +1169,14 @@ function SidebarProjectSessions({ project, selectedSessionId, closingSessionIds,
 }
 
 function SidebarForkNode(props: SidebarNodeProps) {
+  const { t } = useTranslation();
   const { stream, selectedWorkspaceId, selectedSessionId, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleWorkspace, onSessionMenu, onNavigate, onCreateShell, onCreateCodex, onCreateFork, onCloseSession, onOpenContext } = props;
   const open = expandedWorkspaces.has(stream.id);
   return <div className="relative">
     <div data-testid="sidebar-fork-node" className={cn("group flex min-w-0 items-center rounded-md", selectedWorkspaceId === stream.id && !selectedSessionId && "bg-white shadow-sm")} onContextMenu={(event) => onOpenContext(event, stream)}>
       <button data-testid="sidebar-tree-toggle" className={sidebarTreeToggleClass} aria-label={`${open ? "Collapse" : "Expand"} Fork ${stream.name}`} aria-expanded={open} onClick={() => onToggleWorkspace(stream.id)}>{open ? <ChevronDown data-testid="sidebar-tree-chevron" className="size-3.5" /> : <ChevronRight data-testid="sidebar-tree-chevron" className="size-3.5" />}</button>
       <button className={cn(sidebarTreeLinkClass, "text-[11px] text-neutral-600")} title={stream.name} onClick={() => onNavigate(`/workspaces/${stream.id}`)}><GitBranch data-testid="sidebar-tree-icon" className={sidebarTreeIconClass} /><span data-testid="sidebar-node-name" data-sidebar-tree-label="true" className="min-w-0 flex-1 truncate">{stream.name}</span></button>
-      {stream.status === "active" ? <button data-testid="sidebar-node-action" data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" aria-label={`New Session in Fork ${stream.name}`} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); onSessionMenu(sessionMenu?.id === stream.id ? null : { id: stream.id, x: rect.left, y: rect.bottom + 4 }); }}><Plus className="size-3.5" /></button> : <span data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center" title="Archived"><StatusDot status="closed" /></span>}
+      {stream.status === "active" ? <SidebarNodeActions menuLabel={t("sidebar.forkActions", { name: stream.name })} createLabel={t("sidebar.newInFork", { name: stream.name })} createTestId="sidebar-node-action" onMenu={(event) => onOpenContext(event, stream)} onCreate={(event) => { const rect = event.currentTarget.getBoundingClientRect(); onSessionMenu(sessionMenu?.id === stream.id ? null : { id: stream.id, x: rect.left, y: rect.bottom + 4 }); }} /> : <span data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center" title="Archived"><StatusDot status="closed" /></span>}
     </div>
     <SidebarCreateSessionMenu stream={stream} menu={sessionMenu?.id === stream.id ? sessionMenu : null} onSessionMenu={onSessionMenu} onCreateShell={onCreateShell} onCreateCodex={onCreateCodex} onCreateFork={onCreateFork} />
     {open && <div className="ml-3.5 border-l border-neutral-300 pl-1"><SidebarSessions stream={stream} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} onNavigate={onNavigate} onCloseSession={onCloseSession} />{(!stream.sessions || stream.sessions.filter((session) => session.sidebar_visible).length === 0) && <p className="px-2 py-1.5 text-[10px] text-neutral-400">No Sessions</p>}</div>}
@@ -1068,7 +1192,7 @@ function SidebarWorkspaceNode(props: SidebarNodeProps & { allStreams: Workspace[
     <div data-testid="sidebar-workspace-node" className={cn("group flex min-w-0 items-center rounded-md", selectedWorkspaceId === stream.id && !selectedSessionId && "bg-white shadow-sm")} onContextMenu={(event) => onOpenContext(event, stream)}>
       <button data-testid="sidebar-tree-toggle" className={sidebarTreeToggleClass} aria-label={`${open ? "Collapse" : "Expand"} Workspace ${stream.name}`} aria-expanded={open} onClick={() => onToggleWorkspace(stream.id)}>{open ? <ChevronDown data-testid="sidebar-tree-chevron" className="size-3.5" /> : <ChevronRight data-testid="sidebar-tree-chevron" className="size-3.5" />}</button>
       <button className={cn(sidebarTreeLinkClass, "text-xs")} title={stream.name} onClick={() => onNavigate(`/workspaces/${stream.id}`)}><Workflow data-testid="sidebar-tree-icon" className={sidebarTreeIconClass} /><span data-testid="sidebar-node-name" data-sidebar-tree-label="true" className="min-w-0 flex-1 truncate">{stream.name}</span></button>
-      {stream.status === "active" ? <button data-testid="sidebar-node-action" data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" aria-label={t("sidebar.newInWorkspace", { name: stream.name })} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); onSessionMenu(sessionMenu?.id === stream.id ? null : { id: stream.id, x: rect.left, y: rect.bottom + 4 }); }}><Plus className="size-3.5" /></button> : <span data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center" title="Archived"><StatusDot status="closed" /></span>}
+      {stream.status === "active" ? <SidebarNodeActions menuLabel={t("sidebar.workspaceActions", { name: stream.name })} createLabel={t("sidebar.newInWorkspace", { name: stream.name })} createTestId="sidebar-node-action" onMenu={(event) => onOpenContext(event, stream)} onCreate={(event) => { const rect = event.currentTarget.getBoundingClientRect(); onSessionMenu(sessionMenu?.id === stream.id ? null : { id: stream.id, x: rect.left, y: rect.bottom + 4 }); }} /> : <span data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center" title="Archived"><StatusDot status="closed" /></span>}
     </div>
     <SidebarCreateSessionMenu stream={stream} menu={sessionMenu?.id === stream.id ? sessionMenu : null} onSessionMenu={onSessionMenu} onCreateShell={onCreateShell} onCreateCodex={onCreateCodex} onCreateFork={onCreateFork} allowFork />
     {open && <div data-testid="sidebar-workspace-children" className="ml-3.5 border-l border-neutral-300 pl-1">
@@ -1276,7 +1400,7 @@ function InspectorGroup({ title, children }: { title: string; children: React.Re
 function InspectorRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) { return <div className="grid grid-cols-[82px_minmax(0,1fr)] gap-3 text-xs"><span className="text-neutral-400">{label}</span><span className={cn("min-w-0 break-all text-neutral-700", mono && "font-mono text-[10px]")}>{value}</span></div>; }
 function StatusDot({ status }: { status: string }) { return <span className={cn("size-1.5 shrink-0 rounded-full", status === "running" ? "bg-emerald-500" : status === "failed" ? "bg-red-500" : status === "starting" || status === "stopping" ? "bg-amber-500" : "bg-neutral-400")} />; }
 
-function WorkspaceHome({ detail, busy, onOpen, onOpenFork, onFork, onSyncLocation, onConfigureUpstream, onClearUpstream, onPull, onPush, onFinish }: { detail: WorkspaceDetail; busy: boolean; onOpen: (session: Session) => void; onOpenFork: (fork: Workspace) => void; onFork: () => void; onSyncLocation: (location: WorkspaceLocation, action: "pull" | "push") => void; onConfigureUpstream: (location: WorkspaceLocation) => void; onClearUpstream: (location: WorkspaceLocation) => void; onPull: () => void; onPush: () => void; onFinish: () => void }) {
+function WorkspaceHome({ detail, busy, onOpen, onOpenFork, onConfigureUpstream, onClearUpstream }: { detail: WorkspaceDetail; busy: boolean; onOpen: (session: Session) => void; onOpenFork: (fork: Workspace) => void; onConfigureUpstream: (location: WorkspaceLocation) => void; onClearUpstream: (location: WorkspaceLocation) => void }) {
   const [filter, setFilter] = useState<"all" | "codex" | "shell">("all");
   const sessions = detail.sessions.filter((session) => filter === "all" || session.kind === filter);
   const actionLabel = (session: Session) => {
@@ -1293,11 +1417,10 @@ function WorkspaceHome({ detail, busy, onOpen, onOpenFork, onFork, onSyncLocatio
   const formatTime = (value?: string) => value ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
   return <div data-testid="page-scroll" className="h-full overflow-y-auto p-5 [scrollbar-gutter:stable] sm:p-8 lg:p-12">
     <div data-testid="page-content" className="mx-auto max-w-6xl">
-      <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+      <div>
         <div><div className="mb-3 flex items-center gap-2"><Badge>{detail.checkout_mode}</Badge><Badge variant={detail.status === "active" ? "success" : "secondary"}>{detail.status}</Badge></div><h1 className="text-3xl font-semibold tracking-tight">{detail.name}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">{detail.description || "在同一个 Workspace 中运行 Shell 和 Codex Sessions。"}</p></div>
-        {detail.status === "active" && <div className="flex flex-wrap gap-2">{detail.kind === "workspace" && <Button data-testid="new-fork-action" disabled={busy} onClick={onFork}><GitBranch data-icon="inline-start" />New Fork</Button>}<Button data-testid="finish-workspace-action" variant="destructive" disabled={busy} onClick={onFinish}><X data-icon="inline-start" />Finish {detail.kind === "fork" ? "Fork" : "Workspace"}…</Button></div>}
       </div>
-      <section data-testid="workspace-locations-section" className="mt-8"><div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Repository locations</h2><p className="mt-1 text-xs text-neutral-400">Git worktrees are writable; non-Git locations are context-only.</p></div>{detail.kind === "workspace" && <ActionMenu label="Workspace repository actions" testId="workspace-repositories-menu" disabled={busy}><ActionMenuItem icon={<Download className="size-3.5" />} disabled={busy} testId="workspace-pull-all" onClick={onPull}>Pull all</ActionMenuItem><ActionMenuItem icon={<Upload className="size-3.5" />} disabled={busy} testId="workspace-push-all" onClick={onPush}>Push all</ActionMenuItem></ActionMenu>}</div><div className="mt-3 grid gap-3">{detail.locations.map((location) => <WorkspaceLocationRow key={location.id} location={location} busy={busy} actionsEnabled={detail.kind === "workspace"} onSync={(action) => onSyncLocation(location, action)} onConfigureUpstream={() => onConfigureUpstream(location)} onClearUpstream={() => onClearUpstream(location)} />)}</div></section>
+      <section data-testid="workspace-locations-section" className="mt-8"><div><h2 className="text-sm font-semibold">Repository locations</h2><p className="mt-1 text-xs text-neutral-400">Git worktrees are writable; non-Git locations are context-only.</p></div><div className="mt-3 grid gap-3">{detail.locations.map((location) => <WorkspaceLocationRow key={location.id} location={location} busy={busy} actionsEnabled={detail.kind === "workspace"} onConfigureUpstream={() => onConfigureUpstream(location)} onClearUpstream={() => onClearUpstream(location)} />)}</div></section>
       {detail.kind === "workspace" && <section data-testid="workspace-forks-section" className="mt-8"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Forks</h2><span className="text-[11px] text-neutral-400">{detail.forks.length}</span></div><div className="mt-3 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{detail.forks.map((fork) => <button key={fork.id} className="flex w-full items-center gap-3 p-4 text-left hover:bg-neutral-50" onClick={() => onOpenFork(fork)}><GitBranch className="size-4 text-neutral-400" /><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{fork.name}</span><Badge variant={fork.status === "active" ? "success" : "neutral"}>{fork.delivery_status}</Badge></div><p className="mt-1 truncate text-xs text-neutral-400">{fork.branch}</p></div><ChevronRight className="size-4 text-neutral-300" /></button>)}{detail.forks.length === 0 && <p className="px-4 py-8 text-center text-xs text-neutral-400">No Forks</p>}</div></section>}
       <section data-testid="workspace-todos-section" className="mt-8"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Todos</h2><span className="text-[11px] text-neutral-400">{detail.todos.length}</span></div><div className="mt-3 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{detail.todos.map((todo) => <div key={todo.id} className="flex items-center gap-3 px-4 py-3"><span className={cn("size-2 rounded-full", todo.status === "done" ? "bg-emerald-500" : "bg-amber-400")} /><span className="min-w-0 flex-1 truncate text-sm">{todo.title}</span><Badge>{todo.status}</Badge></div>)}{detail.todos.length === 0 && <p className="px-4 py-8 text-center text-xs text-neutral-400">No Todos</p>}</div></section>
       <div className="mt-8 flex items-center justify-between border-b border-neutral-200">
@@ -1409,7 +1532,7 @@ function ActionMenuItem({ icon, children, disabled, testId, title, onClick }: { 
   return <button type="button" role="menuitem" data-testid={testId} disabled={disabled} title={title} className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-neutral-100 focus-visible:bg-neutral-100 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40" onClick={onClick}>{icon}<span className="min-w-0 flex-1 truncate">{children}</span></button>;
 }
 
-function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, onRefresh, onMakeDefault, onReattach, onSync, onDeleteWorktree }: { directory: Directory; worktrees: GitWorktree[]; busy: boolean; onOpen: (id: string) => void; onEdit: () => void; onRefresh: () => void; onMakeDefault: () => void; onReattach: () => void; onSync: (action: "pull" | "push") => void; onDeleteWorktree: (worktree: GitWorktree) => void }) {
+function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, onRefresh, onMakeDefault, onReattach, onDeleteWorktree }: { directory: Directory; worktrees: GitWorktree[]; busy: boolean; onOpen: (id: string) => void; onEdit: () => void; onRefresh: () => void; onMakeDefault: () => void; onReattach: () => void; onDeleteWorktree: (worktree: GitWorktree) => void }) {
   const isRepository = directory.git_status !== "not_git";
   const [expanded, setExpanded] = useState(isRepository && (directory.role === "primary" || directory.git_status !== "ready"));
   const orderedWorktrees = useMemo(() => [...worktrees].sort((left, right) => Number(right.is_main) - Number(left.is_main)), [worktrees]);
@@ -1438,8 +1561,7 @@ function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, on
       <div className="flex shrink-0 gap-1">
         <Button data-testid={`project-location-refresh-${directory.id}`} size="icon" variant="ghost" disabled={busy} aria-label={`Refresh ${directory.name}`} title={`Refresh ${directory.name}`} onClick={onRefresh}><RefreshCw data-icon="inline-start" /></Button>
         <ActionMenu label={`Actions for ${directory.name}`} testId={`project-location-actions-${directory.id}`} disabled={busy}>
-          {isRepository && directory.git_status === "ready" && <><ActionMenuItem icon={<Download className="size-3.5" />} disabled={busy} testId={`project-location-pull-${directory.id}`} title={`Pull ${directory.base_branch || "base branch"}`} onClick={() => onSync("pull")}>Pull {directory.base_branch || "base branch"}</ActionMenuItem><ActionMenuItem icon={<Upload className="size-3.5" />} disabled={busy} testId={`project-location-push-${directory.id}`} title={`Push ${directory.base_branch || "base branch"}`} onClick={() => onSync("push")}>Push {directory.base_branch || "base branch"}</ActionMenuItem><div role="separator" className="my-1 border-t border-neutral-100" /></>}
-          {directory.git_status === "ready" && directory.role !== "primary" && <ActionMenuItem icon={<FolderGit2 className="size-3.5" />} disabled={busy} onClick={onMakeDefault}>Make default</ActionMenuItem>}
+          {directory.git_status === "ready" && directory.role !== "primary" && <ActionMenuItem icon={<FolderGit2 className="size-3.5" />} disabled={busy} testId={`project-location-make-default-${directory.id}`} onClick={onMakeDefault}>Make default</ActionMenuItem>}
           {["missing", "broken", "mismatch"].includes(directory.git_status) && <ActionMenuItem icon={<RefreshCw className="size-3.5" />} disabled={busy} onClick={onReattach}>Reattach</ActionMenuItem>}
           <ActionMenuItem icon={<Pencil className="size-3.5" />} disabled={busy} testId={`project-location-edit-${directory.id}`} onClick={onEdit}>Edit location</ActionMenuItem>
         </ActionMenu>
@@ -1458,30 +1580,25 @@ function ProjectLocationTreeRow({ directory, worktrees, busy, onOpen, onEdit, on
   </article>;
 }
 
-function ProjectHome({ project, busy, onOpen, onOpenSession, onCreate, onAddDirectory, onEditDirectory, onRefreshLocation, onMakeDefault, onReattach, onSyncLocation, onDeleteWorktree, onPull, onPush }: { project: ProjectDetail; busy: boolean; onOpen: (id: string) => void; onOpenSession: (session: Session) => void; onCreate: () => void; onAddDirectory: () => void; onEditDirectory: (directory: Directory) => void; onRefreshLocation: (directory: Directory) => void; onMakeDefault: (directory: Directory) => void; onReattach: (directory: Directory) => void; onSyncLocation: (directory: Directory, action: "pull" | "push") => void; onDeleteWorktree: (worktree: GitWorktree) => void; onPull: () => void; onPush: () => void }) {
-  const hasGitRepository = project.directories.some((directory) => directory.is_git);
-  const primary = project.directories.find((directory) => directory.id === project.primary_directory_id) ?? project.directories.find((directory) => directory.role === "primary");
+function ProjectHome({ project, busy, onOpen, onOpenSession, onAddDirectory, onEditDirectory, onRefreshLocation, onMakeDefault, onReattach, onDeleteWorktree }: { project: ProjectDetail; busy: boolean; onOpen: (id: string) => void; onOpenSession: (session: Session) => void; onAddDirectory: () => void; onEditDirectory: (directory: Directory) => void; onRefreshLocation: (directory: Directory) => void; onMakeDefault: (directory: Directory) => void; onReattach: (directory: Directory) => void; onDeleteWorktree: (worktree: GitWorktree) => void }) {
   const rootWorkspaces = project.workspaces.filter((stream) => !stream.parent_workspace_id);
   return <div data-testid="page-scroll" className="h-full overflow-y-auto p-5 [scrollbar-gutter:stable] sm:p-8 lg:p-12"><div data-testid="page-content" className="mx-auto max-w-6xl">
-    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-neutral-400">Project · multi-repository locations</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{project.name}</h1><p className="mt-2 text-sm text-neutral-500">{project.description}</p></div><Button disabled={busy || primary?.git_status !== "ready"} onClick={onCreate}><Plus data-icon="inline-start" />New Workspace</Button></div>
-    <section className="mt-10"><div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Repositories</h2><p className="mt-1 text-xs text-neutral-400">Expand a repository to inspect its worktrees; non-Git locations remain read-only context.</p></div><div className="flex shrink-0 items-center gap-1"><Button data-testid="project-add-location" size="sm" onClick={onAddDirectory}><Plus data-icon="inline-start" />Add location</Button><ActionMenu label="Repository actions" testId="project-repositories-menu" disabled={busy || !hasGitRepository}><ActionMenuItem icon={<Download className="size-3.5" />} disabled={busy || !hasGitRepository} testId="project-pull-all" onClick={onPull}>Pull all</ActionMenuItem><ActionMenuItem icon={<Upload className="size-3.5" />} disabled={busy || !hasGitRepository} testId="project-push-all" onClick={onPush}>Push all</ActionMenuItem></ActionMenu></div></div>
-      <div data-testid="project-repository-tree" className="relative z-10 mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.directories.map((directory) => <ProjectLocationTreeRow key={directory.id} directory={directory} worktrees={project.worktrees.filter((item) => item.project_location_id === directory.id)} busy={busy} onOpen={onOpen} onEdit={() => onEditDirectory(directory)} onRefresh={() => onRefreshLocation(directory)} onMakeDefault={() => onMakeDefault(directory)} onReattach={() => onReattach(directory)} onSync={(action) => onSyncLocation(directory, action)} onDeleteWorktree={onDeleteWorktree} />)}{project.directories.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">Add a Git location before creating a Workspace.</div>}</div>
+    <div><p className="text-xs text-neutral-400">Project · multi-repository locations</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">{project.name}</h1><p className="mt-2 text-sm text-neutral-500">{project.description}</p></div>
+    <section className="mt-10"><div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Repositories</h2><p className="mt-1 text-xs text-neutral-400">Expand a repository to inspect its worktrees; non-Git locations remain read-only context.</p></div><Button data-testid="project-add-location" size="sm" onClick={onAddDirectory}><Plus data-icon="inline-start" />Add location</Button></div>
+      <div data-testid="project-repository-tree" className="relative z-10 mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.directories.map((directory) => <ProjectLocationTreeRow key={directory.id} directory={directory} worktrees={project.worktrees.filter((item) => item.project_location_id === directory.id)} busy={busy} onOpen={onOpen} onEdit={() => onEditDirectory(directory)} onRefresh={() => onRefreshLocation(directory)} onMakeDefault={() => onMakeDefault(directory)} onReattach={() => onReattach(directory)} onDeleteWorktree={onDeleteWorktree} />)}{project.directories.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">Add a Git location before creating a Workspace.</div>}</div>
     </section>
     <section data-testid="project-sessions-section" className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Project Sessions</h2><p className="mt-1 text-xs text-amber-600">These Sessions operate directly in Project locations. Shell records disappear when closed; Codex history is retained.</p></div><span className="text-[11px] text-neutral-400">{project.sessions.length}</span></div><div className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{project.sessions.map((session) => <div key={session.id} data-testid={`project-session-${session.id}`} className="flex items-center gap-3 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100">{session.kind === "codex" ? <Bot className="size-4 text-neutral-500" /> : <TerminalSquare className="size-4 text-neutral-500" />}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{session.name}</p><Badge>{session.kind === "codex" ? "Codex" : "Shell"}</Badge><Badge variant={session.status === "running" ? "success" : "neutral"}>{session.sidebar_visible ? session.status : "history"}</Badge></div><code className="mt-1 block truncate text-[10px] text-neutral-400" title={session.cwd}>{session.cwd}</code></div><Button size="sm" variant="secondary" disabled={busy || (session.kind === "codex" && !session.codex_session_id)} onClick={() => onOpenSession(session)}>{session.sidebar_visible ? "Open" : "Resume"}</Button></div>)}{project.sessions.length === 0 && <div className="py-10 text-center text-xs text-neutral-400">No active Shell or saved Codex Sessions</div>}</div></section>
     <section className="mt-10"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Workspaces</h2><span className="text-[11px] text-neutral-400">{rootWorkspaces.length}</span></div><div className="mt-4 divide-y divide-neutral-100 overflow-hidden rounded-xl border border-neutral-200 bg-white">{rootWorkspaces.map((stream) => <button key={stream.id} onClick={() => onOpen(stream.id)} className="flex w-full items-center gap-3 p-4 text-left hover:bg-neutral-50"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100"><Workflow className="size-4 text-neutral-500" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{stream.name}</p>{stream.status === "archived" && <Badge>archived</Badge>}</div><p className="mt-1 truncate text-xs text-neutral-500">{stream.description || stream.checkout_path}</p></div><ChevronRight className="size-4 shrink-0 text-neutral-300" /></button>)}{rootWorkspaces.length === 0 && <div className="py-12 text-center text-xs text-neutral-400">No Workspaces yet</div>}</div></section>
   </div></div>;
 }
 
-function WorkspaceLocationRow({ location, busy, actionsEnabled, onSync, onConfigureUpstream, onClearUpstream }: { location: WorkspaceLocation; busy: boolean; actionsEnabled: boolean; onSync: (action: "pull" | "push") => void; onConfigureUpstream: () => void; onClearUpstream: () => void }) {
+function WorkspaceLocationRow({ location, busy, actionsEnabled, onConfigureUpstream, onClearUpstream }: { location: WorkspaceLocation; busy: boolean; actionsEnabled: boolean; onConfigureUpstream: () => void; onClearUpstream: () => void }) {
   const writableGit = location.access_mode === "read_write" && location.git_status === "ready";
   const upstream = location.remote_name && location.remote_branch ? `${location.remote_name}/${location.remote_branch}` : "";
   return <article data-testid={`workspace-location-${location.id}`} className="rounded-xl border border-neutral-200 bg-white p-4">
     <div className="flex min-w-0 items-start gap-2">
       <div className="min-w-0 flex-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><h3 className="min-w-0 flex-1 truncate text-sm font-semibold">{location.location_name}</h3><Badge variant={location.git_status === "ready" ? "success" : location.git_status === "not_git" ? "secondary" : "destructive"}>{location.git_status}</Badge><Badge>{location.access_mode}</Badge><Badge>{location.delivery_status}</Badge></div><code className="mt-2 block truncate text-[10px] text-neutral-500" title={location.checkout_path ?? location.source_path}>{location.checkout_path ?? location.source_path}</code>{location.creation_error && <Alert role="alert" data-testid={`workspace-location-error-${location.id}`} variant="destructive" className="mt-3"><CircleAlert /><AlertDescription className="font-mono text-[11px]">{location.creation_error}</AlertDescription></Alert>}{location.access_mode === "read_write" && <div className="mt-2 flex flex-wrap gap-x-4 text-[11px] text-neutral-500"><span>branch <code>{location.branch}</code></span><span>base <code>{location.base_branch}</code></span><span>upstream <code>{upstream || "—"}</code></span><span>delivery <code>{location.delivery_mode}</code></span></div>}</div>
       {actionsEnabled && writableGit && <div className="-mt-2 self-start"><ActionMenu label={`Actions for ${location.location_name}`} testId={`workspace-location-actions-${location.id}`} disabled={busy}>
-        <ActionMenuItem icon={<Download className="size-3.5" />} disabled={busy || !upstream} testId={`workspace-location-pull-${location.id}`} title={upstream ? `Pull ${upstream}` : "Set an upstream before pulling"} onClick={() => onSync("pull")}>{upstream ? `Pull ${upstream}` : "Pull (set upstream first)"}</ActionMenuItem>
-        <ActionMenuItem icon={<Upload className="size-3.5" />} disabled={busy || !upstream} testId={`workspace-location-push-${location.id}`} title={upstream ? `Push ${upstream}` : "Set an upstream before pushing"} onClick={() => onSync("push")}>{upstream ? `Push ${upstream}` : "Push (set upstream first)"}</ActionMenuItem>
-        <div role="separator" className="my-1 border-t border-neutral-100" />
         <ActionMenuItem icon={<GitBranch className="size-3.5" />} disabled={busy} testId={`workspace-location-upstream-${location.id}`} onClick={onConfigureUpstream}>{upstream ? "Change upstream" : "Set upstream"}</ActionMenuItem>
         {upstream && <ActionMenuItem icon={<X className="size-3.5" />} disabled={busy} testId={`workspace-location-clear-upstream-${location.id}`} onClick={onClearUpstream}>Clear upstream</ActionMenuItem>}
       </ActionMenu></div>}
