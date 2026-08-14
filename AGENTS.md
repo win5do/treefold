@@ -33,6 +33,26 @@ hard storage boundary.
   values without rewriting the file. Add explicit sequential migrations before
   supporting a second schema version.
 
+## Frontend UI conventions
+
+Treefold uses shadcn/ui with Base UI (`base-mira`), Tailwind CSS v4, the Neutral
+CSS-variable theme, Lucide icons, and Inter. Treat `components.json` as the
+source of truth for this configuration.
+
+- Reuse `src/components/ui` primitives and built-in variants before writing
+  custom controls or styles. Import them through `@/components/ui/*`.
+- Add components with `npx shadcn@latest`; inspect installed-component updates
+  with `--dry-run` and `--diff` before changing local source.
+- Keep direct `@base-ui/react` usage inside shared UI primitives. Use Base UI's
+  `render` composition API, not Radix-only `asChild` examples.
+- In new or touched application UI, use semantic color tokens rather than raw
+  palette or hex colors. Keep reusable visual variants in shared components and
+  use feature-level `className` primarily for layout.
+- Use Lucide exclusively for application icons. Button icons use `data-icon`
+  and inherit sizing from the component; standalone icons use `size-*`.
+- Use `Field` primitives for forms, expose validation with `aria-invalid`, and
+  give every dialog an accessible title.
+
 ## UI verification workflow
 
 Every user-visible frontend change must be verified by running the existing WebdriverIO core flow and completing a focused Codex UI exploration pass. Running the existing suite is required; adding or changing automated coverage is not. New UI tests must pass the admission gate below.
