@@ -1100,7 +1100,17 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       fontSize: 13,
       lineHeight: 1.2,
       scrollback: 10000,
-      theme: { background: "#111315", foreground: "#e5e7eb", cursor: "#f5f5f5", selectionBackground: "#47556988", black: "#111315", brightBlack: "#6b7280" },
+      theme: {
+        background: "#111315",
+        foreground: "#e5e7eb",
+        cursor: "#f5f5f5",
+        selectionBackground: "#47556988",
+        black: "#111315",
+        brightBlack: "#6b7280",
+        scrollbarSliderBackground: "#3f3f46",
+        scrollbarSliderHoverBackground: "#52525b",
+        scrollbarSliderActiveBackground: "#71717a",
+      },
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
