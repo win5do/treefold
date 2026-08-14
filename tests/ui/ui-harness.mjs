@@ -525,6 +525,11 @@ async function startFixtureApi() {
         detail.forks.forEach((item) => { if (item.id === FIXTURE_IDS.fork) item.status = "active"; });
       }
     },
+    setProjectStatus(id, status) {
+      const project = fixture.projects.find((item) => item.id === id);
+      if (project) project.status = status;
+      if (fixture.projectDetails[id]) fixture.projectDetails[id].status = status;
+    },
     unexpectedRequests,
     async close() {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -544,6 +549,7 @@ export async function startUiHarness() {
       deleteRequests: [],
       archiveAllStreams() {},
       restoreActiveStreams() {},
+      setProjectStatus() {},
       assertNoUnexpectedRequests() {},
       async close() {},
     };
@@ -588,6 +594,7 @@ export async function startUiHarness() {
     deleteRequests: fixtureApi.deleteRequests,
     archiveAllStreams: fixtureApi.archiveAllStreams,
     restoreActiveStreams: fixtureApi.restoreActiveStreams,
+    setProjectStatus: fixtureApi.setProjectStatus,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {
         throw new Error(`Unexpected UI fixture requests: ${fixtureApi.unexpectedRequests.join(", ")}`);

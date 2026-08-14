@@ -914,16 +914,45 @@ function DeleteRecordDialog({ target, busy, onOpenChange, onConfirm }: { target:
   </AlertDialog>;
 }
 
+function projectLastActivity(project: ProjectDetail) {
+  const timestamps = [
+    project.updated_at,
+    ...project.sessions.map((session) => session.updated_at),
+    ...project.workspaces.flatMap((workspace) => [
+      workspace.updated_at,
+      ...((workspace as SidebarStream).sessions ?? []).map((session) => session.updated_at),
+    ]),
+  ];
+  return Math.max(...timestamps.map((value) => Date.parse(value)).filter(Number.isFinite), 0);
+}
+
 function Overview({ projects, busy, onOpen, onCreate, onRestore, onDelete, onDeleteBlocked }: { projects: ProjectDetail[]; busy: boolean; onOpen: (id: string) => void; onCreate: () => void; onRestore: (project: ProjectDetail) => void; onDelete: (project: ProjectDetail) => void; onDeleteBlocked: (project: ProjectDetail) => void }) {
   const { t, i18n } = useTranslation();
-  const formatUpdatedAt = (value: string) => new Intl.DateTimeFormat(i18n.resolvedLanguage, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+  const formatUpdatedAt = (value: number) => new Intl.DateTimeFormat(i18n.resolvedLanguage, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(value);
+  const nameCollator = new Intl.Collator(i18n.resolvedLanguage, { numeric: true, sensitivity: "base" });
+  const rows = projects
+    .map((project) => ({ project, lastActivity: projectLastActivity(project) }))
+    .sort((left, right) => {
+      if (left.project.status !== right.project.status) return left.project.status === "active" ? -1 : 1;
+      return right.lastActivity - left.lastActivity || nameCollator.compare(left.project.name, right.project.name);
+    });
   return <div data-testid="page-scroll" className="h-full overflow-y-auto p-5 [scrollbar-gutter:stable] sm:p-8 lg:p-12"><div data-testid="page-content" className="mx-auto max-w-6xl"><div className="flex items-end justify-between"><div><p className="text-xs text-neutral-400">{t("overview.eyebrow")}</p><h1 className="mt-2 text-4xl font-semibold tracking-tight">{t("overview.title")}</h1></div><Button onClick={onCreate}><FolderPlus data-icon="inline-start" />{t("overview.newProject")}</Button></div>
     <div className="mt-8 overflow-x-auto rounded-xl border border-neutral-200 bg-white">
-      <table className="w-full min-w-[920px] table-fixed text-left">
-        <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-[10px] font-semibold uppercase tracking-wider text-neutral-400"><th className="w-[22%] px-4 py-3">{t("overview.columns.project")}</th><th className="w-[25%] px-4 py-3">{t("overview.columns.mainDirectory")}</th><th className="w-[12%] px-4 py-3">{t("overview.columns.gitBranch")}</th><th className="w-[15%] px-4 py-3">{t("overview.columns.remote")}</th><th className="w-[9%] px-4 py-3">{t("overview.columns.workspaces")}</th><th className="w-[9%] px-4 py-3">{t("overview.columns.updated")}</th><th className="w-[8%] px-4 py-3"><span className="sr-only">{t("overview.columns.actions")}</span></th></tr></thead>
-        <tbody className="divide-y divide-neutral-100">{projects.map((project) => {
-          const primary = project.directories.find((directory) => directory.id === project.primary_directory_id) ?? project.directories.find((directory) => directory.role === "primary");
-          return <tr key={project.id} data-testid="project-overview-row" data-project-status={project.status} role="link" tabIndex={0} className={cn("cursor-pointer outline-none hover:bg-neutral-50 focus-visible:bg-neutral-50", project.status === "archived" && "bg-neutral-50/60 text-neutral-500")} onClick={() => onOpen(project.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(project.id); } }}><td className="px-4 py-4"><div className="flex min-w-0 items-center gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100">{primary?.is_git ? <FolderGit2 className="size-4 text-neutral-500" /> : <Folder className="size-4 text-neutral-500" />}</div><div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><p className="truncate text-sm font-semibold">{project.name}</p>{project.status === "archived" && <Badge>{t("overview.archived")}</Badge>}</div><p className="mt-1 truncate text-xs text-neutral-500">{project.description || t("overview.localProject")}</p></div></div></td><td className="px-4 py-4"><code className="block truncate text-[10px] text-neutral-500" title={primary?.path}>{primary?.path || "—"}</code></td><td className="px-4 py-4"><div className="flex min-w-0 items-center gap-1.5 text-xs text-neutral-600">{primary?.is_git && <GitBranch className="size-3.5 shrink-0 text-neutral-400" />}<span className="truncate">{primary?.is_git ? primary.branch || t("overview.detachedHead") : "—"}</span></div></td><td className="px-4 py-4"><span className="block truncate text-xs text-neutral-500" title={primary?.remote_url}>{primary?.remote_url ? repositoryLabel(primary.remote_url) : "—"}</span></td><td className="px-4 py-4 text-xs text-neutral-600">{project.workspaces.length}</td><td className="px-4 py-4 text-xs text-neutral-500">{formatUpdatedAt(project.updated_at)}</td><td className="px-4 py-4" onClick={(event) => event.stopPropagation()}><div className="flex justify-end"><RecordActionMenu kind="project" name={project.name} status={project.status} busy={busy} onRestore={() => onRestore(project)} onDelete={() => onDelete(project)} onDeleteBlocked={() => onDeleteBlocked(project)} /></div></td></tr>;
+      <table className="w-full min-w-[900px] table-fixed text-left">
+        <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-[10px] font-semibold uppercase tracking-wider text-neutral-400"><th className="w-[27%] px-4 py-3">{t("overview.columns.project")}</th><th className="w-[23%] px-4 py-3">{t("overview.columns.locations")}</th><th className="w-[15%] px-4 py-3">{t("overview.columns.health")}</th><th className="w-[11%] px-4 py-3">{t("overview.columns.activeWorkspaces")}</th><th className="w-[15%] px-4 py-3">{t("overview.columns.recentActivity")}</th><th className="w-[9%] px-4 py-3"><span className="sr-only">{t("overview.columns.actions")}</span></th></tr></thead>
+        <tbody className="divide-y divide-neutral-100">{rows.map(({ project, lastActivity }) => {
+          const gitLocations = project.directories.filter((directory) => Boolean(directory.git_common_dir) || directory.is_git).length;
+          const contextLocations = project.directories.length - gitLocations;
+          const missingLocations = project.directories.filter((directory) => directory.git_status === "missing").length;
+          const abnormalLocations = project.directories.filter((directory) => !["ready", "not_git", "missing"].includes(directory.git_status)).length;
+          const health = project.directories.length === 0
+            ? t("overview.health.noLocations")
+            : [
+                missingLocations > 0 ? t("overview.health.missing", { count: missingLocations }) : "",
+                abnormalLocations > 0 ? t("overview.health.abnormal", { count: abnormalLocations }) : "",
+              ].filter(Boolean).join(" · ") || t("overview.health.healthy");
+          const activeWorkspaces = project.workspaces.filter((workspace) => workspace.kind === "workspace" && workspace.status === "active").length;
+          return <tr key={project.id} data-testid="project-overview-row" data-project-id={project.id} data-project-status={project.status} role="link" tabIndex={0} className={cn("cursor-pointer outline-none hover:bg-neutral-50 focus-visible:bg-neutral-50", project.status === "archived" && "bg-neutral-50/60 text-neutral-500")} onClick={() => onOpen(project.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(project.id); } }}><td className="px-4 py-4"><div className="flex min-w-0 items-center gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100"><Folders className="size-4 text-neutral-500" /></div><div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><p className="truncate text-sm font-semibold">{project.name}</p>{project.status === "archived" && <Badge>{t("overview.archived")}</Badge>}</div><p className="mt-1 truncate text-xs text-neutral-500">{project.description || t("overview.localProject")}</p></div></div></td><td data-testid="project-overview-locations" className="px-4 py-4 text-xs text-neutral-600">{t("overview.locationSummary", { locations: project.directories.length, git: gitLocations, contextLocations })}</td><td className="px-4 py-4"><Badge variant={abnormalLocations > 0 ? "destructive" : missingLocations > 0 ? "warning" : project.directories.length === 0 ? "neutral" : "success"}>{health}</Badge></td><td data-testid="project-overview-active-workspaces" className="px-4 py-4 text-xs text-neutral-600">{activeWorkspaces}</td><td className="px-4 py-4 text-xs text-neutral-500">{formatUpdatedAt(lastActivity)}</td><td className="px-4 py-4" onClick={(event) => event.stopPropagation()}><div className="flex justify-end"><RecordActionMenu kind="project" name={project.name} status={project.status} busy={busy} onRestore={() => onRestore(project)} onDelete={() => onDelete(project)} onDeleteBlocked={() => onDeleteBlocked(project)} /></div></td></tr>;
         })}</tbody>
       </table>
       {projects.length === 0 && <div className="py-16 text-center text-xs text-neutral-400">{t("overview.empty")}</div>}

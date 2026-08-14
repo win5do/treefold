@@ -100,6 +100,10 @@ try {
   assert.equal(await projectsBreadcrumb.getAttribute("aria-current"), "page", "Project overview must mark the root breadcrumb as current");
   assert.equal(await sidebarProjectsLink.getAttribute("aria-current"), "page", "Project overview must highlight the Sidebar Projects entry");
   assert.equal(await (await browser.$('button[aria-label="Show right sidebar"]')).isExisting(), false, "right sidebar control must stay hidden outside a Project");
+  const initialOverviewRow = await browser.$(`[data-testid="project-overview-row"][data-project-id="${FIXTURE_IDS.project}"]`);
+  assert.match(await initialOverviewRow.getText(), /3 locations · 2 Git · 1 Context/, "Project overview must summarize every location instead of exposing one repository");
+  assert.match(await initialOverviewRow.getText(), /All healthy/, "Project overview must aggregate location health");
+  assert.equal(await (await initialOverviewRow.$('[data-testid="project-overview-active-workspaces"]')).getText(), "1", "Project overview must count only active root Workspaces");
 
   await (await browser.$('button[aria-label="New Project"]')).click();
   const newProjectDialog = await browser.$('[role="dialog"]');
@@ -892,6 +896,13 @@ try {
     ],
     "a mixed first batch must create its primary Git repository before context locations",
   );
+  await browser.url(harness.baseUrl);
+  let orderedOverviewRows = await browser.$$('[data-testid="project-overview-row"]');
+  assert.deepEqual(await orderedOverviewRows.map((row) => row.getAttribute("data-project-id")), ["project-created-primary-requirement", FIXTURE_IDS.project], "active Projects must be ordered by recent activity");
+  harness.setProjectStatus("project-created-primary-requirement", "archived");
+  await browser.refresh();
+  orderedOverviewRows = await browser.$$('[data-testid="project-overview-row"]');
+  assert.deepEqual(await orderedOverviewRows.map((row) => row.getAttribute("data-project-id")), [FIXTURE_IDS.project, "project-created-primary-requirement"], "archived Projects must be ordered after active Projects");
   harness.assertNoUnexpectedRequests();
 
   console.log("✓ deterministic fixture, Directory setup, sidebar flows, Project lifecycle, inspector, and settlement preflight passed");
