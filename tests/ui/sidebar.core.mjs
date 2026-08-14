@@ -907,7 +907,7 @@ try {
   );
   await browser.url(harness.baseUrl);
   let orderedOverviewRows = await browser.$$('[data-testid="project-overview-row"]');
-  assert.deepEqual(await orderedOverviewRows.map((row) => row.getAttribute("data-project-id")), ["project-created-primary-requirement", FIXTURE_IDS.project], "active Projects must be ordered by recent activity");
+  assert.deepEqual(await orderedOverviewRows.map((row) => row.getAttribute("data-project-id")), ["project-created-primary-requirement", FIXTURE_IDS.project], "active Projects must be ordered alphabetically even when the first name has older activity");
   harness.setProjectStatus("project-created-primary-requirement", "archived");
   await browser.refresh();
   orderedOverviewRows = await browser.$$('[data-testid="project-overview-row"]');

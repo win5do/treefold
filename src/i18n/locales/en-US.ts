@@ -65,7 +65,6 @@ export const enUS = {
       locations: "Locations",
       health: "Health",
       activeWorkspaces: "Active workspaces",
-      recentActivity: "Recent activity",
       actions: "Actions",
     },
     locationSummary: "{{locations}} locations · {{git}} Git · {{contextLocations}} Context",

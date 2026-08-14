@@ -67,7 +67,6 @@ export const zhCN = {
       locations: "Locations",
       health: "健康状态",
       activeWorkspaces: "活跃工作区",
-      recentActivity: "最近活动",
       actions: "操作",
     },
     locationSummary: "{{locations}} 个位置 · {{git}} Git · {{contextLocations}} Context",

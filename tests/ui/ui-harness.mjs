@@ -76,8 +76,8 @@ async function startFixtureApi() {
         status: "active",
         default_base_branch: "main",
         default_delivery_mode: "remote_review",
-        created_at: "2026-08-10T08:30:00.000Z",
-        updated_at: "2026-08-10T08:30:00.000Z",
+        created_at: "2026-08-09T08:30:00.000Z",
+        updated_at: "2026-08-09T08:30:00.000Z",
       };
       const locations = [];
       fixture.projects.push(created);
