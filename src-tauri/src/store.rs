@@ -1,5 +1,6 @@
 use std::{path::Path, sync::Arc};
 
+use async_sqlite::{Pool, PoolBuilder};
 use parking_lot::Mutex;
 use rusqlite::Connection;
 
@@ -12,7 +13,7 @@ mod todos;
 mod workspaces;
 
 #[derive(Clone)]
-pub struct Store(Arc<Mutex<Connection>>);
+pub struct Store(Arc<Mutex<Connection>>, Pool);
 
 const SCHEMA: &str = r#"
 PRAGMA foreign_keys=ON;
@@ -29,7 +30,7 @@ CREATE TABLE IF NOT EXISTS project_locations (
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  worktree_setup_command TEXT NOT NULL DEFAULT '', path TEXT NOT NULL,
  repository_url TEXT, preferred_remote_name TEXT, base_branch TEXT, delivery_mode TEXT,
- git_common_dir TEXT,
+ git_common_dir TEXT, git_status TEXT NOT NULL DEFAULT 'not_git', last_checked_at TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  UNIQUE(project_id,path)
 );
@@ -53,6 +54,8 @@ CREATE TABLE IF NOT EXISTS workspace_locations (
  UNIQUE(workspace_id,project_location_id)
 );
 CREATE INDEX IF NOT EXISTS workspace_locations_workspace ON workspace_locations(workspace_id);
+CREATE INDEX IF NOT EXISTS workspaces_project_status_kind_parent
+ ON workspaces(project_id,status,kind,parent_workspace_id);
 CREATE TRIGGER IF NOT EXISTS projects_default_location_insert
 BEFORE INSERT ON projects WHEN NEW.default_location_id IS NOT NULL
 BEGIN SELECT CASE WHEN NOT EXISTS(
@@ -74,6 +77,8 @@ CREATE TABLE IF NOT EXISTS sessions (
  command TEXT NOT NULL DEFAULT '[]', launch_started_at TEXT NOT NULL, last_attached_at TEXT,
  sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS sessions_workspace_visible_order
+ ON sessions(workspace_id,sidebar_visible,sort_order);
 CREATE TABLE IF NOT EXISTS session_additional_directories (
  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, path TEXT NOT NULL,
  access_mode TEXT NOT NULL DEFAULT 'read_write',
@@ -138,7 +143,18 @@ impl Store {
         migrate_development_schema(&connection, path)?;
         connection.execute_batch("PRAGMA journal_mode=WAL;")?;
         connection.execute_batch(SCHEMA)?;
-        Ok(Self(Arc::new(Mutex::new(connection))))
+        let readers = PoolBuilder::new()
+            .path(path)
+            .flags(rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .num_conns(2)
+            .open_blocking()?;
+        for result in readers.conn_for_each_blocking(|reader| {
+            reader.busy_timeout(std::time::Duration::from_secs(5))?;
+            reader.execute_batch("PRAGMA foreign_keys=ON; PRAGMA query_only=ON;")
+        }) {
+            result?;
+        }
+        Ok(Self(Arc::new(Mutex::new(connection)), readers))
     }
 }
 
@@ -166,6 +182,22 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
             )?;
             connection.execute(
                 "UPDATE project_locations SET delivery_mode='remote_review' WHERE git_common_dir IS NOT NULL",
+                [],
+            )?;
+        }
+        if !table_has_column(connection, "project_locations", "git_status")? {
+            connection.execute(
+                "ALTER TABLE project_locations ADD COLUMN git_status TEXT NOT NULL DEFAULT 'not_git'",
+                [],
+            )?;
+            connection.execute(
+                "UPDATE project_locations SET git_status=CASE WHEN git_common_dir IS NOT NULL THEN 'ready' ELSE 'not_git' END",
+                [],
+            )?;
+        }
+        if !table_has_column(connection, "project_locations", "last_checked_at")? {
+            connection.execute(
+                "ALTER TABLE project_locations ADD COLUMN last_checked_at TEXT",
                 [],
             )?;
         }
@@ -265,6 +297,8 @@ mod workspace_schema_tests {
         assert!(!table_has_column(&connection, "workspaces", "checkout_path").unwrap());
         assert!(table_exists(&connection, "project_locations").unwrap());
         assert!(table_has_column(&connection, "project_locations", "delivery_mode").unwrap());
+        assert!(table_has_column(&connection, "project_locations", "git_status").unwrap());
+        assert!(table_has_column(&connection, "project_locations", "last_checked_at").unwrap());
         assert!(table_exists(&connection, "workspace_locations").unwrap());
         assert!(table_has_column(&connection, "workspace_locations", "creation_error").unwrap());
         assert!(!table_has_column(&connection, "sessions", "yolo").unwrap());
@@ -287,6 +321,7 @@ mod workspace_schema_tests {
         connection
             .execute_batch(
                 "PRAGMA foreign_keys=OFF;
+                 DROP INDEX sessions_workspace_visible_order;
                  ALTER TABLE sessions DROP COLUMN sort_order;
                  ALTER TABLE sessions ADD COLUMN yolo INTEGER NOT NULL DEFAULT 0;
                  INSERT INTO sessions(
@@ -425,7 +460,58 @@ mod workspace_schema_tests {
         let store = Store::open(&path).expect("upgrade current database");
         let location = store.directory("l").expect("preserve location");
         assert_eq!(location.delivery_mode.as_deref(), Some("remote_review"));
+        assert_eq!(location.git_status, "ready");
         assert_eq!(location.name, "repo");
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[tokio::test]
+    async fn summary_and_sidebar_are_aggregated_without_duplicate_counts() {
+        let (root, path) = temporary_database("navigation-aggregates");
+        let store = Store::open(&path).expect("create current database");
+        let connection = Connection::open(&path).expect("seed navigation data");
+        connection.execute_batch(
+            "PRAGMA foreign_keys=ON;
+             INSERT INTO projects(id,name,description,status,created_at,updated_at)
+             VALUES('p','Project','','active','now','now'),('archived','Old','','archived','now','old');
+             INSERT INTO project_locations(id,project_id,name,path,git_common_dir,git_status,created_at,updated_at)
+             VALUES('git','p','repo','/missing/repo','/missing/repo/.git','missing','now','now'),
+                   ('context','p','docs','/missing/docs',NULL,'not_git','now','now');
+             INSERT INTO workspaces(id,project_id,name,description,status,kind,parent_workspace_id,created_at,updated_at)
+             VALUES('w','p','Workspace','','active','workspace',NULL,'now','now'),
+                   ('f','p','Fork','','active','fork','w','now','now'),
+                   ('old','p','Old','','archived','workspace',NULL,'now','now');
+             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,sidebar_visible,launch_started_at,created_at,updated_at)
+             VALUES('visible','w','Visible','shell','/tmp','/tmp','running',1,'now','now','now'),
+                   ('hidden','w','Hidden','codex','/tmp','/tmp','closed',0,'now','now','now');"
+        ).expect("seed navigation records");
+        drop(connection);
+
+        let summaries = store
+            .project_summaries_async()
+            .await
+            .expect("read summaries");
+        let summary = summaries
+            .iter()
+            .find(|item| item.id == "p")
+            .expect("Project summary");
+        assert_eq!(summary.location_count, 2);
+        assert_eq!(summary.git_location_count, 1);
+        assert_eq!(summary.context_location_count, 1);
+        assert_eq!(summary.missing_location_count, 1);
+        assert_eq!(summary.active_workspace_count, 1);
+
+        let sidebar = store.sidebar_async().await.expect("read sidebar");
+        assert_eq!(sidebar.projects.len(), 1);
+        assert_eq!(sidebar.projects[0].workspaces.len(), 2);
+        let workspace = sidebar.projects[0]
+            .workspaces
+            .iter()
+            .find(|item| item.workspace.id == "w")
+            .expect("active Workspace");
+        assert_eq!(workspace.sessions.len(), 1);
+        assert_eq!(workspace.sessions[0].id, "visible");
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
     }

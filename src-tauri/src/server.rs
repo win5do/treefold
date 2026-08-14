@@ -16,8 +16,10 @@ use axum::{
     Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
+use moka::future::Cache;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::sync::LazyLock;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
@@ -36,6 +38,19 @@ pub struct AppState {
     pub settings: SettingsStore,
     pub terminals: TerminalManager,
 }
+
+static PROJECT_WORKTREES: LazyLock<Cache<String, Vec<GitWorktree>>> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(256)
+        .time_to_live(std::time::Duration::from_secs(10))
+        .build()
+});
+static LOCATION_OBSERVATIONS: LazyLock<Cache<String, ProjectLocation>> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(256)
+        .time_to_live(std::time::Duration::from_secs(10))
+        .build()
+});
 
 pub async fn serve(state: AppState) -> anyhow::Result<()> {
     let app = app(state);
@@ -75,6 +90,8 @@ fn app(state: AppState) -> Router {
         .route("/api/v1/agent/todos/{id}/block", post(agent_block_todo))
         .route("/api/system", get(system_status))
         .route("/api/projects", get(list_projects).post(create_project))
+        .route("/api/projects/summary", get(list_project_summaries))
+        .route("/api/sidebar", get(get_sidebar))
         .route(
             "/api/projects/{id}",
             get(get_project)

@@ -248,8 +248,8 @@ impl Store {
     }
 }
 
-const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
-fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
+pub(super) const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
+pub(super) fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
     let command: String = r.get("command")?;
     Ok(Session {
         id: r.get("id")?,

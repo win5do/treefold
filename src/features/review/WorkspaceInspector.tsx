@@ -3,7 +3,8 @@ import type * as React from "react";
 import { Bot, GitBranch, Info, TerminalSquare, Workflow } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { GitHistory, GitOperationRecord, ProjectDetail, Session, WorkspaceDetail } from "@/domain/types";
-import { api } from "@/lib/api";
+import { projectsApi } from "@/api/projects";
+import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
 
 export function WorkspaceInspector({ open, project, workspace, session }: { open: boolean; project: ProjectDetail; workspace: WorkspaceDetail | null; session: Session | null }) {
@@ -12,31 +13,30 @@ export function WorkspaceInspector({ open, project, workspace, session }: { open
   const [historyError, setHistoryError] = useState("");
   const [operations, setOperations] = useState<GitOperationRecord[] | null>(null);
   const [operationsError, setOperationsError] = useState("");
-  const historyPath = workspace ? `/api/workspaces/${workspace.id}/git-history` : `/api/projects/${project.id}/git-history`;
-
   useEffect(() => {
     if (!open || tab !== "history") return;
-    let cancelled = false;
+    const controller = new AbortController();
     setHistory(null);
     setHistoryError("");
-    void api<GitHistory>(historyPath).then((value) => {
-      if (!cancelled) setHistory(value);
+    const load = workspace ? workspacesApi.history(workspace.id, controller.signal) : projectsApi.history(project.id, controller.signal);
+    void load.then((value) => {
+      if (!controller.signal.aborted) setHistory(value);
     }).catch((cause) => {
-      if (!cancelled) setHistoryError(cause instanceof Error ? cause.message : "Git history could not be loaded");
+      if (!controller.signal.aborted) setHistoryError(cause instanceof Error ? cause.message : "Git history could not be loaded");
     });
-    return () => { cancelled = true; };
-  }, [historyPath, open, tab]);
+    return () => controller.abort();
+  }, [open, project.id, tab, workspace?.id]);
 
   useEffect(() => {
     if (!open || tab !== "operations" || !workspace) return;
-    let cancelled = false;
+    const controller = new AbortController();
     setOperations(null); setOperationsError("");
-    void api<GitOperationRecord[]>(`/api/workspaces/${workspace.id}/git-operations`).then((value) => {
-      if (!cancelled) setOperations(value);
+    void workspacesApi.operations(workspace.id, controller.signal).then((value) => {
+      if (!controller.signal.aborted) setOperations(value);
     }).catch((cause) => {
-      if (!cancelled) setOperationsError(cause instanceof Error ? cause.message : "Git operations could not be loaded");
+      if (!controller.signal.aborted) setOperationsError(cause instanceof Error ? cause.message : "Git operations could not be loaded");
     });
-    return () => { cancelled = true; };
+    return () => controller.abort();
   }, [open, tab, workspace?.id]);
 
   useEffect(() => {

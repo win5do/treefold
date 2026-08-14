@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import {
   Bot,
@@ -32,6 +32,7 @@ import { Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { createPortal } from "react-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -42,10 +43,13 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect as Select } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { api } from "@/lib/api";
+import { appApi } from "@/api/app";
+import { projectsApi } from "@/api/projects";
+import { sessionsApi } from "@/api/sessions";
+import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
 import { applyLanguage, type LanguagePreference } from "@/i18n";
-import type { AppSettings, Directory, LocationDraft, Project, ProjectDetail, ProjectLocationInspection, RenameTarget, Session, SessionMenuState, SystemStatus, Workspace, WorkspaceDetail, WorkspaceLocation, GitWorktree } from "@/domain/types";
+import type { AppSettings, Directory, LocationDraft, Project, ProjectDetail, ProjectSummary, RenameTarget, Session, SessionMenuState, SystemStatus, Workspace, WorkspaceDetail, WorkspaceLocation, GitWorktree } from "@/domain/types";
 import { normalizeProject, normalizeWorkspace, updateProjectWorkspaceSessions, upsertSession } from "@/features/workspace/model";
 import { WorkspaceSidebar, type SessionDropPosition, type SidebarStream } from "@/features/workspace/WorkspaceSidebar";
 import { SessionWorkspace } from "@/features/terminal/SessionWorkspace";
@@ -53,6 +57,9 @@ import { WorkspaceInspector } from "@/features/review/WorkspaceInspector";
 import { FinishWorkspaceDialog } from "@/features/delivery/FinishWorkspaceDialog";
 import { CreateForkDialog } from "@/features/fork/CreateForkDialog";
 import { StatusDot } from "@/components/app/StatusDot";
+import { appKeys, settingsQuery, systemQuery } from "@/features/app/queries";
+import { projectDetailQuery, projectKeys, projectSessionsQuery, projectSummariesQuery, sidebarQuery } from "@/features/projects/queries";
+import { workspaceDetailQuery, workspaceKeys, workspaceSessionsQuery } from "@/features/workspace/queries";
 
 export default function App() {
   return (
@@ -72,11 +79,35 @@ function Workspace() {
   const { t } = useTranslation();
   const params = useParams<{ projectId?: string; workspaceId?: string; sessionId?: string }>();
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<ProjectDetail[]>([]);
-  const [workspace, setWorkspace] = useState<WorkspaceDetail | null>(null);
-  const [system, setSystem] = useState<SystemStatus | null>(null);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const sidebar = useQuery(sidebarQuery());
+  const summaries = useQuery({ ...projectSummariesQuery(), enabled: !params.projectId && !params.workspaceId });
+  const projectDetail = useQuery({ ...projectDetailQuery(params.projectId ?? ""), enabled: Boolean(params.projectId) });
+  const workspaceDetail = useQuery({ ...workspaceDetailQuery(params.workspaceId ?? ""), enabled: Boolean(params.workspaceId) });
+  const projectSessions = useQuery({ ...projectSessionsQuery(params.projectId ?? ""), enabled: Boolean(params.projectId) });
+  const workspaceSessions = useQuery({ ...workspaceSessionsQuery(params.workspaceId ?? ""), enabled: Boolean(params.workspaceId) });
+  const systemQueryResult = useQuery(systemQuery());
+  const settingsQueryResult = useQuery(settingsQuery());
+  const system = systemQueryResult.data ?? null;
+  const settings = settingsQueryResult.data ?? null;
+  const workspace = workspaceDetail.data
+    ? { ...workspaceDetail.data, sessions: workspaceSessions.data ?? workspaceDetail.data.sessions }
+    : null;
+  const projects = useMemo(() => {
+    const values = [...(sidebar.data ?? [])];
+    if (!projectDetail.data) return values;
+    const detail = { ...projectDetail.data, sessions: projectSessions.data ?? projectDetail.data.sessions };
+    const index = values.findIndex((project) => project.id === detail.id);
+    if (index < 0) return [...values, detail];
+    values[index] = detail;
+    return values;
+  }, [projectDetail.data, projectSessions.data, sidebar.data]);
+  const loading = params.workspaceId
+    ? workspaceDetail.isPending
+    : params.projectId
+      ? projectDetail.isPending
+      : summaries.isPending;
+  const queryError = workspaceDetail.error ?? projectDetail.error ?? summaries.error ?? sidebar.error ?? systemQueryResult.error ?? settingsQueryResult.error;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
@@ -96,77 +127,32 @@ function Workspace() {
   const [configureWorkspaceLocation, setConfigureWorkspaceLocation] = useState<WorkspaceLocation | null>(null);
   const [finishWorkspaceDialog, setFinishWorkspaceDialog] = useState<WorkspaceDetail | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<{ kind: "project"; value: ProjectDetail } | { kind: "workspace" | "fork"; value: Workspace } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: "project"; value: ProjectDetail | ProjectSummary } | { kind: "workspace" | "fork"; value: Workspace } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
   const [closingSessionIds, setClosingSessionIds] = useState<Set<string>>(new Set());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(new Set());
-  const sessionRefreshInFlight = useRef(false);
 
-  const refresh = useCallback(async (quiet = false) => {
-    if (!quiet) setLoading(true);
-    try {
-      const [projectList, systemStatus, appSettings] = await Promise.all([
-        api<Project[]>("/api/projects"),
-        api<SystemStatus>("/api/system"),
-        api<AppSettings>("/api/settings"),
-      ]);
-      const details = await Promise.all((projectList ?? []).map((project) => api<ProjectDetail>(`/api/projects/${project.id}`).then(normalizeProject)));
-      const streamDetails = await Promise.all(details.flatMap((project) => project.workspaces.filter((stream) => stream.status === "active")).map((stream) => api<WorkspaceDetail>(`/api/workspaces/${stream.id}`).then(normalizeWorkspace)));
-      const streamsByID = new Map(streamDetails.map((stream) => [stream.id, stream]));
-      setProjects(details.map((project) => ({ ...project, workspaces: project.workspaces.map((stream) => streamsByID.get(stream.id) ?? stream) })));
-      setSystem(systemStatus);
-      setSettings(appSettings);
-      if (params.workspaceId) {
-        const detail = streamsByID.get(params.workspaceId) ?? normalizeWorkspace(await api<WorkspaceDetail>(`/api/workspaces/${params.workspaceId}`));
-        setWorkspace(detail);
-        setExpandedProjects((current) => new Set(current).add(detail.project.id));
-        setExpandedWorkspaces((current) => {
-          const next = new Set(current);
-          next.add(detail.id);
-          if (detail.parent_workspace_id) next.add(detail.parent_workspace_id);
-          return next;
-        });
-      } else {
-        setWorkspace(null);
-      }
-      setError("");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "加载失败");
-    } finally {
-      if (!quiet) setLoading(false);
-    }
-  }, [params.workspaceId]);
+  useEffect(() => {
+    if (queryError instanceof Error) setError(queryError.message);
+  }, [queryError]);
 
-  const refreshWorkspaceSessions = useCallback(async (workspaceId: string) => {
-    if (sessionRefreshInFlight.current) return;
-    sessionRefreshInFlight.current = true;
-    try {
-      const sessions = await api<Session[]>(`/api/workspaces/${workspaceId}/sessions`);
-      setProjects((current) => updateProjectWorkspaceSessions(current, workspaceId, sessions));
-      setWorkspace((current) => current?.id === workspaceId ? { ...current, sessions } : current);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Session 状态刷新失败");
-    } finally {
-      sessionRefreshInFlight.current = false;
-    }
-  }, []);
+  const refresh = async () => {
+    if (params.workspaceId) await Promise.all([workspaceDetail.refetch(), workspaceSessions.refetch()]);
+    else if (params.projectId) await Promise.all([projectDetail.refetch(), projectSessions.refetch()]);
+    else await summaries.refetch();
+  };
 
-  const refreshProjectSessions = useCallback(async (projectId: string) => {
-    if (sessionRefreshInFlight.current) return;
-    sessionRefreshInFlight.current = true;
-    try {
-      const sessions = await api<Session[]>(`/api/projects/${projectId}/sessions`);
-      setProjects((current) => current.map((project) => project.id === projectId ? { ...project, sessions } : project));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Session 状态刷新失败");
-    } finally {
-      sessionRefreshInFlight.current = false;
-    }
-  }, []);
-
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!workspace) return;
+    setExpandedProjects((current) => new Set(current).add(workspace.project.id));
+    setExpandedWorkspaces((current) => {
+      const next = new Set(current).add(workspace.id);
+      if (workspace.parent_workspace_id) next.add(workspace.parent_workspace_id);
+      return next;
+    });
+  }, [workspace?.id, workspace?.parent_workspace_id, workspace?.project.id]);
   useEffect(() => {
     const preference = settings?.language ?? "system";
     void applyLanguage(preference);
@@ -175,16 +161,6 @@ function Workspace() {
     window.addEventListener("languagechange", updateFromSystem);
     return () => window.removeEventListener("languagechange", updateFromSystem);
   }, [settings?.language]);
-  useEffect(() => {
-    const refreshSessions = params.workspaceId
-      ? () => void refreshWorkspaceSessions(params.workspaceId!)
-      : params.projectId
-        ? () => void refreshProjectSessions(params.projectId!)
-        : null;
-    if (!refreshSessions) return;
-    const timer = window.setInterval(refreshSessions, 2500);
-    return () => window.clearInterval(timer);
-  }, [params.projectId, params.workspaceId, refreshProjectSessions, refreshWorkspaceSessions]);
   useEffect(() => {
     if (!resizingSidebar) return;
     const resize = (event: PointerEvent) => {
@@ -215,7 +191,12 @@ function Workspace() {
     setBusy(true);
     try {
       await action();
-      await refresh(true);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: projectKeys.summaries }),
+        queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
+        params.projectId ? queryClient.invalidateQueries({ queryKey: projectKeys.detail(params.projectId) }) : Promise.resolve(),
+        params.workspaceId ? queryClient.invalidateQueries({ queryKey: workspaceKeys.detail(params.workspaceId) }) : Promise.resolve(),
+      ]);
       setError("");
       return true;
     } catch (cause) {
@@ -229,11 +210,8 @@ function Workspace() {
   async function saveSettings(update: { language: LanguagePreference; extraArgs: string[] }) {
     setBusy(true);
     try {
-      await api("/api/settings", {
-        method: "PATCH",
-        body: JSON.stringify({ language: update.language, agents: { codex: { extra_args: update.extraArgs } } }),
-      });
-      await refresh(true);
+      const next = await appApi.updateSettings({ language: update.language, agents: { codex: { extra_args: update.extraArgs } } });
+      queryClient.setQueryData(appKeys.settings, next);
       setError("");
       return { ok: true as const };
     } catch (cause) {
@@ -246,19 +224,19 @@ function Workspace() {
   }
 
   async function gitSync(scope: "projects" | "workspaces", id: string, action: "pull" | "push") {
-    await act(() => api(`/api/${scope}/${id}/git/${action}-all`, { method: "POST" }));
+    await act(() => scope === "projects" ? projectsApi.sync(id, action) : workspacesApi.sync(id, action));
   }
 
   async function gitSyncProjectLocation(id: string, action: "pull" | "push") {
-    await act(() => api(`/api/project-locations/${id}/git/${action}`, { method: "POST" }));
+    await act(() => projectsApi.syncLocation(id, action));
   }
 
   async function gitSyncWorkspaceLocation(id: string, action: "pull" | "push") {
-    await act(() => api(`/api/workspace-locations/${id}/git/${action}`, { method: "POST" }));
+    await act(() => workspacesApi.syncLocation(id, action));
   }
 
   async function clearWorkspaceLocationUpstream(location: WorkspaceLocation) {
-    await act(() => api(`/api/workspace-locations/${location.id}`, { method: "PATCH", body: JSON.stringify({ remote_name: "", remote_branch: "" }) }));
+    await act(() => workspacesApi.updateLocation(location.id, { remote_name: "", remote_branch: "" }));
   }
 
   async function openFinishWorkspace(stream: Workspace) {
@@ -268,7 +246,7 @@ function Workspace() {
     }
     setBusy(true);
     try {
-      setFinishWorkspaceDialog(normalizeWorkspace(await api<WorkspaceDetail>(`/api/workspaces/${stream.id}`)));
+      setFinishWorkspaceDialog(normalizeWorkspace(await workspacesApi.detail(stream.id)));
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Workspace 加载失败");
@@ -281,12 +259,9 @@ function Workspace() {
     setSessionMenu(null);
     setBusy(true);
     try {
-      const created = await api<Session>(`/api/workspaces/${stream.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "shell", project_directory_id: directory?.id }) });
-      setProjects((current) => {
-        const owner = current.flatMap((project) => project.workspaces).find((item) => item.id === stream.id) as SidebarStream | undefined;
-        return updateProjectWorkspaceSessions(current, stream.id, upsertSession(owner?.sessions ?? [], created));
-      });
-      setWorkspace((current) => current?.id === stream.id ? { ...current, sessions: upsertSession(current.sessions, created) } : current);
+      const created = await workspacesApi.createSession(stream.id, { kind: "shell", project_directory_id: directory?.id });
+      queryClient.setQueryData<Session[]>(workspaceKeys.sessions(stream.id), (current = []) => upsertSession(current, created));
+      queryClient.setQueryData<ProjectDetail[]>(projectKeys.sidebar, (current = []) => updateProjectWorkspaceSessions(current, stream.id, upsertSession((current.flatMap((project) => project.workspaces).find((item) => item.id === stream.id) as SidebarStream | undefined)?.sessions ?? [], created)));
       setError("");
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
@@ -300,12 +275,9 @@ function Workspace() {
     setSessionMenu(null);
     setBusy(true);
     try {
-      const created = await api<Session>(`/api/workspaces/${stream.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "codex", project_directory_id: directory?.id }) });
-      setProjects((current) => {
-        const owner = current.flatMap((project) => project.workspaces).find((item) => item.id === stream.id) as SidebarStream | undefined;
-        return updateProjectWorkspaceSessions(current, stream.id, upsertSession(owner?.sessions ?? [], created));
-      });
-      setWorkspace((current) => current?.id === stream.id ? { ...current, sessions: upsertSession(current.sessions, created) } : current);
+      const created = await workspacesApi.createSession(stream.id, { kind: "codex", project_directory_id: directory?.id });
+      queryClient.setQueryData<Session[]>(workspaceKeys.sessions(stream.id), (current = []) => upsertSession(current, created));
+      queryClient.setQueryData<ProjectDetail[]>(projectKeys.sidebar, (current = []) => updateProjectWorkspaceSessions(current, stream.id, upsertSession((current.flatMap((project) => project.workspaces).find((item) => item.id === stream.id) as SidebarStream | undefined)?.sessions ?? [], created)));
       setError("");
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
@@ -319,8 +291,8 @@ function Workspace() {
     setSessionMenu(null);
     setBusy(true);
     try {
-      const created = await api<Session>(`/api/projects/${project.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "shell", project_directory_id: directory?.id }) });
-      setProjects((current) => current.map((item) => item.id === project.id ? { ...item, sessions: upsertSession(item.sessions, created) } : item));
+      const created = await projectsApi.createSession(project.id, { kind: "shell", project_directory_id: directory?.id });
+      queryClient.setQueryData<Session[]>(projectKeys.sessions(project.id), (current = []) => upsertSession(current, created));
       setError("");
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
@@ -334,8 +306,8 @@ function Workspace() {
     setSessionMenu(null);
     setBusy(true);
     try {
-      const created = await api<Session>(`/api/projects/${project.id}/sessions`, { method: "POST", body: JSON.stringify({ kind: "codex", project_directory_id: directory?.id }) });
-      setProjects((current) => current.map((item) => item.id === project.id ? { ...item, sessions: upsertSession(item.sessions, created) } : item));
+      const created = await projectsApi.createSession(project.id, { kind: "codex", project_directory_id: directory?.id });
+      queryClient.setQueryData<Session[]>(projectKeys.sessions(project.id), (current = []) => upsertSession(current, created));
       setError("");
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
@@ -346,16 +318,16 @@ function Workspace() {
   }
 
   async function openInFinder(project: ProjectDetail, stream?: Workspace) {
-    const endpoint = stream ? `/api/workspaces/${stream.id}/reveal` : `/api/projects/${project.id}/reveal`;
-    await act(() => api(endpoint, { method: "POST" }));
+    await act(() => stream ? workspacesApi.reveal(stream.id) : projectsApi.reveal(project.id));
   }
 
   async function rename(target: RenameTarget, name: string, description?: string) {
-    const endpoint = target.kind === "project" ? `/api/projects/${target.value.id}` : target.kind === "session" ? `/api/sessions/${target.value.id}` : `/api/workspaces/${target.value.id}`;
-    const ok = await act(() => api(endpoint, {
-      method: "PATCH",
-      body: JSON.stringify(target.kind === "session" ? { name } : { name, description: description ?? "" }),
-    }));
+    const payload = target.kind === "session" ? { name } : { name, description: description ?? "" };
+    const ok = await act(() => target.kind === "project"
+      ? projectsApi.update(target.value.id, payload)
+      : target.kind === "session"
+        ? sessionsApi.update(target.value.id, payload)
+        : workspacesApi.update(target.value.id, payload));
     if (ok) setRenameTarget(null);
   }
 
@@ -370,23 +342,24 @@ function Workspace() {
     reordered.splice(targetIndex + (position === "after" ? 1 : 0), 0, source);
     if (reordered.every((session, index) => session.id === sessions[index]?.id)) return;
     const nextSessions = [...reordered, ...allSessions.filter((session) => !session.sidebar_visible)];
-    setProjects((current) => updateProjectWorkspaceSessions(current, stream.id, nextSessions));
-    setWorkspace((current) => current?.id === stream.id ? { ...current, sessions: nextSessions } : current);
+    queryClient.setQueryData<Session[]>(workspaceKeys.sessions(stream.id), nextSessions);
+    queryClient.setQueryData<ProjectDetail[]>(projectKeys.sidebar, (current = []) => updateProjectWorkspaceSessions(current, stream.id, nextSessions));
     try {
-      await api(`/api/workspaces/${stream.id}/sessions/order`, { method: "PATCH", body: JSON.stringify({ session_ids: reordered.map((session) => session.id) }) });
+      await workspacesApi.reorderSessions(stream.id, reordered.map((session) => session.id));
       setError("");
     } catch (cause) {
-      await refresh(true);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
+        queryClient.invalidateQueries({ queryKey: workspaceKeys.sessions(stream.id) }),
+      ]);
       setError(cause instanceof Error ? cause.message : "Session 排序失败");
     }
   }
 
-  async function updateProjectStatus(project: ProjectDetail, status: Project["status"]) {
-    const ok = await act(() => api(`/api/projects/${project.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-    }));
+  async function updateProjectStatus(project: ProjectDetail | ProjectSummary, status: Project["status"]) {
+    const ok = await act(() => projectsApi.update(project.id, { status }));
     if (!ok) return;
+    if (!params.projectId) queryClient.removeQueries({ queryKey: projectKeys.detail(project.id), exact: true });
     if (status === "archived") {
       setExpandedProjects((current) => {
         const next = new Set(current);
@@ -397,14 +370,13 @@ function Workspace() {
     }
   }
 
-  async function permanentlyDeleteProject(project: ProjectDetail) {
+  async function permanentlyDeleteProject(project: ProjectDetail | ProjectSummary) {
     setDeleteTarget({ kind: "project", value: project });
   }
 
   async function permanentlyDeleteTarget() {
     if (!deleteTarget) return;
-    const endpoint = deleteTarget.kind === "project" ? `/api/projects/${deleteTarget.value.id}` : `/api/workspaces/${deleteTarget.value.id}`;
-    const ok = await act(() => api(endpoint, { method: "DELETE" }));
+    const ok = await act(() => deleteTarget.kind === "project" ? projectsApi.delete(deleteTarget.value.id) : workspacesApi.delete(deleteTarget.value.id));
     if (!ok) return;
     const deleted = deleteTarget;
     setDeleteTarget(null);
@@ -418,24 +390,21 @@ function Workspace() {
       return;
     }
     if (!window.confirm(`确定删除 worktree？\n\n${worktree.path}\n\n未提交的改动会被丢弃。`)) return;
-    await act(() => api(`/api/project-directories/${worktree.project_location_id}/worktrees`, {
-      method: "DELETE",
-      body: JSON.stringify({ path: worktree.path }),
-    }));
+    await act(() => projectsApi.removeWorktree(worktree.project_location_id, worktree));
   }
 
   async function refreshLocation(location: Directory) {
-    await act(() => api(`/api/project-locations/${location.id}/refresh`, { method: "POST" }));
+    await act(() => projectsApi.refreshLocation(location.id));
   }
 
   async function makeDefaultLocation(project: ProjectDetail, location: Directory) {
-    await act(() => api(`/api/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ default_location_id: location.id }) }));
+    await act(() => projectsApi.update(project.id, { default_location_id: location.id }));
   }
 
   async function reattachLocation(location: Directory) {
     const selected = await open({ directory: true, multiple: false, title: `Reattach ${location.name}` });
     if (typeof selected !== "string") return;
-    await act(() => api(`/api/project-locations/${location.id}/reattach`, { method: "POST", body: JSON.stringify({ path: selected }) }));
+    await act(() => projectsApi.reattachLocation(location.id, selected));
   }
 
   async function closeSidebarSession(stream: Workspace, session: Session) {
@@ -443,15 +412,17 @@ function Workspace() {
     if (params.sessionId === session.id) navigate(stream.id ? `/workspaces/${stream.id}` : `/projects/${stream.project_id}`);
 
     try {
-      await api(`/api/sessions/${session.id}/close`, { method: "POST" });
-      await refresh(true);
+      await sessionsApi.close(session.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
+        queryClient.invalidateQueries({ queryKey: workspaceKeys.sessions(stream.id) }),
+      ]);
     } catch (cause) {
-      await refresh(true);
+      await queryClient.invalidateQueries({ queryKey: workspaceKeys.sessions(stream.id) });
       setError(cause instanceof Error ? cause.message : "关闭 Session 失败");
     } finally {
       if (session.kind === "shell") {
-        setProjects((current) => updateProjectWorkspaceSessions(current, stream.id, (current.flatMap((project) => project.workspaces).find((item) => item.id === stream.id) as SidebarStream | undefined)?.sessions?.filter((item) => item.id !== session.id) ?? []));
-        setWorkspace((current) => current?.id === stream.id ? { ...current, sessions: current.sessions.filter((item) => item.id !== session.id) } : current);
+        queryClient.setQueryData<Session[]>(workspaceKeys.sessions(stream.id), (current = []) => current.filter((item) => item.id !== session.id));
       }
       setClosingSessionIds((current) => {
         const next = new Set(current);
@@ -465,14 +436,17 @@ function Workspace() {
     setClosingSessionIds((current) => new Set(current).add(session.id));
     if (params.sessionId === session.id) navigate(`/projects/${project.id}`);
     try {
-      await api(`/api/sessions/${session.id}/close`, { method: "POST" });
-      await refresh(true);
+      await sessionsApi.close(session.id);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
+        queryClient.invalidateQueries({ queryKey: projectKeys.sessions(project.id) }),
+      ]);
     } catch (cause) {
-      await refresh(true);
+      await queryClient.invalidateQueries({ queryKey: projectKeys.sessions(project.id) });
       setError(cause instanceof Error ? cause.message : "关闭 Session 失败");
     } finally {
       if (session.kind === "shell") {
-        setProjects((current) => current.map((item) => item.id === project.id ? { ...item, sessions: item.sessions.filter((candidate) => candidate.id !== session.id) } : item));
+        queryClient.setQueryData<Session[]>(projectKeys.sessions(project.id), (current = []) => current.filter((candidate) => candidate.id !== session.id));
       }
       setClosingSessionIds((current) => {
         const next = new Set(current);
@@ -484,7 +458,7 @@ function Workspace() {
 
   async function openHistorySession(stream: WorkspaceDetail, session: Session) {
     if (!session.sidebar_visible) {
-      const ok = await act(() => api(`/api/sessions/${session.id}/open`, { method: "POST" }));
+      const ok = await act(() => sessionsApi.open(session.id));
       if (!ok) return;
     }
     navigate(`/workspaces/${stream.id}/sessions/${session.id}`);
@@ -492,7 +466,7 @@ function Workspace() {
 
   async function openProjectHistorySession(project: ProjectDetail, session: Session) {
     if (!session.sidebar_visible) {
-      const ok = await act(() => api(`/api/sessions/${session.id}/open`, { method: "POST" }));
+      const ok = await act(() => sessionsApi.open(session.id));
       if (!ok) return;
     }
     navigate(`/projects/${project.id}/sessions/${session.id}`);
@@ -590,14 +564,14 @@ function Workspace() {
               <SessionWorkspace
                 session={selectedSession}
                 busy={busy}
-                onStop={() => void act(() => api(`/api/sessions/${selectedSession.id}/stop`, { method: "POST" }))}
-                onRestart={() => void act(() => api(`/api/sessions/${selectedSession.id}/restart`, { method: "POST" }))}
+                onStop={() => void act(() => sessionsApi.stop(selectedSession.id))}
+                onRestart={() => void act(() => sessionsApi.restart(selectedSession.id))}
                 onClose={() => workspace ? void closeSidebarSession(workspace, selectedSession) : selectedProject ? void closeProjectSession(selectedProject, selectedSession) : undefined}
                 onExit={() => {
                   if (selectedSession.kind === "shell") {
                     navigate(workspace ? `/workspaces/${workspace.id}` : `/projects/${selectedProject!.id}`);
                   }
-                  void refresh(true);
+                  void refresh();
                 }}
               />
             ) : workspace ? (
@@ -605,7 +579,7 @@ function Workspace() {
             ) : selectedProject ? (
               <ProjectHome project={selectedProject} busy={busy} onOpen={(id) => navigate(`/workspaces/${id}`)} onDeleteWorkspace={(stream) => setDeleteTarget({ kind: "workspace", value: stream })} onDeleteWorkspaceBlocked={(stream) => setError(t("overview.deleteBlocked.workspace", { name: stream.name }))} onOpenSession={(session) => void openProjectHistorySession(selectedProject, session)} onAddDirectory={() => setAddDirectoryProject(selectedProject)} onEditDirectory={setEditDirectory} onRefreshLocation={(location) => void refreshLocation(location)} onMakeDefault={(location) => void makeDefaultLocation(selectedProject, location)} onReattach={(location) => void reattachLocation(location)} onDeleteWorktree={(item) => void removeWorktree(item)} />
             ) : (
-              <Overview projects={projects} busy={busy} onOpen={(id) => navigate(`/projects/${id}`)} onCreate={() => setCreateProjectOpen(true)} onRestore={(project) => void updateProjectStatus(project, "active")} onDelete={(project) => void permanentlyDeleteProject(project)} onDeleteBlocked={(project) => setError(t("overview.deleteBlocked.project", { name: project.name }))} />
+              <Overview projects={summaries.data ?? []} busy={busy} onOpen={(id) => navigate(`/projects/${id}`)} onCreate={() => setCreateProjectOpen(true)} onRestore={(project) => void updateProjectStatus(project, "active")} onDelete={(project) => void permanentlyDeleteProject(project)} onDeleteBlocked={(project) => setError(t("overview.deleteBlocked.project", { name: project.name }))} />
             )}
           </section>
 
@@ -618,8 +592,8 @@ function Workspace() {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
         let created: Project | null = null;
-        const ok = await act(async () => { created = await api<Project>("/api/projects", { method: "POST", body: JSON.stringify({ name: form.get("name"), description: form.get("description") }) }); });
-        if (ok && created) { const detail = normalizeProject(await api<ProjectDetail>(`/api/projects/${(created as Project).id}`)); setCreateProjectOpen(false); setAddDirectoryProject(detail); navigate(`/projects/${detail.id}`); }
+        const ok = await act(async () => { created = await projectsApi.create({ name: form.get("name"), description: form.get("description") }); });
+        if (ok && created) { const detail = normalizeProject(await projectsApi.detail((created as Project).id)); queryClient.setQueryData(projectKeys.detail(detail.id), detail); setCreateProjectOpen(false); setAddDirectoryProject(detail); navigate(`/projects/${detail.id}`); }
       }} />
       <AddDirectoryDialog project={addDirectoryProject} busy={busy} onOpenChange={(open) => { if (!open) setAddDirectoryProject(null); }} onSubmit={async (locations) => {
         if (!addDirectoryProject) return;
@@ -631,15 +605,12 @@ function Workspace() {
                 ...locations.filter((location) => location.inspection?.git_status !== "ready"),
               ];
           for (const location of orderedLocations) {
-            await api(`/api/projects/${addDirectoryProject.id}/locations`, {
-              method: "POST",
-              body: JSON.stringify({
+            await projectsApi.addLocation(addDirectoryProject.id, {
                 path: location.path,
                 description: location.description,
                 worktree_setup_command: location.worktree_setup_command,
                 base_branch: location.inspection?.git_status === "ready" ? location.base_branch : undefined,
                 delivery_mode: location.inspection?.git_status === "ready" ? location.delivery_mode : undefined,
-              }),
             });
           }
         });
@@ -649,7 +620,7 @@ function Workspace() {
         event.preventDefault();
         if (!editDirectory) return;
         const form = new FormData(event.currentTarget);
-        const ok = await act(() => api(`/api/project-directories/${editDirectory.id}`, { method: "PATCH", body: JSON.stringify({ description: form.get("description"), worktree_setup_command: form.get("worktree_setup_command"), base_branch: form.get("base_branch"), delivery_mode: form.get("delivery_mode") }) }));
+        const ok = await act(() => projectsApi.updateLocation(editDirectory.id, { description: form.get("description"), worktree_setup_command: form.get("worktree_setup_command"), base_branch: form.get("base_branch"), delivery_mode: form.get("delivery_mode") }));
         if (ok) setEditDirectory(null);
       }} />
       <CreateWorkspaceDialog project={createWorkspaceProject} busy={busy} onOpenChange={(open) => { if (!open) setCreateWorkspaceProject(null); }} onSubmit={async (event) => {
@@ -657,7 +628,7 @@ function Workspace() {
         if (!createWorkspaceProject) return;
         const form = new FormData(event.currentTarget);
         let created: Workspace | null = null;
-        const ok = await act(async () => { created = await api<Workspace>(`/api/projects/${createWorkspaceProject.id}/workspaces`, { method: "POST", body: JSON.stringify({ name: form.get("name"), description: form.get("description"), branch: form.get("branch"), remote_name: form.get("remote_name"), remote_branch: form.get("remote_branch") }) }); });
+        const ok = await act(async () => { created = await projectsApi.createWorkspace(createWorkspaceProject.id, { name: form.get("name"), description: form.get("description"), branch: form.get("branch"), remote_name: form.get("remote_name"), remote_branch: form.get("remote_branch") }); });
         if (ok && created) { setCreateWorkspaceProject(null); navigate(`/workspaces/${(created as Workspace).id}`); }
       }} />
       <CreateForkDialog workspace={createForkWorkspace} busy={busy} onOpenChange={(open) => { if (!open) setCreateForkWorkspace(null); }} onSubmit={async (event) => {
@@ -665,19 +636,19 @@ function Workspace() {
         if (!createForkWorkspace) return;
         const form = new FormData(event.currentTarget);
         let created: Workspace | null = null;
-        const ok = await act(async () => { created = await api<Workspace>(`/api/workspaces/${createForkWorkspace.id}/forks`, { method: "POST", body: JSON.stringify({ name: form.get("name"), description: form.get("description") }) }); });
+        const ok = await act(async () => { created = await workspacesApi.createFork(createForkWorkspace.id, { name: form.get("name"), description: form.get("description") }); });
         if (ok && created) { setCreateForkWorkspace(null); navigate(`/workspaces/${(created as Workspace).id}`); }
       }} />
       <ConfigureWorkspaceLocationDialog location={configureWorkspaceLocation} busy={busy} onOpenChange={(open) => { if (!open) setConfigureWorkspaceLocation(null); }} onSubmit={async (event) => {
         event.preventDefault(); if (!configureWorkspaceLocation) return; const owner = configureWorkspaceLocation; const form = new FormData(event.currentTarget);
-        const ok = await act(() => api(`/api/workspace-locations/${owner.id}`, { method: "PATCH", body: JSON.stringify({ remote_name: form.get("remote_name"), remote_branch: form.get("remote_branch") }) }));
+        const ok = await act(() => workspacesApi.updateLocation(owner.id, { remote_name: form.get("remote_name"), remote_branch: form.get("remote_branch") }));
         if (ok) setConfigureWorkspaceLocation(null);
       }} />
       <FinishWorkspaceDialog workspace={finishWorkspaceDialog} busy={busy} onOpenChange={(open) => { if (!open) setFinishWorkspaceDialog(null); }} onSubmit={async (locationId, payload) => {
         if (!finishWorkspaceDialog) return;
         const owner = finishWorkspaceDialog;
         let updated: WorkspaceDetail | null = null;
-        const ok = await act(async () => { await api(`/api/workspace-locations/${locationId}/finish`, { method: "POST", body: JSON.stringify(payload) }); updated = normalizeWorkspace(await api<WorkspaceDetail>(`/api/workspaces/${owner.id}`)); if ((updated as WorkspaceDetail).locations.filter((item) => item.access_mode === "read_write").every((item) => ["delivered", "kept", "discarded", "remote_merged"].includes(item.delivery_status))) await api(`/api/workspaces/${owner.id}/archive`, { method: "POST" }); });
+        const ok = await act(async () => { await workspacesApi.finishLocation(locationId, payload); updated = normalizeWorkspace(await workspacesApi.detail(owner.id)); if ((updated as WorkspaceDetail).locations.filter((item) => item.access_mode === "read_write").every((item) => ["delivered", "kept", "discarded", "remote_merged"].includes(item.delivery_status))) await workspacesApi.archive(owner.id); });
         if (ok && updated && (updated as WorkspaceDetail).locations.filter((item) => item.access_mode === "read_write").every((item) => ["delivered", "kept", "discarded", "remote_merged"].includes(item.delivery_status))) { setFinishWorkspaceDialog(null); navigate(owner.parent_workspace_id ? `/workspaces/${owner.parent_workspace_id}` : `/projects/${owner.project.id}`); } else if (ok && updated) setFinishWorkspaceDialog(updated);
       }} />
       <RenameDialog target={renameTarget} busy={busy} onOpenChange={(open) => { if (!open) setRenameTarget(null); }} onSubmit={(name, description) => void (renameTarget && rename(renameTarget, name, description))} />
@@ -902,7 +873,7 @@ function RecordActionMenu({ kind, name, status, busy, onRestore, onDelete, onDel
   </ActionMenu>;
 }
 
-function DeleteRecordDialog({ target, busy, onOpenChange, onConfirm }: { target: { kind: "project"; value: ProjectDetail } | { kind: "workspace" | "fork"; value: Workspace } | null; busy: boolean; onOpenChange: (open: boolean) => void; onConfirm: () => void }) {
+function DeleteRecordDialog({ target, busy, onOpenChange, onConfirm }: { target: { kind: "project"; value: ProjectDetail | ProjectSummary } | { kind: "workspace" | "fork"; value: Workspace } | null; busy: boolean; onOpenChange: (open: boolean) => void; onConfirm: () => void }) {
   const { t } = useTranslation();
   return <AlertDialog open={Boolean(target)} onOpenChange={onOpenChange}>
     <AlertDialogContent data-testid="delete-record-dialog">
@@ -915,7 +886,7 @@ function DeleteRecordDialog({ target, busy, onOpenChange, onConfirm }: { target:
   </AlertDialog>;
 }
 
-function Overview({ projects, busy, onOpen, onCreate, onRestore, onDelete, onDeleteBlocked }: { projects: ProjectDetail[]; busy: boolean; onOpen: (id: string) => void; onCreate: () => void; onRestore: (project: ProjectDetail) => void; onDelete: (project: ProjectDetail) => void; onDeleteBlocked: (project: ProjectDetail) => void }) {
+function Overview({ projects, busy, onOpen, onCreate, onRestore, onDelete, onDeleteBlocked }: { projects: ProjectSummary[]; busy: boolean; onOpen: (id: string) => void; onCreate: () => void; onRestore: (project: ProjectSummary) => void; onDelete: (project: ProjectSummary) => void; onDeleteBlocked: (project: ProjectSummary) => void }) {
   const { t, i18n } = useTranslation();
   const nameCollator = new Intl.Collator(i18n.resolvedLanguage, { numeric: true, sensitivity: "base" });
   const rows = [...projects]
@@ -928,18 +899,18 @@ function Overview({ projects, busy, onOpen, onCreate, onRestore, onDelete, onDel
       <table className="w-full min-w-[760px] table-fixed text-left">
         <thead><tr className="border-b border-neutral-100 bg-neutral-50 text-[10px] font-semibold uppercase tracking-wider text-neutral-400"><th className="w-[32%] px-4 py-3">{t("overview.columns.project")}</th><th className="w-[27%] px-4 py-3">{t("overview.columns.locations")}</th><th className="w-[18%] px-4 py-3">{t("overview.columns.health")}</th><th className="w-[13%] px-4 py-3">{t("overview.columns.activeWorkspaces")}</th><th className="w-[10%] px-4 py-3"><span className="sr-only">{t("overview.columns.actions")}</span></th></tr></thead>
         <tbody className="divide-y divide-neutral-100">{rows.map((project) => {
-          const gitLocations = project.directories.filter((directory) => Boolean(directory.git_common_dir) || directory.is_git).length;
-          const contextLocations = project.directories.length - gitLocations;
-          const missingLocations = project.directories.filter((directory) => directory.git_status === "missing").length;
-          const abnormalLocations = project.directories.filter((directory) => !["ready", "not_git", "missing"].includes(directory.git_status)).length;
-          const health = project.directories.length === 0
+          const gitLocations = project.git_location_count;
+          const contextLocations = project.context_location_count;
+          const missingLocations = project.missing_location_count;
+          const abnormalLocations = project.abnormal_location_count;
+          const health = project.location_count === 0
             ? t("overview.health.noLocations")
             : [
                 missingLocations > 0 ? t("overview.health.missing", { count: missingLocations }) : "",
                 abnormalLocations > 0 ? t("overview.health.abnormal", { count: abnormalLocations }) : "",
               ].filter(Boolean).join(" · ") || t("overview.health.healthy");
-          const activeWorkspaces = project.workspaces.filter((workspace) => workspace.kind === "workspace" && workspace.status === "active").length;
-          return <tr key={project.id} data-testid="project-overview-row" data-project-id={project.id} data-project-status={project.status} role="link" tabIndex={0} className={cn("cursor-pointer outline-none hover:bg-neutral-50 focus-visible:bg-neutral-50", project.status === "archived" && "bg-neutral-50/60 text-neutral-500")} onClick={() => onOpen(project.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(project.id); } }}><td className="px-4 py-4"><div className="flex min-w-0 items-center gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100"><Folders className="size-4 text-neutral-500" /></div><div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><p className="truncate text-sm font-semibold">{project.name}</p>{project.status === "archived" && <Badge>{t("overview.archived")}</Badge>}</div><p className="mt-1 truncate text-xs text-neutral-500">{project.description || t("overview.localProject")}</p></div></div></td><td data-testid="project-overview-locations" className="px-4 py-4 text-xs text-neutral-600">{t("overview.locationSummary", { locations: project.directories.length, git: gitLocations, contextLocations })}</td><td className="px-4 py-4"><Badge variant={abnormalLocations > 0 ? "destructive" : missingLocations > 0 ? "warning" : project.directories.length === 0 ? "neutral" : "success"}>{health}</Badge></td><td data-testid="project-overview-active-workspaces" className="px-4 py-4 text-xs text-neutral-600">{activeWorkspaces}</td><td className="px-4 py-4" onClick={(event) => event.stopPropagation()}><div className="flex justify-end"><RecordActionMenu kind="project" name={project.name} status={project.status} busy={busy} onRestore={() => onRestore(project)} onDelete={() => onDelete(project)} onDeleteBlocked={() => onDeleteBlocked(project)} /></div></td></tr>;
+          const activeWorkspaces = project.active_workspace_count;
+          return <tr key={project.id} data-testid="project-overview-row" data-project-id={project.id} data-project-status={project.status} role="link" tabIndex={0} className={cn("cursor-pointer outline-none hover:bg-neutral-50 focus-visible:bg-neutral-50", project.status === "archived" && "bg-neutral-50/60 text-neutral-500")} onClick={() => onOpen(project.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(project.id); } }}><td className="px-4 py-4"><div className="flex min-w-0 items-center gap-3"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-neutral-100"><Folders className="size-4 text-neutral-500" /></div><div className="min-w-0"><div className="flex min-w-0 items-center gap-2"><p className="truncate text-sm font-semibold">{project.name}</p>{project.status === "archived" && <Badge>{t("overview.archived")}</Badge>}</div><p className="mt-1 truncate text-xs text-neutral-500">{project.description || t("overview.localProject")}</p></div></div></td><td data-testid="project-overview-locations" className="px-4 py-4 text-xs text-neutral-600">{t("overview.locationSummary", { locations: project.location_count, git: gitLocations, contextLocations })}</td><td className="px-4 py-4"><Badge variant={abnormalLocations > 0 ? "destructive" : missingLocations > 0 ? "warning" : project.location_count === 0 ? "neutral" : "success"}>{health}</Badge></td><td data-testid="project-overview-active-workspaces" className="px-4 py-4 text-xs text-neutral-600">{activeWorkspaces}</td><td className="px-4 py-4" onClick={(event) => event.stopPropagation()}><div className="flex justify-end"><RecordActionMenu kind="project" name={project.name} status={project.status} busy={busy} onRestore={() => onRestore(project)} onDelete={() => onDelete(project)} onDeleteBlocked={() => onDeleteBlocked(project)} /></div></td></tr>;
         })}</tbody>
       </table>
       {projects.length === 0 && <div className="py-16 text-center text-xs text-neutral-400">{t("overview.empty")}</div>}
@@ -1038,7 +1009,7 @@ function AddDirectoryDialog({ project, busy, onOpenChange, onSubmit }: { project
     setCheckingKeys((current) => new Set(current).add(key));
     update(key, { inspection: undefined, inspectionError: undefined });
     try {
-      const result = await api<ProjectLocationInspection>("/api/project-locations/inspect", { method: "POST", body: JSON.stringify({ path }) });
+      const result = await projectsApi.inspectLocation(path);
       update(key, { path: result.path, inspection: result, base_branch: result.base_branch ?? "main", inspectionError: undefined });
     } catch (cause) {
       update(key, { inspection: undefined, inspectionError: cause instanceof Error ? cause.message : "Could not inspect location" });

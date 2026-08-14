@@ -928,6 +928,10 @@ try {
   assert.deepEqual(await orderedOverviewRows.map((row) => row.getAttribute("data-project-id")), ["project-created-primary-requirement", FIXTURE_IDS.project], "active Projects must be ordered alphabetically even when the first name has older activity");
   harness.setProjectStatus("project-created-primary-requirement", "archived");
   await browser.refresh();
+  await browser.waitUntil(async () => (await browser.$$('[data-testid="project-overview-row"]')).length === 2, {
+    timeout: 3_000,
+    timeoutMsg: "Project summaries did not reload after browser refresh",
+  });
   orderedOverviewRows = await browser.$$('[data-testid="project-overview-row"]');
   assert.deepEqual(await orderedOverviewRows.map((row) => row.getAttribute("data-project-id")), [FIXTURE_IDS.project, "project-created-primary-requirement"], "archived Projects must be ordered after active Projects");
   harness.assertNoUnexpectedRequests();

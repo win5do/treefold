@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Bot, RotateCcw, Square, TerminalSquare, X } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { sessionsApi } from "@/api/sessions";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -59,7 +60,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     let disposed = false;
     const connect = () => {
       if (disposed) return;
-      socket = new WebSocket(`ws://127.0.0.1:7331/api/sessions/${session.id}/terminal?takeover=true`);
+      socket = new WebSocket(sessionsApi.terminalSocketUrl(session.id));
       socket.binaryType = "arraybuffer";
       socket.onopen = () => {
         fit.fit();

@@ -2,6 +2,16 @@ async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project
     Ok(Json(state.store.projects()?))
 }
 
+async fn list_project_summaries(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ProjectSummary>>> {
+    Ok(Json(state.store.project_summaries_async().await?))
+}
+
+async fn get_sidebar(State(state): State<AppState>) -> Result<Json<SidebarData>> {
+    Ok(Json(state.store.sidebar_async().await?))
+}
+
 #[derive(Deserialize)]
 struct CreateProject {
     name: Option<String>,
@@ -81,6 +91,7 @@ async fn create_project(
             delivery_mode: Some(project.default_delivery_mode.clone()),
             git_common_dir: None,
             git_status: if is_git { "ready" } else { "not_git" }.into(),
+            last_checked_at: None,
             created_at: timestamp.clone(),
             updated_at: timestamp,
             checkout_path: None,
@@ -226,18 +237,27 @@ async fn get_project(
             } else {
                 "additional".into()
             };
-        enrich_directory(directory, None);
     }
     let tracked_workspaces = state.store.workspaces(&id)?;
     let mut tracked_workspace_locations = Vec::new();
     for workspace in &tracked_workspaces {
         tracked_workspace_locations.extend(state.store.workspace_locations(&workspace.id)?);
     }
-    detail.worktrees = project_worktrees(
-        &detail.locations,
-        &tracked_workspaces,
-        &tracked_workspace_locations,
-    );
+    let cache_key = id.clone();
+    let locations = detail.locations.clone();
+    detail.worktrees = PROJECT_WORKTREES
+        .get_with(cache_key, async move {
+            blocking_git_operation(move || {
+                Ok(project_worktrees(
+                    &locations,
+                    &tracked_workspaces,
+                    &tracked_workspace_locations,
+                ))
+            })
+            .await
+            .unwrap_or_default()
+        })
+        .await;
     detail.sessions = refresh_session_records(&state, detail.sessions).await?;
     Ok(Json(detail))
 }
@@ -592,7 +612,10 @@ async fn delete_worktree(
     AxumPath(directory_id): AxumPath<String>,
     ApiJson(input): ApiJson<DeleteWorktree>,
 ) -> Result<StatusCode> {
-    blocking_git_operation(move || delete_worktree_impl(state, directory_id, input)).await
+    let project_id = state.store.directory(&directory_id)?.project_id;
+    let status = blocking_git_operation(move || delete_worktree_impl(state, directory_id, input)).await?;
+    PROJECT_WORKTREES.invalidate(&project_id).await;
+    Ok(status)
 }
 
 fn delete_worktree_impl(
@@ -716,6 +739,7 @@ async fn inspect_project_location(
         delivery_mode: None,
         git_common_dir: None,
         git_status: if is_git { "ready" } else { "not_git" }.into(),
+        last_checked_at: None,
         created_at: String::new(),
         updated_at: String::new(),
         checkout_path: None,
@@ -754,8 +778,14 @@ async fn get_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectLocation>> {
-    let mut location = state.store.directory(&id)?;
-    refresh_location_observation(&mut location)?;
+    let cache_key = id.clone();
+    let location = LOCATION_OBSERVATIONS.try_get_with(cache_key, async move {
+        blocking_git_operation(move || {
+            let mut location = state.store.directory(&id)?;
+            refresh_location_observation(&mut location)?;
+            Ok(location)
+        }).await.map_err(|error| error.to_string())
+    }).await.map_err(|error| AppError::BadRequest((*error).clone()))?;
     Ok(Json(location))
 }
 async fn create_directory(
@@ -805,6 +835,7 @@ async fn create_directory(
         } else {
             "not_git".into()
         },
+        last_checked_at: None,
         updated_at: now(),
         checkout_path: None,
         role: "attached".into(),
@@ -827,6 +858,8 @@ async fn create_directory(
         directory.delivery_mode = Some("remote_review".into());
     }
     state.store.create_directory(&directory)?;
+    LOCATION_OBSERVATIONS.insert(directory.id.clone(), directory.clone()).await;
+    PROJECT_WORKTREES.invalidate(&directory.project_id).await;
     Ok((StatusCode::CREATED, Json(directory)))
 }
 
@@ -834,6 +867,7 @@ async fn refresh_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectLocation>> {
+    LOCATION_OBSERVATIONS.invalidate(&id).await;
     let mut location = state.store.directory(&id)?;
     ensure_active_project(&state.store.project(&location.project_id)?)?;
     let was_git = location.git_common_dir.is_some();
@@ -843,13 +877,15 @@ async fn refresh_project_location(
         if location.delivery_mode.is_none() {
             location.delivery_mode = Some("remote_review".into());
         }
-        location.updated_at = now();
-        state.store.refresh_project_location(&location)?;
     } else if was_git {
         // Persisted repository identity is intentionally retained when the path
         // is unavailable or no longer points at the same repository.
         location.is_git = false;
     }
+    location.updated_at = now();
+    state.store.refresh_project_location(&location)?;
+    LOCATION_OBSERVATIONS.insert(id, location.clone()).await;
+    PROJECT_WORKTREES.invalidate(&location.project_id).await;
     Ok(Json(location))
 }
 
@@ -969,6 +1005,8 @@ async fn delete_project_location(
         )?;
     }
     state.store.delete_project_location(&id)?;
+    LOCATION_OBSERVATIONS.invalidate(&id).await;
+    PROJECT_WORKTREES.invalidate(&project.id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1165,9 +1203,11 @@ async fn create_workspace(
     ApiJson(input): ApiJson<CreateWorkspace>,
 ) -> Result<(StatusCode, Json<Workspace>)> {
     let operation_state = state.clone();
+    let cache_key = project_id.clone();
     let created =
         blocking_git_operation(move || create_workspace_impl(operation_state, project_id, input))
             .await?;
+    PROJECT_WORKTREES.invalidate(&cache_key).await;
     spawn_workspace_setup_shells(
         state.clone(),
         created.workspace.clone(),

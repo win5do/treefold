@@ -1,0 +1,24 @@
+import { request } from "./client";
+import type { Directory, GitHistory, GitWorktree, Project, ProjectDetail, ProjectLocationInspection, ProjectSummary, Session, SidebarData, Workspace } from "@/domain/types";
+
+export const projectsApi = {
+  summaries: (signal?: AbortSignal) => request<ProjectSummary[]>("/api/projects/summary", { signal }),
+  sidebar: (signal?: AbortSignal) => request<SidebarData>("/api/sidebar", { signal }),
+  detail: (id: string, signal?: AbortSignal) => request<ProjectDetail>(`/api/projects/${id}`, { signal }),
+  create: (json: unknown) => request<Project>("/api/projects", { method: "POST", json }),
+  update: (id: string, json: unknown) => request<Project>(`/api/projects/${id}`, { method: "PATCH", json }),
+  delete: (id: string) => request(`/api/projects/${id}`, { method: "DELETE" }),
+  sessions: (id: string, signal?: AbortSignal) => request<Session[]>(`/api/projects/${id}/sessions`, { signal }),
+  createSession: (id: string, json: unknown) => request<Session>(`/api/projects/${id}/sessions`, { method: "POST", json }),
+  createWorkspace: (id: string, json: unknown) => request<Workspace>(`/api/projects/${id}/workspaces`, { method: "POST", json }),
+  addLocation: (id: string, json: unknown) => request<Directory>(`/api/projects/${id}/locations`, { method: "POST", json }),
+  inspectLocation: (path: string, signal?: AbortSignal) => request<ProjectLocationInspection>("/api/project-locations/inspect", { method: "POST", json: { path }, signal }),
+  updateLocation: (id: string, json: unknown) => request<Directory>(`/api/project-directories/${id}`, { method: "PATCH", json }),
+  refreshLocation: (id: string) => request<Directory>(`/api/project-locations/${id}/refresh`, { method: "POST" }),
+  reattachLocation: (id: string, path: string) => request<Directory>(`/api/project-locations/${id}/reattach`, { method: "POST", json: { path } }),
+  removeWorktree: (locationId: string, worktree: GitWorktree) => request(`/api/project-directories/${locationId}/worktrees`, { method: "DELETE", json: { path: worktree.path } }),
+  reveal: (id: string) => request(`/api/projects/${id}/reveal`, { method: "POST" }),
+  sync: (id: string, action: "pull" | "push") => request(`/api/projects/${id}/git/${action}-all`, { method: "POST" }),
+  syncLocation: (id: string, action: "pull" | "push") => request(`/api/project-locations/${id}/git/${action}`, { method: "POST" }),
+  history: (id: string, signal?: AbortSignal) => request<GitHistory>(`/api/projects/${id}/git-history`, { signal }),
+};

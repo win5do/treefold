@@ -302,8 +302,8 @@ impl Store {
     }
 }
 
-const WORKSPACE_COLUMNS: &str = "id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at";
-fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
+pub(super) const WORKSPACE_COLUMNS: &str = "id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at";
+pub(super) fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
     Ok(Workspace {
         id: r.get("id")?,
         project_id: r.get("project_id")?,
@@ -335,10 +335,10 @@ fn workspace_row(r: &Row<'_>) -> rusqlite::Result<Workspace> {
     })
 }
 
-const WORKSPACE_LOCATION_COLUMNS: &str = "id,workspace_id,project_location_id,location_name,source_path,access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
+pub(super) const WORKSPACE_LOCATION_COLUMNS: &str = "id,workspace_id,project_location_id,location_name,source_path,access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
 const WORKSPACE_LOCATION_JOIN_COLUMNS: &str = "wl.id,wl.workspace_id,wl.project_location_id,wl.location_name,wl.source_path,wl.access_mode,wl.git_status,wl.creation_error,wl.worktree_id,wl.checkout_path,wl.branch,wl.base_branch,wl.start_commit,wl.forked_from_commit,wl.remote_name,wl.remote_branch,wl.branch_ownership,wl.delivery_mode,wl.delivery_status,wl.close_outcome,wl.integrated_commit,wl.closed_at,wl.created_at,wl.updated_at";
 
-fn workspace_location_row(r: &Row<'_>) -> rusqlite::Result<WorkspaceLocation> {
+pub(super) fn workspace_location_row(r: &Row<'_>) -> rusqlite::Result<WorkspaceLocation> {
     Ok(WorkspaceLocation {
         id: r.get("id")?,
         workspace_id: r.get("workspace_id")?,
@@ -367,7 +367,10 @@ fn workspace_location_row(r: &Row<'_>) -> rusqlite::Result<WorkspaceLocation> {
     })
 }
 
-fn hydrate_workspace_compat(db: &Connection, workspace: &mut Workspace) -> rusqlite::Result<()> {
+pub(super) fn hydrate_workspace_compat(
+    db: &Connection,
+    workspace: &mut Workspace,
+) -> rusqlite::Result<()> {
     if workspace.kind == "base" {
         workspace.checkout_mode = "in_place".into();
         workspace.branch_ownership = "user".into();

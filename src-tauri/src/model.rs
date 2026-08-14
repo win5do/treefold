@@ -41,6 +41,8 @@ pub struct ProjectLocation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub git_common_dir: Option<String>,
     pub git_status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_checked_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
     #[serde(skip)]
@@ -62,6 +64,43 @@ pub struct ProjectLocation {
 }
 
 pub type Directory = ProjectLocation;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProjectSummary {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub status: String,
+    pub location_count: i64,
+    pub git_location_count: i64,
+    pub context_location_count: i64,
+    pub missing_location_count: i64,
+    pub abnormal_location_count: i64,
+    pub active_workspace_count: i64,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SidebarData {
+    pub projects: Vec<SidebarProject>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SidebarProject {
+    #[serde(flatten)]
+    pub project: Project,
+    pub locations: Vec<ProjectLocation>,
+    pub sessions: Vec<Session>,
+    pub workspaces: Vec<SidebarWorkspace>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SidebarWorkspace {
+    #[serde(flatten)]
+    pub workspace: Workspace,
+    pub sessions: Vec<Session>,
+    pub locations: Vec<WorkspaceLocation>,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Workspace {

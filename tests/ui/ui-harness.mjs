@@ -63,6 +63,46 @@ async function startFixtureApi() {
       sendJson(response, 200, fixture.settings);
       return;
     }
+    if (request.method === "GET" && pathname === "/api/projects/summary") {
+      sendJson(response, 200, fixture.projects.map((project) => {
+        const detail = fixture.projectDetails[project.id];
+        const locations = detail?.locations ?? [];
+        return {
+          id: project.id,
+          name: project.name,
+          description: project.description,
+          status: project.status,
+          location_count: locations.length,
+          git_location_count: locations.filter((location) => location.git_common_dir != null).length,
+          context_location_count: locations.filter((location) => location.git_common_dir == null).length,
+          missing_location_count: locations.filter((location) => location.git_status === "missing").length,
+          abnormal_location_count: locations.filter((location) => !["ready", "not_git", "missing"].includes(location.git_status)).length,
+          active_workspace_count: (detail?.workspaces ?? []).filter((workspace) => workspace.kind === "workspace" && workspace.status === "active").length,
+          updated_at: project.updated_at,
+        };
+      }));
+      return;
+    }
+    if (request.method === "GET" && pathname === "/api/sidebar") {
+      sendJson(response, 200, {
+        projects: fixture.projects.filter((project) => project.status === "active").map((project) => {
+          const detail = fixture.projectDetails[project.id];
+          return {
+            ...project,
+            locations: detail.locations,
+            sessions: detail.sessions.filter((session) => session.sidebar_visible),
+            workspaces: detail.workspaces
+              .filter((workspace) => workspace.kind !== "base" && workspace.status === "active")
+              .map((workspace) => ({
+                ...workspace,
+                sessions: (fixture.workspaceDetails[workspace.id]?.sessions ?? []).filter((session) => session.sidebar_visible),
+                locations: fixture.workspaceDetails[workspace.id]?.locations ?? [],
+              })),
+          };
+        }),
+      });
+      return;
+    }
     if (request.method === "GET" && pathname === "/api/projects") {
       sendJson(response, 200, fixture.projects);
       return;
@@ -492,6 +532,15 @@ async function startFixtureApi() {
 
     unexpectedRequests.push(`${request.method} ${pathname}`);
     sendJson(response, 501, { error: `UI fixture does not implement ${request.method} ${pathname}` });
+  });
+  server.on("upgrade", (request, socket) => {
+    const pathname = new URL(request.url ?? "/", "http://fixture.test").pathname;
+    if (/^\/api\/sessions\/[^/]+\/terminal$/.test(pathname)) {
+      socket.destroy();
+      return;
+    }
+    unexpectedRequests.push(`UPGRADE ${pathname}`);
+    socket.destroy();
   });
 
   await new Promise((resolve, reject) => {

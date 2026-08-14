@@ -12,6 +12,7 @@ async fn create_fork(
     let operation_state = state.clone();
     let created =
         blocking_git_operation(move || create_fork_impl(operation_state, parent_id, input)).await?;
+    PROJECT_WORKTREES.invalidate(&created.workspace.project_id).await;
     spawn_workspace_setup_shells(
         state.clone(),
         created.workspace.clone(),
@@ -187,4 +188,3 @@ fn create_fork_impl(
         setup_shells,
     })
 }
-

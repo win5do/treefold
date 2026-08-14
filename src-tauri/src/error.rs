@@ -44,6 +44,12 @@ impl From<rusqlite::Error> for AppError {
     }
 }
 
+impl From<async_sqlite::Error> for AppError {
+    fn from(value: async_sqlite::Error) -> Self {
+        Self::Internal(value.into())
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message, details) = match self {

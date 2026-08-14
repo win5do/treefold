@@ -27,7 +27,9 @@ futures-util = "0.3"
 http = "1"
 parking_lot = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "=0.40.1", features = ["bundled"] }
+moka = { version = "0.12", features = ["future"] }
+async-sqlite = { version = "0.6", default-features = false }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml_edit = { version = "0.25", features = ["serde"] }

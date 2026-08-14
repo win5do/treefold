@@ -672,6 +672,7 @@ fn inspect_path(value: &str) -> Result<(String, bool)> {
 }
 
 fn refresh_location_observation(location: &mut ProjectLocation) -> Result<()> {
+    location.last_checked_at = Some(now());
     let path = Path::new(&location.path);
     if !path.exists() {
         location.git_status = "missing".into();

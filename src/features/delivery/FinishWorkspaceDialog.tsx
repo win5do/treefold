@@ -7,7 +7,7 @@ import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/componen
 import { Input } from "@/components/ui/input";
 import { NativeSelect as Select } from "@/components/ui/native-select";
 import type { DeliveryPreflight, WorkspaceDetail } from "@/domain/types";
-import { api } from "@/lib/api";
+import { workspacesApi } from "@/api/workspaces";
 
 export type FinishPayload = { code_action: string; todo_action: string; push_after_merge: boolean; keep_session_history: boolean; delete_worktree: boolean; delete_branch: boolean; commit_message?: string; preflight_id?: string };
 export function FinishWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit }: { workspace: WorkspaceDetail | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (locationId: string, payload: FinishPayload) => void }) {
@@ -26,7 +26,7 @@ export function FinishWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit 
   const isFork = workspace?.kind === "fork";
   useEffect(() => { if (!workspace) return; const first = workspace.locations.find((item) => item.access_mode === "read_write" && ["active", "failed"].includes(item.delivery_status)); setLocationId(first?.id ?? ""); }, [workspace?.id]);
   useEffect(() => { if (!workspace || !location) return; setCodeAction(isFork || location.delivery_mode === "local_merge" ? "local_merge" : "remote_merged"); setTodoAction(isFork ? "carry" : "keep"); setKeepSessions(true); setDeleteWorktree(true); setDeleteBranch(true); setCommitMessage(""); }, [workspace?.id, location?.id, isFork]);
-  useEffect(() => { if (!location) return; let cancelled = false; setChecking(true); setPreflight(null); setPreflightError(""); void api<DeliveryPreflight>(`/api/workspace-locations/${location.id}/delivery-preflight`, { method: "POST", body: JSON.stringify({ code_action: codeAction }) }).then((value) => { if (!cancelled) setPreflight(value); }).catch((cause) => { if (!cancelled) setPreflightError(cause instanceof Error ? cause.message : "Preflight failed"); }).finally(() => { if (!cancelled) setChecking(false); }); return () => { cancelled = true; }; }, [location?.id, codeAction]);
+  useEffect(() => { if (!location) return; const controller = new AbortController(); setChecking(true); setPreflight(null); setPreflightError(""); void workspacesApi.preflight(location.id, codeAction, controller.signal).then(setPreflight).catch((cause) => { if (!controller.signal.aborted) setPreflightError(cause instanceof Error ? cause.message : "Preflight failed"); }).finally(() => { if (!controller.signal.aborted) setChecking(false); }); return () => controller.abort(); }, [location?.id, codeAction]);
   useEffect(() => { if (codeAction === "keep") { setDeleteWorktree(false); setDeleteBranch(false); } else if (codeAction === "discard") { setDeleteWorktree(true); setDeleteBranch(true); } }, [codeAction]);
   const blocked = !preflight || preflight.blockers.length > 0;
   return <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>

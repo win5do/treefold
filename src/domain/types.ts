@@ -28,6 +28,7 @@ export type Directory = {
   delivery_mode?: "remote_review" | "local_merge";
   git_common_dir?: string;
   git_status: "creating" | "ready" | "failed" | "not_git" | "missing" | "broken" | "mismatch";
+  last_checked_at?: string;
   checkout_path?: string;
   role: "primary" | "attached";
   is_git: boolean;
@@ -127,6 +128,23 @@ export type ProjectDetail = Project & {
   workspaces: Workspace[];
   worktrees: GitWorktree[];
 };
+
+export type ProjectSummary = Pick<Project, "id" | "name" | "description" | "status" | "updated_at"> & {
+  location_count: number;
+  git_location_count: number;
+  context_location_count: number;
+  missing_location_count: number;
+  abnormal_location_count: number;
+  active_workspace_count: number;
+};
+
+export type SidebarWorkspace = Workspace & { sessions: Session[]; locations: WorkspaceLocation[] };
+export type SidebarProject = Project & {
+  locations: Directory[];
+  sessions: Session[];
+  workspaces: SidebarWorkspace[];
+};
+export type SidebarData = { projects: SidebarProject[] };
 
 export type Todo = { id: string; workspace_id: string; title: string; description: string; status: string };
 
@@ -228,4 +246,3 @@ export type AppSettings = {
     };
   };
 };
-
