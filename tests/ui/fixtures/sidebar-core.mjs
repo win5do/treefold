@@ -4,6 +4,7 @@ export const FIXTURE_IDS = Object.freeze({
   attachedDirectory: "directory-attached-ui-fixture",
   secondaryDirectory: "directory-secondary-ui-fixture",
   workspace: "workspace-ui-fixture",
+  archivedWorkspace: "workspace-archived-ui-fixture",
   fork: "fork-ui-fixture",
   archivedFork: "fork-archived-ui-fixture",
   workspaceShell: "session-workspace-shell-ui-fixture",
@@ -21,6 +22,7 @@ export const FIXTURE_IDS = Object.freeze({
 export const FIXTURE_NAMES = Object.freeze({
   project: "UI Fixture Project",
   workspace: "Workspace with an intentionally long name for sidebar layout verification",
+  archivedWorkspace: "Finished Workspace that must stay out of the active sidebar tree",
   fork: "Fork with an intentionally long name that must preserve its action button",
   archivedFork: "Archived Fork that must stay out of the active sidebar tree",
 });
@@ -216,6 +218,20 @@ const fork = {
   runtime_name: "treefold-fork-ui-fixture",
 };
 
+const archivedWorkspace = {
+  ...workspace,
+  id: FIXTURE_IDS.archivedWorkspace,
+  name: FIXTURE_NAMES.archivedWorkspace,
+  status: "archived",
+  checkout_path: "/tmp/treefold-ui-fixture/worktrees/archived-workspace-ui-fixture",
+  branch: "treefold/w-archived-ui-fixture",
+  delivery_status: "delivered",
+  close_outcome: "delivered",
+  closed_at: timestamp,
+  runtime_id: FIXTURE_IDS.archivedWorkspace,
+  runtime_name: "treefold-archived-workspace-ui-fixture",
+};
+
 const archivedFork = {
   ...fork,
   id: FIXTURE_IDS.archivedFork,
@@ -311,7 +327,7 @@ const projectDetail = {
   directories,
   locations: directories,
   sessions: projectSessions,
-  workspaces: [workspace, fork, archivedFork],
+  workspaces: [workspace, archivedWorkspace, fork, archivedFork],
   worktrees: [
     {
       project_location_id: FIXTURE_IDS.primaryDirectory,

@@ -916,6 +916,7 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
     <div className="min-h-0 flex-1 overflow-y-auto p-2">
       {projects.filter((project) => project.status === "active").map((project) => {
         const projectOpen = expandedProjects.has(project.id);
+        const activeRootWorkspaces = project.workspaces.filter((item) => item.status === "active" && !item.parent_workspace_id);
         return <div key={project.id} className="relative mb-1">
           <div data-testid="sidebar-project-node" className="group flex min-w-0 items-center" onContextMenu={(event) => { event.preventDefault(); onSessionMenu(null); setContextOwner({ project, x: event.clientX, y: event.clientY }); }}>
             <button data-testid="sidebar-tree-toggle" className={sidebarTreeToggleClass} aria-label={t(projectOpen ? "sidebar.collapseProject" : "sidebar.expandProject", { name: project.name })} aria-expanded={projectOpen} onClick={() => onToggleProject(project.id)}>{projectOpen ? <ChevronDown data-testid="sidebar-tree-chevron" className="size-3.5" /> : <ChevronRight data-testid="sidebar-tree-chevron" className="size-3.5" />}</button>
@@ -925,7 +926,7 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
           {sessionMenu?.id === `project:${project.id}` && <SessionDirectoryMenu testId="sidebar-session-menu" directories={project.directories} position={sessionMenu} primaryAction={<button data-testid="create-workspace-action" className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-medium hover:bg-neutral-100" onClick={() => { onSessionMenu(null); onCreateWorkspace(project); }}><Workflow className="size-3.5" />{t("sidebar.newWorkspace")}</button>} onShell={(directory) => { onSessionMenu(null); onCreateBaseShell(project, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateBaseCodex(project, directory); }} />}
           {projectOpen && <div data-testid="sidebar-project-children" className="ml-3.5 border-l border-neutral-300 pl-1">
             <SidebarProjectSessions project={project} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} onNavigate={onNavigate} onCloseSession={onCloseProjectSession} />
-            {project.workspaces.filter((item) => !item.parent_workspace_id).map((stream) => <SidebarWorkspaceNode
+            {activeRootWorkspaces.map((stream) => <SidebarWorkspaceNode
               key={stream.id}
               stream={stream}
               allStreams={project.workspaces}
@@ -943,7 +944,7 @@ function WorkspaceSidebar({ projects, selectedWorkspaceId, selectedSessionId, hi
               onOpenContext={(event, stream) => { event.preventDefault(); onSessionMenu(null); setContextOwner({ project, stream, x: event.clientX, y: event.clientY }); }}
               onCloseSession={onCloseSession}
             />)}
-            {project.workspaces.filter((item) => !item.parent_workspace_id).length === 0 && <p className="px-3 py-2 text-[11px] text-neutral-400">{t("sidebar.noWorkspaces")}</p>}
+            {activeRootWorkspaces.length === 0 && <p className="px-3 py-2 text-[11px] text-neutral-400">{t("sidebar.noWorkspaces")}</p>}
           </div>}
         </div>;
       })}

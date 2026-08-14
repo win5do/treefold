@@ -139,6 +139,7 @@ try {
     const owner = await name.parentElement();
     assert.equal(await owner.getAttribute("title"), await name.getText(), "sidebar node must expose its full name on hover");
   }
+  assert.equal((await sidebar.getText()).includes(FIXTURE_NAMES.archivedWorkspace), false, "finished Workspace must stay out of the active sidebar tree");
   assert.equal((await sidebar.getText()).includes(FIXTURE_NAMES.archivedFork), false, "archived Fork must stay out of the active sidebar tree");
 
   await (await browser.$('[data-testid="sidebar-workspace-node"]')).click({ button: "right" });
