@@ -1,4 +1,4 @@
-import type { Directory, ProjectDetail, Session, Workspace, WorkspaceDetail, WorkspaceLocation } from "@/domain/types";
+import type { ProjectDetail, Session, Workspace, WorkspaceDetail } from "@/domain/types";
 
 export function normalizeProject(value: ProjectDetail): ProjectDetail {
   const locations = value.locations ?? value.directories ?? [];
@@ -44,4 +44,3 @@ export function updateProjectWorkspaceSessions(projects: ProjectDetail[], worksp
     workspaces: project.workspaces.map((stream) => stream.id === workspaceId ? { ...stream, sessions } : stream),
   }));
 }
-

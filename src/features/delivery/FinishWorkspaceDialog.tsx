@@ -16,7 +16,6 @@ export function FinishWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit 
   const location = finishable.find((item) => item.id === locationId) ?? finishable[0];
   const [codeAction, setCodeAction] = useState("remote_merged");
   const [todoAction, setTodoAction] = useState("keep");
-  const [pushAfterMerge, setPushAfterMerge] = useState(false);
   const [keepSessions, setKeepSessions] = useState(true);
   const [deleteWorktree, setDeleteWorktree] = useState(true);
   const [deleteBranch, setDeleteBranch] = useState(true);
@@ -26,7 +25,7 @@ export function FinishWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit 
   const [preflightError, setPreflightError] = useState("");
   const isFork = workspace?.kind === "fork";
   useEffect(() => { if (!workspace) return; const first = workspace.locations.find((item) => item.access_mode === "read_write" && ["active", "failed"].includes(item.delivery_status)); setLocationId(first?.id ?? ""); }, [workspace?.id]);
-  useEffect(() => { if (!workspace || !location) return; setCodeAction(isFork || location.delivery_mode === "local_merge" ? "local_merge" : "remote_merged"); setTodoAction(isFork ? "carry" : "keep"); setPushAfterMerge(false); setKeepSessions(true); setDeleteWorktree(true); setDeleteBranch(true); setCommitMessage(""); }, [workspace?.id, location?.id, isFork]);
+  useEffect(() => { if (!workspace || !location) return; setCodeAction(isFork || location.delivery_mode === "local_merge" ? "local_merge" : "remote_merged"); setTodoAction(isFork ? "carry" : "keep"); setKeepSessions(true); setDeleteWorktree(true); setDeleteBranch(true); setCommitMessage(""); }, [workspace?.id, location?.id, isFork]);
   useEffect(() => { if (!location) return; let cancelled = false; setChecking(true); setPreflight(null); setPreflightError(""); void api<DeliveryPreflight>(`/api/workspace-locations/${location.id}/delivery-preflight`, { method: "POST", body: JSON.stringify({ code_action: codeAction }) }).then((value) => { if (!cancelled) setPreflight(value); }).catch((cause) => { if (!cancelled) setPreflightError(cause instanceof Error ? cause.message : "Preflight failed"); }).finally(() => { if (!cancelled) setChecking(false); }); return () => { cancelled = true; }; }, [location?.id, codeAction]);
   useEffect(() => { if (codeAction === "keep") { setDeleteWorktree(false); setDeleteBranch(false); } else if (codeAction === "discard") { setDeleteWorktree(true); setDeleteBranch(true); } }, [codeAction]);
   const blocked = !preflight || preflight.blockers.length > 0;
