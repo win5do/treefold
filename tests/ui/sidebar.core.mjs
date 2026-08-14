@@ -534,7 +534,9 @@ try {
   await primaryRepositoryToggle.click();
   primaryWorktrees = await primaryLocation.$(`[data-testid="project-location-worktrees-${FIXTURE_IDS.primaryDirectory}"]`);
   await primaryWorktrees.waitForDisplayed({ timeout: 3_000 });
-  await (await browser.$("button*=Add location")).click();
+  const addLocationButton = await browser.$('[data-testid="project-add-location"]');
+  assert.match(await addLocationButton.getAttribute("class"), /bg-primary/, "Add location must use the primary button treatment");
+  await addLocationButton.click();
   const addDirectoryDialog = await browser.$('[role="dialog"]');
   await addDirectoryDialog.waitForDisplayed({ timeout: 3_000 });
   assert.match(await addDirectoryDialog.getText(), /Add project locations/);
