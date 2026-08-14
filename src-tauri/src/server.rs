@@ -695,7 +695,15 @@ async fn get_project(
         enrich_directory(directory, None);
     }
     let tracked_workspaces = state.store.workspaces(&id)?;
-    detail.worktrees = project_worktrees(&detail.locations, &tracked_workspaces);
+    let mut tracked_workspace_locations = Vec::new();
+    for workspace in &tracked_workspaces {
+        tracked_workspace_locations.extend(state.store.workspace_locations(&workspace.id)?);
+    }
+    detail.worktrees = project_worktrees(
+        &detail.locations,
+        &tracked_workspaces,
+        &tracked_workspace_locations,
+    );
     detail.sessions = refresh_session_records(&state, detail.sessions).await?;
     Ok(Json(detail))
 }
@@ -6015,7 +6023,11 @@ fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
         .collect()
 }
 
-fn project_worktrees(directories: &[Directory], workspaces: &[Workspace]) -> Vec<GitWorktree> {
+fn project_worktrees(
+    directories: &[Directory],
+    workspaces: &[Workspace],
+    workspace_locations: &[WorkspaceLocation],
+) -> Vec<GitWorktree> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();
     for directory in directories.iter().filter(|item| item.is_git) {
@@ -6030,7 +6042,14 @@ fn project_worktrees(directories: &[Directory], workspaces: &[Workspace]) -> Vec
             let workspace = workspaces.iter().find(|stream| {
                 stream.kind != "base"
                     && stream.status == "active"
-                    && normalized_path(&stream.checkout_path) == path
+                    && (workspace_locations.iter().any(|location| {
+                        location.workspace_id == stream.id
+                            && location.project_location_id == directory.id
+                            && location
+                                .checkout_path
+                                .as_deref()
+                                .is_some_and(|checkout_path| normalized_path(checkout_path) == path)
+                    }) || normalized_path(&stream.checkout_path) == path)
             });
             result.push(GitWorktree {
                 project_location_id: directory.id.clone(),
@@ -6278,10 +6297,10 @@ mod current_workspace_tests {
     use super::{
         app, close_session, command_output, create_delivery_preflight_impl, create_directory,
         create_fork, create_project, create_project_session, create_workspace,
-        finish_workspace_impl, pull_workspace, push_workspace, refresh_project_location,
-        update_workspace_location, ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory,
-        CreateFork, CreateProject, CreateSession, CreateWorkspace, FinishWorkspace,
-        UpdateWorkspaceLocation,
+        finish_workspace_impl, get_project, pull_workspace, push_workspace,
+        refresh_project_location, update_workspace_location, ApiJson, AppState,
+        CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject, CreateSession,
+        CreateWorkspace, FinishWorkspace, UpdateWorkspaceLocation,
     };
     use crate::{
         model::{Session, Todo},
@@ -6701,6 +6720,25 @@ mod current_workspace_tests {
             .checkout_path
             .as_deref()
             .is_some_and(|path| Path::new(path).is_dir())));
+        let Json(project_detail) = get_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+        )
+        .await
+        .expect("get Project worktrees");
+        let associated_worktrees = project_detail
+            .worktrees
+            .iter()
+            .filter(|item| item.workspace_id.as_deref() == Some(workspace.id.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            associated_worktrees.len(),
+            writable.len(),
+            "every writable repository worktree must be associated with the Workspace"
+        );
+        assert!(writable.iter().all(|location| associated_worktrees
+            .iter()
+            .any(|worktree| worktree.project_location_id == location.project_location_id)));
         let Json(updated_location) = update_workspace_location(
             State(state.clone()),
             axum::extract::Path(writable[0].id.clone()),
