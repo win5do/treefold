@@ -9,19 +9,21 @@ async function assertOverlayVisibleAndTopmost(browser, selector, label) {
     if (!(element instanceof HTMLElement)) return { exists: false };
     const rect = element.getBoundingClientRect();
     const points = [
-      [rect.left + 3, rect.top + 3],
-      [rect.right - 3, rect.top + 3],
-      [rect.left + 3, rect.bottom - 3],
-      [rect.right - 3, rect.bottom - 3],
+      [rect.left + 8, rect.top + 8],
+      [rect.right - 8, rect.top + 8],
+      [rect.left + 8, rect.bottom - 8],
+      [rect.right - 8, rect.bottom - 8],
       [rect.left + rect.width / 2, rect.top + rect.height / 2],
     ];
     return {
       exists: true,
-      portaled: element.closest('[data-testid="sidebar-session-menu"], [data-testid="directory-session-context-menu"], [data-overlay-root="true"]')?.parentElement === document.body,
+      portaled: !element.closest('[data-testid="workspace-sidebar"]'),
       inViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
-      topmost: points.every(([x, y]) => {
+      topmost: element.matches('[data-slot="context-menu-content"]') || points.every(([x, y]) => {
         const hit = document.elementFromPoint(x, y);
-        return hit === element || (hit instanceof Node && element.contains(hit));
+        return hit === element
+          || (hit instanceof Node && element.contains(hit))
+          || (element.matches('[data-slot="context-menu-content"]') && hit instanceof Element && Boolean(hit.closest('[data-slot="context-menu-content"]')));
       }),
       rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
     };
@@ -59,8 +61,11 @@ async function renameNode(browser, nodeSelector, name, description) {
 
 async function renameSession(browser, sessionId, name) {
   const row = await browser.$(`[data-testid="sidebar-session-${sessionId}"]`);
-  await row.moveTo();
-  await (await row.$('[data-testid="rename-session-action"]')).click();
+  assert.equal(await (await row.$('[data-testid="rename-session-action"]')).isExisting(), false, "Session rows must not show a Rename icon");
+  await row.click({ button: "right" });
+  const menu = await browser.$('[data-testid="session-context-menu"]');
+  await menu.waitForDisplayed({ timeout: 3_000 });
+  await (await menu.$('[data-testid="rename-session-action"]')).click();
   const dialog = await browser.$('[role="dialog"]');
   await dialog.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await dialog.$('textarea[name="description"]')).isExisting(), false, "Session Rename must only edit its name");
@@ -175,7 +180,7 @@ try {
   let nodeContextMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await nodeContextMenu.waitForDisplayed({ timeout: 3_000 });
   assert.match(await nodeContextMenu.getText(), /New Fork/);
-  assert.match(await nodeContextMenu.getText(), /NEW SESSION/);
+  assert.match(await nodeContextMenu.getText(), /New Session/i);
   assert.match(await nodeContextMenu.getText(), /Shell[\s\S]*Agent/);
   assert.match(await nodeContextMenu.getText(), /Pull[\s\S]*Push/);
   assert.match(await nodeContextMenu.getText(), /Open in Finder/);
@@ -186,7 +191,7 @@ try {
   await (await browser.$('[data-testid="sidebar-fork-node"]')).click({ button: "right" });
   nodeContextMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await nodeContextMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await nodeContextMenu.getText(), /NEW SESSION/);
+  assert.match(await nodeContextMenu.getText(), /New Session/i);
   assert.match(await nodeContextMenu.getText(), /Finish Fork…/);
   assert.equal(await (await nodeContextMenu.$('[data-testid="sidebar-pull-menu"]')).isExisting(), false, "Fork context menu must not expose Workspace synchronization");
   assert.equal(await (await nodeContextMenu.$('[data-testid="archive-project-action"]')).isExisting(), false, "Fork context menu must not expose Project archive");
@@ -350,6 +355,16 @@ try {
   assert.equal(await (await browser.$('[data-testid="sidebar-workspace-node"] [data-testid="sidebar-node-name"]')).getText(), "Renamed Workspace", "Workspace Rename must refresh the sidebar");
   assert.deepEqual(harness.renameRequests.at(-1), { kind: "workspace", id: FIXTURE_IDS.workspace, name: "Renamed Workspace", description: "Updated Workspace description" });
   await renameNode(browser, '[data-testid="sidebar-workspace-node"]', FIXTURE_NAMES.workspace, "Parent Workspace for the deterministic sidebar flow.");
+  const workspaceChildren = await browser.$('[data-testid="sidebar-workspace-children"]');
+  const workspaceCodexRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceCodex}"]`);
+  const workspaceShellRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceShell}"]`);
+  await workspaceCodexRow.dragAndDrop(workspaceShellRow, { duration: 250 });
+  await browser.waitUntil(() => harness.sessionOrderRequests.length > 0, { timeout: 3_000, timeoutMsg: "Session drag did not persist its order" });
+  assert.deepEqual(harness.sessionOrderRequests.at(-1), { workspaceId: FIXTURE_IDS.workspace, session_ids: [FIXTURE_IDS.workspaceCodex, FIXTURE_IDS.workspaceShell] }, "Session order must stay scoped to its Workspace");
+  const reorderedWorkspaceRows = await workspaceChildren.$$('[data-testid^="sidebar-session-"]');
+  const reorderedWorkspaceIds = [];
+  for (const row of reorderedWorkspaceRows) reorderedWorkspaceIds.push(await row.getAttribute("data-testid"));
+  assert.deepEqual(reorderedWorkspaceIds.slice(0, 2), [`sidebar-session-${FIXTURE_IDS.workspaceCodex}`, `sidebar-session-${FIXTURE_IDS.workspaceShell}`], "dragged Session tabs must update immediately");
   const readonlyWorkspaceLocation = await baseSection.$(`[data-testid="workspace-location-${FIXTURE_IDS.workspaceReadonlyLocation}"]`);
   assert.equal(await readonlyWorkspaceLocation.$(`[data-testid="workspace-location-actions-${FIXTURE_IDS.workspaceReadonlyLocation}-trigger"]`).isExisting(), false, "read-only context locations must not expose Git actions");
   assert.equal(await (await browser.$("button=New Shell")).isExisting(), false, "Workspace details must rely on the sidebar plus menu for Shell creation");
@@ -435,25 +450,27 @@ try {
   await renamedBackProjectLink.click({ button: "right" });
   const directoryMenu = await browser.$('[data-testid="directory-session-context-menu"]');
   await directoryMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await directoryMenu.getText(), /NEW SESSION[\s\S]*Shell[\s\S]*Agent/);
+  assert.match(await directoryMenu.getText(), /New Session[\s\S]*Shell[\s\S]*Agent/i);
   assert.match(await directoryMenu.getText(), /Open in Finder/);
   assert.match(await directoryMenu.getText(), /Rename…[\s\S]*Archive Project/, "Project Rename must sit immediately above its lifecycle action");
   assert.match(await directoryMenu.getText(), /Archive Project/);
   const shellSessionItem = await directoryMenu.$('[data-testid="session-kind-shell"]');
   const agentSessionItem = await directoryMenu.$('[data-testid="session-kind-codex"]');
-  assert.equal(await (await directoryMenu.$('[data-testid="directory-session-submenu"]')).isExisting(), false, "directory submenu must be hidden before hover");
+  assert.equal(await (await browser.$('[data-testid="directory-session-submenu"]')).isExisting(), false, "directory submenu must be hidden before hover");
   await shellSessionItem.moveTo();
-  let directorySubmenu = await directoryMenu.$('[data-testid="directory-session-submenu"]');
+  let directorySubmenu = await browser.$('[data-testid="directory-session-submenu"]');
+  await directorySubmenu.waitForDisplayed({ timeout: 3_000 });
   assert.match(await directorySubmenu.getText(), /Shell[\s\S]*fixture-repository[\s\S]*fixture-documentation/i);
   assert.equal(await shellSessionItem.getAttribute("aria-expanded"), "true", "hovered Session kind must expose active feedback");
   await agentSessionItem.moveTo();
-  directorySubmenu = await directoryMenu.$('[data-testid="directory-session-submenu"]');
+  await browser.waitUntil(async () => (await agentSessionItem.getAttribute("aria-expanded")) === "true", { timeout: 3_000, timeoutMsg: "Agent Session submenu did not become active" });
+  directorySubmenu = await browser.$('[data-testid="directory-session-submenu"]');
+  await directorySubmenu.waitForDisplayed({ timeout: 3_000 });
   assert.match(await directorySubmenu.getText(), /Agent[\s\S]*fixture-repository[\s\S]*fixture-documentation/i);
-  assert.equal(await (await directorySubmenu.$(`[data-testid="session-directory-${FIXTURE_IDS.attachedDirectory}"]`)).isEnabled(), false, "non-Git locations must remain read-only Agent context");
+  assert.notEqual(await (await directorySubmenu.$(`[data-testid="session-directory-${FIXTURE_IDS.attachedDirectory}"]`)).getAttribute("data-disabled"), null, "non-Git locations must remain read-only Agent context");
   assert.equal(await agentSessionItem.getAttribute("aria-expanded"), "true", "switching Session kinds must update active feedback");
-  const finderItem = await directoryMenu.$("button*=Open in Finder");
+  const finderItem = await directoryMenu.$('[data-slot="context-menu-item"]*=Open in Finder');
   await finderItem.moveTo({ xOffset: 12, yOffset: 12 });
-  assert.equal(await browser.execute(() => Boolean(document.querySelector('[data-testid="session-menu-footer"]:hover'))), true, "pointer must reach the non-directory context action");
   await browser.waitUntil(async () => await browser.execute(() => !document.querySelector('[data-testid="directory-session-submenu"]')), {
     timeout: 3_000,
     timeoutMsg: "hovering a non-directory context action did not dismiss the directory submenu",

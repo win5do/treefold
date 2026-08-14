@@ -29,6 +29,7 @@ async function startFixtureApi() {
   const workspaceLocationUpdates = [];
   const locationRequests = [];
   const renameRequests = [];
+  const sessionOrderRequests = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -391,6 +392,17 @@ async function startFixtureApi() {
       }
     }
 
+    const workspaceSessionOrderMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/sessions\/order$/);
+    if (request.method === "PATCH" && workspaceSessionOrderMatch && fixture.workspaceDetails[workspaceSessionOrderMatch[1]]) {
+      const input = await readJson(request);
+      const detail = fixture.workspaceDetails[workspaceSessionOrderMatch[1]];
+      const positions = new Map(input.session_ids.map((id, index) => [id, index]));
+      detail.sessions.sort((left, right) => (positions.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (positions.get(right.id) ?? Number.MAX_SAFE_INTEGER));
+      sessionOrderRequests.push({ workspaceId: workspaceSessionOrderMatch[1], session_ids: [...input.session_ids] });
+      sendJson(response, 200, detail.sessions);
+      return;
+    }
+
     const workspaceHistoryMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/git-history$/);
     if (request.method === "GET" && workspaceHistoryMatch && fixture.gitHistories[workspaceHistoryMatch[1]]) {
       sendJson(response, 200, fixture.gitHistories[workspaceHistoryMatch[1]]);
@@ -477,6 +489,7 @@ async function startFixtureApi() {
     locationRequests,
     workspaceLocationUpdates,
     renameRequests,
+    sessionOrderRequests,
     unexpectedRequests,
     async close() {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -492,6 +505,7 @@ export async function startUiHarness() {
       locationRequests: [],
       workspaceLocationUpdates: [],
       renameRequests: [],
+      sessionOrderRequests: [],
       assertNoUnexpectedRequests() {},
       async close() {},
     };
@@ -532,6 +546,7 @@ export async function startUiHarness() {
     locationRequests: fixtureApi.locationRequests,
     workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,
     renameRequests: fixtureApi.renameRequests,
+    sessionOrderRequests: fixtureApi.sessionOrderRequests,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {
         throw new Error(`Unexpected UI fixture requests: ${fixtureApi.unexpectedRequests.join(", ")}`);

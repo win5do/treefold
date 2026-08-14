@@ -1,7 +1,10 @@
 use rusqlite::{named_params, params, Row};
 
 use super::{now, Store};
-use crate::{error::Result, model::*};
+use crate::{
+    error::{AppError, Result},
+    model::*,
+};
 
 impl Store {
     pub fn project_sessions(&self, project_id: &str) -> Result<Vec<Session>> {
@@ -14,7 +17,7 @@ impl Store {
     pub fn sessions(&self, workspace_id: &str) -> Result<Vec<Session>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(&format!(
-            "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? ORDER BY created_at DESC"
+            "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? ORDER BY sort_order ASC,created_at DESC"
         ))?;
         let mut values = stmt
             .query_map([workspace_id], session_row)?
@@ -138,6 +141,24 @@ impl Store {
         if changed == 0 {
             return Err(crate::error::AppError::NotFound);
         }
+        Ok(())
+    }
+
+    pub fn reorder_sessions(&self, workspace_id: &str, session_ids: &[String]) -> Result<()> {
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        for (sort_order, id) in session_ids.iter().enumerate() {
+            let changed = tx.execute(
+                "UPDATE sessions SET sort_order=?,updated_at=? WHERE id=? AND workspace_id=?",
+                params![sort_order as i64, now(), id, workspace_id],
+            )?;
+            if changed == 0 {
+                return Err(AppError::BadRequest(
+                    "every Session must belong to the target Workspace".into(),
+                ));
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 

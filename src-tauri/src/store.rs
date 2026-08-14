@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS sessions (
  process_name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, pid INTEGER NOT NULL DEFAULT 0,
  process_group_id INTEGER NOT NULL DEFAULT 0, exit_code INTEGER, exit_signal TEXT NOT NULL DEFAULT '',
  command TEXT NOT NULL DEFAULT '[]', launch_started_at TEXT NOT NULL, last_attached_at TEXT,
- created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+ sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS session_additional_directories (
  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, path TEXT NOT NULL,
@@ -180,6 +180,14 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
         {
             connection.execute("ALTER TABLE sessions DROP COLUMN yolo", [])?;
         }
+        if table_exists(connection, "sessions")?
+            && !table_has_column(connection, "sessions", "sort_order")?
+        {
+            connection.execute(
+                "ALTER TABLE sessions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
         return Ok(());
     }
 
@@ -260,6 +268,7 @@ mod workspace_schema_tests {
         assert!(table_exists(&connection, "workspace_locations").unwrap());
         assert!(table_has_column(&connection, "workspace_locations", "creation_error").unwrap());
         assert!(!table_has_column(&connection, "sessions", "yolo").unwrap());
+        assert!(table_has_column(&connection, "sessions", "sort_order").unwrap());
         assert!(
             table_has_column(&connection, "delivery_operations", "workspace_location_id").unwrap()
         );
@@ -278,6 +287,7 @@ mod workspace_schema_tests {
         connection
             .execute_batch(
                 "PRAGMA foreign_keys=OFF;
+                 ALTER TABLE sessions DROP COLUMN sort_order;
                  ALTER TABLE sessions ADD COLUMN yolo INTEGER NOT NULL DEFAULT 0;
                  INSERT INTO sessions(
                    id,workspace_id,name,kind,cwd,original_cwd,status,
@@ -294,11 +304,46 @@ mod workspace_schema_tests {
         let store = Store::open(&path).expect("migrate current database");
         let connection = Connection::open(&path).expect("inspect migrated database");
         assert!(!table_has_column(&connection, "sessions", "yolo").unwrap());
+        assert!(table_has_column(&connection, "sessions", "sort_order").unwrap());
         assert_eq!(
             store.session("session-1").expect("preserve Session").name,
             "Saved Codex"
         );
         drop(connection);
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[test]
+    fn persists_session_order_within_workspace() {
+        let (root, path) = temporary_database("session-order");
+        let store = Store::open(&path).expect("create current database");
+        let connection = Connection::open(&path).expect("seed Sessions");
+        connection.execute_batch(
+            "PRAGMA foreign_keys=ON;
+             INSERT INTO projects(id,name,description,status,created_at,updated_at)
+             VALUES('p','Project','','active','now','now');
+             INSERT INTO workspaces(id,project_id,name,description,status,created_at,updated_at)
+             VALUES('w','p','Workspace','','active','now','now');
+             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,launch_started_at,created_at,updated_at)
+             VALUES('s1','w','First','shell','/tmp','/tmp','running','now','2026-01-01','now');
+             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,launch_started_at,created_at,updated_at)
+             VALUES('s2','w','Second','codex','/tmp','/tmp','closed','now','2026-01-02','now');",
+        ).expect("seed Workspace Sessions");
+        drop(connection);
+
+        store
+            .reorder_sessions("w", &["s1".into(), "s2".into()])
+            .expect("persist Session order");
+        assert_eq!(
+            store
+                .sessions("w")
+                .expect("read ordered Sessions")
+                .into_iter()
+                .map(|session| session.id)
+                .collect::<Vec<_>>(),
+            vec!["s1", "s2"]
+        );
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
     }

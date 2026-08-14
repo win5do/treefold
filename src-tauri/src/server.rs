@@ -229,6 +229,10 @@ fn app(state: AppState) -> Router {
             "/api/workspaces/{id}/sessions",
             get(list_sessions).post(create_session),
         )
+        .route(
+            "/api/workspaces/{id}/sessions/order",
+            patch(reorder_sessions),
+        )
         .route("/api/workspaces/{id}/todos", post(create_todo))
         .route("/api/todos/{id}", patch(update_todo))
         .route(
@@ -5176,6 +5180,32 @@ async fn list_sessions(
     state.store.workspace(&workspace_id)?;
     let sessions = state.store.sessions(&workspace_id)?;
     Ok(Json(refresh_session_records(&state, sessions).await?))
+}
+
+#[derive(Deserialize)]
+struct ReorderSessions {
+    session_ids: Vec<String>,
+}
+
+async fn reorder_sessions(
+    State(state): State<AppState>,
+    AxumPath(workspace_id): AxumPath<String>,
+    ApiJson(input): ApiJson<ReorderSessions>,
+) -> Result<Json<Vec<Session>>> {
+    state.store.workspace(&workspace_id)?;
+    let unique = input
+        .session_ids
+        .iter()
+        .collect::<std::collections::HashSet<_>>();
+    if unique.len() != input.session_ids.len() {
+        return Err(AppError::BadRequest(
+            "Session order contains duplicates".into(),
+        ));
+    }
+    state
+        .store
+        .reorder_sessions(&workspace_id, &input.session_ids)?;
+    Ok(Json(state.store.sessions(&workspace_id)?))
 }
 
 async fn create_session_for_workspace(
