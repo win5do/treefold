@@ -73,6 +73,17 @@ impl Store {
         Ok(())
     }
 
+    pub fn rename_project(&self, id: &str, name: &str, description: &str) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE projects SET name=?,description=?,updated_at=? WHERE id=?",
+            params![name, description, now(), id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn delete_project(&self, id: &str) -> Result<()> {
         let changed = self
             .0

@@ -28,6 +28,7 @@ async function startFixtureApi() {
   const syncRequests = [];
   const workspaceLocationUpdates = [];
   const locationRequests = [];
+  const renameRequests = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -158,6 +159,15 @@ async function startFixtureApi() {
         return;
       }
       const project = fixture.projects.find((item) => item.id === projectMatch[1]);
+      if (input.name !== undefined) {
+        project.name = input.name;
+        fixture.projectDetails[projectMatch[1]].name = input.name;
+      }
+      if (input.description !== undefined) {
+        project.description = input.description;
+        fixture.projectDetails[projectMatch[1]].description = input.description;
+      }
+      if (input.name !== undefined || input.description !== undefined) renameRequests.push({ kind: "project", id: projectMatch[1], ...input });
       if (input.status !== undefined) project.status = input.status;
       if (input.status !== undefined) fixture.projectDetails[projectMatch[1]].status = input.status;
       if (input.default_location_id !== undefined) {
@@ -330,7 +340,11 @@ async function startFixtureApi() {
     }
     if (request.method === "PATCH" && workspaceMatch && fixture.workspaceDetails[workspaceMatch[1]]) {
       const input = await readJson(request);
-      Object.assign(fixture.workspaceDetails[workspaceMatch[1]], { remote_name: input.remote_name || undefined, remote_branch: input.remote_branch || undefined, delivery_mode: input.delivery_mode });
+      Object.assign(fixture.workspaceDetails[workspaceMatch[1]], input);
+      const projectDetail = Object.values(fixture.projectDetails).find((detail) => detail.workspaces.some((item) => item.id === workspaceMatch[1]));
+      const summary = projectDetail?.workspaces.find((item) => item.id === workspaceMatch[1]);
+      if (summary) Object.assign(summary, input);
+      renameRequests.push({ kind: fixture.workspaceDetails[workspaceMatch[1]].kind, id: workspaceMatch[1], ...input });
       sendJson(response, 200, fixture.workspaceDetails[workspaceMatch[1]]);
       return;
     }
@@ -411,6 +425,24 @@ async function startFixtureApi() {
       return;
     }
 
+    const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)$/);
+    if (request.method === "PATCH" && sessionMatch) {
+      const sessions = [
+        ...Object.values(fixture.projectDetails).flatMap((detail) => detail.sessions),
+        ...Object.values(fixture.workspaceDetails).flatMap((detail) => detail.sessions),
+      ].filter((session, index, values) => values.findIndex((item) => item.id === session.id) === index);
+      const session = sessions.find((item) => item.id === sessionMatch[1]);
+      if (!session) return sendJson(response, 404, { error: "Session not found" });
+      const input = await readJson(request);
+      for (const collection of [...Object.values(fixture.projectDetails).map((detail) => detail.sessions), ...Object.values(fixture.workspaceDetails).map((detail) => detail.sessions)]) {
+        const value = collection.find((item) => item.id === sessionMatch[1]);
+        if (value) value.name = input.name;
+      }
+      renameRequests.push({ kind: "session", id: sessionMatch[1], ...input });
+      sendJson(response, 200, { ...session, name: input.name });
+      return;
+    }
+
     const operationsMatch = pathname.match(/^\/api\/workspaces\/([^/]+)\/git-operations$/);
     if (request.method === "GET" && operationsMatch && fixture.gitOperations[operationsMatch[1]]) {
       sendJson(response, 200, fixture.gitOperations[operationsMatch[1]]);
@@ -444,6 +476,7 @@ async function startFixtureApi() {
     syncRequests,
     locationRequests,
     workspaceLocationUpdates,
+    renameRequests,
     unexpectedRequests,
     async close() {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -458,6 +491,7 @@ export async function startUiHarness() {
       syncRequests: [],
       locationRequests: [],
       workspaceLocationUpdates: [],
+      renameRequests: [],
       assertNoUnexpectedRequests() {},
       async close() {},
     };
@@ -497,6 +531,7 @@ export async function startUiHarness() {
     syncRequests: fixtureApi.syncRequests,
     locationRequests: fixtureApi.locationRequests,
     workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,
+    renameRequests: fixtureApi.renameRequests,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {
         throw new Error(`Unexpected UI fixture requests: ${fixtureApi.unexpectedRequests.join(", ")}`);

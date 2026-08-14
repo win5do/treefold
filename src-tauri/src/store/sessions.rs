@@ -130,6 +130,17 @@ impl Store {
         Ok(())
     }
 
+    pub fn rename_session(&self, id: &str, name: &str) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE sessions SET name=?,updated_at=? WHERE id=?",
+            params![name, now(), id],
+        )?;
+        if changed == 0 {
+            return Err(crate::error::AppError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn touch_session(&self, id: &str) -> Result<()> {
         let timestamp = now();
         self.0.lock().execute(

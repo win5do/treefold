@@ -148,7 +148,10 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/projects/{id}/workspaces", post(create_workspace))
         .route("/api/workspaces/{id}/forks", post(create_fork))
-        .route("/api/workspaces/{id}", get(get_workspace))
+        .route(
+            "/api/workspaces/{id}",
+            get(get_workspace).patch(update_workspace),
+        )
         .route(
             "/api/workspaces/{id}/git-history",
             get(get_workspace_git_history),
@@ -230,7 +233,9 @@ fn app(state: AppState) -> Router {
         .route("/api/todos/{id}", patch(update_todo))
         .route(
             "/api/sessions/{id}",
-            get(get_session).delete(delete_session),
+            get(get_session)
+                .patch(update_session)
+                .delete(delete_session),
         )
         .route("/api/sessions/{id}/stop", post(stop_session))
         .route("/api/sessions/{id}/restart", post(restart_session))
@@ -629,6 +634,8 @@ async fn create_project(
 
 #[derive(Deserialize)]
 struct UpdateProject {
+    name: Option<String>,
+    description: Option<String>,
     status: Option<String>,
     default_location_id: Option<String>,
     default_base_branch: Option<String>,
@@ -660,6 +667,18 @@ async fn update_project(
                 "primary location must be a ready Git repository".into(),
             ));
         }
+    }
+    if input.name.is_some() || input.description.is_some() {
+        let name = input
+            .name
+            .as_deref()
+            .map(str::trim)
+            .unwrap_or(&current.name);
+        if name.is_empty() {
+            return Err(AppError::BadRequest("Project name cannot be empty".into()));
+        }
+        let description = input.description.as_deref().unwrap_or(&current.description);
+        state.store.rename_project(&id, name, description)?;
     }
     if status == "archived" && current.status != "archived" {
         for workspace in state.store.workspaces(&id)? {
@@ -2191,6 +2210,29 @@ async fn get_workspace(
     }
     detail.sessions = refresh_session_records(&state, detail.sessions).await?;
     Ok(Json(detail))
+}
+
+#[derive(Deserialize)]
+struct UpdateWorkspace {
+    name: String,
+    description: String,
+}
+
+async fn update_workspace(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<UpdateWorkspace>,
+) -> Result<Json<Workspace>> {
+    let name = input.name.trim();
+    if name.is_empty() {
+        return Err(AppError::BadRequest(
+            "Workspace name cannot be empty".into(),
+        ));
+    }
+    state
+        .store
+        .rename_workspace(&id, name, &input.description)?;
+    Ok(Json(state.store.workspace(&id)?))
 }
 
 async fn get_workspace_git_history(
@@ -5324,6 +5366,24 @@ async fn get_session(
     }
     Ok(Json(session))
 }
+
+#[derive(Deserialize)]
+struct UpdateSession {
+    name: String,
+}
+
+async fn update_session(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<UpdateSession>,
+) -> Result<Json<Session>> {
+    let name = input.name.trim();
+    if name.is_empty() {
+        return Err(AppError::BadRequest("Session name cannot be empty".into()));
+    }
+    state.store.rename_session(&id, name)?;
+    Ok(Json(state.store.session(&id)?))
+}
 async fn stop_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
@@ -6625,6 +6685,8 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(UpdateProject {
+                name: None,
+                description: None,
                 status: None,
                 default_location_id: Some(context_location.id),
                 default_base_branch: None,
@@ -7816,7 +7878,12 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(UpdateProject {
-                status: "archived".into(),
+                name: None,
+                description: None,
+                status: Some("archived".into()),
+                default_location_id: None,
+                default_base_branch: None,
+                default_delivery_mode: None,
             }),
         )
         .await
@@ -7842,7 +7909,12 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(UpdateProject {
-                status: "active".into(),
+                name: None,
+                description: None,
+                status: Some("active".into()),
+                default_location_id: None,
+                default_base_branch: None,
+                default_delivery_mode: None,
             }),
         )
         .await
@@ -7866,7 +7938,12 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(UpdateProject {
-                status: "archived".into(),
+                name: None,
+                description: None,
+                status: Some("archived".into()),
+                default_location_id: None,
+                default_base_branch: None,
+                default_delivery_mode: None,
             }),
         )
         .await
