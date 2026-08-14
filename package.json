@@ -2,6 +2,11 @@
   "name": "treefold",
   "version": "0.1.0",
   "private": true,
+  "allowScripts": {
+    "edgedriver": false,
+    "fsevents@2.3.3": true,
+    "geckodriver": false
+  },
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 1420",
