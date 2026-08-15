@@ -110,6 +110,10 @@ export const zhCN = {
       simplifiedChinese: "简体中文",
     },
     backend: "后端",
+    runtime: {
+      title: "运行环境",
+      description: "Treefold 当前可用的版本信息与终端后端。",
+    },
     codexArguments: {
       title: "Codex 额外参数",
       description: "每一行会作为一个独立参数传给 Codex，并保持当前顺序。",

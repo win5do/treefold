@@ -108,6 +108,10 @@ export const enUS = {
       simplifiedChinese: "简体中文",
     },
     backend: "Backend",
+    runtime: {
+      title: "Runtime",
+      description: "Versions and terminal backend currently available to Treefold.",
+    },
     codexArguments: {
       title: "Additional Codex arguments",
       description: "Each row is passed to Codex as one argv value. Order is preserved.",
