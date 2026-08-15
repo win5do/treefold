@@ -1,16 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Archive, Bot, ChevronDown, ChevronRight, Download, Ellipsis, Folder, FolderGit2, FolderOpen, Gauge, GitBranch, Pencil, Plus, Settings, Shell, TerminalSquare, Upload, Workflow, X } from "lucide-react";
+import { Archive, Bot, ChevronDown, ChevronRight, Download, Ellipsis, Folder, FolderGit2, FolderOpen, Gauge, GitBranch, PanelsTopLeft, Pencil, Plus, Settings, Shell, TerminalSquare, Upload, Workflow, X } from "lucide-react";
 import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@/components/ui/context-menu";
-import type { Directory, ProjectDetail, Session, SessionMenuState, Workspace, WorkspaceLocation } from "@/domain/types";
+import type { BackgroundProcess, Directory, ProjectDetail, Session, SessionMenuState, Workspace, WorkspaceLocation } from "@/domain/types";
 import { cn } from "@/lib/utils";
 
-export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onSyncProject, onSyncProjectLocation, onSyncWorkspace, onSyncWorkspaceLocation, onFinishWorkspace, onRenameProject, onRenameWorkspace, onRenameSession, onReorderSessions, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings, onResources }: {
+export function WorkspaceSidebar({ projects, backgroundProcesses, busy, selectedProjectId, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onSyncProject, onSyncProjectLocation, onSyncWorkspace, onSyncWorkspaceLocation, onFinishWorkspace, onRenameProject, onRenameWorkspace, onRenameSession, onReorderSessions, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings, onResources }: {
   projects: ProjectDetail[];
+  backgroundProcesses: BackgroundProcess[];
   busy: boolean;
   selectedProjectId?: string;
   selectedWorkspaceId?: string;
@@ -52,6 +53,7 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
   onResources: () => void;
 }) {
   const { t } = useTranslation();
+  const processPlacement = useMemo(() => placeBackgroundProcesses(projects, backgroundProcesses), [backgroundProcesses, projects]);
   const [contextOwner, setContextOwner] = useState<{ project: ProjectDetail; stream?: SidebarStream; x: number; y: number } | null>(null);
   const openContextMenu = (event: React.MouseEvent, project: ProjectDetail, stream?: SidebarStream) => {
     event.preventDefault();
@@ -118,7 +120,8 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
           </div>)}
           {sessionMenu?.id === `project:${project.id}` && <SessionDirectoryMenu testId="sidebar-session-menu" directories={project.directories} position={sessionMenu} primaryAction={<SidebarMenuButton testId="create-workspace-action" icon={<Workflow />} onClick={() => { onSessionMenu(null); onCreateWorkspace(project); }}>{t("sidebar.newWorkspace")}</SidebarMenuButton>} onShell={(directory) => { onSessionMenu(null); onCreateBaseShell(project, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateBaseCodex(project, directory); }} />}
           {projectOpen && <div data-testid="sidebar-project-children" className={sidebarTreeChildrenClass}>
-            <SidebarProjectSessions project={project} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} onNavigate={onNavigate} onRenameSession={onRenameSession} onCloseSession={onCloseProjectSession} />
+            <SidebarProjectSessions project={project} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} processesBySession={processPlacement.bySession} onNavigate={onNavigate} onRenameSession={onRenameSession} onCloseSession={onCloseProjectSession} />
+            <SidebarBackgroundProcesses processes={processPlacement.byOwner.get(`project:${project.id}`) ?? []} />
             {activeRootWorkspaces.map((stream) => <SidebarWorkspaceNode
               key={stream.id}
               stream={stream}
@@ -139,6 +142,8 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
               onRenameSession={onRenameSession}
               onReorderSessions={onReorderSessions}
               onCloseSession={onCloseSession}
+              processesBySession={processPlacement.bySession}
+              processesByOwner={processPlacement.byOwner}
             />)}
             {activeRootWorkspaces.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground/70">{t("sidebar.noWorkspaces")}</p>}
           </div>}
@@ -251,6 +256,61 @@ const sidebarTreeChildrenClass = "ml-3 border-l border-border/70 pl-2";
 const sidebarSessionRowClass = "group/session flex min-h-8 items-center rounded-md text-[13px] text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground focus-within:bg-background/60 focus-within:text-foreground";
 const sidebarSelectedRowClass = "bg-background text-foreground ring-1 ring-border/70 hover:bg-background";
 
+function SidebarBackgroundProcesses({ processes, nested = false }: { processes: BackgroundProcess[]; nested?: boolean }) {
+  if (processes.length === 0) return null;
+  return <div data-testid="sidebar-background-processes" role="list" aria-label="Background processes" className={cn("flex flex-col", nested && "ml-5 border-l border-border/70 pl-2")}>
+    {processes.map((process) => {
+      const command = process.command.length > 0 ? process.command.join(" ") : process.name;
+      return <div key={process.id} role="listitem" data-testid={`sidebar-background-process-${process.id}`} className="flex min-h-7 min-w-0 items-center gap-2 rounded-md px-2 text-xs text-muted-foreground" title={`${command} · ${process.state}`}>
+        <PanelsTopLeft className="size-3.5 shrink-0 opacity-70" aria-hidden="true" />
+        <span className="min-w-0 flex-1 truncate font-mono">{command}</span>
+        <StatusDot status={process.state} />
+        <span className="shrink-0 text-[10px]">{process.state}</span>
+      </div>;
+    })}
+  </div>;
+}
+
+function placeBackgroundProcesses(projects: ProjectDetail[], processes: BackgroundProcess[]) {
+  const bySession = new Map<string, BackgroundProcess[]>();
+  const byOwner = new Map<string, BackgroundProcess[]>();
+  const sessionIds = new Set<string>();
+  const roots: { owner: string; path: string }[] = [];
+  for (const project of projects) {
+    project.sessions.forEach((session) => sessionIds.add(session.id));
+    project.directories.forEach((directory) => roots.push({ owner: `project:${project.id}`, path: directory.checkout_path ?? directory.path }));
+    for (const stream of project.workspaces as SidebarStream[]) {
+      stream.sessions?.forEach((session) => sessionIds.add(session.id));
+      if (stream.checkout_path) roots.push({ owner: `workspace:${stream.id}`, path: stream.checkout_path });
+      stream.locations?.forEach((location) => roots.push({ owner: `workspace:${stream.id}`, path: location.checkout_path ?? location.source_path }));
+    }
+  }
+  roots.sort((left, right) => right.path.length - left.path.length);
+  for (const process of processes.filter((item) => !item.session_root)) {
+    if (process.session_id && sessionIds.has(process.session_id)) {
+      appendProcess(bySession, process.session_id, process);
+      continue;
+    }
+    const owner = roots.find((root) => pathContains(root.path, process.cwd))?.owner;
+    if (owner) appendProcess(byOwner, owner, process);
+  }
+  for (const values of [...bySession.values(), ...byOwner.values()]) {
+    values.sort((left, right) => left.created_at.localeCompare(right.created_at) || left.id.localeCompare(right.id));
+  }
+  return { bySession, byOwner };
+}
+
+function appendProcess(target: Map<string, BackgroundProcess[]>, key: string, process: BackgroundProcess) {
+  const current = target.get(key);
+  if (current) current.push(process);
+  else target.set(key, [process]);
+}
+
+function pathContains(root: string, path: string) {
+  const normalizedRoot = root.replace(/\/+$/, "");
+  return path === normalizedRoot || path.startsWith(`${normalizedRoot}/`);
+}
+
 function SidebarNodeActions({ menuLabel, createLabel, createTestId, onMenu, onCreate }: {
   menuLabel: string;
   createLabel: string;
@@ -293,6 +353,8 @@ type SidebarNodeProps = {
   onRenameSession: (session: Session) => void;
   onReorderSessions: (stream: Workspace, sourceId: string, targetId: string, position: SessionDropPosition) => void;
   onCloseSession: (stream: Workspace, session: Session) => void;
+  processesBySession: Map<string, BackgroundProcess[]>;
+  processesByOwner: Map<string, BackgroundProcess[]>;
 };
 
 type SidebarSyncTarget = { id: string; name: string };
@@ -353,7 +415,7 @@ function SidebarCreateSessionMenu({ stream, menu, onSessionMenu, onCreateShell, 
   return <SessionDirectoryMenu testId="sidebar-session-menu" directories={stream.directories ?? []} position={menu} primaryAction={allowFork ? <SidebarMenuButton testId="create-fork-action" icon={<GitBranch />} onClick={() => { onSessionMenu(null); onCreateFork(stream); }}>{t("sidebar.newFork")}</SidebarMenuButton> : undefined} onShell={(directory) => { onSessionMenu(null); onCreateShell(stream, directory); }} onCodex={(directory) => { onSessionMenu(null); onCreateCodex(stream, directory); }} />;
 }
 
-function SidebarSessions({ stream, selectedSessionId, closingSessionIds, onNavigate, onRenameSession, onReorderSessions, onCloseSession }: Pick<SidebarNodeProps, "stream" | "selectedSessionId" | "closingSessionIds" | "onNavigate" | "onRenameSession" | "onReorderSessions" | "onCloseSession">) {
+function SidebarSessions({ stream, selectedSessionId, closingSessionIds, processesBySession, onNavigate, onRenameSession, onReorderSessions, onCloseSession }: Pick<SidebarNodeProps, "stream" | "selectedSessionId" | "closingSessionIds" | "processesBySession" | "onNavigate" | "onRenameSession" | "onReorderSessions" | "onCloseSession">) {
   const { t } = useTranslation();
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<{ sessionId: string; position: SessionDropPosition } | null>(null);
@@ -426,7 +488,7 @@ function SidebarSessions({ stream, selectedSessionId, closingSessionIds, onNavig
 
   return sessions.map((session) => {
     const dropPosition = dropTarget?.sessionId === session.id ? dropTarget.position : null;
-    return <ContextMenu key={session.id}><ContextMenuTrigger
+    return <Fragment key={session.id}><ContextMenu><ContextMenuTrigger
       data-testid={`sidebar-session-${session.id}`}
       data-session-reorder-id={session.id}
       data-session-owner-id={stream.id}
@@ -456,23 +518,23 @@ function SidebarSessions({ stream, selectedSessionId, closingSessionIds, onNavig
     >
       <button className="flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden px-2 text-left focus-visible:outline-none" title={session.name} onClick={() => onNavigate(`/workspaces/${stream.id}/sessions/${session.id}`)}>{session.kind === "codex" ? <Bot className={sidebarTreeIconClass} /> : <TerminalSquare className={sidebarTreeIconClass} />}<span className="min-w-0 flex-1 truncate">{session.name}</span><StatusDot status={session.status} /></button>
       <Button data-session-close="true" size="icon-sm" variant="ghost" className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible" title={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} aria-label={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} onClick={(event) => { event.stopPropagation(); onCloseSession(stream, session); }}><X data-icon="inline-start" /></Button>
-    </ContextMenuTrigger><ContextMenuContent data-testid="session-context-menu" className="w-52"><ContextMenuGroup><ContextMenuItem data-testid="rename-session-action" onClick={() => onRenameSession(session)}><Pencil />{t("sidebar.rename")}</ContextMenuItem></ContextMenuGroup></ContextMenuContent></ContextMenu>;
+    </ContextMenuTrigger><ContextMenuContent data-testid="session-context-menu" className="w-52"><ContextMenuGroup><ContextMenuItem data-testid="rename-session-action" onClick={() => onRenameSession(session)}><Pencil />{t("sidebar.rename")}</ContextMenuItem></ContextMenuGroup></ContextMenuContent></ContextMenu><SidebarBackgroundProcesses processes={processesBySession.get(session.id) ?? []} nested /></Fragment>;
   }) ?? null;
 }
 
-function SidebarProjectSessions({ project, selectedSessionId, closingSessionIds, onNavigate, onRenameSession, onCloseSession }: { project: ProjectDetail; selectedSessionId?: string; closingSessionIds: Set<string>; onNavigate: (path: string) => void; onRenameSession: (session: Session) => void; onCloseSession: (project: ProjectDetail, session: Session) => void }) {
+function SidebarProjectSessions({ project, selectedSessionId, closingSessionIds, processesBySession, onNavigate, onRenameSession, onCloseSession }: { project: ProjectDetail; selectedSessionId?: string; closingSessionIds: Set<string>; processesBySession: Map<string, BackgroundProcess[]>; onNavigate: (path: string) => void; onRenameSession: (session: Session) => void; onCloseSession: (project: ProjectDetail, session: Session) => void }) {
   const { t } = useTranslation();
   return project.sessions.filter((session) => session.sidebar_visible && !closingSessionIds.has(session.id)).map((session) => {
-    return <ContextMenu key={session.id}><ContextMenuTrigger data-testid={`sidebar-session-${session.id}`} className={cn(sidebarSessionRowClass, selectedSessionId === session.id && sidebarSelectedRowClass)}>
+    return <Fragment key={session.id}><ContextMenu><ContextMenuTrigger data-testid={`sidebar-session-${session.id}`} className={cn(sidebarSessionRowClass, selectedSessionId === session.id && sidebarSelectedRowClass)}>
       <button className="flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden px-2 text-left focus-visible:outline-none" title={session.name} onClick={() => onNavigate(`/projects/${project.id}/sessions/${session.id}`)}>{session.kind === "codex" ? <Bot className={sidebarTreeIconClass} /> : <TerminalSquare className={sidebarTreeIconClass} />}<span className="min-w-0 flex-1 truncate">{session.name}</span><StatusDot status={session.status} /></button>
       <Button size="icon-sm" variant="ghost" className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible" title={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} aria-label={session.kind === "shell" ? "Close shell" : "Remove from sidebar"} onClick={(event) => { event.stopPropagation(); onCloseSession(project, session); }}><X data-icon="inline-start" /></Button>
-    </ContextMenuTrigger><ContextMenuContent data-testid="session-context-menu" className="w-52"><ContextMenuGroup><ContextMenuItem data-testid="rename-session-action" onClick={() => onRenameSession(session)}><Pencil />{t("sidebar.rename")}</ContextMenuItem></ContextMenuGroup></ContextMenuContent></ContextMenu>;
+    </ContextMenuTrigger><ContextMenuContent data-testid="session-context-menu" className="w-52"><ContextMenuGroup><ContextMenuItem data-testid="rename-session-action" onClick={() => onRenameSession(session)}><Pencil />{t("sidebar.rename")}</ContextMenuItem></ContextMenuGroup></ContextMenuContent></ContextMenu><SidebarBackgroundProcesses processes={processesBySession.get(session.id) ?? []} nested /></Fragment>;
   });
 }
 
 function SidebarForkNode(props: SidebarNodeProps) {
   const { t } = useTranslation();
-  const { stream, selectedWorkspaceId, selectedSessionId, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleWorkspace, onSessionMenu, onNavigate, onCreateShell, onCreateCodex, onCreateFork, onRenameSession, onReorderSessions, onCloseSession, onOpenContext, renderOwnerContext } = props;
+  const { stream, selectedWorkspaceId, selectedSessionId, expandedWorkspaces, closingSessionIds, sessionMenu, processesBySession, processesByOwner, onToggleWorkspace, onSessionMenu, onNavigate, onCreateShell, onCreateCodex, onCreateFork, onRenameSession, onReorderSessions, onCloseSession, onOpenContext, renderOwnerContext } = props;
   const open = expandedWorkspaces.has(stream.id);
   return <div className="relative">
     {renderOwnerContext(stream, <div data-testid="sidebar-fork-node" className={cn(sidebarTreeRowClass, "font-normal", selectedWorkspaceId === stream.id && !selectedSessionId && sidebarSelectedRowClass)}>
@@ -481,13 +543,13 @@ function SidebarForkNode(props: SidebarNodeProps) {
       {stream.status === "active" ? <SidebarNodeActions menuLabel={t("sidebar.forkActions", { name: stream.name })} createLabel={t("sidebar.newInFork", { name: stream.name })} createTestId="sidebar-node-action" onMenu={(event) => onOpenContext(event, stream)} onCreate={(event) => { const rect = event.currentTarget.getBoundingClientRect(); onSessionMenu(sessionMenu?.id === stream.id ? null : { id: stream.id, x: rect.left, y: rect.bottom + 4 }); }} /> : <span data-sidebar-row-action="true" className="grid size-7 shrink-0 place-items-center" title="Archived"><StatusDot status="closed" /></span>}
     </div>)}
     <SidebarCreateSessionMenu stream={stream} menu={sessionMenu?.id === stream.id ? sessionMenu : null} onSessionMenu={onSessionMenu} onCreateShell={onCreateShell} onCreateCodex={onCreateCodex} onCreateFork={onCreateFork} />
-    {open && <div className={sidebarTreeChildrenClass}><SidebarSessions stream={stream} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} onNavigate={onNavigate} onRenameSession={onRenameSession} onReorderSessions={onReorderSessions} onCloseSession={onCloseSession} />{(!stream.sessions || stream.sessions.filter((session) => session.sidebar_visible).length === 0) && <p className="px-2 py-1.5 text-xs text-muted-foreground/70">No Sessions</p>}</div>}
+    {open && <div className={sidebarTreeChildrenClass}><SidebarSessions stream={stream} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} processesBySession={processesBySession} onNavigate={onNavigate} onRenameSession={onRenameSession} onReorderSessions={onReorderSessions} onCloseSession={onCloseSession} /><SidebarBackgroundProcesses processes={processesByOwner.get(`workspace:${stream.id}`) ?? []} />{(!stream.sessions || stream.sessions.filter((session) => session.sidebar_visible).length === 0) && (processesByOwner.get(`workspace:${stream.id}`)?.length ?? 0) === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground/70">No Sessions</p>}</div>}
   </div>;
 }
 
 function SidebarWorkspaceNode(props: SidebarNodeProps & { allStreams: Workspace[] }) {
   const { t } = useTranslation();
-  const { stream, allStreams, selectedWorkspaceId, selectedSessionId, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleWorkspace, onSessionMenu, onNavigate, onCreateShell, onCreateCodex, onCreateFork, onRenameSession, onReorderSessions, onCloseSession, onOpenContext, renderOwnerContext } = props;
+  const { stream, allStreams, selectedWorkspaceId, selectedSessionId, expandedWorkspaces, closingSessionIds, sessionMenu, processesBySession, processesByOwner, onToggleWorkspace, onSessionMenu, onNavigate, onCreateShell, onCreateCodex, onCreateFork, onRenameSession, onReorderSessions, onCloseSession, onOpenContext, renderOwnerContext } = props;
   const open = expandedWorkspaces.has(stream.id);
   const forks = (stream.forks ?? []).map((fork) => (allStreams.find((candidate) => candidate.id === fork.id) ?? fork) as SidebarStream).filter((fork) => fork.status === "active");
   return <div className="relative">
@@ -498,9 +560,10 @@ function SidebarWorkspaceNode(props: SidebarNodeProps & { allStreams: Workspace[
     </div>)}
     <SidebarCreateSessionMenu stream={stream} menu={sessionMenu?.id === stream.id ? sessionMenu : null} onSessionMenu={onSessionMenu} onCreateShell={onCreateShell} onCreateCodex={onCreateCodex} onCreateFork={onCreateFork} allowFork />
     {open && <div data-testid="sidebar-workspace-children" className={sidebarTreeChildrenClass}>
-      <SidebarSessions stream={stream} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} onNavigate={onNavigate} onRenameSession={onRenameSession} onReorderSessions={onReorderSessions} onCloseSession={onCloseSession} />
+      <SidebarSessions stream={stream} selectedSessionId={selectedSessionId} closingSessionIds={closingSessionIds} processesBySession={processesBySession} onNavigate={onNavigate} onRenameSession={onRenameSession} onReorderSessions={onReorderSessions} onCloseSession={onCloseSession} />
+      <SidebarBackgroundProcesses processes={processesByOwner.get(`workspace:${stream.id}`) ?? []} />
       {forks.map((fork) => <SidebarForkNode key={fork.id} {...props} stream={fork} />)}
-      {(!stream.sessions || stream.sessions.filter((session) => session.sidebar_visible).length === 0) && forks.length === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground/70">No Sessions or Forks</p>}
+      {(!stream.sessions || stream.sessions.filter((session) => session.sidebar_visible).length === 0) && forks.length === 0 && (processesByOwner.get(`workspace:${stream.id}`)?.length ?? 0) === 0 && <p className="px-2 py-1.5 text-xs text-muted-foreground/70">No Sessions or Forks</p>}
     </div>}
   </div>;
 }

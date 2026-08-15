@@ -52,6 +52,10 @@ async function startFixtureApi() {
       sendJson(response, 200, fixture.amux);
       return;
     }
+    if (request.method === "GET" && pathname === "/api/processes") {
+      sendJson(response, 200, fixture.processes);
+      return;
+    }
     if (request.method === "POST" && pathname === "/api/amux/stop") {
       amuxStopRequests.push(pathname);
       fixture.amux.running = false;
@@ -597,6 +601,13 @@ async function startFixtureApi() {
       if (project) project.status = status;
       if (fixture.projectDetails[id]) fixture.projectDetails[id].status = status;
     },
+    setProcessState(id, state) {
+      const process = fixture.processes.find((item) => item.id === id);
+      if (process) process.state = state;
+    },
+    removeProcess(id) {
+      fixture.processes = fixture.processes.filter((item) => item.id !== id);
+    },
     unexpectedRequests,
     async close() {
       await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
@@ -618,6 +629,8 @@ export async function startUiHarness() {
       archiveAllStreams() {},
       restoreActiveStreams() {},
       setProjectStatus() {},
+      setProcessState() {},
+      removeProcess() {},
       assertNoUnexpectedRequests() {},
       async close() {},
     };
@@ -664,6 +677,8 @@ export async function startUiHarness() {
     archiveAllStreams: fixtureApi.archiveAllStreams,
     restoreActiveStreams: fixtureApi.restoreActiveStreams,
     setProjectStatus: fixtureApi.setProjectStatus,
+    setProcessState: fixtureApi.setProcessState,
+    removeProcess: fixtureApi.removeProcess,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {
         throw new Error(`Unexpected UI fixture requests: ${fixtureApi.unexpectedRequests.join(", ")}`);

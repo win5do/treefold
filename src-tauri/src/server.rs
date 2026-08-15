@@ -91,6 +91,7 @@ fn app(state: AppState) -> Router {
         .route("/api/system", get(system_status))
         .route("/api/amux", get(amux_status))
         .route("/api/amux/stop", post(stop_amux))
+        .route("/api/processes", get(list_background_processes))
         .route("/api/projects", get(list_projects).post(create_project))
         .route("/api/projects/summary", get(list_project_summaries))
         .route("/api/sidebar", get(get_sidebar))
@@ -284,6 +285,12 @@ async fn method_not_allowed() -> AppError {
         "METHOD_NOT_ALLOWED",
         "method not allowed",
     )
+}
+
+async fn list_background_processes(
+    State(state): State<AppState>,
+) -> Json<Vec<crate::terminal::TreefoldProcessView>> {
+    Json(state.terminals.process_snapshot().await)
 }
 
 include!("server/agent.rs");

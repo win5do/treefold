@@ -59,7 +59,7 @@ import { WorkspaceInspector } from "@/features/review/WorkspaceInspector";
 import { FinishWorkspaceDialog } from "@/features/delivery/FinishWorkspaceDialog";
 import { CreateForkDialog } from "@/features/fork/CreateForkDialog";
 import { StatusDot } from "@/components/app/StatusDot";
-import { amuxQuery, appKeys, settingsQuery, systemQuery } from "@/features/app/queries";
+import { amuxQuery, appKeys, backgroundProcessesQuery, settingsQuery, systemQuery } from "@/features/app/queries";
 import { projectDetailQuery, projectKeys, projectSessionsQuery, projectSummariesQuery, sidebarQuery } from "@/features/projects/queries";
 import { workspaceDetailQuery, workspaceKeys, workspaceSessionsQuery } from "@/features/workspace/queries";
 
@@ -90,6 +90,7 @@ function Workspace() {
   const workspaceSessions = useQuery({ ...workspaceSessionsQuery(params.workspaceId ?? ""), enabled: Boolean(params.workspaceId) });
   const systemQueryResult = useQuery(systemQuery());
   const settingsQueryResult = useQuery(settingsQuery());
+  const backgroundProcesses = useQuery(backgroundProcessesQuery());
   const system = systemQueryResult.data ?? null;
   const settings = settingsQueryResult.data ?? null;
   const workspace = workspaceDetail.data
@@ -538,6 +539,7 @@ function Workspace() {
         {mobileSidebar && <button className="absolute inset-0 z-30 bg-black/30 md:hidden" onClick={() => setMobileSidebar(false)} aria-label={t("workspace.closeNavigation")} />}
         <WorkspaceSidebar
           projects={projects}
+          backgroundProcesses={backgroundProcesses.data ?? []}
           busy={busy}
           selectedProjectId={params.projectId}
           selectedWorkspaceId={workspace?.id}

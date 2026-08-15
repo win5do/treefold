@@ -54,6 +54,25 @@ pub struct TreefoldProcessEvent {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct TreefoldProcessView {
+    pub id: String,
+    pub workspace_id: String,
+    pub group_id: String,
+    pub parent_process_id: Option<String>,
+    pub session_id: Option<String>,
+    pub session_root: bool,
+    pub name: String,
+    pub command: Vec<String>,
+    pub cwd: String,
+    pub state: String,
+    pub pid: i32,
+    pub execution: u64,
+    pub created_at: String,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct DaemonResourceStatus {
     pub name: String,
     pub running: bool,
@@ -168,9 +187,38 @@ impl TerminalManager {
         self.process_events.subscribe()
     }
 
-    #[allow(dead_code)]
-    pub async fn process_snapshot(&self) -> Vec<(ProcessView, Option<String>)> {
-        self.process_state.read().await.values().cloned().collect()
+    pub async fn process_snapshot(&self) -> Vec<TreefoldProcessView> {
+        if !self.client.ready().await {
+            return Vec::new();
+        }
+        self.process_state
+            .read()
+            .await
+            .values()
+            .map(|(view, session_id)| {
+                let process = &view.process;
+                TreefoldProcessView {
+                    id: process.id.clone(),
+                    workspace_id: process.workspace_id.clone(),
+                    group_id: process.group_id.clone(),
+                    parent_process_id: process.parent_process_id.clone(),
+                    session_id: session_id.clone(),
+                    session_root: process
+                        .env
+                        .get("TREEFOLD_SESSION_ID")
+                        .is_some_and(|value| !value.is_empty()),
+                    name: process.name.clone(),
+                    command: process.command.clone(),
+                    cwd: process.cwd.clone(),
+                    state: process_state_name(&process.state).into(),
+                    pid: process.pid,
+                    execution: process.execution,
+                    created_at: process.created_at.to_rfc3339(),
+                    started_at: process.started_at.map(|value| value.to_rfc3339()),
+                    finished_at: process.finished_at.map(|value| value.to_rfc3339()),
+                }
+            })
+            .collect()
     }
 
     fn start_event_bridge(&self) {
@@ -356,6 +404,18 @@ impl TerminalManager {
     }
 }
 
+fn process_state_name(state: &ProcessState) -> &'static str {
+    match state {
+        ProcessState::Created => "created",
+        ProcessState::Starting => "starting",
+        ProcessState::Running => "running",
+        ProcessState::Stopping => "stopping",
+        ProcessState::Exited => "exited",
+        ProcessState::Failed => "failed",
+        ProcessState::Unknown => "unknown",
+    }
+}
+
 fn shell_command(shell: &str, initial_command: &str) -> Vec<String> {
     if initial_command.trim().is_empty() {
         vec![shell.into(), "-l".into()]
@@ -538,7 +598,12 @@ fn codex_arguments(
 
 #[cfg(test)]
 mod tests {
-    use super::{codex_arguments, TerminalManager};
+    use std::collections::BTreeMap;
+
+    use amux::model::ProcessView;
+    use serde_json::json;
+
+    use super::{codex_arguments, resolve_session, TerminalManager};
     use crate::model::Session;
 
     fn session() -> Session {
@@ -676,5 +741,68 @@ mod tests {
         );
         assert!(super::SETUP_SHELL_WRAPPER.contains("Treefold setup exited with status"));
         assert!(super::SETUP_SHELL_WRAPPER.ends_with("exec \"$SHELL\" -l"));
+    }
+
+    fn process_view(id: &str, parent: Option<&str>, session_id: Option<&str>) -> ProcessView {
+        let mut env = serde_json::Map::new();
+        if let Some(session_id) = session_id {
+            env.insert("TREEFOLD_SESSION_ID".into(), json!(session_id));
+        }
+        serde_json::from_value(json!({
+            "schema_version": 2,
+            "id": id,
+            "workspace_id": "workspace-1",
+            "group_id": "group-1",
+            "environment_id": "environment-1",
+            "name": id,
+            "parent_process_id": parent,
+            "command": [id],
+            "cwd": "/tmp/worktree",
+            "env": env,
+            "io_mode": "pipe",
+            "runtime": "host",
+            "pid": 0,
+            "process_group_id": 0,
+            "runtime_handle": "",
+            "state": "running",
+            "exit_code": null,
+            "exit_signal": "",
+            "error": "",
+            "execution": 1,
+            "initial_rows": 0,
+            "initial_cols": 0,
+            "boot_id": "boot-1",
+            "created_at": "2026-08-15T00:00:00Z",
+            "started_at": "2026-08-15T00:00:00Z",
+            "finished_at": null,
+            "workspace_name": "workspace-1",
+            "target": id
+        }))
+        .expect("valid process fixture")
+    }
+
+    #[test]
+    fn resolves_nested_processes_to_the_original_treefold_session() {
+        let views = BTreeMap::from([
+            (
+                "session-root".into(),
+                process_view("session-root", None, Some("session-1")),
+            ),
+            (
+                "dev-server".into(),
+                process_view("dev-server", Some("session-root"), None),
+            ),
+            (
+                "worker".into(),
+                process_view("worker", Some("dev-server"), None),
+            ),
+            ("standalone".into(), process_view("standalone", None, None)),
+        ]);
+
+        assert_eq!(
+            resolve_session("worker", &views).as_deref(),
+            Some("session-1")
+        );
+        assert_eq!(resolve_session("standalone", &views), None);
     }
 }

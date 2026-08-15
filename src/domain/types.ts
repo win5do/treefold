@@ -257,3 +257,21 @@ export type AmuxStatus = {
   active_groups: number;
   active_processes: number;
 };
+
+export type BackgroundProcess = {
+  id: string;
+  workspace_id: string;
+  group_id: string;
+  parent_process_id?: string;
+  session_id?: string;
+  session_root: boolean;
+  name: string;
+  command: string[];
+  cwd: string;
+  state: "created" | "starting" | "running" | "stopping" | "exited" | "failed" | "unknown";
+  pid: number;
+  execution: number;
+  created_at: string;
+  started_at?: string;
+  finished_at?: string;
+};

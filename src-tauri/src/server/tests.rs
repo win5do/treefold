@@ -51,6 +51,29 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
+    async fn process_snapshot_route_does_not_start_a_missing_daemon() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-process-snapshot-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let response = app(test_state(&root))
+            .oneshot(
+                Request::builder()
+                    .uri("/api/processes")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request process snapshot");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read response");
+        assert_eq!(serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(), serde_json::json!([]));
+    }
+
+    #[tokio::test]
     async fn project_requires_a_primary_git_location_before_context_locations() {
         let root = std::env::temp_dir().join(format!(
             "treefold-primary-location-test-{}",
