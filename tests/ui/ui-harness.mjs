@@ -31,6 +31,7 @@ async function startFixtureApi() {
   const renameRequests = [];
   const sessionOrderRequests = [];
   const deleteRequests = [];
+  const amuxStopRequests = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -47,10 +48,23 @@ async function startFixtureApi() {
       sendJson(response, 200, fixture.settings);
       return;
     }
+    if (request.method === "GET" && pathname === "/api/amux") {
+      sendJson(response, 200, fixture.amux);
+      return;
+    }
+    if (request.method === "POST" && pathname === "/api/amux/stop") {
+      amuxStopRequests.push(pathname);
+      fixture.amux.running = false;
+      fixture.amux.started_at = undefined;
+      fixture.amux.active_groups = 0;
+      fixture.amux.active_processes = 0;
+      sendJson(response, 204, null);
+      return;
+    }
     if (request.method === "PATCH" && pathname === "/api/settings") {
       const input = await readJson(request);
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const allowed = new Set(["language", "worktree_root", "agents"]);
+      const allowed = new Set(["language", "worktree_root", "agents", "amux"]);
       if (Object.keys(input).some((key) => !allowed.has(key))) {
         sendJson(response, 400, { error: "Unknown settings field" });
         return;
@@ -59,6 +73,9 @@ async function startFixtureApi() {
       if (input.worktree_root !== undefined) fixture.settings.worktree_root = input.worktree_root;
       if (input.agents?.codex?.extra_args !== undefined) {
         fixture.settings.agents.codex.extra_args = [...input.agents.codex.extra_args];
+      }
+      if (input.amux?.keep_daemon_running_on_exit !== undefined) {
+        fixture.settings.amux.keep_daemon_running_on_exit = input.amux.keep_daemon_running_on_exit;
       }
       sendJson(response, 200, fixture.settings);
       return;
@@ -558,6 +575,7 @@ async function startFixtureApi() {
     renameRequests,
     sessionOrderRequests,
     deleteRequests,
+    amuxStopRequests,
     archiveAllStreams() {
       for (const detail of Object.values(fixture.projectDetails)) detail.workspaces.forEach((item) => { if (item.kind !== "base") item.status = "archived"; });
       for (const detail of Object.values(fixture.workspaceDetails)) {
@@ -596,6 +614,7 @@ export async function startUiHarness() {
       renameRequests: [],
       sessionOrderRequests: [],
       deleteRequests: [],
+      amuxStopRequests: [],
       archiveAllStreams() {},
       restoreActiveStreams() {},
       setProjectStatus() {},
@@ -641,6 +660,7 @@ export async function startUiHarness() {
     renameRequests: fixtureApi.renameRequests,
     sessionOrderRequests: fixtureApi.sessionOrderRequests,
     deleteRequests: fixtureApi.deleteRequests,
+    amuxStopRequests: fixtureApi.amuxStopRequests,
     archiveAllStreams: fixtureApi.archiveAllStreams,
     restoreActiveStreams: fixtureApi.restoreActiveStreams,
     setProjectStatus: fixtureApi.setProjectStatus,

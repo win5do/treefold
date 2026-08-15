@@ -24,6 +24,12 @@ pub struct CodexAgentSettings {
     pub extra_args: Vec<String>,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+pub struct AmuxSettings {
+    #[serde(default)]
+    pub keep_daemon_running_on_exit: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Settings {
     pub schema_version: u32,
@@ -31,6 +37,8 @@ pub struct Settings {
     pub worktree_root: String,
     #[serde(default)]
     pub agents: AgentsSettings,
+    #[serde(default)]
+    pub amux: AmuxSettings,
 }
 
 impl Settings {
@@ -51,6 +59,7 @@ impl Settings {
             agents: AgentsSettings {
                 codex: CodexAgentSettings { extra_args: vec![] },
             },
+            amux: AmuxSettings::default(),
         }
     }
 
@@ -80,6 +89,13 @@ pub struct SettingsPatch {
     pub language: Option<String>,
     pub worktree_root: Option<String>,
     pub agents: Option<AgentsSettingsPatch>,
+    pub amux: Option<AmuxSettingsPatch>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AmuxSettingsPatch {
+    pub keep_daemon_running_on_exit: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -200,6 +216,10 @@ impl SettingsStore {
             settings.agents.codex.extra_args = extra_args;
             set_codex_extra_args(&mut document, &settings.agents.codex.extra_args)?;
         }
+        if let Some(keep_running) = patch.amux.and_then(|amux| amux.keep_daemon_running_on_exit) {
+            settings.amux.keep_daemon_running_on_exit = keep_running;
+            set_amux_settings(&mut document, keep_running)?;
+        }
         settings.validate()?;
         self.atomic_write(&document.to_string())?;
         Ok(settings)
@@ -232,6 +252,7 @@ impl SettingsStore {
         agents.insert("codex", Item::Table(Table::new()));
         document["agents"] = Item::Table(agents);
         set_codex_extra_args(&mut document, &settings.agents.codex.extra_args)?;
+        set_amux_settings(&mut document, settings.amux.keep_daemon_running_on_exit)?;
         self.atomic_write(&document.to_string())
     }
 
@@ -294,11 +315,22 @@ fn set_codex_extra_args(document: &mut DocumentMut, values: &[String]) -> anyhow
     Ok(())
 }
 
+fn set_amux_settings(document: &mut DocumentMut, keep_running: bool) -> anyhow::Result<()> {
+    if document.get("amux").is_none() {
+        document["amux"] = Item::Table(Table::new());
+    }
+    let amux = document["amux"]
+        .as_table_like_mut()
+        .context("amux must be a table")?;
+    amux.insert("keep_daemon_running_on_exit", value(keep_running));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentsSettings, AgentsSettingsPatch, CodexAgentSettings, CodexAgentSettingsPatch,
-        SettingsPatch, SettingsStore, SETTINGS_SCHEMA_VERSION,
+        AgentsSettings, AgentsSettingsPatch, AmuxSettings, AmuxSettingsPatch, CodexAgentSettings,
+        CodexAgentSettingsPatch, SettingsPatch, SettingsStore, SETTINGS_SCHEMA_VERSION,
     };
 
     fn fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -326,6 +358,7 @@ mod tests {
                 agents: AgentsSettings {
                     codex: CodexAgentSettings { extra_args: vec![] },
                 },
+                amux: AmuxSettings::default(),
             }
         );
         assert_eq!(
@@ -337,6 +370,11 @@ mod tests {
         assert!(std::fs::read_to_string(settings_file)
             .expect("read generated settings")
             .contains("[agents.codex]\nextra_args = []"));
+        assert!(
+            std::fs::read_to_string(treefold_home.join("config/settings.toml"))
+                .expect("read generated settings")
+                .contains("[amux]\nkeep_daemon_running_on_exit = false")
+        );
 
         std::fs::remove_dir_all(root).expect("remove settings fixture");
     }
@@ -368,9 +406,14 @@ mod tests {
                         ]),
                     }),
                 }),
+                amux: Some(AmuxSettingsPatch {
+                    keep_daemon_running_on_exit: Some(true),
+                }),
+                ..SettingsPatch::default()
             })
             .expect("update settings");
         assert_eq!(updated.language, "zh-CN");
+        assert!(updated.amux.keep_daemon_running_on_exit);
         assert_eq!(
             updated.agents.codex.extra_args,
             ["--dangerously-bypass-approvals-and-sandbox", "--search"]
@@ -380,6 +423,7 @@ mod tests {
         assert!(contents.contains("future_setting = \"preserve-me\""));
         assert!(contents.contains("[agents.codex]"));
         assert!(contents.contains("--dangerously-bypass-approvals-and-sandbox"));
+        assert!(contents.contains("[amux]\nkeep_daemon_running_on_exit = true"));
 
         std::fs::remove_dir_all(root).expect("remove settings fixture");
     }

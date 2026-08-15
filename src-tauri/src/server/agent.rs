@@ -10,6 +10,15 @@ async fn system_status() -> Result<Json<Value>> {
     })))
 }
 
+async fn amux_status(State(state): State<AppState>) -> Json<crate::terminal::DaemonResourceStatus> {
+    Json(state.terminals.daemon_status().await)
+}
+
+async fn stop_amux(State(state): State<AppState>) -> Result<StatusCode> {
+    state.terminals.stop_daemon().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 struct AgentContext {
     session: Session,
     workspace: Workspace,
@@ -268,4 +277,3 @@ async fn agent_block_todo(
         .block_todo(&id, &context.session.id, input.reason.trim())?;
     Ok(Json(state.store.todo(&id)?))
 }
-

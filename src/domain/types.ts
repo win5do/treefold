@@ -245,4 +245,15 @@ export type AppSettings = {
       extra_args: string[];
     };
   };
+  amux: {
+    keep_daemon_running_on_exit: boolean;
+  };
+};
+
+export type AmuxStatus = {
+  name: string;
+  running: boolean;
+  started_at?: string;
+  active_groups: number;
+  active_processes: number;
 };

@@ -20,6 +20,7 @@ use amux::{
 use anyhow::{anyhow, bail, Context};
 use http::Method;
 use http_body_util::BodyExt;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio_tungstenite::WebSocketStream;
 
@@ -50,6 +51,22 @@ pub struct TerminalManager {
 pub struct TreefoldProcessEvent {
     pub event: ProcessEvent,
     pub session_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DaemonResourceStatus {
+    pub name: String,
+    pub running: bool,
+    pub started_at: Option<String>,
+    pub active_groups: usize,
+    pub active_processes: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct DaemonRegistration {
+    started_at: String,
+    active_groups: usize,
+    active_processes: usize,
 }
 
 impl TerminalManager {
@@ -104,6 +121,44 @@ impl TerminalManager {
         if self.client.ready().await {
             self.start_event_bridge();
         }
+    }
+
+    pub async fn daemon_status(&self) -> DaemonResourceStatus {
+        let stopped = || DaemonResourceStatus {
+            name: self.daemon_name.as_ref().clone(),
+            running: false,
+            started_at: None,
+            active_groups: 0,
+            active_processes: 0,
+        };
+        if !self.client.ready().await {
+            return stopped();
+        }
+        let registration = std::fs::read(self.client.config.state_dir.join("daemon.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<DaemonRegistration>(&bytes).ok());
+        match registration {
+            Some(value) => DaemonResourceStatus {
+                name: self.daemon_name.as_ref().clone(),
+                running: true,
+                started_at: Some(value.started_at),
+                active_groups: value.active_groups,
+                active_processes: value.active_processes,
+            },
+            None => DaemonResourceStatus {
+                running: true,
+                ..stopped()
+            },
+        }
+    }
+
+    /// Stops the existing daemon without triggering lazy startup.
+    pub async fn stop_daemon(&self) -> anyhow::Result<bool> {
+        if !self.client.ready().await {
+            return Ok(false);
+        }
+        self.client.do_empty(Method::POST, "/v1/admin/stop").await?;
+        Ok(true)
     }
 
     #[allow(dead_code)]

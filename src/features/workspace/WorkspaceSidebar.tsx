@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type * as React from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Archive, Bot, ChevronDown, ChevronRight, Download, Ellipsis, Folder, FolderGit2, FolderOpen, GitBranch, Pencil, Plus, Settings2, Shell, TerminalSquare, Upload, Workflow, X } from "lucide-react";
+import { Archive, Bot, ChevronDown, ChevronRight, Download, Ellipsis, Folder, FolderGit2, FolderOpen, Gauge, GitBranch, Pencil, Plus, Settings, Shell, TerminalSquare, Upload, Workflow, X } from "lucide-react";
 import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { Directory, ProjectDetail, Session, SessionMenuState, Workspace, WorkspaceLocation } from "@/domain/types";
 import { cn } from "@/lib/utils";
 
-export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onSyncProject, onSyncProjectLocation, onSyncWorkspace, onSyncWorkspaceLocation, onFinishWorkspace, onRenameProject, onRenameWorkspace, onRenameSession, onReorderSessions, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings }: {
+export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onSyncProject, onSyncProjectLocation, onSyncWorkspace, onSyncWorkspaceLocation, onFinishWorkspace, onRenameProject, onRenameWorkspace, onRenameSession, onReorderSessions, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings, onResources }: {
   projects: ProjectDetail[];
   busy: boolean;
   selectedProjectId?: string;
@@ -49,6 +49,7 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
   onResizeStart: () => void;
   onResizeKeyboard: (delta: number) => void;
   onSettings: () => void;
+  onResources: () => void;
 }) {
   const { t } = useTranslation();
   const [contextOwner, setContextOwner] = useState<{ project: ProjectDetail; stream?: SidebarStream; x: number; y: number } | null>(null);
@@ -181,7 +182,10 @@ export function WorkspaceSidebar({ projects, busy, selectedProjectId, selectedWo
           : <SidebarMenuButton testId="archive-project-action" destructive icon={<Archive />} onClick={() => { const owner = contextOwner; setContextOwner(null); onArchiveProject(owner.project); }}>{t("sidebar.archiveProject")}</SidebarMenuButton>}
       </>}
     />}
-    <div className="border-t border-neutral-200 p-2"><button data-testid="open-settings" className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs text-neutral-600 hover:bg-white/70" onClick={onSettings}><Settings2 className="size-4 shrink-0" />{t("sidebar.settings")}</button></div>
+    <div className="flex items-center gap-1 border-t border-neutral-200 p-2">
+      <Button data-testid="open-settings" size="icon" variant="ghost" aria-label={t("sidebar.settings")} title={t("sidebar.settings")} onClick={onSettings}><Settings data-icon="inline-start" /></Button>
+      <Button data-testid="open-resources" size="icon" variant="ghost" aria-label={t("sidebar.resources")} title={t("sidebar.resources")} onClick={onResources}><Gauge data-icon="inline-start" /></Button>
+    </div>
     <div data-testid="sidebar-resize-handle" role="separator" aria-label={t("sidebar.resize")} aria-orientation="vertical" tabIndex={0} className="absolute inset-y-0 right-0 hidden w-1 translate-x-1/2 cursor-col-resize touch-none hover:bg-blue-400/50 focus:bg-blue-400/50 md:block" onPointerDown={(event) => { event.preventDefault(); onResizeStart(); }} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); onResizeKeyboard(-16); } else if (event.key === "ArrowRight") { event.preventDefault(); onResizeKeyboard(16); } }} />
   </aside>;
 }

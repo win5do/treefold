@@ -12,7 +12,7 @@
     "dev": "vite --host 127.0.0.1 --port 1420",
     "dev:desktop": "tauri dev",
     "build": "vite build",
-    "test:ui": "node tests/ui/sidebar.core.mjs",
+    "test:ui": "node tests/ui/sidebar.core.mjs && node tests/ui/resources.mjs",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri"
   },

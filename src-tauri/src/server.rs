@@ -89,6 +89,8 @@ fn app(state: AppState) -> Router {
         .route("/api/v1/agent/todos/{id}/done", post(agent_done_todo))
         .route("/api/v1/agent/todos/{id}/block", post(agent_block_todo))
         .route("/api/system", get(system_status))
+        .route("/api/amux", get(amux_status))
+        .route("/api/amux/stop", post(stop_amux))
         .route("/api/projects", get(list_projects).post(create_project))
         .route("/api/projects/summary", get(list_project_summaries))
         .route("/api/sidebar", get(get_sidebar))

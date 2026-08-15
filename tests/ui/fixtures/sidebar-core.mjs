@@ -451,6 +451,16 @@ export function createSidebarCoreFixture() {
           ],
         },
       },
+      amux: {
+        keep_daemon_running_on_exit: false,
+      },
+    },
+    amux: {
+      name: "treefold-a8c7fixture",
+      running: true,
+      started_at: "2026-08-10T06:00:00.000Z",
+      active_groups: 3,
+      active_processes: 8,
     },
     system: {
       platform: "test",

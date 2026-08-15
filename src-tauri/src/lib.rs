@@ -71,9 +71,12 @@ pub fn run_amux_daemon() -> anyhow::Result<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let shutdown = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let shutdown_state = shutdown.clone();
+    let daemon_stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .setup(move |app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -90,6 +93,8 @@ pub fn run() {
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
             let (daemon_name, daemon_config) = amux_identity(&home)?;
             let terminals = terminal::TerminalManager::new_named(daemon_config, daemon_name);
+            *shutdown_state.lock().expect("lock shutdown state") =
+                Some((settings.clone(), terminals.clone()));
             let reconnect = terminals.clone();
             tauri::async_runtime::spawn(async move {
                 reconnect.connect_existing().await;
@@ -106,6 +111,33 @@ pub fn run() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Treefold");
+        .build(tauri::generate_context!())
+        .expect("error while building Treefold")
+        .run(move |_app, event| {
+            if !matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                return;
+            }
+            let Some((settings, terminals)) = shutdown.lock().expect("lock shutdown state").clone()
+            else {
+                return;
+            };
+            let keep_running = settings
+                .load()
+                .map(|value| value.amux.keep_daemon_running_on_exit)
+                .unwrap_or(false);
+            if keep_running {
+                return;
+            }
+            if daemon_stopped.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            let result = tauri::async_runtime::block_on(terminals.stop_daemon());
+            if let Err(error) = result {
+                daemon_stopped.store(false, std::sync::atomic::Ordering::SeqCst);
+                log::error!("failed to stop amux daemon during Treefold exit: {error:#}");
+            }
+        });
 }
