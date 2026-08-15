@@ -23,6 +23,11 @@ fn show_main_window(app: &tauri::AppHandle) {
         log::error!("cannot open Treefold: main window is missing");
         return;
     };
+    #[cfg(target_os = "macos")]
+    if let Err(error) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+        log::error!("failed to restore Treefold Dock icon: {error}");
+        return;
+    }
     if let Err(error) = window
         .unminimize()
         .and_then(|_| window.show())
@@ -106,6 +111,14 @@ pub fn run() {
                 api.prevent_close();
                 if let Err(error) = window.hide() {
                     log::error!("failed to hide Treefold window: {error}");
+                    return;
+                }
+                #[cfg(target_os = "macos")]
+                if let Err(error) = window
+                    .app_handle()
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory)
+                {
+                    log::error!("failed to remove Treefold Dock icon: {error}");
                 }
             }
         })
