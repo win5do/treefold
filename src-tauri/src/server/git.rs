@@ -3,15 +3,8 @@ async fn get_workspace_git_history(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
     blocking_git_operation(move || {
-        let workspace = state.store.workspace(&id)?;
-        let directory = state.store.directory(&workspace.project_directory_id)?;
-        if !directory.is_git {
-            return Ok(Json(GitHistory {
-                branch: String::new(),
-                commits: Vec::new(),
-            }));
-        }
-        Ok(Json(git_history(&workspace.checkout_path)?))
+        let repository = state.store.default_workspace_location(&id)?;
+        Ok(Json(git_history(workspace_location_git_path(&repository)?)?))
     })
     .await
 }
@@ -21,7 +14,7 @@ async fn get_project_location_git_history(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
     blocking_git_operation(move || {
-        let mut location = state.store.directory(&id)?;
+        let mut location = state.store.repository_as_directory(&id)?;
         refresh_location_observation(&mut location)?;
         ensure_location_ready(&location)?;
         Ok(Json(git_history(&location.path)?))
@@ -45,24 +38,34 @@ async fn pull_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.directory(&id)?;
+    let location = state.store.repository_as_directory(&id)?;
     let project = state.store.project(&location.project_id)?;
     ensure_active_project(&project)?;
-    Ok(Json(
-        sync_project_location(&location, &project, "pull").await?,
-    ))
+    let common = location
+        .git_common_dir
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    git::with_repository_lock(Path::new(&common), || async {
+        Ok(Json(sync_project_location(&location, &project, "pull").await?))
+    })
+    .await
 }
 
 async fn push_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.directory(&id)?;
+    let location = state.store.repository_as_directory(&id)?;
     let project = state.store.project(&location.project_id)?;
     ensure_active_project(&project)?;
-    Ok(Json(
-        sync_project_location(&location, &project, "push").await?,
-    ))
+    let common = location
+        .git_common_dir
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    git::with_repository_lock(Path::new(&common), || async {
+        Ok(Json(sync_project_location(&location, &project, "push").await?))
+    })
+    .await
 }
 
 async fn pull_workspace_location(
@@ -71,7 +74,14 @@ async fn pull_workspace_location(
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.workspace_location(&id)?;
     ensure_active_workspace(&state.store.workspace(&location.workspace_id)?)?;
-    Ok(Json(sync_workspace_location(&location, "pull").await?))
+    let common = state
+        .store
+        .repository(&location.project_location_id)?
+        .git_common_dir;
+    git::with_repository_lock(Path::new(&common), || async {
+        Ok(Json(sync_workspace_location(&location, "pull").await?))
+    })
+    .await
 }
 
 async fn push_workspace_location(
@@ -80,7 +90,14 @@ async fn push_workspace_location(
 ) -> Result<Json<GitSyncResult>> {
     let location = state.store.workspace_location(&id)?;
     ensure_active_workspace(&state.store.workspace(&location.workspace_id)?)?;
-    Ok(Json(sync_workspace_location(&location, "push").await?))
+    let common = state
+        .store
+        .repository(&location.project_location_id)?
+        .git_common_dir;
+    git::with_repository_lock(Path::new(&common), || async {
+        Ok(Json(sync_workspace_location(&location, "push").await?))
+    })
+    .await
 }
 
 async fn pull_all_project(
@@ -103,18 +120,8 @@ async fn sync_all_project_locations(
     let project = state.store.project(project_id)?;
     ensure_active_project(&project)?;
     let mut results = Vec::new();
-    for location in state.store.directories(project_id)? {
-        if location.git_common_dir.is_none() {
-            results.push(GitSyncItemResult {
-                project_location_id: location.id,
-                workspace_location_id: None,
-                location_name: location.name,
-                status: "skipped".into(),
-                result: None,
-                error: None,
-            });
-            continue;
-        }
+    for repository in state.store.repositories(project_id)? {
+        let location = state.store.repository_as_directory(&repository.id)?;
         match sync_project_location(&location, &project, action).await {
             Ok(result) => results.push(GitSyncItemResult {
                 project_location_id: location.id,
@@ -250,7 +257,7 @@ async fn sync_project_location(
     let after_head = command_output(Path::new(&location.path), "git", &["rev-parse", &branch])
         .map_err(AppError::BadRequest)?;
     Ok(sync_result(
-        "project_location",
+        "project_repository",
         action,
         &branch,
         &remote,
@@ -323,7 +330,7 @@ async fn sync_workspace_location(
         .map_err(AppError::BadRequest)?;
     }
     Ok(sync_result(
-        "workspace_location",
+        "workspace_repository",
         action,
         branch,
         remote,
@@ -649,6 +656,9 @@ fn id() -> String {
 fn trimmed(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned())
 }
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
 fn basename(path: &str) -> String {
     Path::new(path)
         .file_name()
@@ -697,6 +707,8 @@ fn refresh_location_observation(location: &mut ProjectLocation) -> Result<()> {
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
     )
     .map_err(AppError::BadRequest)?;
+    let source_root = command_output(path, "git", &["rev-parse", "--show-toplevel"])
+        .map_err(AppError::BadRequest)?;
     let remote_names = git_remote_names(&location.path)?;
     let remote = location
         .preferred_remote_name
@@ -722,6 +734,7 @@ fn refresh_location_observation(location: &mut ProjectLocation) -> Result<()> {
         }
     }
     location.git_common_dir = Some(common_dir);
+    location.checkout_path = Some(source_root);
     location.preferred_remote_name = remote;
     location.repository_url = repository_url.or_else(|| location.repository_url.clone());
     location.base_branch = location.base_branch.clone().or_else(|| {
@@ -768,6 +781,16 @@ where
     F: FnOnce() -> Result<T> + Send + 'static,
 {
     git::blocking(operation)
+        .await
+        .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
+}
+
+async fn blocking_git_operation_for<T, F>(git_common_dir: String, operation: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    git::blocking_for(Path::new(&git_common_dir), operation)
         .await
         .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
 }

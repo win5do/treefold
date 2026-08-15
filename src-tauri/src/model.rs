@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Internal compatibility fields are skipped by the Repository-first API.
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -6,9 +8,14 @@ pub struct Project {
     pub name: String,
     pub description: String,
     pub status: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "default_directory_id",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub default_location_id: Option<String>,
+    #[serde(skip)]
     pub default_base_branch: String,
+    #[serde(skip)]
     pub default_delivery_mode: String,
     pub created_at: String,
     pub updated_at: String,
@@ -65,6 +72,46 @@ pub struct ProjectLocation {
 
 pub type Directory = ProjectLocation;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProjectRepository {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+    pub source_root: String,
+    pub git_common_dir: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preferred_remote_name: Option<String>,
+    pub base_branch: String,
+    pub delivery_mode: String,
+    pub setup_command: String,
+    pub setup_workdir: String,
+    pub git_status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_checked_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProjectDirectory {
+    pub id: String,
+    pub project_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository_id: Option<String>,
+    pub name: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relative_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_path: Option<String>,
+    pub path: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectSummary {
     pub id: String,
@@ -89,7 +136,8 @@ pub struct SidebarData {
 pub struct SidebarProject {
     #[serde(flatten)]
     pub project: Project,
-    pub locations: Vec<ProjectLocation>,
+    pub repositories: Vec<ProjectRepository>,
+    pub directories: Vec<ProjectDirectory>,
     pub sessions: Vec<Session>,
     pub workspaces: Vec<SidebarWorkspace>,
 }
@@ -99,7 +147,8 @@ pub struct SidebarWorkspace {
     #[serde(flatten)]
     pub workspace: Workspace,
     pub sessions: Vec<Session>,
-    pub locations: Vec<WorkspaceLocation>,
+    pub repositories: Vec<WorkspaceLocation>,
+    pub directories: Vec<WorkspaceDirectory>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -191,6 +240,26 @@ pub struct WorkspaceLocation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WorkspaceDirectory {
+    pub id: String,
+    pub workspace_id: String,
+    pub project_directory_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_repository_id: Option<String>,
+    pub name: String,
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relative_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_path: Option<String>,
+    pub path: String,
+    pub access_mode: String,
+    pub status: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,
     pub workspace_id: String,
@@ -241,7 +310,8 @@ pub struct Todo {
 pub struct ProjectDetail {
     #[serde(flatten)]
     pub project: Project,
-    pub locations: Vec<ProjectLocation>,
+    pub repositories: Vec<ProjectRepository>,
+    pub directories: Vec<ProjectDirectory>,
     pub sessions: Vec<Session>,
     pub workspaces: Vec<Workspace>,
     pub worktrees: Vec<GitWorktree>,
@@ -331,7 +401,8 @@ pub struct WorkspaceDetail {
     #[serde(flatten)]
     pub workspace: Workspace,
     pub project: Project,
-    pub locations: Vec<WorkspaceLocation>,
+    pub repositories: Vec<WorkspaceLocation>,
+    pub directories: Vec<WorkspaceDirectory>,
     pub sessions: Vec<Session>,
     pub todos: Vec<Todo>,
     pub forks: Vec<Workspace>,

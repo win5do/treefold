@@ -20,19 +20,27 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS projects (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  status TEXT NOT NULL DEFAULT 'active',
- default_location_id TEXT,
- default_base_branch TEXT NOT NULL DEFAULT 'main',
- default_delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
+ default_directory_id TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS project_locations (
+CREATE TABLE IF NOT EXISTS project_repositories (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
- name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
- worktree_setup_command TEXT NOT NULL DEFAULT '', path TEXT NOT NULL,
- repository_url TEXT, preferred_remote_name TEXT, base_branch TEXT, delivery_mode TEXT,
- git_common_dir TEXT, git_status TEXT NOT NULL DEFAULT 'not_git', last_checked_at TEXT,
+ name TEXT NOT NULL, source_root TEXT NOT NULL, git_common_dir TEXT NOT NULL,
+ repository_url TEXT, preferred_remote_name TEXT,
+ base_branch TEXT NOT NULL DEFAULT 'main', delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
+ setup_command TEXT NOT NULL DEFAULT '', setup_workdir TEXT NOT NULL DEFAULT '.',
+ git_status TEXT NOT NULL DEFAULT 'ready', last_checked_at TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
- UNIQUE(project_id,path)
+ UNIQUE(project_id,git_common_dir)
+);
+CREATE TABLE IF NOT EXISTS project_directories (
+ id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ repository_id TEXT REFERENCES project_repositories(id),
+ name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', relative_path TEXT, external_path TEXT,
+ status TEXT NOT NULL DEFAULT 'ready', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ CHECK((repository_id IS NOT NULL AND relative_path IS NOT NULL AND external_path IS NULL)
+    OR (repository_id IS NULL AND relative_path IS NULL AND external_path IS NOT NULL)),
+ UNIQUE(repository_id,relative_path), UNIQUE(project_id,external_path)
 );
 CREATE TABLE IF NOT EXISTS workspaces (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -41,31 +49,40 @@ CREATE TABLE IF NOT EXISTS workspaces (
  runtime_id TEXT NOT NULL DEFAULT '', runtime_name TEXT NOT NULL DEFAULT '',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS workspace_locations (
+CREATE TABLE IF NOT EXISTS workspace_repositories (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
- project_location_id TEXT NOT NULL REFERENCES project_locations(id),
- location_name TEXT NOT NULL, source_path TEXT NOT NULL, access_mode TEXT NOT NULL,
+ project_repository_id TEXT NOT NULL REFERENCES project_repositories(id),
+ repository_name TEXT NOT NULL, source_root TEXT NOT NULL,
  git_status TEXT NOT NULL, creation_error TEXT, worktree_id TEXT, checkout_path TEXT, branch TEXT,
  base_branch TEXT, start_commit TEXT, forked_from_commit TEXT,
  remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL DEFAULT 'managed',
  delivery_mode TEXT NOT NULL DEFAULT 'remote_review', delivery_status TEXT NOT NULL DEFAULT 'active',
  close_outcome TEXT, integrated_commit TEXT, closed_at TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
- UNIQUE(workspace_id,project_location_id)
+ UNIQUE(workspace_id,project_repository_id)
 );
-CREATE INDEX IF NOT EXISTS workspace_locations_workspace ON workspace_locations(workspace_id);
+CREATE TABLE IF NOT EXISTS workspace_directories (
+ id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+ project_directory_id TEXT NOT NULL REFERENCES project_directories(id),
+ workspace_repository_id TEXT REFERENCES workspace_repositories(id) ON DELETE CASCADE,
+ name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', relative_path TEXT, external_path TEXT,
+ access_mode TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ UNIQUE(workspace_id,project_directory_id)
+);
+CREATE INDEX IF NOT EXISTS workspace_repositories_workspace ON workspace_repositories(workspace_id);
+CREATE INDEX IF NOT EXISTS workspace_directories_workspace ON workspace_directories(workspace_id);
 CREATE INDEX IF NOT EXISTS workspaces_project_status_kind_parent
  ON workspaces(project_id,status,kind,parent_workspace_id);
-CREATE TRIGGER IF NOT EXISTS projects_default_location_insert
-BEFORE INSERT ON projects WHEN NEW.default_location_id IS NOT NULL
+CREATE TRIGGER IF NOT EXISTS projects_default_directory_insert
+BEFORE INSERT ON projects WHEN NEW.default_directory_id IS NOT NULL
 BEGIN SELECT CASE WHEN NOT EXISTS(
- SELECT 1 FROM project_locations WHERE id=NEW.default_location_id AND project_id=NEW.id AND git_common_dir IS NOT NULL
-) THEN RAISE(ABORT,'default location must be a Git location in this Project') END; END;
-CREATE TRIGGER IF NOT EXISTS projects_default_location_update
-BEFORE UPDATE OF default_location_id ON projects WHEN NEW.default_location_id IS NOT NULL
+ SELECT 1 FROM project_directories WHERE id=NEW.default_directory_id AND project_id=NEW.id AND repository_id IS NOT NULL AND status='ready'
+) THEN RAISE(ABORT,'default directory must belong to an available Repository in this Project') END; END;
+CREATE TRIGGER IF NOT EXISTS projects_default_directory_update
+BEFORE UPDATE OF default_directory_id ON projects WHEN NEW.default_directory_id IS NOT NULL
 BEGIN SELECT CASE WHEN NOT EXISTS(
- SELECT 1 FROM project_locations WHERE id=NEW.default_location_id AND project_id=NEW.id AND git_common_dir IS NOT NULL
-) THEN RAISE(ABORT,'default location must be a Git location in this Project') END; END;
+ SELECT 1 FROM project_directories WHERE id=NEW.default_directory_id AND project_id=NEW.id AND repository_id IS NOT NULL AND status='ready'
+) THEN RAISE(ABORT,'default directory must belong to an available Repository in this Project') END; END;
 CREATE TABLE IF NOT EXISTS sessions (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  name TEXT NOT NULL, kind TEXT NOT NULL, cwd TEXT NOT NULL, original_cwd TEXT NOT NULL,
@@ -96,7 +113,7 @@ CREATE TABLE IF NOT EXISTS todos (
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS delivery_operations (
- workspace_location_id TEXT PRIMARY KEY REFERENCES workspace_locations(id) ON DELETE CASCADE,
+ workspace_repository_id TEXT PRIMARY KEY REFERENCES workspace_repositories(id) ON DELETE CASCADE,
  phase TEXT NOT NULL, code_action TEXT NOT NULL, todo_action TEXT NOT NULL DEFAULT 'keep',
  push_after_merge INTEGER NOT NULL DEFAULT 0,
  keep_session_history INTEGER NOT NULL,
@@ -107,16 +124,16 @@ CREATE TABLE IF NOT EXISTS delivery_operations (
  started_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS rebase_operations (
- id TEXT PRIMARY KEY, workspace_location_id TEXT NOT NULL REFERENCES workspace_locations(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_repository_id TEXT NOT NULL REFERENCES workspace_repositories(id) ON DELETE CASCADE,
  status TEXT NOT NULL, phase TEXT NOT NULL, before_head TEXT NOT NULL,
  target_head TEXT NOT NULL, rebased_head TEXT, recovery_ref TEXT NOT NULL,
  error TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  completed_at TEXT
 );
-CREATE INDEX IF NOT EXISTS rebase_operations_location_updated
- ON rebase_operations(workspace_location_id,updated_at DESC);
+CREATE INDEX IF NOT EXISTS rebase_operations_repository_updated
+ ON rebase_operations(workspace_repository_id,updated_at DESC);
 CREATE TABLE IF NOT EXISTS delivery_preflights (
- id TEXT PRIMARY KEY, workspace_location_id TEXT NOT NULL REFERENCES workspace_locations(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_repository_id TEXT NOT NULL REFERENCES workspace_repositories(id) ON DELETE CASCADE,
  code_action TEXT NOT NULL, source_head TEXT NOT NULL, target_head TEXT NOT NULL,
  target_branch TEXT NOT NULL, source_status TEXT NOT NULL, source_dirty INTEGER NOT NULL,
  target_dirty INTEGER NOT NULL, ahead INTEGER NOT NULL, behind INTEGER NOT NULL,
@@ -124,17 +141,17 @@ CREATE TABLE IF NOT EXISTS delivery_preflights (
  blockers TEXT NOT NULL, warnings TEXT NOT NULL,
  created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS delivery_preflights_location_created
- ON delivery_preflights(workspace_location_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS delivery_preflights_repository_created
+ ON delivery_preflights(workspace_repository_id,created_at DESC);
 CREATE TABLE IF NOT EXISTS reset_operations (
- id TEXT PRIMARY KEY, workspace_location_id TEXT NOT NULL REFERENCES workspace_locations(id) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, workspace_repository_id TEXT NOT NULL REFERENCES workspace_repositories(id) ON DELETE CASCADE,
  status TEXT NOT NULL, mode TEXT NOT NULL, before_head TEXT NOT NULL,
  target_head TEXT NOT NULL, result_head TEXT, recovery_ref TEXT NOT NULL,
  error TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  completed_at TEXT
 );
-CREATE INDEX IF NOT EXISTS reset_operations_location_started
- ON reset_operations(workspace_location_id,started_at DESC);
+CREATE INDEX IF NOT EXISTS reset_operations_repository_started
+ ON reset_operations(workspace_repository_id,started_at DESC);
 DROP TABLE IF EXISTS settings;
 "#;
 
@@ -176,42 +193,12 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
     if !exists {
         return Ok(());
     }
-    let current = table_has_column(connection, "projects", "default_location_id")?
-        && table_exists(connection, "project_locations")?
-        && table_exists(connection, "workspace_locations")?;
+    let current = table_has_column(connection, "projects", "default_directory_id")?
+        && table_exists(connection, "project_repositories")?
+        && table_exists(connection, "project_directories")?
+        && table_exists(connection, "workspace_repositories")?
+        && table_exists(connection, "workspace_directories")?;
     if current {
-        if !table_has_column(connection, "project_locations", "delivery_mode")? {
-            connection.execute(
-                "ALTER TABLE project_locations ADD COLUMN delivery_mode TEXT",
-                [],
-            )?;
-            connection.execute(
-                "UPDATE project_locations SET delivery_mode='remote_review' WHERE git_common_dir IS NOT NULL",
-                [],
-            )?;
-        }
-        if !table_has_column(connection, "project_locations", "git_status")? {
-            connection.execute(
-                "ALTER TABLE project_locations ADD COLUMN git_status TEXT NOT NULL DEFAULT 'not_git'",
-                [],
-            )?;
-            connection.execute(
-                "UPDATE project_locations SET git_status=CASE WHEN git_common_dir IS NOT NULL THEN 'ready' ELSE 'not_git' END",
-                [],
-            )?;
-        }
-        if !table_has_column(connection, "project_locations", "last_checked_at")? {
-            connection.execute(
-                "ALTER TABLE project_locations ADD COLUMN last_checked_at TEXT",
-                [],
-            )?;
-        }
-        if !table_has_column(connection, "workspace_locations", "creation_error")? {
-            connection.execute(
-                "ALTER TABLE workspace_locations ADD COLUMN creation_error TEXT",
-                [],
-            )?;
-        }
         if table_exists(connection, "sessions")?
             && table_has_column(connection, "sessions", "yolo")?
         {
@@ -232,7 +219,7 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
     // Project Locations deliberately starts a new business-data generation. User
     // preferences live in TOML and are not part of this database. Keep a complete,
     // versioned SQLite backup before clearing the old Project/Workspace records.
-    let backup = path.with_extension("pre-project-locations-v1.db");
+    let backup = path.with_extension("pre-repository-scopes-v2.db");
     if !backup.exists() {
         let quoted = backup.to_string_lossy().replace('\'', "''");
         connection.execute_batch(&format!("VACUUM INTO '{quoted}';"))?;
@@ -255,6 +242,9 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
          DROP TABLE IF EXISTS workstream_contexts;
          DROP TABLE IF EXISTS project_contexts;
          DROP TABLE IF EXISTS project_directories;
+         DROP TABLE IF EXISTS workspace_directories;
+         DROP TABLE IF EXISTS workspace_repositories;
+         DROP TABLE IF EXISTS project_repositories;
          DROP TABLE IF EXISTS workspace_locations;
          DROP TABLE IF EXISTS project_locations;
          DROP TABLE IF EXISTS projects;
@@ -378,33 +368,29 @@ mod workspace_schema_tests {
     }
 
     #[test]
-    fn current_schema_separates_projects_workspaces_and_locations() {
+    fn current_schema_separates_repositories_and_directory_scopes() {
         let (root, path) = temporary_database("workspace-schema");
         let store = Store::open(&path).expect("open current Store");
         let connection = Connection::open(&path).expect("inspect current Store");
-        assert!(table_has_column(&connection, "projects", "default_location_id").unwrap());
-        assert!(!table_has_column(&connection, "projects", "primary_directory_id").unwrap());
-        assert!(table_has_column(&connection, "workspaces", "kind").unwrap());
-        assert!(table_has_column(&connection, "workspaces", "parent_workspace_id").unwrap());
-        assert!(!table_has_column(&connection, "workspaces", "checkout_path").unwrap());
-        assert!(table_exists(&connection, "project_locations").unwrap());
-        assert!(table_has_column(&connection, "project_locations", "delivery_mode").unwrap());
-        assert!(table_has_column(&connection, "project_locations", "git_status").unwrap());
-        assert!(table_has_column(&connection, "project_locations", "last_checked_at").unwrap());
-        assert!(table_exists(&connection, "workspace_locations").unwrap());
-        assert!(table_has_column(&connection, "workspace_locations", "creation_error").unwrap());
-        assert!(!table_has_column(&connection, "sessions", "yolo").unwrap());
-        assert!(table_has_column(&connection, "sessions", "sort_order").unwrap());
-        assert!(table_has_column(&connection, "sessions", "visibility").unwrap());
-        assert!(table_has_column(&connection, "sessions", "amux_workspace_name").unwrap());
-        assert!(table_has_column(&connection, "sessions", "amux_process_name").unwrap());
-        assert!(table_has_column(&connection, "sessions", "argv").unwrap());
-        assert!(table_has_column(&connection, "sessions", "io_mode").unwrap());
-        assert!(!table_has_column(&connection, "sessions", "sidebar_visible").unwrap());
-        assert!(!table_has_column(&connection, "sessions", "process_id").unwrap());
-        assert!(
-            table_has_column(&connection, "delivery_operations", "workspace_location_id").unwrap()
-        );
+        assert!(table_has_column(&connection, "projects", "default_directory_id").unwrap());
+        assert!(!table_has_column(&connection, "projects", "default_location_id").unwrap());
+        for table in [
+            "project_repositories",
+            "project_directories",
+            "workspace_repositories",
+            "workspace_directories",
+        ] {
+            assert!(table_exists(&connection, table).unwrap(), "missing {table}");
+        }
+        assert!(!table_exists(&connection, "project_locations").unwrap());
+        assert!(!table_exists(&connection, "workspace_locations").unwrap());
+        assert!(table_has_column(
+            &connection,
+            "delivery_operations",
+            "workspace_repository_id"
+        )
+        .unwrap());
+        assert!(table_has_column(&connection, "project_repositories", "setup_workdir").unwrap());
         drop(connection);
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
@@ -449,67 +435,6 @@ mod workspace_schema_tests {
     }
 
     #[test]
-    fn migrates_legacy_session_visibility_status_and_amux_identity() {
-        let (root, path) = temporary_database("session-lifecycle-migration");
-        let connection = Connection::open(&path).expect("create legacy database");
-        connection.execute_batch(
-            "CREATE TABLE projects(
-               id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL,
-               default_location_id TEXT, default_base_branch TEXT NOT NULL, default_delivery_mode TEXT NOT NULL,
-               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-             );
-             CREATE TABLE project_locations(
-               id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
-               worktree_setup_command TEXT NOT NULL DEFAULT '', path TEXT NOT NULL, repository_url TEXT,
-               preferred_remote_name TEXT, base_branch TEXT, delivery_mode TEXT, git_common_dir TEXT,
-               git_status TEXT NOT NULL, last_checked_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-             );
-             CREATE TABLE workspaces(
-               id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL,
-               status TEXT NOT NULL, kind TEXT NOT NULL, parent_workspace_id TEXT, runtime_id TEXT NOT NULL DEFAULT '',
-               runtime_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-             );
-             CREATE TABLE workspace_locations(
-               id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, project_location_id TEXT NOT NULL,
-               location_name TEXT NOT NULL, source_path TEXT NOT NULL, access_mode TEXT NOT NULL,
-               git_status TEXT NOT NULL, creation_error TEXT, worktree_id TEXT, checkout_path TEXT, branch TEXT,
-               base_branch TEXT, start_commit TEXT, forked_from_commit TEXT, remote_name TEXT, remote_branch TEXT,
-               branch_ownership TEXT NOT NULL, delivery_mode TEXT NOT NULL, delivery_status TEXT NOT NULL,
-               close_outcome TEXT, integrated_commit TEXT, closed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-             );
-             CREATE TABLE sessions(
-               id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL,
-               cwd TEXT NOT NULL, original_cwd TEXT NOT NULL, initial_prompt TEXT NOT NULL DEFAULT '',
-               codex_session_id TEXT, sidebar_visible INTEGER NOT NULL DEFAULT 1, hidden_at TEXT, evicted_at TEXT,
-               process_id TEXT NOT NULL DEFAULT '', process_name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
-               pid INTEGER NOT NULL DEFAULT 0, process_group_id INTEGER NOT NULL DEFAULT 0, exit_code INTEGER,
-               exit_signal TEXT NOT NULL DEFAULT '', command TEXT NOT NULL DEFAULT '[]', launch_started_at TEXT NOT NULL,
-               last_attached_at TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-             );
-             INSERT INTO projects VALUES('p','P','','active',NULL,'main','remote_review','now','now');
-             INSERT INTO workspaces VALUES('w','p','W','','active','workspace',NULL,'','','now','now');
-             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,codex_session_id,sidebar_visible,
-               hidden_at,process_id,process_name,status,pid,process_group_id,command,launch_started_at,created_at,updated_at)
-             VALUES('s','w','Saved','codex','/tmp/worktree','/tmp/worktree','resume-id',0,'hidden-at',
-               'proc_generated','codex-old','starting',123,123,'[\"codex\"]','now','now','now');",
-        ).expect("seed legacy Session schema");
-        drop(connection);
-
-        let store = Store::open(&path).expect("migrate legacy Session schema");
-        let session = store.session("s").expect("preserve migrated Session");
-        assert_eq!(session.visibility, "hidden");
-        assert_eq!(session.status, "stopped");
-        assert_eq!(session.codex_session_id.as_deref(), Some("resume-id"));
-        assert_eq!(session.amux_process_name, "codex-old");
-        assert!(session.amux_workspace_name.starts_with("treefold-ws-"));
-        assert_eq!(session.argv, vec!["codex"]);
-        assert_eq!(session.io_mode, "tty");
-        assert_eq!(session.hidden_at.as_deref(), Some("hidden-at"));
-        drop(store);
-        std::fs::remove_dir_all(root).expect("remove migration fixture");
-    }
-
-    #[test]
     fn persists_session_order_within_workspace() {
         let (root, path) = temporary_database("session-order");
         let store = Store::open(&path).expect("create current database");
@@ -544,139 +469,6 @@ mod workspace_schema_tests {
     }
 
     #[test]
-    fn deleting_workspace_cascades_only_its_sqlite_history() {
-        let (root, path) = temporary_database("workspace-delete");
-        let store = Store::open(&path).expect("create current database");
-        let connection = Connection::open(&path).expect("seed Workspace history");
-        connection.execute_batch(
-            "PRAGMA foreign_keys=ON;
-             INSERT INTO projects(id,name,description,status,created_at,updated_at)
-             VALUES('p','Project','','active','now','now');
-             INSERT INTO project_locations(id,project_id,name,path,created_at,updated_at)
-             VALUES('l','p','repo','/source','now','now');
-             INSERT INTO workspaces(id,project_id,name,description,status,kind,created_at,updated_at)
-             VALUES('w','p','Archived','','archived','workspace','now','now');
-             INSERT INTO workspace_locations(id,workspace_id,project_location_id,location_name,source_path,access_mode,git_status,created_at,updated_at)
-             VALUES('wl','w','l','repo','/source','read_only','not_git','now','now');
-             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,launch_started_at,created_at,updated_at)
-             VALUES('s','w','History','codex','/source','/source','stopped','now','now','now');
-             INSERT INTO todos(id,workspace_id,title,status,created_at,updated_at)
-             VALUES('t','w','History','done','now','now');",
-        ).expect("seed archived Workspace");
-        drop(connection);
-
-        store
-            .delete_workspace("w")
-            .expect("delete Workspace record");
-        let db = store.0.lock();
-        for (table, expected) in [
-            ("workspaces", 0),
-            ("workspace_locations", 0),
-            ("sessions", 0),
-            ("todos", 0),
-            ("projects", 1),
-            ("project_locations", 1),
-        ] {
-            let count: i64 = db
-                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                    row.get(0)
-                })
-                .expect("count records");
-            assert_eq!(count, expected, "unexpected count for {table}");
-        }
-        drop(db);
-        drop(store);
-        std::fs::remove_dir_all(root).expect("remove temporary database root");
-    }
-
-    #[test]
-    fn adds_location_delivery_mode_without_clearing_current_business_data() {
-        let (root, path) = temporary_database("location-delivery-mode-migration");
-        let connection = Connection::open(&path).expect("create current database");
-        connection
-            .execute_batch(
-                "CREATE TABLE projects (
-                   id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
-                   status TEXT NOT NULL DEFAULT 'active', default_location_id TEXT,
-                   default_base_branch TEXT NOT NULL DEFAULT 'main',
-                   default_delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
-                   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-                 );
-                 CREATE TABLE project_locations (
-                   id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
-                   description TEXT NOT NULL DEFAULT '', worktree_setup_command TEXT NOT NULL DEFAULT '',
-                   path TEXT NOT NULL, repository_url TEXT, preferred_remote_name TEXT,
-                   base_branch TEXT, git_common_dir TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-                 );
-                 CREATE TABLE workspace_locations (id TEXT PRIMARY KEY, workspace_id TEXT);
-                 INSERT INTO projects VALUES('p','Project','','active','l','main','remote_review','now','now');
-                 INSERT INTO project_locations VALUES(
-                   'l','p','repo','','','/repo',NULL,NULL,'main','/repo/.git','now','now'
-                 );",
-            )
-            .expect("seed current database without location delivery mode");
-        drop(connection);
-
-        let store = Store::open(&path).expect("upgrade current database");
-        let location = store.directory("l").expect("preserve location");
-        assert_eq!(location.delivery_mode.as_deref(), Some("remote_review"));
-        assert_eq!(location.git_status, "ready");
-        assert_eq!(location.name, "repo");
-        drop(store);
-        std::fs::remove_dir_all(root).expect("remove temporary database root");
-    }
-
-    #[tokio::test]
-    async fn summary_and_sidebar_are_aggregated_without_duplicate_counts() {
-        let (root, path) = temporary_database("navigation-aggregates");
-        let store = Store::open(&path).expect("create current database");
-        let connection = Connection::open(&path).expect("seed navigation data");
-        connection.execute_batch(
-            "PRAGMA foreign_keys=ON;
-             INSERT INTO projects(id,name,description,status,created_at,updated_at)
-             VALUES('p','Project','','active','now','now'),('archived','Old','','archived','now','old');
-             INSERT INTO project_locations(id,project_id,name,path,git_common_dir,git_status,created_at,updated_at)
-             VALUES('git','p','repo','/missing/repo','/missing/repo/.git','missing','now','now'),
-                   ('context','p','docs','/missing/docs',NULL,'not_git','now','now');
-             INSERT INTO workspaces(id,project_id,name,description,status,kind,parent_workspace_id,created_at,updated_at)
-             VALUES('w','p','Workspace','','active','workspace',NULL,'now','now'),
-                   ('f','p','Fork','','active','fork','w','now','now'),
-                   ('old','p','Old','','archived','workspace',NULL,'now','now');
-             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,visibility,launch_started_at,created_at,updated_at)
-             VALUES('visible','w','Visible','shell','/tmp','/tmp','running','visible','now','now','now'),
-                   ('hidden','w','Hidden','codex','/tmp','/tmp','stopped','hidden','now','now','now');"
-        ).expect("seed navigation records");
-        drop(connection);
-
-        let summaries = store
-            .project_summaries_async()
-            .await
-            .expect("read summaries");
-        let summary = summaries
-            .iter()
-            .find(|item| item.id == "p")
-            .expect("Project summary");
-        assert_eq!(summary.location_count, 2);
-        assert_eq!(summary.git_location_count, 1);
-        assert_eq!(summary.context_location_count, 1);
-        assert_eq!(summary.missing_location_count, 1);
-        assert_eq!(summary.active_workspace_count, 1);
-
-        let sidebar = store.sidebar_async().await.expect("read sidebar");
-        assert_eq!(sidebar.projects.len(), 1);
-        assert_eq!(sidebar.projects[0].workspaces.len(), 2);
-        let workspace = sidebar.projects[0]
-            .workspaces
-            .iter()
-            .find(|item| item.workspace.id == "w")
-            .expect("active Workspace");
-        assert_eq!(workspace.sessions.len(), 1);
-        assert_eq!(workspace.sessions[0].id, "visible");
-        drop(store);
-        std::fs::remove_dir_all(root).expect("remove temporary database root");
-    }
-
-    #[test]
     fn legacy_database_is_backed_up_before_the_new_schema_is_created() {
         let (root, path) = temporary_database("workspace-migration");
         let connection = Connection::open(&path).expect("create legacy database");
@@ -686,47 +478,8 @@ mod workspace_schema_tests {
         drop(connection);
 
         let store = Store::open(&path).expect("migrate legacy database");
-        assert!(path.with_extension("pre-project-locations-v1.db").exists());
+        assert!(path.with_extension("pre-repository-scopes-v2.db").exists());
         assert!(store.projects().expect("list migrated Projects").is_empty());
-        drop(store);
-        std::fs::remove_dir_all(root).expect("remove temporary database root");
-    }
-
-    #[test]
-    fn previous_workspace_schema_is_backed_up_and_business_records_are_cleared() {
-        let (root, path) = temporary_database("flat-workspace-migration");
-        let connection = Connection::open(&path).expect("create flat Workspace database");
-        connection.execute_batch(
-            "CREATE TABLE projects (
-               id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL,
-               primary_directory_id TEXT NOT NULL, git_common_dir TEXT NOT NULL, preferred_remote TEXT,
-               default_target_branch TEXT NOT NULL, default_delivery_mode TEXT NOT NULL,
-               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-             );
-             CREATE TABLE workspaces (
-               id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL,
-               status TEXT NOT NULL, project_directory_id TEXT NOT NULL, worktree_id TEXT,
-               checkout_path TEXT NOT NULL, target_branch TEXT NOT NULL, start_commit TEXT NOT NULL,
-               branch TEXT NOT NULL, remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL,
-               delivery_mode TEXT NOT NULL, delivery_status TEXT NOT NULL, close_outcome TEXT,
-               integrated_commit TEXT, closed_at TEXT, runtime_id TEXT NOT NULL, runtime_name TEXT NOT NULL,
-               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-             );
-             CREATE TABLE sessions (workspace_id TEXT NOT NULL);
-             INSERT INTO projects VALUES(
-               'p','Project','','active','d','/repo/.git','origin','main','remote_review','now','now'
-             );
-             INSERT INTO workspaces VALUES(
-               'w','p','Feature','','active','d',NULL,'/worktree','main','abc','treefold/feature',
-               'origin','feature/test','managed','remote_review','active',NULL,NULL,NULL,'w','treefold-w','now','now'
-             );",
-        ).expect("seed flat Workspace schema");
-        drop(connection);
-
-        let store = Store::open(&path).expect("upgrade flat Workspace database");
-        assert!(store.projects().expect("list Projects").is_empty());
-        assert!(store.workspace("w").is_err());
-        assert!(path.with_extension("pre-project-locations-v1.db").exists());
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
     }

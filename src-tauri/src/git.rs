@@ -1,7 +1,14 @@
 use std::{
+    collections::HashMap,
     path::Path,
     process::{Command, ExitStatus, Output},
+    sync::{Arc, OnceLock, Weak},
 };
+
+use parking_lot::Mutex;
+
+static REPOSITORY_LOCKS: OnceLock<Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>> =
+    OnceLock::new();
 
 pub type CommandResult<T> = std::result::Result<T, String>;
 
@@ -61,6 +68,45 @@ where
     tokio::task::spawn_blocking(operation)
         .await
         .map_err(|error| format!("Git operation task failed: {error}"))
+}
+
+/// Serialize a complete Git mutation for one canonical common directory while
+/// allowing unrelated repositories to continue in parallel.
+pub async fn blocking_for<T, F>(git_common_dir: &Path, operation: F) -> CommandResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let lock = repository_lock(git_common_dir);
+    let _guard = lock.lock().await;
+    blocking(operation).await
+}
+
+pub async fn with_repository_lock<T, F, Fut>(git_common_dir: &Path, operation: F) -> T
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<Output = T>,
+{
+    let lock = repository_lock(git_common_dir);
+    let _guard = lock.lock().await;
+    operation().await
+}
+
+fn repository_lock(git_common_dir: &Path) -> Arc<tokio::sync::Mutex<()>> {
+    let key = std::fs::canonicalize(git_common_dir)
+        .unwrap_or_else(|_| git_common_dir.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+    let mut locks = REPOSITORY_LOCKS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock();
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(&key).and_then(Weak::upgrade) {
+        return lock;
+    }
+    let lock = Arc::new(tokio::sync::Mutex::new(()));
+    locks.insert(key, Arc::downgrade(&lock));
+    lock
 }
 
 fn parse_output(output: Output) -> CommandResult<String> {

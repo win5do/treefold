@@ -75,6 +75,79 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
+    async fn monorepo_scopes_share_one_repository_and_one_workspace_worktree() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-monorepo-scopes-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("monorepo");
+        initialize_repository(&repository);
+        let web = repository.join("apps/web");
+        let api = repository.join("services/api");
+        std::fs::create_dir_all(&web).expect("create web scope");
+        std::fs::create_dir_all(&api).expect("create api scope");
+        std::fs::write(web.join("scope.txt"), "web\n").expect("write web scope");
+        std::fs::write(api.join("scope.txt"), "api\n").expect("write api scope");
+        command_output(&repository, "git", &["add", "."]).expect("stage scopes");
+        command_output(&repository, "git", &["commit", "-m", "add scopes"])
+            .expect("commit scopes");
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Monorepo scopes".into()),
+                description: None,
+                path: Some(web.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_base_branch: Some("main".into()),
+                default_target_branch: None,
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create Project from first scope");
+        let _ = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                path: api.to_string_lossy().into_owned(),
+                description: None,
+                worktree_setup_command: None,
+                base_branch: None,
+                delivery_mode: None,
+            }),
+        )
+        .await
+        .expect("add second scope");
+
+        assert_eq!(state.store.repositories(&project.id).unwrap().len(), 1);
+        assert_eq!(state.store.project_directories(&project.id).unwrap().len(), 2);
+
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Scoped change".into(),
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("create one-worktree Workspace");
+        assert_eq!(state.store.workspace_repositories(&workspace.id).unwrap().len(), 1);
+        let scopes = state.store.workspace_directories(&workspace.id).unwrap();
+        assert_eq!(scopes.len(), 2);
+        assert!(scopes.iter().all(|scope| Path::new(&scope.path).is_dir()));
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove monorepo fixture");
+    }
+
+    #[tokio::test]
     async fn discovered_processes_become_idempotent_worktree_command_sessions() {
         let root = std::env::temp_dir().join(format!(
             "treefold-command-discovery-test-{}",
@@ -307,7 +380,7 @@ mod current_workspace_tests {
             .expect_err("primary cannot be deleted while other locations remain");
         assert_eq!(
             error.to_string(),
-            "choose another primary Git repository before deleting this location"
+            "choose another default Directory before removing this one"
         );
 
         std::fs::remove_dir_all(root).expect("remove primary location fixture");
@@ -678,27 +751,34 @@ mod current_workspace_tests {
         )
         .await
         .expect("create multi-location Workspace");
-        let snapshots = state
+        let repositories = state
             .store
             .workspace_locations(&workspace.id)
-            .expect("list Workspace locations");
-        assert_eq!(snapshots.len(), 3);
-        let writable = snapshots
-            .iter()
-            .filter(|item| item.access_mode == "read_write")
-            .collect::<Vec<_>>();
-        assert_eq!(writable.len(), 2);
-        assert!(writable
+            .expect("list Workspace repositories");
+        assert_eq!(repositories.len(), 2);
+        assert!(repositories
             .iter()
             .all(|item| item.delivery_mode == "local_merge"));
         assert_eq!(
-            writable[0].branch, writable[1].branch,
+            repositories[0].branch, repositories[1].branch,
             "all repositories share one branch name"
         );
-        assert!(writable.iter().all(|item| item
+        assert!(repositories.iter().all(|item| item
             .checkout_path
             .as_deref()
             .is_some_and(|path| Path::new(path).is_dir())));
+        let directories = state
+            .store
+            .workspace_directories(&workspace.id)
+            .expect("list Workspace Directory snapshots");
+        assert_eq!(directories.len(), 3);
+        assert_eq!(
+            directories
+                .iter()
+                .filter(|item| item.access_mode == "read_only")
+                .count(),
+            1
+        );
         let Json(project_detail) = get_project(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
@@ -712,15 +792,15 @@ mod current_workspace_tests {
             .collect::<Vec<_>>();
         assert_eq!(
             associated_worktrees.len(),
-            writable.len(),
+            repositories.len(),
             "every writable repository worktree must be associated with the Workspace"
         );
-        assert!(writable.iter().all(|location| associated_worktrees
+        assert!(repositories.iter().all(|location| associated_worktrees
             .iter()
             .any(|worktree| worktree.project_location_id == location.project_location_id)));
         let Json(updated_location) = update_workspace_location(
             State(state.clone()),
-            axum::extract::Path(writable[0].id.clone()),
+            axum::extract::Path(repositories[0].id.clone()),
             ApiJson(UpdateWorkspaceLocation {
                 remote_name: None,
                 remote_branch: None,
@@ -731,14 +811,6 @@ mod current_workspace_tests {
         assert_eq!(updated_location.delivery_mode, "local_merge");
         assert!(updated_location.remote_name.is_none());
         assert!(updated_location.remote_branch.is_none());
-        assert_eq!(
-            snapshots
-                .iter()
-                .filter(|item| item.access_mode == "read_only")
-                .count(),
-            1
-        );
-
         command_output(&context, "git", &["init", "-b", "main"]).expect("turn context into Git");
         command_output(
             &context,
@@ -758,10 +830,10 @@ mod current_workspace_tests {
         assert_eq!(
             state
                 .store
-                .workspace_locations(&workspace.id)
+                .workspace_directories(&workspace.id)
                 .unwrap()
                 .iter()
-                .find(|item| item.project_location_id == ids[2])
+                .find(|item| item.project_directory_id == ids[2])
                 .unwrap()
                 .access_mode,
             "read_only",
@@ -852,7 +924,7 @@ mod current_workspace_tests {
         }
         let setup_shell = setup_shell.expect("create a visible setup Shell");
         assert_eq!(setup_shell.kind, "shell");
-        assert_eq!(setup_shell.initial_prompt, "exit 7");
+        assert!(setup_shell.initial_prompt.ends_with("&& exit 7"));
         assert_eq!(
             setup_shell.cwd,
             state
@@ -860,7 +932,15 @@ mod current_workspace_tests {
                 .workspace_locations(&workspace.id)
                 .unwrap()
                 .into_iter()
-                .find(|location| location.project_location_id == second_location.id)
+                .find(|location| {
+                    location.project_location_id
+                        == state
+                            .store
+                            .directory_record(&second_location.id)
+                            .unwrap()
+                            .repository_id
+                            .unwrap()
+                })
                 .unwrap()
                 .checkout_path
                 .unwrap()
@@ -875,9 +955,9 @@ mod current_workspace_tests {
             if let Some(checkout_path) = location.checkout_path {
                 let repository = state
                     .store
-                    .directory(&location.project_location_id)
+                    .repository(&location.project_location_id)
                     .unwrap()
-                    .path;
+                    .source_root;
                 command_output(
                     Path::new(&repository),
                     "git",
@@ -963,10 +1043,16 @@ mod current_workspace_tests {
         )
         .await
         .expect("retain a partially created Workspace");
-        let locations = state.store.workspace_locations(&workspace.id).unwrap();
-        let failed = locations
+        let second_repository_id = state
+            .store
+            .directory_record(&second_location.id)
+            .unwrap()
+            .repository_id
+            .unwrap();
+        let repositories = state.store.workspace_locations(&workspace.id).unwrap();
+        let failed = repositories
             .iter()
-            .find(|location| location.project_location_id == second_location.id)
+            .find(|repository| repository.project_location_id == second_repository_id)
             .unwrap();
         assert_eq!(failed.git_status, "failed");
         assert_eq!(failed.delivery_status, "discarded");
@@ -977,7 +1063,7 @@ mod current_workspace_tests {
             .unwrap()
             .contains("missing-base"));
         assert_eq!(
-            locations
+            repositories
                 .iter()
                 .filter(|location| location.git_status == "ready")
                 .count(),
@@ -994,7 +1080,7 @@ mod current_workspace_tests {
             1
         );
 
-        let ready = locations
+        let ready = repositories
             .into_iter()
             .find(|location| location.git_status == "ready")
             .unwrap();

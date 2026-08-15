@@ -1,11 +1,15 @@
+#![allow(dead_code)] // Directory-shaped accessors bridge internal call sites, not removed HTTP routes.
+
+use std::path::{Path, PathBuf};
+
 use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
 
 use super::{now, Store};
 use super::{
     sessions::{session_row, SESSION_COLUMNS},
     workspaces::{
-        hydrate_workspace_compat, workspace_location_row, workspace_row, WORKSPACE_COLUMNS,
-        WORKSPACE_LOCATION_COLUMNS,
+        hydrate_workspace_compat, workspace_directory_row, workspace_location_row, workspace_row,
+        WORKSPACE_COLUMNS, WORKSPACE_DIRECTORY_COLUMNS, WORKSPACE_LOCATION_COLUMNS,
     },
 };
 use crate::{
@@ -13,48 +17,51 @@ use crate::{
     model::*,
 };
 
+const PROJECT_COLUMNS: &str =
+    "id,name,description,status,default_directory_id,created_at,updated_at";
+const DIRECTORY_COLUMNS: &str = "d.id,d.project_id,d.repository_id,d.name,d.description,d.relative_path,d.external_path,d.status,d.created_at,d.updated_at,r.name AS repository_name,r.source_root,r.git_common_dir,r.repository_url,r.preferred_remote_name,r.base_branch,r.delivery_mode,r.setup_command,r.setup_workdir,r.git_status AS repository_status,r.last_checked_at";
+
 impl Store {
     pub async fn project_summaries_async(&self) -> Result<Vec<ProjectSummary>> {
-        Ok(self.1.conn_and_then(project_summaries_on).await?)
+        self.1.conn_and_then(project_summaries_on).await
     }
 
     pub async fn sidebar_async(&self) -> Result<SidebarData> {
-        Ok(self.1.conn_and_then(sidebar_on).await?)
+        self.1.conn_and_then(sidebar_on).await
     }
 
     pub fn projects(&self) -> Result<Vec<Project>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare("SELECT id,name,description,status,default_location_id,default_base_branch,default_delivery_mode,created_at,updated_at FROM projects ORDER BY updated_at DESC")?;
-        let mut values = stmt
+        let mut statement = db.prepare(&format!(
+            "SELECT {PROJECT_COLUMNS} FROM projects ORDER BY updated_at DESC"
+        ))?;
+        let values = statement
             .query_map([], project_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        for project in &mut values {
-            hydrate_project_compat(&db, project)?;
-        }
         Ok(values)
     }
 
     pub fn project(&self, id: &str) -> Result<Project> {
         let db = self.0.lock();
-        let mut project = db.query_row("SELECT id,name,description,status,default_location_id,default_base_branch,default_delivery_mode,created_at,updated_at FROM projects WHERE id=?", [id], project_row)?;
-        hydrate_project_compat(&db, &mut project)?;
-        Ok(project)
+        Ok(db.query_row(
+            &format!("SELECT {PROJECT_COLUMNS} FROM projects WHERE id=?"),
+            [id],
+            project_row,
+        )?)
     }
 
-    pub fn create_empty_project(&self, p: &Project) -> Result<()> {
+    pub fn create_empty_project(&self, project: &Project) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO projects(id,name,description,status,default_location_id,default_base_branch,default_delivery_mode,created_at,updated_at)
-             VALUES(:id,:name,:description,:status,:default_location_id,:default_base_branch,:default_delivery_mode,:created_at,:updated_at)",
+            "INSERT INTO projects(id,name,description,status,default_directory_id,created_at,updated_at)
+             VALUES(:id,:name,:description,:status,:default_directory_id,:created_at,:updated_at)",
             named_params! {
-                ":id": p.id,
-                ":name": p.name,
-                ":description": p.description,
-                ":status": p.status,
-                ":default_location_id": p.default_location_id,
-                ":default_base_branch": p.default_base_branch,
-                ":default_delivery_mode": p.default_delivery_mode,
-                ":created_at": p.created_at,
-                ":updated_at": p.updated_at,
+                ":id": project.id,
+                ":name": project.name,
+                ":description": project.description,
+                ":status": project.status,
+                ":default_directory_id": project.default_location_id,
+                ":created_at": project.created_at,
+                ":updated_at": project.updated_at,
             },
         )?;
         Ok(())
@@ -63,13 +70,13 @@ impl Store {
     pub fn update_project_defaults(
         &self,
         id: &str,
-        default_location_id: Option<&str>,
-        default_base_branch: &str,
-        default_delivery_mode: &str,
+        default_directory_id: Option<&str>,
+        _default_base_branch: &str,
+        _default_delivery_mode: &str,
     ) -> Result<()> {
         let changed = self.0.lock().execute(
-            "UPDATE projects SET default_location_id=?,default_base_branch=?,default_delivery_mode=?,updated_at=? WHERE id=?",
-            params![default_location_id,default_base_branch,default_delivery_mode,now(),id],
+            "UPDATE projects SET default_directory_id=?,updated_at=? WHERE id=?",
+            params![default_directory_id, now(), id],
         )?;
         if changed == 0 {
             return Err(AppError::NotFound);
@@ -83,7 +90,7 @@ impl Store {
             params![status, now(), id],
         )?;
         if changed == 0 {
-            return Err(crate::error::AppError::NotFound);
+            return Err(AppError::NotFound);
         }
         Ok(())
     }
@@ -105,39 +112,198 @@ impl Store {
             .lock()
             .execute("DELETE FROM projects WHERE id=?", [id])?;
         if changed == 0 {
-            return Err(crate::error::AppError::NotFound);
+            return Err(AppError::NotFound);
         }
         Ok(())
     }
 
+    pub fn repositories(&self, project_id: &str) -> Result<Vec<ProjectRepository>> {
+        let db = self.0.lock();
+        let mut statement = db.prepare(
+            "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at
+             FROM project_repositories WHERE project_id=? ORDER BY created_at,id",
+        )?;
+        let values = statement
+            .query_map([project_id], project_repository_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(values)
+    }
+
+    pub fn repository(&self, id: &str) -> Result<ProjectRepository> {
+        let db = self.0.lock();
+        Ok(db.query_row(
+            "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE id=?",
+            [id],
+            project_repository_row,
+        )?)
+    }
+
+    pub fn repository_as_directory(&self, id: &str) -> Result<Directory> {
+        let repository = self.repository(id)?;
+        Ok(Directory {
+            id: repository.id,
+            project_id: repository.project_id,
+            name: repository.name,
+            description: String::new(),
+            worktree_setup_command: repository.setup_command,
+            path: repository.source_root.clone(),
+            repository_url: repository.repository_url.clone(),
+            preferred_remote_name: repository.preferred_remote_name,
+            base_branch: Some(repository.base_branch),
+            delivery_mode: Some(repository.delivery_mode),
+            git_common_dir: Some(repository.git_common_dir),
+            git_status: repository.git_status,
+            last_checked_at: repository.last_checked_at,
+            created_at: repository.created_at,
+            updated_at: repository.updated_at,
+            checkout_path: Some(repository.source_root),
+            role: "repository".into(),
+            is_git: true,
+            remote_url: repository.repository_url,
+            branch: None,
+            head_commit: None,
+            head_summary: None,
+            dirty: false,
+        })
+    }
+
     pub fn directories(&self, project_id: &str) -> Result<Vec<Directory>> {
         let db = self.0.lock();
-        let mut stmt = db.prepare(
-            "SELECT pl.id,pl.project_id,pl.name,pl.description,pl.worktree_setup_command,pl.path,pl.repository_url,pl.preferred_remote_name,pl.base_branch,pl.delivery_mode,pl.git_common_dir,pl.git_status,pl.last_checked_at,pl.created_at,pl.updated_at
-             FROM project_locations pl
-             JOIN projects p ON p.id=pl.project_id
-             WHERE pl.project_id=?
-             ORDER BY CASE WHEN pl.id=p.default_location_id THEN 0 ELSE 1 END,
-                      pl.created_at ASC,
-                      pl.rowid ASC",
-        )?;
-        let values = stmt
+        let mut statement = db.prepare(&format!(
+            "SELECT {DIRECTORY_COLUMNS} FROM project_directories d
+             LEFT JOIN project_repositories r ON r.id=d.repository_id
+             JOIN projects p ON p.id=d.project_id WHERE d.project_id=?
+             ORDER BY d.id=p.default_directory_id DESC,d.created_at,d.rowid"
+        ))?;
+        let values = statement
             .query_map([project_id], directory_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(values)
+    }
+
+    pub fn project_directories(&self, project_id: &str) -> Result<Vec<ProjectDirectory>> {
+        let db = self.0.lock();
+        let mut statement = db.prepare(&format!(
+            "SELECT {DIRECTORY_COLUMNS} FROM project_directories d
+             LEFT JOIN project_repositories r ON r.id=d.repository_id
+             JOIN projects p ON p.id=d.project_id WHERE d.project_id=?
+             ORDER BY d.id=p.default_directory_id DESC,r.created_at,d.created_at,d.id"
+        ))?;
+        let values = statement
+            .query_map([project_id], project_directory_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
     pub fn directory(&self, id: &str) -> Result<Directory> {
         let db = self.0.lock();
-        Ok(db.query_row("SELECT id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,delivery_mode,git_common_dir,git_status,last_checked_at,created_at,updated_at FROM project_locations WHERE id=?", [id], directory_row)?)
+        Ok(db.query_row(
+            &format!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=?"),
+            [id],
+            directory_row,
+        )?)
     }
 
-    pub fn create_directory(&self, d: &Directory) -> Result<()> {
+    pub fn directory_record(&self, id: &str) -> Result<ProjectDirectory> {
+        let db = self.0.lock();
+        Ok(db.query_row(
+            &format!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=?"),
+            [id],
+            project_directory_row,
+        )?)
+    }
+
+    pub fn directory_repository_id(&self, id: &str) -> Result<Option<String>> {
+        let db = self.0.lock();
+        Ok(db.query_row(
+            "SELECT repository_id FROM project_directories WHERE id=?",
+            [id],
+            |row| row.get(0),
+        )?)
+    }
+
+    pub fn create_directory(&self, directory: &Directory) -> Result<()> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
-        insert_project_location(&tx, d)?;
-        if d.git_common_dir.is_some() {
-            tx.execute("UPDATE projects SET default_location_id=COALESCE(default_location_id,?),updated_at=? WHERE id=?", params![d.id,now(),d.project_id])?;
+        let repository_id = if let Some(git_common_dir) = directory.git_common_dir.as_deref() {
+            let source_root = directory
+                .checkout_path
+                .as_deref()
+                .unwrap_or(&directory.path);
+            let existing: Option<(String, String)> = tx
+                .query_row(
+                    "SELECT id,source_root FROM project_repositories WHERE project_id=? AND git_common_dir=?",
+                    params![directory.project_id, git_common_dir],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()?;
+            if let Some((id, existing_root)) = existing {
+                if normalized_path(&existing_root) != normalized_path(source_root) {
+                    return Err(AppError::BadRequest(format!(
+                        "repository is already associated with source worktree {existing_root}; add scopes from that worktree"
+                    )));
+                }
+                id
+            } else {
+                let id = uuid::Uuid::new_v4().to_string();
+                tx.execute(
+                    "INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    params![
+                        id,
+                        directory.project_id,
+                        basename(source_root),
+                        source_root,
+                        git_common_dir,
+                        directory.repository_url,
+                        directory.preferred_remote_name,
+                        directory.base_branch.as_deref().unwrap_or("main"),
+                        directory.delivery_mode.as_deref().unwrap_or("remote_review"),
+                        directory.worktree_setup_command,
+                        ".",
+                        directory.git_status,
+                        directory.last_checked_at,
+                        directory.created_at,
+                        directory.updated_at,
+                    ],
+                )?;
+                id
+            }
+        } else {
+            String::new()
+        };
+        let relative_path = if repository_id.is_empty() {
+            None
+        } else {
+            Some(relative_scope(
+                directory
+                    .checkout_path
+                    .as_deref()
+                    .unwrap_or(&directory.path),
+                &directory.path,
+            )?)
+        };
+        tx.execute(
+            "INSERT INTO project_directories(id,project_id,repository_id,name,description,relative_path,external_path,status,created_at,updated_at)
+             VALUES(?,?,?,?,?,?,?,?,?,?)",
+            params![
+                directory.id,
+                directory.project_id,
+                (!repository_id.is_empty()).then_some(repository_id),
+                directory.name,
+                directory.description,
+                relative_path,
+                directory.git_common_dir.is_none().then_some(directory.path.clone()),
+                directory.git_status,
+                directory.created_at,
+                directory.updated_at,
+            ],
+        )?;
+        if directory.git_common_dir.is_some() {
+            tx.execute(
+                "UPDATE projects SET default_directory_id=COALESCE(default_directory_id,?),updated_at=? WHERE id=?",
+                params![directory.id, now(), directory.project_id],
+            )?;
         }
         tx.commit()?;
         Ok(())
@@ -147,25 +313,102 @@ impl Store {
         &self,
         id: &str,
         description: &str,
-        worktree_setup_command: &str,
+        setup_command: &str,
         base_branch: Option<&str>,
         delivery_mode: Option<&str>,
     ) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE project_locations SET description=?,worktree_setup_command=?,base_branch=?,delivery_mode=?,updated_at=? WHERE id=?",
-            params![description, worktree_setup_command, base_branch, delivery_mode, now(), id],
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        let repository_id: Option<String> = tx.query_row(
+            "SELECT repository_id FROM project_directories WHERE id=?",
+            [id],
+            |row| row.get(0),
         )?;
+        tx.execute(
+            "UPDATE project_directories SET description=?,updated_at=? WHERE id=?",
+            params![description, now(), id],
+        )?;
+        if let Some(repository_id) = repository_id {
+            tx.execute(
+                "UPDATE project_repositories SET setup_command=?,base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),updated_at=? WHERE id=?",
+                params![setup_command, base_branch, delivery_mode, now(), repository_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
-    pub fn refresh_project_location(&self, location: &ProjectLocation) -> Result<()> {
+    pub fn update_repository(
+        &self,
+        id: &str,
+        setup_command: &str,
+        setup_workdir: &str,
+        base_branch: &str,
+        delivery_mode: &str,
+    ) -> Result<()> {
         let changed = self.0.lock().execute(
-            "UPDATE project_locations SET path=?,name=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,git_common_dir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=?",
-            params![location.path,location.name,location.repository_url,location.preferred_remote_name,location.base_branch,location.delivery_mode,location.git_common_dir,location.git_status,location.last_checked_at,location.updated_at,location.id],
+            "UPDATE project_repositories SET setup_command=?,setup_workdir=?,base_branch=?,delivery_mode=?,updated_at=? WHERE id=?",
+            params![setup_command,setup_workdir,base_branch,delivery_mode,now(),id],
         )?;
         if changed == 0 {
             return Err(AppError::NotFound);
         }
+        Ok(())
+    }
+
+    pub fn refresh_repository(&self, repository: &ProjectRepository) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE project_repositories SET name=?,source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,setup_command=?,setup_workdir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=?",
+            params![repository.name,repository.source_root,repository.git_common_dir,repository.repository_url,repository.preferred_remote_name,repository.base_branch,repository.delivery_mode,repository.setup_command,repository.setup_workdir,repository.git_status,repository.last_checked_at,repository.updated_at,repository.id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn reattach_repository(
+        &self,
+        id: &str,
+        source_root: &str,
+        git_common_dir: &str,
+        repository_url: Option<&str>,
+        preferred_remote_name: Option<&str>,
+    ) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE project_repositories SET source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=?",
+            params![source_root,git_common_dir,repository_url,preferred_remote_name,now(),now(),id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
+    pub fn refresh_project_location(&self, directory: &ProjectLocation) -> Result<()> {
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        let repository_id: Option<String> = tx.query_row(
+            "SELECT repository_id FROM project_directories WHERE id=?",
+            [&directory.id],
+            |row| row.get(0),
+        )?;
+        tx.execute(
+            "UPDATE project_directories SET name=?,status=?,updated_at=? WHERE id=?",
+            params![
+                directory.name,
+                directory.git_status,
+                directory.updated_at,
+                directory.id
+            ],
+        )?;
+        if let Some(repository_id) = repository_id {
+            tx.execute(
+                "UPDATE project_repositories SET source_root=COALESCE(?,source_root),repository_url=?,preferred_remote_name=?,base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),git_common_dir=COALESCE(?,git_common_dir),git_status=?,last_checked_at=?,updated_at=? WHERE id=?",
+                params![directory.checkout_path,directory.repository_url,directory.preferred_remote_name,directory.base_branch,directory.delivery_mode,directory.git_common_dir,directory.git_status,directory.last_checked_at,directory.updated_at,repository_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -178,7 +421,7 @@ impl Store {
         preferred_remote_name: Option<&str>,
     ) -> Result<()> {
         let changed = self.0.lock().execute(
-            "UPDATE project_locations SET path=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=?",
+            "UPDATE project_repositories SET source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=(SELECT repository_id FROM project_directories WHERE id=?)",
             params![path,git_common_dir,repository_url,preferred_remote_name,now(),now(),id],
         )?;
         if changed == 0 {
@@ -190,23 +433,82 @@ impl Store {
     pub fn delete_project_location(&self, id: &str) -> Result<()> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
-        tx.execute(
-            "DELETE FROM workspace_locations
-             WHERE project_location_id=?
-               AND workspace_id IN (SELECT id FROM workspaces WHERE kind='base')",
+        let (project_id, repository_id, is_default): (String, Option<String>, bool) = tx.query_row(
+            "SELECT d.project_id,d.repository_id,d.id=p.default_directory_id FROM project_directories d JOIN projects p ON p.id=d.project_id WHERE d.id=?",
             [id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )?;
+        if is_default {
+            return Err(AppError::BadRequest(
+                "choose another default Directory before removing this one".into(),
+            ));
+        }
         let referenced: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM workspace_locations WHERE project_location_id=?) AS referenced",
+            "SELECT EXISTS(SELECT 1 FROM workspace_directories WHERE project_directory_id=?)",
             [id],
-            |r| r.get("referenced"),
+            |row| row.get(0),
         )?;
         if referenced {
             return Err(AppError::BadRequest(
-                "location is snapshotted by an existing Workspace".into(),
+                "directory is snapshotted by an existing Workspace or Fork".into(),
             ));
         }
-        let changed = tx.execute("DELETE FROM project_locations WHERE id=?", [id])?;
+        tx.execute("DELETE FROM project_directories WHERE id=?", [id])?;
+        if let Some(repository_id) = repository_id {
+            let has_scopes: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM project_directories WHERE repository_id=?)",
+                [&repository_id],
+                |row| row.get(0),
+            )?;
+            if !has_scopes {
+                let snapshotted: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM workspace_repositories WHERE project_repository_id=?)",
+                    [&repository_id],
+                    |row| row.get(0),
+                )?;
+                if snapshotted {
+                    return Err(AppError::BadRequest(
+                        "repository is snapshotted by an existing Workspace or Fork".into(),
+                    ));
+                }
+                tx.execute(
+                    "DELETE FROM project_repositories WHERE id=?",
+                    [&repository_id],
+                )?;
+            }
+        }
+        tx.execute(
+            "UPDATE projects SET updated_at=? WHERE id=?",
+            params![now(), project_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_repository(&self, id: &str) -> Result<()> {
+        let mut db = self.0.lock();
+        let tx = db.transaction()?;
+        let referenced: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workspace_repositories WHERE project_repository_id=?)",
+            [id],
+            |row| row.get(0),
+        )?;
+        if referenced {
+            return Err(AppError::BadRequest(
+                "repository is snapshotted by an existing Workspace or Fork".into(),
+            ));
+        }
+        let contains_default: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM project_directories d JOIN projects p ON p.default_directory_id=d.id WHERE d.repository_id=?)",
+            [id],
+            |row| row.get(0),
+        )?;
+        if contains_default {
+            return Err(AppError::BadRequest(
+                "choose a default Directory in another Repository first".into(),
+            ));
+        }
+        let changed = tx.execute("DELETE FROM project_repositories WHERE id=?", [id])?;
         if changed == 0 {
             return Err(AppError::NotFound);
         }
@@ -215,10 +517,10 @@ impl Store {
     }
 
     pub fn project_detail(&self, id: &str) -> Result<ProjectDetail> {
-        let locations = self.directories(id)?;
         Ok(ProjectDetail {
             project: self.project(id)?,
-            locations,
+            repositories: self.repositories(id)?,
+            directories: self.project_directories(id)?,
             sessions: self.project_sessions(id)?,
             workspaces: self
                 .workspaces(id)?
@@ -233,16 +535,13 @@ impl Store {
 fn project_summaries_on(db: &Connection) -> Result<Vec<ProjectSummary>> {
     let mut statement = db.prepare(
         "SELECT p.id,p.name,p.description,p.status,p.updated_at,
-                COUNT(DISTINCT pl.id),
-                COUNT(DISTINCT CASE WHEN pl.git_common_dir IS NOT NULL THEN pl.id END),
-                COUNT(DISTINCT CASE WHEN pl.git_common_dir IS NULL THEN pl.id END),
-                COUNT(DISTINCT CASE WHEN pl.git_status='missing' THEN pl.id END),
-                COUNT(DISTINCT CASE WHEN pl.git_status NOT IN ('ready','not_git','missing') THEN pl.id END),
+                COUNT(DISTINCT d.id),COUNT(DISTINCT CASE WHEN d.repository_id IS NOT NULL THEN d.id END),
+                COUNT(DISTINCT CASE WHEN d.repository_id IS NULL THEN d.id END),
+                COUNT(DISTINCT CASE WHEN d.status='missing' THEN d.id END),
+                COUNT(DISTINCT CASE WHEN d.status NOT IN ('ready','not_git','missing') THEN d.id END),
                 COUNT(DISTINCT CASE WHEN w.status='active' AND w.kind='workspace' THEN w.id END)
-         FROM projects p
-         LEFT JOIN project_locations pl ON pl.project_id=p.id
-         LEFT JOIN workspaces w ON w.project_id=p.id
-         GROUP BY p.id ORDER BY p.updated_at DESC",
+         FROM projects p LEFT JOIN project_directories d ON d.project_id=p.id
+         LEFT JOIN workspaces w ON w.project_id=p.id GROUP BY p.id ORDER BY p.updated_at DESC",
     )?;
     let values = statement
         .query_map([], |row| {
@@ -266,38 +565,27 @@ fn project_summaries_on(db: &Connection) -> Result<Vec<ProjectSummary>> {
 
 fn sidebar_on(db: &Connection) -> Result<SidebarData> {
     let transaction = db.unchecked_transaction()?;
-    let mut project_statement = transaction.prepare(
-        "SELECT id,name,description,status,default_location_id,default_base_branch,default_delivery_mode,created_at,updated_at
-         FROM projects WHERE status='active' ORDER BY updated_at DESC",
-    )?;
-    let mut projects = project_statement
+    let mut project_statement = transaction.prepare(&format!(
+        "SELECT {PROJECT_COLUMNS} FROM projects WHERE status='active' ORDER BY updated_at DESC"
+    ))?;
+    let projects = project_statement
         .query_map([], project_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     drop(project_statement);
-    let mut values = Vec::with_capacity(projects.len());
-    for mut project in projects.drain(..) {
-        hydrate_project_compat(&transaction, &mut project)?;
-        let mut location_statement = transaction.prepare(
-            "SELECT pl.id,pl.project_id,pl.name,pl.description,pl.worktree_setup_command,pl.path,pl.repository_url,pl.preferred_remote_name,pl.base_branch,pl.delivery_mode,pl.git_common_dir,pl.git_status,pl.last_checked_at,pl.created_at,pl.updated_at
-             FROM project_locations pl WHERE pl.project_id=? ORDER BY pl.created_at,pl.rowid",
-        )?;
-        let locations = location_statement
-            .query_map([&project.id], directory_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-
+    let mut result = Vec::with_capacity(projects.len());
+    for project in projects {
+        let repositories = query_project_repositories(&transaction, &project.id)?;
+        let directories = query_project_directories(&transaction, &project.id)?;
         let aliased_session_columns = format!("s.{}", SESSION_COLUMNS.replace(',', ",s."));
-        let mut project_sessions_statement = transaction.prepare(&format!(
+        let mut sessions_statement = transaction.prepare(&format!(
             "SELECT {aliased_session_columns} FROM sessions s JOIN workspaces w ON w.id=s.workspace_id
-             WHERE w.project_id=? AND w.kind='base' AND s.visibility='visible'
-             ORDER BY s.sort_order,s.created_at DESC"
+             WHERE w.project_id=? AND w.kind='base' AND s.visibility='visible' ORDER BY s.sort_order,s.created_at DESC"
         ))?;
-        let sessions = project_sessions_statement
+        let sessions = sessions_statement
             .query_map([&project.id], session_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-
         let mut workspace_statement = transaction.prepare(&format!(
-            "SELECT {WORKSPACE_COLUMNS} FROM workspaces
-             WHERE project_id=? AND status='active' AND kind!='base' ORDER BY updated_at DESC"
+            "SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE project_id=? AND status='active' AND kind!='base' ORDER BY updated_at DESC"
         ))?;
         let mut workspaces = workspace_statement
             .query_map([&project.id], workspace_row)?
@@ -305,97 +593,146 @@ fn sidebar_on(db: &Connection) -> Result<SidebarData> {
         let mut sidebar_workspaces = Vec::with_capacity(workspaces.len());
         for mut workspace in workspaces.drain(..) {
             hydrate_workspace_compat(&transaction, &mut workspace)?;
-            let mut sessions_statement = transaction.prepare(&format!(
-                "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? AND visibility='visible'
-                 ORDER BY sort_order,created_at DESC"
+            let mut statement = transaction.prepare(&format!(
+                "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? AND visibility='visible' ORDER BY sort_order,created_at DESC"
             ))?;
-            let sessions = sessions_statement
+            let workspace_sessions = statement
                 .query_map([&workspace.id], session_row)?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-            let mut locations_statement = transaction.prepare(&format!(
-                "SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_locations WHERE workspace_id=? ORDER BY location_name"
+            let mut repository_statement = transaction.prepare(&format!(
+                "SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories WHERE workspace_id=? ORDER BY repository_name"
             ))?;
-            let locations = locations_statement
+            let workspace_repositories = repository_statement
                 .query_map([&workspace.id], workspace_location_row)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            let mut directory_statement = transaction.prepare(&format!(
+                "SELECT {WORKSPACE_DIRECTORY_COLUMNS} FROM workspace_directories wd LEFT JOIN workspace_repositories wr ON wr.id=wd.workspace_repository_id WHERE wd.workspace_id=? ORDER BY wd.name"
+            ))?;
+            let workspace_directories = directory_statement
+                .query_map([&workspace.id], workspace_directory_row)?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             sidebar_workspaces.push(SidebarWorkspace {
                 workspace,
-                sessions,
-                locations,
+                sessions: workspace_sessions,
+                repositories: workspace_repositories,
+                directories: workspace_directories,
             });
         }
-        values.push(SidebarProject {
+        result.push(SidebarProject {
             project,
-            locations,
+            repositories,
+            directories,
             sessions,
             workspaces: sidebar_workspaces,
         });
     }
     drop(transaction);
-    Ok(SidebarData { projects: values })
+    Ok(SidebarData { projects: result })
 }
 
-fn project_row(r: &Row<'_>) -> rusqlite::Result<Project> {
-    let default_location_id: Option<String> = r.get("default_location_id")?;
-    let default_base_branch: String = r.get("default_base_branch")?;
+fn query_project_repositories(
+    db: &Connection,
+    project_id: &str,
+) -> rusqlite::Result<Vec<ProjectRepository>> {
+    let mut statement = db.prepare(
+        "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE project_id=? ORDER BY created_at,id",
+    )?;
+    let values = statement
+        .query_map([project_id], project_repository_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(values)
+}
+
+fn query_project_directories(
+    db: &Connection,
+    project_id: &str,
+) -> rusqlite::Result<Vec<ProjectDirectory>> {
+    let mut statement = db.prepare(&format!(
+        "SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.project_id=? ORDER BY d.created_at,d.id"
+    ))?;
+    let values = statement
+        .query_map([project_id], project_directory_row)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(values)
+}
+
+fn project_row(row: &Row<'_>) -> rusqlite::Result<Project> {
+    let default_directory_id: Option<String> = row.get("default_directory_id")?;
     Ok(Project {
-        id: r.get("id")?,
-        name: r.get("name")?,
-        description: r.get("description")?,
-        status: r.get("status")?,
-        default_location_id: default_location_id.clone(),
-        default_base_branch: default_base_branch.clone(),
-        default_delivery_mode: r.get("default_delivery_mode")?,
-        created_at: r.get("created_at")?,
-        updated_at: r.get("updated_at")?,
-        primary_directory_id: default_location_id.unwrap_or_default(),
+        id: row.get("id")?,
+        name: row.get("name")?,
+        description: row.get("description")?,
+        status: row.get("status")?,
+        default_location_id: default_directory_id.clone(),
+        default_base_branch: "main".into(),
+        default_delivery_mode: "remote_review".into(),
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        primary_directory_id: default_directory_id.unwrap_or_default(),
         git_common_dir: String::new(),
         preferred_remote: None,
-        default_target_branch: default_base_branch,
+        default_target_branch: "main".into(),
     })
 }
 
-fn hydrate_project_compat(db: &Connection, project: &mut Project) -> rusqlite::Result<()> {
-    let Some(location_id) = project.default_location_id.as_deref() else {
-        return Ok(());
-    };
-    let metadata = db.query_row(
-        "SELECT git_common_dir,preferred_remote_name,COALESCE(base_branch,?) AS base_branch,COALESCE(delivery_mode,?) AS delivery_mode FROM project_locations WHERE id=?",
-        params![project.default_base_branch, project.default_delivery_mode, location_id],
-        |r| Ok((r.get::<_, Option<String>>("git_common_dir")?, r.get::<_, Option<String>>("preferred_remote_name")?, r.get::<_, String>("base_branch")?, r.get::<_, String>("delivery_mode")?)),
-    ).optional()?;
-    if let Some((git_common_dir, remote, branch, delivery_mode)) = metadata {
-        project.primary_directory_id = location_id.to_owned();
-        project.git_common_dir = git_common_dir.unwrap_or_default();
-        project.preferred_remote = remote;
-        project.default_target_branch = branch;
-        project.default_delivery_mode = delivery_mode;
-    }
-    Ok(())
+fn project_repository_row(row: &Row<'_>) -> rusqlite::Result<ProjectRepository> {
+    Ok(ProjectRepository {
+        id: row.get("id")?,
+        project_id: row.get("project_id")?,
+        name: row.get("name")?,
+        source_root: row.get("source_root")?,
+        git_common_dir: row.get("git_common_dir")?,
+        repository_url: row.get("repository_url")?,
+        preferred_remote_name: row.get("preferred_remote_name")?,
+        base_branch: row.get("base_branch")?,
+        delivery_mode: row.get("delivery_mode")?,
+        setup_command: row.get("setup_command")?,
+        setup_workdir: row.get("setup_workdir")?,
+        git_status: row.get("git_status")?,
+        last_checked_at: row.get("last_checked_at")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
 }
-fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
-    let git_common_dir: Option<String> = r.get("git_common_dir")?;
-    let is_git = git_common_dir.is_some();
+
+fn directory_row(row: &Row<'_>) -> rusqlite::Result<Directory> {
+    let repository_id: Option<String> = row.get("repository_id")?;
+    let relative_path: Option<String> = row.get("relative_path")?;
+    let source_root: Option<String> = row.get("source_root")?;
+    let external_path: Option<String> = row.get("external_path")?;
+    let path = scope_path(
+        source_root.as_deref(),
+        relative_path.as_deref(),
+        external_path.as_deref(),
+    );
+    let is_git = repository_id.is_some();
     Ok(Directory {
-        id: r.get("id")?,
-        project_id: r.get("project_id")?,
-        name: r.get("name")?,
-        description: r.get("description")?,
-        worktree_setup_command: r.get("worktree_setup_command")?,
-        path: r.get("path")?,
-        repository_url: r.get("repository_url")?,
-        preferred_remote_name: r.get("preferred_remote_name")?,
-        base_branch: r.get("base_branch")?,
-        delivery_mode: r.get("delivery_mode")?,
-        git_common_dir,
-        git_status: r.get("git_status")?,
-        last_checked_at: r.get("last_checked_at")?,
-        created_at: r.get("created_at")?,
-        updated_at: r.get("updated_at")?,
-        checkout_path: None,
+        id: row.get("id")?,
+        project_id: row.get("project_id")?,
+        name: row.get("name")?,
+        description: row.get("description")?,
+        worktree_setup_command: row
+            .get::<_, Option<String>>("setup_command")?
+            .unwrap_or_default(),
+        path,
+        repository_url: row.get("repository_url")?,
+        preferred_remote_name: row.get("preferred_remote_name")?,
+        base_branch: row.get("base_branch")?,
+        delivery_mode: row.get("delivery_mode")?,
+        git_common_dir: row.get("git_common_dir")?,
+        git_status: if is_git {
+            row.get::<_, Option<String>>("repository_status")?
+                .unwrap_or_else(|| "missing".into())
+        } else {
+            row.get("status")?
+        },
+        last_checked_at: row.get("last_checked_at")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+        checkout_path: source_root,
         role: "attached".into(),
         is_git,
-        remote_url: r.get("repository_url")?,
+        remote_url: row.get("repository_url")?,
         branch: None,
         head_commit: None,
         head_summary: None,
@@ -403,30 +740,66 @@ fn directory_row(r: &Row<'_>) -> rusqlite::Result<Directory> {
     })
 }
 
-fn insert_project_location(
-    tx: &rusqlite::Transaction<'_>,
-    d: &ProjectLocation,
-) -> rusqlite::Result<()> {
-    tx.execute(
-        "INSERT INTO project_locations(id,project_id,name,description,worktree_setup_command,path,repository_url,preferred_remote_name,base_branch,delivery_mode,git_common_dir,git_status,last_checked_at,created_at,updated_at)
-         VALUES(:id,:project_id,:name,:description,:worktree_setup_command,:path,:repository_url,:preferred_remote_name,:base_branch,:delivery_mode,:git_common_dir,:git_status,:last_checked_at,:created_at,:updated_at)",
-        named_params! {
-            ":id": d.id,
-            ":project_id": d.project_id,
-            ":name": d.name,
-            ":description": d.description,
-            ":worktree_setup_command": d.worktree_setup_command,
-            ":path": d.path,
-            ":repository_url": d.repository_url,
-            ":preferred_remote_name": d.preferred_remote_name,
-            ":base_branch": d.base_branch,
-            ":delivery_mode": d.delivery_mode,
-            ":git_common_dir": d.git_common_dir,
-            ":git_status": d.git_status,
-            ":last_checked_at": d.last_checked_at,
-            ":created_at": d.created_at,
-            ":updated_at": d.updated_at,
-        },
-    )?;
-    Ok(())
+fn project_directory_row(row: &Row<'_>) -> rusqlite::Result<ProjectDirectory> {
+    let relative_path: Option<String> = row.get("relative_path")?;
+    let external_path: Option<String> = row.get("external_path")?;
+    let source_root: Option<String> = row.get("source_root")?;
+    Ok(ProjectDirectory {
+        id: row.get("id")?,
+        project_id: row.get("project_id")?,
+        repository_id: row.get("repository_id")?,
+        name: row.get("name")?,
+        description: row.get("description")?,
+        relative_path: relative_path.clone(),
+        external_path: external_path.clone(),
+        path: scope_path(
+            source_root.as_deref(),
+            relative_path.as_deref(),
+            external_path.as_deref(),
+        ),
+        status: row.get("status")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
+    })
+}
+
+fn scope_path(
+    source_root: Option<&str>,
+    relative_path: Option<&str>,
+    external: Option<&str>,
+) -> String {
+    match (source_root, relative_path, external) {
+        (Some(root), Some("."), _) => root.into(),
+        (Some(root), Some(relative), _) => Path::new(root)
+            .join(relative)
+            .to_string_lossy()
+            .into_owned(),
+        (_, _, Some(path)) => path.into(),
+        _ => String::new(),
+    }
+}
+
+fn relative_scope(source_root: &str, selected: &str) -> Result<String> {
+    let root = PathBuf::from(source_root);
+    let selected = PathBuf::from(selected);
+    let relative = selected.strip_prefix(&root).map_err(|_| {
+        AppError::BadRequest("Directory must be inside the Repository source root".into())
+    })?;
+    if relative.as_os_str().is_empty() {
+        Ok(".".into())
+    } else {
+        Ok(relative.to_string_lossy().replace('\\', "/"))
+    }
+}
+
+fn normalized_path(path: &str) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path))
+}
+
+fn basename(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("repository")
+        .to_owned()
 }

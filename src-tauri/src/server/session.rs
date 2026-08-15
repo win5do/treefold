@@ -31,12 +31,18 @@ fn sync_project_session_workspace(state: &AppState, project_id: &str) -> Result<
             "cannot create a Session in an archived Project".into(),
         ));
     }
-    let mut project_locations = state.store.directories(project_id)?;
-    if project_locations.is_empty() {
+    let project_directories = state.store.project_directories(project_id)?;
+    if project_directories.is_empty() {
         return Err(AppError::BadRequest(
             "Project has no location for a Session".into(),
         ));
     }
+    let mut project_locations = state
+        .store
+        .repositories(project_id)?
+        .iter()
+        .map(|repository| state.store.repository_as_directory(&repository.id))
+        .collect::<Result<Vec<_>>>()?;
     for location in &mut project_locations {
         refresh_location_observation(location)?;
     }
@@ -104,7 +110,7 @@ fn project_session_location(
         git_status: location.git_status.clone(),
         creation_error: None,
         worktree_id: None,
-        checkout_path: tracked_git.then(|| location.path.clone()),
+        checkout_path: tracked_git.then(|| location.checkout_path.clone().unwrap_or_else(|| location.path.clone())),
         branch: location.branch.clone(),
         base_branch: location.base_branch.clone(),
         start_commit: location.head_commit.clone(),
@@ -189,54 +195,62 @@ async fn create_session_for_workspace(
         return Err(AppError::BadRequest("kind must be shell or codex".into()));
     }
     let project = state.store.project(&workspace.project_id)?;
-    let locations = state.store.workspace_locations(&workspace.id)?;
-    let selected_location = if let Some(directory_id) = input.project_directory_id.as_deref() {
-        locations
+    let repositories = state.store.workspace_repositories(&workspace.id)?;
+    let directories = state.store.workspace_directories(&workspace.id)?;
+    let repository_is_ready = |directory: &&WorkspaceDirectory| {
+        directory
+            .workspace_repository_id
+            .as_deref()
+            .and_then(|id| repositories.iter().find(|repository| repository.id == id))
+            .is_some_and(|repository| repository.git_status == "ready")
+    };
+    let selected_directory = if let Some(directory_id) = input.project_directory_id.as_deref() {
+        directories
             .iter()
-            .find(|location| location.project_location_id == directory_id)
+            .find(|directory| directory.project_directory_id == directory_id)
             .ok_or_else(|| {
                 AppError::BadRequest("project directory does not belong to project".into())
             })?
     } else {
-        locations
+        directories
             .iter()
-            .find(|location| {
+            .find(|directory| {
                 project.default_location_id.as_deref()
-                    == Some(location.project_location_id.as_str())
-                    && (location.access_mode == "read_only" || location.git_status == "ready")
+                    == Some(directory.project_directory_id.as_str())
+                    && repository_is_ready(directory)
             })
             .or_else(|| {
-                locations.iter().find(|location| {
-                    location.access_mode == "read_write" && location.git_status == "ready"
+                directories.iter().find(|directory| {
+                    directory.access_mode == "read_write" && repository_is_ready(directory)
                 })
             })
             .or_else(|| {
                 (workspace.kind == "base")
-                    .then(|| locations.first())
+                    .then(|| directories.first())
                     .flatten()
             })
             .ok_or_else(|| AppError::BadRequest("Workspace has no usable location".into()))?
     };
-    if selected_location.access_mode == "read_write" && selected_location.git_status != "ready" {
+    let selected_repository = selected_directory.workspace_repository_id.as_deref().and_then(|id| {
+        repositories.iter().find(|repository| repository.id == id)
+    });
+    if let Some(repository) = selected_repository.filter(|repository| repository.git_status != "ready") {
         return Err(AppError::BadRequest(format!(
-            "Workspace location '{}' is unavailable: {}",
-            selected_location.location_name,
-            selected_location
+            "Workspace Repository '{}' is unavailable: {}",
+            repository.location_name,
+            repository
                 .creation_error
                 .as_deref()
-                .unwrap_or(&selected_location.git_status)
+                .unwrap_or(&repository.git_status)
         )));
     }
-    if kind == "codex" && selected_location.access_mode != "read_write" {
+    if kind == "codex" && selected_repository.is_none() {
         return Err(AppError::BadRequest(
             "Codex must start in an available Git location; non-Git locations are read-only context"
                 .into(),
         ));
     }
-    let cwd = selected_location
-        .checkout_path
-        .clone()
-        .unwrap_or_else(|| selected_location.source_path.clone());
+    let cwd = selected_directory.path.clone();
     if !Path::new(&cwd).is_dir() {
         return Err(AppError::BadRequest(format!(
             "Session location is unavailable: {cwd}"
@@ -244,20 +258,20 @@ async fn create_session_for_workspace(
     }
     let mut additional_directories = Vec::new();
     let mut read_only_contexts = Vec::new();
-    let selected_name = Some(selected_location.location_name.clone());
-    for location in &locations {
-        let path = location
-            .checkout_path
-            .clone()
-            .unwrap_or_else(|| location.source_path.clone());
-        if location.access_mode == "read_write"
-            && location.git_status == "ready"
-            && normalized_path(&path) != normalized_path(&cwd)
+    let selected_name = Some(selected_directory.name.clone());
+    let mut seen_repository_roots = std::collections::HashSet::new();
+    for repository in &repositories {
+        let root = repository.checkout_path.clone().unwrap_or_else(|| repository.source_path.clone());
+        if repository.git_status == "ready"
+            && seen_repository_roots.insert(normalized_path(&root))
+            && normalized_path(&root) != normalized_path(&cwd)
         {
-            additional_directories.push(path.clone());
+            additional_directories.push(root);
         }
-        if location.access_mode == "read_only" {
-            read_only_contexts.push(path.clone());
+    }
+    for directory in &directories {
+        if directory.access_mode == "read_only" {
+            read_only_contexts.push(directory.path.clone());
         }
     }
     let codex_extra_args = if kind == "codex" {

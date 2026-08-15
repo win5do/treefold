@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Legacy helpers remain only for shared delivery state-machine coverage.
+
 use std::{
     collections::{HashMap, HashSet},
     io::{BufRead, BufReader},
@@ -19,7 +21,7 @@ use futures_util::{SinkExt, StreamExt};
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::sync::LazyLock;
+use std::sync::OnceLock;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
@@ -39,18 +41,26 @@ pub struct AppState {
     pub terminals: TerminalManager,
 }
 
-static PROJECT_WORKTREES: LazyLock<Cache<String, Vec<GitWorktree>>> = LazyLock::new(|| {
-    Cache::builder()
-        .max_capacity(256)
-        .time_to_live(std::time::Duration::from_secs(10))
-        .build()
-});
-static LOCATION_OBSERVATIONS: LazyLock<Cache<String, ProjectLocation>> = LazyLock::new(|| {
-    Cache::builder()
-        .max_capacity(256)
-        .time_to_live(std::time::Duration::from_secs(10))
-        .build()
-});
+static PROJECT_WORKTREES: OnceLock<Cache<String, Vec<GitWorktree>>> = OnceLock::new();
+static LOCATION_OBSERVATIONS: OnceLock<Cache<String, ProjectLocation>> = OnceLock::new();
+
+fn project_worktrees_cache() -> &'static Cache<String, Vec<GitWorktree>> {
+    PROJECT_WORKTREES.get_or_init(|| {
+        Cache::builder()
+            .max_capacity(256)
+            .time_to_live(std::time::Duration::from_secs(10))
+            .build()
+    })
+}
+
+fn location_observations_cache() -> &'static Cache<String, ProjectLocation> {
+    LOCATION_OBSERVATIONS.get_or_init(|| {
+        Cache::builder()
+            .max_capacity(256)
+            .time_to_live(std::time::Duration::from_secs(10))
+            .build()
+    })
+}
 
 pub async fn serve(state: AppState) -> anyhow::Result<()> {
     let mut process_events = state.terminals.subscribe_process_events();
@@ -120,12 +130,6 @@ fn app(state: AppState) -> Router {
                 .patch(update_project)
                 .delete(delete_project),
         )
-        .route(
-            "/api/projects/{id}/git-history",
-            get(get_project_git_history),
-        )
-        .route("/api/projects/{id}/git/pull", post(pull_project))
-        .route("/api/projects/{id}/git/push", post(push_project))
         .route("/api/projects/{id}/git/pull-all", post(pull_all_project))
         .route("/api/projects/{id}/git/push-all", post(push_all_project))
         .route(
@@ -137,52 +141,64 @@ fn app(state: AppState) -> Router {
             "/api/projects/{id}/reconciliation",
             get(get_project_reconciliation).post(repair_project),
         )
-        .route("/api/projects/{id}/directories", post(create_directory))
         .route(
-            "/api/projects/{id}/locations",
-            get(list_project_locations).post(create_directory),
+            "/api/projects/{id}/directories",
+            get(list_project_directories).post(create_directory),
         )
         .route(
-            "/api/project-locations/inspect",
+            "/api/project-directories/inspect",
             post(inspect_project_location),
         )
-        .route("/api/project-directories/{id}", patch(update_directory))
         .route(
-            "/api/project-locations/{id}",
-            get(get_project_location)
+            "/api/project-directories/{id}",
+            get(get_project_directory)
                 .patch(update_directory)
                 .delete(delete_project_location),
         )
         .route(
-            "/api/project-locations/{id}/refresh",
+            "/api/project-directories/{id}/refresh",
             post(refresh_project_location),
         )
         .route(
-            "/api/project-locations/{id}/reattach",
+            "/api/projects/{id}/repositories",
+            get(list_project_repositories),
+        )
+        .route(
+            "/api/project-repositories/{id}",
+            get(get_project_repository)
+                .patch(update_project_repository)
+                .delete(delete_project_repository),
+        )
+        .route(
+            "/api/project-repositories/{id}/refresh",
+            post(refresh_project_repository),
+        )
+        .route(
+            "/api/project-repositories/{id}/reattach",
             post(reattach_project_location),
         )
         .route(
-            "/api/project-locations/{id}/git-history",
+            "/api/project-repositories/{id}/git-history",
             get(get_project_location_git_history),
         )
         .route(
-            "/api/project-locations/{id}/git/pull",
+            "/api/project-repositories/{id}/git/pull",
             post(pull_project_location),
         )
         .route(
-            "/api/project-locations/{id}/git/push",
+            "/api/project-repositories/{id}/git/push",
             post(push_project_location),
         )
         .route(
-            "/api/project-directories/{id}/branches",
+            "/api/project-repositories/{id}/branches",
             get(list_directory_branches),
         )
         .route(
-            "/api/project-directories/{id}/checkout",
+            "/api/project-repositories/{id}/checkout",
             post(checkout_directory_branch),
         )
         .route(
-            "/api/project-directories/{id}/worktrees",
+            "/api/project-repositories/{id}/worktrees",
             axum::routing::delete(delete_worktree),
         )
         .route("/api/projects/{id}/workspaces", post(create_workspace))
@@ -194,12 +210,6 @@ fn app(state: AppState) -> Router {
                 .delete(delete_workspace),
         )
         .route(
-            "/api/workspaces/{id}/git-history",
-            get(get_workspace_git_history),
-        )
-        .route("/api/workspaces/{id}/git/pull", post(pull_workspace))
-        .route("/api/workspaces/{id}/git/push", post(push_workspace))
-        .route(
             "/api/workspaces/{id}/git/pull-all",
             post(pull_all_workspace),
         )
@@ -208,39 +218,39 @@ fn app(state: AppState) -> Router {
             post(push_all_workspace),
         )
         .route(
-            "/api/workspace-locations/{id}/git-history",
+            "/api/workspace-repositories/{id}/git-history",
             get(get_workspace_location_git_history),
         )
         .route(
-            "/api/workspace-locations/{id}",
+            "/api/workspace-repositories/{id}",
             patch(update_workspace_location),
         )
         .route(
-            "/api/workspace-locations/{id}/git/pull",
+            "/api/workspace-repositories/{id}/git/pull",
             post(pull_workspace_location),
         )
         .route(
-            "/api/workspace-locations/{id}/git/push",
+            "/api/workspace-repositories/{id}/git/push",
             post(push_workspace_location),
         )
         .route(
-            "/api/workspace-locations/{id}/delivery-preflight",
+            "/api/workspace-repositories/{id}/delivery-preflight",
             post(create_workspace_location_preflight),
         )
         .route(
-            "/api/workspace-locations/{id}/rebase",
+            "/api/workspace-repositories/{id}/rebase",
             get(get_workspace_location_rebase).post(update_workspace_location_rebase),
         )
         .route(
-            "/api/workspace-locations/{id}/reset",
+            "/api/workspace-repositories/{id}/reset",
             get(get_workspace_location_reset).post(reset_workspace_location),
         )
         .route(
-            "/api/workspace-locations/{id}/reset/restore",
+            "/api/workspace-repositories/{id}/reset/restore",
             post(restore_workspace_location_reset),
         )
         .route(
-            "/api/workspace-locations/{id}/finish",
+            "/api/workspace-repositories/{id}/finish",
             post(finish_workspace_location),
         )
         .route("/api/workspaces/{id}/archive", post(archive_workspace))
@@ -249,23 +259,6 @@ fn app(state: AppState) -> Router {
             "/api/workspaces/{id}/git-operations",
             get(get_git_operations),
         )
-        .route(
-            "/api/workspaces/{id}/rebase",
-            get(get_rebase_status).post(update_rebase),
-        )
-        .route(
-            "/api/workspaces/{id}/delivery-preflight",
-            post(create_delivery_preflight),
-        )
-        .route(
-            "/api/workspaces/{id}/reset",
-            get(get_reset_status).post(reset_workspace),
-        )
-        .route(
-            "/api/workspaces/{id}/reset/restore",
-            post(restore_workspace_reset),
-        )
-        .route("/api/workspaces/{id}/finish", post(finish_workspace))
         .route(
             "/api/workspaces/{id}/sessions",
             get(list_sessions).post(create_session),

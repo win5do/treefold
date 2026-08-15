@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Delivery compatibility helpers remain covered by integration tests.
+
 use rusqlite::{named_params, params, Row};
 
 use super::{now, Store};
@@ -10,8 +12,8 @@ impl Store {
     pub fn session_workspace_candidates(&self) -> Result<Vec<(String, String)>> {
         let db = self.0.lock();
         let mut stmt = db.prepare(
-            "SELECT wl.workspace_id,COALESCE(wl.checkout_path,wl.source_path)
-             FROM workspace_locations wl JOIN workspaces w ON w.id=wl.workspace_id
+            "SELECT wr.workspace_id,COALESCE(wr.checkout_path,wr.source_root)
+             FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id
              JOIN projects p ON p.id=w.project_id
              WHERE w.status='active' AND p.status='active'",
         )?;

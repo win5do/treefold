@@ -435,7 +435,6 @@ mod tests {
                 amux: Some(AmuxSettingsPatch {
                     keep_daemon_running_on_exit: Some(true),
                 }),
-                ..SettingsPatch::default()
             })
             .expect("update settings");
         assert_eq!(updated.language, "zh-CN");
