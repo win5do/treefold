@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 import "./i18n";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyThemePreference } from "@/lib/theme";
 
 const queryClient = new QueryClient({
@@ -24,9 +25,11 @@ applyThemePreference("system");
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <HashRouter>
-        <App />
-      </HashRouter>
+      <TooltipProvider>
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </TooltipProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

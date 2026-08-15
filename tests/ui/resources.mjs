@@ -69,8 +69,11 @@ try {
   });
   assert.equal(harness.amuxStopRequests.length, 1, "stopping must call the daemon stop endpoint exactly once");
   const stoppedStatus = await resourcePopover.$('[data-testid="amux-stopped-status"]');
-  assert.match(await stoppedStatus.getAttribute("title"), /starts automatically/);
   assert.equal(await stoppedStatus.getTagName(), "span", "Not started status must not be clickable");
+  await stoppedStatus.click();
+  const lazyStartTooltip = await browser.$('[data-slot="tooltip-content"]');
+  await lazyStartTooltip.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await lazyStartTooltip.getText(), /starts automatically when a Session needs it/);
 
   harness.assertNoUnexpectedRequests();
   console.log("✓ amux resource status, destructive stop confirmation, and exit preference passed");

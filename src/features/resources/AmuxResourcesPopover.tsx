@@ -7,6 +7,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AmuxStatus } from "@/domain/types";
 import { amuxQuery, appKeys } from "@/features/app/queries";
 
@@ -77,7 +78,12 @@ export function AmuxResourcesPopover() {
             <CardAction>
               {running
                 ? <Button data-testid="amux-running-status" size="xs" variant="ghost" onClick={() => setConfirmStop(true)}><span className="size-2 rounded-full bg-success" />{t("resources.running")}</Button>
-                : <span data-testid="amux-stopped-status" title={t("resources.lazyStartTip")} className="flex cursor-help items-center gap-2 px-2 py-1 text-xs text-muted-foreground"><span className="size-2 rounded-full bg-muted-foreground/50" />{t("resources.notStarted")}</span>}
+                : <Tooltip>
+                    <TooltipTrigger render={<span data-testid="amux-stopped-status" tabIndex={0} className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" />}>
+                      <span className="size-2 rounded-full bg-muted-foreground/50" />{t("resources.notStarted")}
+                    </TooltipTrigger>
+                    <TooltipContent side="top">{t("resources.lazyStartTip")}</TooltipContent>
+                  </Tooltip>}
             </CardAction>
           </CardHeader>
           <CardContent>
