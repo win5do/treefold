@@ -51,7 +51,7 @@ import { sessionsApi } from "@/api/sessions";
 import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
 import { applyLanguage, type LanguagePreference } from "@/i18n";
-import type { AmuxStatus, AppSettings, Directory, LocationDraft, Project, ProjectDetail, ProjectSummary, RenameTarget, Session, SessionMenuState, SystemStatus, ThemePreference, Workspace, WorkspaceDetail, WorkspaceLocation, GitWorktree } from "@/domain/types";
+import type { AppSettings, Directory, LocationDraft, Project, ProjectDetail, ProjectSummary, RenameTarget, Session, SessionMenuState, SystemStatus, ThemePreference, Workspace, WorkspaceDetail, WorkspaceLocation, GitWorktree } from "@/domain/types";
 import { normalizeProject, normalizeWorkspace, updateProjectWorkspaceSessions, upsertSession } from "@/features/workspace/model";
 import { WorkspaceSidebar, type SessionDropPosition, type SidebarStream } from "@/features/workspace/WorkspaceSidebar";
 import { SessionWorkspace } from "@/features/terminal/SessionWorkspace";
@@ -59,7 +59,7 @@ import { WorkspaceInspector } from "@/features/review/WorkspaceInspector";
 import { FinishWorkspaceDialog } from "@/features/delivery/FinishWorkspaceDialog";
 import { CreateForkDialog } from "@/features/fork/CreateForkDialog";
 import { StatusDot } from "@/components/app/StatusDot";
-import { amuxQuery, appKeys, backgroundProcessesQuery, settingsQuery, systemQuery } from "@/features/app/queries";
+import { appKeys, backgroundProcessesQuery, settingsQuery, systemQuery } from "@/features/app/queries";
 import { projectDetailQuery, projectKeys, projectSessionsQuery, projectSummariesQuery, sidebarQuery } from "@/features/projects/queries";
 import { workspaceDetailQuery, workspaceKeys, workspaceSessionsQuery } from "@/features/workspace/queries";
 import { watchSystemTheme } from "@/lib/theme";
@@ -138,7 +138,6 @@ function Workspace() {
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ kind: "project"; value: ProjectDetail | ProjectSummary } | { kind: "workspace" | "fork"; value: Workspace } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [resourcesOpen, setResourcesOpen] = useState(false);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
   const [closingSessionIds, setClosingSessionIds] = useState<Set<string>>(new Set());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
@@ -581,7 +580,6 @@ function Workspace() {
           onResizeStart={() => setResizingSidebar(true)}
           onResizeKeyboard={(delta) => setSidebarWidth((current) => Math.min(520, Math.max(240, current + delta)))}
           onSettings={() => setSettingsOpen(true)}
-          onResources={() => setResourcesOpen(true)}
         />
 
         <main data-testid="workspace-main" className={cn("flex h-full min-w-0 flex-col", !resizingSidebar && "transition-[margin] duration-200", sidebarHidden ? "md:ml-12" : "md:ml-[var(--sidebar-width)]")}>
@@ -684,7 +682,6 @@ function Workspace() {
       <RenameDialog target={renameTarget} busy={busy} onOpenChange={(open) => { if (!open) setRenameTarget(null); }} onSubmit={(name, description) => void (renameTarget && rename(renameTarget, name, description))} />
       <DeleteRecordDialog target={deleteTarget} busy={busy} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }} onConfirm={() => void permanentlyDeleteTarget()} />
       <SettingsDialog open={settingsOpen} system={system} settings={settings} busy={busy} onOpenChange={setSettingsOpen} onSave={saveSettings} />
-      <AmuxResourcesDialog open={resourcesOpen} onOpenChange={setResourcesOpen} />
     </div>
   );
 }
@@ -1201,90 +1198,4 @@ function SettingsDialog({ open, system, settings, busy, onOpenChange, onSave }: 
       </div>
     </DialogContent>
   </Dialog>;
-}
-
-function formatDaemonUptime(status: AmuxStatus | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
-  if (!status?.running || !status.started_at) return "—";
-  const elapsed = Math.max(0, Math.floor((Date.now() - new Date(status.started_at).getTime()) / 1000));
-  if (elapsed < 60) return t("resources.duration.seconds", { count: elapsed });
-  const minutes = Math.floor(elapsed / 60);
-  if (minutes < 60) return t("resources.duration.minutes", { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  if (hours < 24) return remainingMinutes > 0
-    ? t("resources.duration.hoursMinutes", { hours, minutes: remainingMinutes })
-    : t("resources.duration.hours", { count: hours });
-  const days = Math.floor(hours / 24);
-  const remainingHours = hours % 24;
-  return remainingHours > 0
-    ? t("resources.duration.daysHours", { days, hours: remainingHours })
-    : t("resources.duration.days", { count: days });
-}
-
-function AmuxResourcesDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const { t } = useTranslation();
-  const queryClient = useQueryClient();
-  const statusQuery = useQuery({ ...amuxQuery(), enabled: open, refetchInterval: open ? 1_000 : false });
-  const [confirmStop, setConfirmStop] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  const [stopError, setStopError] = useState("");
-  const status = statusQuery.data;
-  const running = status?.running ?? false;
-  const stop = async () => {
-    setStopping(true);
-    setStopError("");
-    try {
-      await appApi.stopAmux();
-      setConfirmStop(false);
-      await queryClient.invalidateQueries({ queryKey: appKeys.amux });
-    } catch (cause) {
-      setStopError(cause instanceof Error ? cause.message : t("resources.stopFailed"));
-    } finally {
-      setStopping(false);
-    }
-  };
-  useEffect(() => {
-    if (!open) {
-      setConfirmStop(false);
-      setStopError("");
-    }
-  }, [open]);
-  return <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>amux Daemon</DialogTitle>
-          <DialogDescription>{t("resources.description")}</DialogDescription>
-        </DialogHeader>
-        <section data-testid="amux-resource-card" className="mt-2 rounded-xl border border-border bg-muted/50 p-4">
-          <div className="flex items-center justify-between border-b border-border pb-4">
-            <span className="text-sm font-medium">amux Daemon</span>
-            {running
-              ? <button data-testid="amux-running-status" className="flex items-center gap-2 rounded-md px-2 py-1 text-xs hover:bg-card" onClick={() => setConfirmStop(true)}><span className="size-2 rounded-full bg-success" />{t("resources.running")}</button>
-              : <span data-testid="amux-stopped-status" title={t("resources.lazyStartTip")} className="flex cursor-help items-center gap-2 px-2 py-1 text-xs text-muted-foreground"><span className="size-2 rounded-full bg-muted-foreground/50" />{t("resources.notStarted")}</span>}
-          </div>
-          <dl className="mt-4 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-3 text-sm">
-            <dt className="text-muted-foreground">{t("resources.name")}</dt><dd className="truncate font-mono text-xs" title={status?.name}>{status?.name ?? "—"}</dd>
-            <dt className="text-muted-foreground">{t("resources.uptime")}</dt><dd>{formatDaemonUptime(status, t)}</dd>
-            <dt className="text-muted-foreground">Groups</dt><dd>{status?.active_groups ?? 0}</dd>
-            <dt className="text-muted-foreground">Processes</dt><dd>{status?.active_processes ?? 0}</dd>
-          </dl>
-        </section>
-        {statusQuery.error && <p role="alert" className="text-xs text-destructive">{statusQuery.error.message}</p>}
-      </DialogContent>
-    </Dialog>
-    <AlertDialog open={confirmStop} onOpenChange={setConfirmStop}>
-      <AlertDialogContent data-testid="stop-amux-dialog">
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t("resources.stopTitle")}</AlertDialogTitle>
-          <AlertDialogDescription>{t("resources.stopDescription", { groups: status?.active_groups ?? 0, processes: status?.active_processes ?? 0 })}</AlertDialogDescription>
-        </AlertDialogHeader>
-        {stopError && <p role="alert" className="text-xs text-destructive">{stopError}</p>}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={stopping}>{t("common.cancel")}</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" disabled={stopping} onClick={() => void stop()}>{stopping ? t("resources.stopping") : t("resources.stop")}</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  </>;
 }

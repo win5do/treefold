@@ -2,14 +2,15 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type * as React from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { Archive, Bot, ChevronDown, ChevronRight, Download, Ellipsis, Folder, FolderGit2, FolderOpen, Gauge, GitBranch, PanelsTopLeft, Pencil, Plus, Settings, Shell, TerminalSquare, Upload, Workflow, X } from "lucide-react";
+import { Archive, Bot, ChevronDown, ChevronRight, Download, Ellipsis, Folder, FolderGit2, FolderOpen, GitBranch, PanelsTopLeft, Pencil, Plus, Settings, Shell, TerminalSquare, Upload, Workflow, X } from "lucide-react";
 import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { BackgroundProcess, Directory, ProjectDetail, Session, SessionMenuState, Workspace, WorkspaceLocation } from "@/domain/types";
+import { AmuxResourcesPopover } from "@/features/resources/AmuxResourcesPopover";
 import { cn } from "@/lib/utils";
 
-export function WorkspaceSidebar({ projects, backgroundProcesses, busy, selectedProjectId, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onSyncProject, onSyncProjectLocation, onSyncWorkspace, onSyncWorkspaceLocation, onFinishWorkspace, onRenameProject, onRenameWorkspace, onRenameSession, onReorderSessions, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings, onResources }: {
+export function WorkspaceSidebar({ projects, backgroundProcesses, busy, selectedProjectId, selectedWorkspaceId, selectedSessionId, hidden, mobileOpen, resizing, expandedProjects, expandedWorkspaces, closingSessionIds, sessionMenu, onToggleProject, onToggleWorkspace, onSessionMenu, onNavigate, onCreateProject, onCreateWorkspace, onCreateFork, onCreateShell, onCreateCodex, onCreateBaseShell, onCreateBaseCodex, onOpenInFinder, onSyncProject, onSyncProjectLocation, onSyncWorkspace, onSyncWorkspaceLocation, onFinishWorkspace, onRenameProject, onRenameWorkspace, onRenameSession, onReorderSessions, onArchiveProject, onCloseSession, onCloseProjectSession, onResizeStart, onResizeKeyboard, onSettings }: {
   projects: ProjectDetail[];
   backgroundProcesses: BackgroundProcess[];
   busy: boolean;
@@ -50,7 +51,6 @@ export function WorkspaceSidebar({ projects, backgroundProcesses, busy, selected
   onResizeStart: () => void;
   onResizeKeyboard: (delta: number) => void;
   onSettings: () => void;
-  onResources: () => void;
 }) {
   const { t } = useTranslation();
   const processPlacement = useMemo(() => placeBackgroundProcesses(projects, backgroundProcesses), [backgroundProcesses, projects]);
@@ -189,7 +189,7 @@ export function WorkspaceSidebar({ projects, backgroundProcesses, busy, selected
     />}
     <div className="flex items-center gap-1 border-t border-border p-2">
       <Button data-testid="open-settings" size="icon" variant="ghost" aria-label={t("sidebar.settings")} title={t("sidebar.settings")} onClick={onSettings}><Settings data-icon="inline-start" /></Button>
-      <Button data-testid="open-resources" size="icon" variant="ghost" aria-label={t("sidebar.resources")} title={t("sidebar.resources")} onClick={onResources}><Gauge data-icon="inline-start" /></Button>
+      <AmuxResourcesPopover />
     </div>
     <div data-testid="sidebar-resize-handle" role="separator" aria-label={t("sidebar.resize")} aria-orientation="vertical" tabIndex={0} className="absolute inset-y-0 right-0 hidden w-1 translate-x-1/2 cursor-col-resize touch-none hover:bg-ring/50 focus:bg-ring/50 md:block" onPointerDown={(event) => { event.preventDefault(); onResizeStart(); }} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); onResizeKeyboard(-16); } else if (event.key === "ArrowRight") { event.preventDefault(); onResizeKeyboard(16); } }} />
   </aside>;

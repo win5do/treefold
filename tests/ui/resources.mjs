@@ -23,6 +23,7 @@ try {
   const resourcesButton = await browser.$('[data-testid="open-resources"]');
   assert.equal(await settingsButton.getAttribute("aria-label"), "Settings");
   assert.equal(await resourcesButton.getAttribute("aria-label"), "Resources");
+  assert.match(await (await resourcesButton.$("svg")).getAttribute("class"), /lucide-network/, "Resources must use the Network icon");
 
   await settingsButton.click();
   let dialog = await browser.$('[role="dialog"]');
@@ -42,25 +43,32 @@ try {
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
   await resourcesButton.click();
-  dialog = await browser.$('[role="dialog"]');
-  await dialog.waitForDisplayed({ timeout: 3_000 });
-  const card = await dialog.$('[data-testid="amux-resource-card"]');
+  const resourcePopover = await browser.$('[data-testid="amux-resources-popover"]');
+  await resourcePopover.waitForDisplayed({ timeout: 3_000 });
+  const triggerLocation = await resourcesButton.getLocation();
+  const popoverLocation = await resourcePopover.getLocation();
+  const popoverSize = await resourcePopover.getSize();
+  assert.ok(popoverLocation.y + popoverSize.height <= triggerLocation.y, "Resources popover must open above its icon");
+  assert.ok(popoverLocation.x >= triggerLocation.x - 4, "Resources popover must extend right from its icon");
+  assert.ok(popoverSize.width <= 360, "Resources popover must remain compact");
+  const card = await resourcePopover.$('[data-testid="amux-resource-card"]');
   assert.match(await card.getText(), /treefold-a8c7fixture/);
   assert.match(await card.getText(), /Groups\s*3/);
   assert.match(await card.getText(), /Processes\s*8/);
 
-  await (await dialog.$('[data-testid="amux-running-status"]')).click();
+  await (await resourcePopover.$('[data-testid="amux-running-status"]')).click();
   const confirmation = await browser.$('[data-testid="stop-amux-dialog"]');
   await confirmation.waitForDisplayed({ timeout: 3_000 });
   assert.match(await confirmation.getText(), /3 Groups and 8 child processes/);
   await (await confirmation.$("button=Stop Daemon")).click();
   await confirmation.waitForDisplayed({ reverse: true, timeout: 3_000 });
-  await browser.waitUntil(async () => await (await dialog.$('[data-testid="amux-stopped-status"]')).isExisting(), {
+  await resourcePopover.waitForDisplayed({ timeout: 3_000 });
+  await browser.waitUntil(async () => await (await resourcePopover.$('[data-testid="amux-stopped-status"]')).isExisting(), {
     timeout: 3_000,
     timeoutMsg: "amux status did not change to Not started after stopping",
   });
   assert.equal(harness.amuxStopRequests.length, 1, "stopping must call the daemon stop endpoint exactly once");
-  const stoppedStatus = await dialog.$('[data-testid="amux-stopped-status"]');
+  const stoppedStatus = await resourcePopover.$('[data-testid="amux-stopped-status"]');
   assert.match(await stoppedStatus.getAttribute("title"), /starts automatically/);
   assert.equal(await stoppedStatus.getTagName(), "span", "Not started status must not be clickable");
 
