@@ -1,106 +1,98 @@
-# Project, Locations, Workspace, Fork, and Session
+# Project, Repository, Directory, Workspace, Fork, and Session
 
-Treefold uses a shallow development hierarchy with explicit repository
-locations:
+Treefold separates Git lifecycle from the directory in which a Session starts:
 
 ```text
 Project
-├── ProjectLocation (default Git location)
-├── ProjectLocation (additional Git location)
-├── ProjectLocation (non-Git context)
-├── Project Session (direct source checkout)
+├── Repository
+│   ├── Directory (repository root, relative path `.`)
+│   └── Directory (scope such as `apps/web`)
+├── Repository
+│   └── Directory
+├── Non-Git Directory
 └── Workspace
-    ├── WorkspaceLocation (one snapshot per ProjectLocation)
+    ├── WorkspaceRepository (one worktree per Repository)
+    ├── WorkspaceDirectory (immutable scope snapshot)
     ├── Session
-    ├── Todo
     └── Fork
 ```
 
-## Project and ProjectLocation
+## Project Repository and Directory
 
-A Project is an organizing record and may temporarily have no locations while
-it is being created. Its first saved location must be a ready Git repository,
-which becomes the primary location. A ProjectLocation is a local path
-whose name is always derived from the directory basename. It also stores a
-description and observed Git identity. Its dynamic status is one of `ready`,
-`not_git`, `missing`, `broken`, or `mismatch`.
+A `ProjectRepository` owns canonical Git identity and policy: source root, Git
+common directory, remote, base branch, delivery mode, status, and one setup
+command with a repository-relative setup workdir. A Project cannot register the
+same Git common directory through another linked worktree.
 
-Base branch, delivery mode, and optional worktree setup command belong to each
-Git ProjectLocation. Non-Git locations do not carry Git settings and are used as
-read-only context. The add-locations flow accepts multiple paths in one dialog,
-checks each path, and only exposes Git settings for rows detected as repositories.
+A `ProjectDirectory` is only a working scope. A Git Directory stores a
+Repository id and a normalized relative path; a Non-Git Directory stores an
+external absolute path and is read-only context. Repository root is an ordinary
+scope represented by `.`. Duplicate scopes and relative paths which escape the
+Repository are rejected.
 
-Additional non-Git context locations may be added after the primary Git
-location exists. Creating a Workspace requires that primary to be ready and
-also blocks when any additional location previously identified as Git is
-unavailable. Non-Git locations do not block creation. Refreshing a non-Git
-location after `git init` gives future Workspaces Git capability; existing
-Workspace snapshots are unchanged.
+`default_directory_id` selects the default Git scope. The Directory must be
+ready and belong to this Project; its Repository is therefore the derived
+default Repository. Removing the default requires selecting another Git
+Directory first. A Directory or Repository referenced by a Workspace/Fork
+snapshot cannot be removed.
 
-Project Pull All and Push All operate each Git location independently. Pull is
-fast-forward only and requires the user's main directory to already be clean and
-on its configured base branch. Treefold never switches that directory for the
-user.
+Adding another scope from an already registered source worktree creates only a
+Directory. Repository Git/setup configuration is shown only on first discovery.
+Adding scopes later never changes existing Workspace snapshots.
 
-## Workspace and WorkspaceLocation
+## Workspace Repository and Directory snapshots
 
-A Workspace is common lifecycle state: name, Project, parent, Sessions, Todos,
-and archive status. Repository-specific state belongs to WorkspaceLocation.
-At creation time every ProjectLocation is snapshotted:
+Workspace creation snapshots each Repository exactly once into a
+`WorkspaceRepository`, with one full worktree, one shared feature branch name,
+upstream, delivery, rebase/reset, and Finish state. Each selected Project scope
+becomes a `WorkspaceDirectory`: Git paths map to
+`checkout_root/relative_path`, while Non-Git paths keep their external location
+and read-only access.
 
-- every ready Git location gets a managed worktree and the same generated
-  feature branch name; independent repositories are created in parallel;
-- a non-Git location keeps its original path with `read_only` access;
-- base branch, start commit, upstream, and delivery state are stored per Git
-  location.
+Worktree creation may partially fail. The Workspace and successful repositories
+are retained, and a failed Repository remains visible with its error and a
+discarded delivery state. Setup starts once per ready Repository in a visible
+Shell at its configured root, existing scope, or validated custom relative
+workdir; setup failure does not roll back the Workspace.
 
-Branch conflicts are checked across all repositories before creation. A failed
-worktree is retained as a `failed` WorkspaceLocation with its Git error and an
-already-terminal `discarded` delivery status. Successful worktrees and the
-Workspace remain available; Treefold does not roll them back.
-
-After creation, each configured worktree setup command starts asynchronously in
-a visible `setup · <location>` Shell rooted at that worktree. Its output and exit
-status remain in the terminal, and the Shell stays interactive so setup failure
-does not reject or delay Workspace creation.
-
-Workspace Pull All and Push All are best-effort. Their result contains a
-`success`, `skipped`, or `failed` item for every location, and successful repos
-are not rolled back when another repo fails.
+Pull All and Push All execute each Repository once. Git mutations for one
+canonical Git common directory are serialized, while unrelated repositories may
+run concurrently.
 
 ## Fork
 
-A Fork is one level of parallel work beneath a Workspace. Every writable parent
-WorkspaceLocation is copied from its current HEAD into a same-named Fork branch;
-read-only snapshots are inherited. Forks cannot nest. Each Git location merges
-back into the corresponding parent WorkspaceLocation.
+A Fork is one level of parallel work beneath a Workspace. It creates one
+worktree per parent Workspace Repository from the parent's current HEAD and
+snapshots all Directory scopes onto those worktrees. Forks cannot nest. Finish
+and delivery operate per Repository, not per Directory.
 
 ## Session access
 
-Codex starts in the default WorkspaceLocation worktree. Other Git worktrees are
-passed through `--add-dir` and are writable. Non-Git locations are recorded in
-the runtime context as `read_only` but are not passed through `--add-dir`.
-Developer instructions repeat this rule and warn that YOLO mode removes sandbox
-enforcement, so the read-only marker must still be honored explicitly.
+Session creation continues to accept `project_directory_id`. Its cwd is the
+selected Directory scope. An Agent receives the complete owning Repository root
+as writable, plus deduplicated roots for other Git repositories. Non-Git
+Directories can be Shell cwd values and Agent read-only context, but cannot host
+an Agent.
 
-Project Shell and Codex Sessions use the same managed Web terminal but run in
-the selected source ProjectLocation without creating a worktree. Project Codex
-history is retained for resume and is explicitly marked as direct repository
-access. Shell records are kept only while running in every scope; closing or
-finishing a Shell removes it instead of adding it to Session history.
+If the default Repository failed during Workspace creation, an implicit Session
+selection falls back to another ready Git Directory. An explicitly selected
+unavailable Directory reports the corresponding Repository error.
 
-## Finishing and unavailable repositories
+## Git and delivery API
 
-Each Git WorkspaceLocation independently chooses `local_merge`,
-`remote_merged`, `keep`, or `discard`. A root local merge directly uses the
-corresponding ProjectLocation main directory and requires it to exist, be clean,
-remain on its configured base branch, and match preflight HEAD. Treefold does not
-checkout that directory. A Workspace can be archived only after every writable
-location reaches a terminal delivery state.
+Individual Git resources are Repository ids:
 
-Moving a main directory uses Reattach. The candidate must be the Git main
-worktree, match the saved remote identity when present, retain registrations for
-known managed worktrees, and pass `git worktree repair` before the database path
-is updated. Missing main directories remain visible as unavailable; reads and
-best-effort cleanup continue without assuming that an unverified directory is
-safe to delete.
+- Project: `/api/project-repositories/{id}/git/...`
+- Workspace/Fork: `/api/workspace-repositories/{id}/git/...`
+
+History, upstream, delivery preflight, rebase, reset, and Finish use the same
+resource identity. The former `project-location` and `workspace-location` HTTP
+routes are intentionally absent. The external `/api/v1/agent` capability stays
+compatible.
+
+## Development schema migration
+
+This development-generation change does not translate old business records.
+On first detection of the old schema, Treefold writes the versioned SQLite
+backup `*.pre-repository-scopes-v2.db`, rebuilds Project/Workspace business
+tables, and leaves TOML user settings untouched.

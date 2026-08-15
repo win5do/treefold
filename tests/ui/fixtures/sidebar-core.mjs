@@ -1,6 +1,9 @@
 export const FIXTURE_IDS = Object.freeze({
   project: "project-ui-fixture",
   primaryDirectory: "directory-primary-ui-fixture",
+  monorepoDirectory: "directory-monorepo-ui-fixture",
+  primaryRepository: "repository-primary-ui-fixture",
+  secondaryRepository: "repository-secondary-ui-fixture",
   attachedDirectory: "directory-attached-ui-fixture",
   secondaryDirectory: "directory-secondary-ui-fixture",
   workspace: "workspace-ui-fixture",
@@ -23,8 +26,10 @@ export const FIXTURE_IDS = Object.freeze({
 
 export const FIXTURE_NAMES = Object.freeze({
   project: "UI Fixture Project",
-  workspace: "Workspace with an intentionally long name for sidebar layout verification",
-  archivedWorkspace: "Finished Workspace that must stay out of the active sidebar tree",
+  workspace:
+    "Workspace with an intentionally long name for sidebar layout verification",
+  archivedWorkspace:
+    "Finished Workspace that must stay out of the active sidebar tree",
   fork: "Fork with an intentionally long name that must preserve its action button",
   archivedFork: "Archived Fork that must stay out of the active sidebar tree",
 });
@@ -47,19 +52,23 @@ export const FIXTURE_COMMITS = Object.freeze([
 ]);
 
 const timestamp = "2026-08-10T08:00:00.000Z";
-const primaryPath = "/tmp/treefold-ui-fixture/repository-with-a-long-readable-path";
+const primaryPath =
+  "/tmp/treefold-ui-fixture/repository-with-a-long-readable-path";
 const attachedPath = "/tmp/treefold-ui-fixture/attached-documentation";
 const secondaryPath = "/tmp/treefold-ui-fixture/secondary-api-repository";
 const workspacePath = "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture";
-const secondaryWorkspacePath = "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture-api";
+const secondaryWorkspacePath =
+  "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture-api";
 const forkPath = "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture";
-const secondaryForkPath = "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture-api";
+const secondaryForkPath =
+  "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture-api";
 
 const project = {
   id: FIXTURE_IDS.project,
   name: FIXTURE_NAMES.project,
   description: "Deterministic data used only by the Treefold UI core test.",
   status: "active",
+  default_directory_id: FIXTURE_IDS.primaryDirectory,
   default_location_id: FIXTURE_IDS.primaryDirectory,
   default_base_branch: "main",
   primary_directory_id: FIXTURE_IDS.primaryDirectory,
@@ -74,6 +83,8 @@ const project = {
 const directories = [
   {
     id: FIXTURE_IDS.primaryDirectory,
+    repository_id: FIXTURE_IDS.primaryRepository,
+    relative_path: ".",
     project_id: FIXTURE_IDS.project,
     name: "fixture-repository",
     description: "Primary Git repository",
@@ -95,7 +106,23 @@ const directories = [
     created_at: timestamp,
   },
   {
+    id: FIXTURE_IDS.monorepoDirectory,
+    project_id: FIXTURE_IDS.project,
+    repository_id: FIXTURE_IDS.primaryRepository,
+    relative_path: "apps/web",
+    name: "fixture-repository",
+    description: "Second scope in the primary monorepo",
+    worktree_setup_command: "",
+    path: `${primaryPath}/apps/web`,
+    git_status: "ready",
+    role: "attached",
+    is_git: true,
+    dirty: false,
+    created_at: timestamp,
+  },
+  {
     id: FIXTURE_IDS.attachedDirectory,
+    external_path: attachedPath,
     project_id: FIXTURE_IDS.project,
     name: "fixture-documentation",
     description: "Attached non-Git reference directory",
@@ -109,6 +136,8 @@ const directories = [
   },
   {
     id: FIXTURE_IDS.secondaryDirectory,
+    repository_id: FIXTURE_IDS.secondaryRepository,
+    relative_path: ".",
     project_id: FIXTURE_IDS.project,
     name: "fixture-api-repository",
     description: "Secondary Git repository",
@@ -131,7 +160,52 @@ const directories = [
   },
 ];
 
-function session({ id, workspaceId, name, kind, cwd, status, codexSessionId, visible = true, argv }) {
+const repositories = [
+  {
+    id: FIXTURE_IDS.primaryRepository,
+    project_id: FIXTURE_IDS.project,
+    name: "fixture-repository",
+    source_root: primaryPath,
+    git_common_dir: `${primaryPath}/.git`,
+    repository_url: "https://example.test/treefold/ui-fixture.git",
+    preferred_remote_name: "origin",
+    base_branch: "main",
+    delivery_mode: "remote_review",
+    setup_command: "",
+    setup_workdir: ".",
+    git_status: "ready",
+    created_at: timestamp,
+    updated_at: timestamp,
+  },
+  {
+    id: FIXTURE_IDS.secondaryRepository,
+    project_id: FIXTURE_IDS.project,
+    name: "fixture-api-repository",
+    source_root: secondaryPath,
+    git_common_dir: `${secondaryPath}/.git`,
+    repository_url: "https://example.test/treefold/ui-fixture-api.git",
+    preferred_remote_name: "origin",
+    base_branch: "develop",
+    delivery_mode: "local_merge",
+    setup_command: "",
+    setup_workdir: ".",
+    git_status: "ready",
+    created_at: timestamp,
+    updated_at: timestamp,
+  },
+];
+
+function session({
+  id,
+  workspaceId,
+  name,
+  kind,
+  cwd,
+  status,
+  codexSessionId,
+  visible = true,
+  argv,
+}) {
   return {
     id,
     workspace_id: workspaceId,
@@ -139,7 +213,8 @@ function session({ id, workspaceId, name, kind, cwd, status, codexSessionId, vis
     kind,
     cwd,
     original_cwd: cwd,
-    initial_prompt: kind === "codex" ? "Verify the deterministic UI fixture." : "",
+    initial_prompt:
+      kind === "codex" ? "Verify the deterministic UI fixture." : "",
     codex_session_id: codexSessionId,
     visibility: visible ? "visible" : "hidden",
     amux_workspace_name: `treefold-${workspaceId}`,
@@ -147,7 +222,9 @@ function session({ id, workspaceId, name, kind, cwd, status, codexSessionId, vis
     status,
     exit_code: status === "exited" ? 0 : undefined,
     exit_signal: "",
-    argv: argv ?? (kind === "codex" ? ["codex", "resume", codexSessionId] : ["/bin/zsh"]),
+    argv:
+      argv ??
+      (kind === "codex" ? ["codex", "resume", codexSessionId] : ["/bin/zsh"]),
     io_mode: kind === "command" ? "pipe" : "tty",
     launch_started_at: timestamp,
     last_attached_at: timestamp,
@@ -224,7 +301,8 @@ const archivedWorkspace = {
   id: FIXTURE_IDS.archivedWorkspace,
   name: FIXTURE_NAMES.archivedWorkspace,
   status: "archived",
-  checkout_path: "/tmp/treefold-ui-fixture/worktrees/archived-workspace-ui-fixture",
+  checkout_path:
+    "/tmp/treefold-ui-fixture/worktrees/archived-workspace-ui-fixture",
   branch: "treefold/w-archived-ui-fixture",
   delivery_status: "delivered",
   close_outcome: "delivered",
@@ -313,14 +391,159 @@ const workspaceTodos = [
   },
 ];
 
+const workspaceRepositories = [
+  {
+    id: FIXTURE_IDS.workspacePrimaryLocation,
+    workspace_id: FIXTURE_IDS.workspace,
+    project_location_id: FIXTURE_IDS.primaryRepository,
+    location_name: "fixture-repository",
+    source_path: primaryPath,
+    access_mode: "read_write",
+    git_status: "ready",
+    checkout_path: workspacePath,
+    branch: workspace.branch,
+    base_branch: "main",
+    start_commit: workspace.start_commit,
+    remote_name: "origin",
+    remote_branch: "feature/ui-fixture",
+    delivery_mode: "remote_review",
+    delivery_status: "active",
+  },
+  {
+    id: FIXTURE_IDS.workspaceSecondaryLocation,
+    workspace_id: FIXTURE_IDS.workspace,
+    project_location_id: FIXTURE_IDS.secondaryRepository,
+    location_name: "fixture-api-repository",
+    source_path: secondaryPath,
+    access_mode: "read_write",
+    git_status: "failed",
+    creation_error:
+      "create worktree for fixture-api-repository: simulated fixture failure",
+    branch: workspace.branch,
+    base_branch: "develop",
+    remote_name: "origin",
+    remote_branch: "feature/ui-fixture",
+    delivery_mode: "local_merge",
+    delivery_status: "discarded",
+  },
+];
+
+const workspaceDirectories = [
+  {
+    id: `workspace-${FIXTURE_IDS.primaryDirectory}`,
+    workspace_id: FIXTURE_IDS.workspace,
+    project_directory_id: FIXTURE_IDS.primaryDirectory,
+    workspace_repository_id: FIXTURE_IDS.workspacePrimaryLocation,
+    name: "fixture-repository",
+    description: "Primary Git repository",
+    relative_path: ".",
+    path: workspacePath,
+    access_mode: "read_write",
+    status: "ready",
+    created_at: timestamp,
+    updated_at: timestamp,
+  },
+  {
+    id: `workspace-${FIXTURE_IDS.monorepoDirectory}`,
+    workspace_id: FIXTURE_IDS.workspace,
+    project_directory_id: FIXTURE_IDS.monorepoDirectory,
+    workspace_repository_id: FIXTURE_IDS.workspacePrimaryLocation,
+    name: "fixture-repository",
+    description: "Second scope in the primary monorepo",
+    relative_path: "apps/web",
+    path: `${workspacePath}/apps/web`,
+    access_mode: "read_write",
+    status: "ready",
+    created_at: timestamp,
+    updated_at: timestamp,
+  },
+  {
+    id: `workspace-${FIXTURE_IDS.secondaryDirectory}`,
+    workspace_id: FIXTURE_IDS.workspace,
+    project_directory_id: FIXTURE_IDS.secondaryDirectory,
+    workspace_repository_id: FIXTURE_IDS.workspaceSecondaryLocation,
+    name: "fixture-api-repository",
+    description: "Secondary Git repository",
+    relative_path: ".",
+    path: secondaryWorkspacePath,
+    access_mode: "read_write",
+    status: "ready",
+    created_at: timestamp,
+    updated_at: timestamp,
+  },
+  {
+    id: `workspace-${FIXTURE_IDS.attachedDirectory}`,
+    workspace_id: FIXTURE_IDS.workspace,
+    project_directory_id: FIXTURE_IDS.attachedDirectory,
+    name: "fixture-documentation",
+    description: "Attached non-Git reference directory",
+    external_path: attachedPath,
+    path: attachedPath,
+    access_mode: "read_only",
+    status: "not_git",
+    created_at: timestamp,
+    updated_at: timestamp,
+  },
+];
+
 const workspaceDetail = {
   ...workspace,
   project,
-  directories: directories.map((directory) => directory.id === FIXTURE_IDS.primaryDirectory ? { ...directory, checkout_path: workspacePath } : directory.id === FIXTURE_IDS.secondaryDirectory ? { ...directory, checkout_path: secondaryWorkspacePath } : directory),
+  directories: directories.map((directory) =>
+    directory.id === FIXTURE_IDS.primaryDirectory
+      ? { ...directory, checkout_path: workspacePath }
+      : directory.id === FIXTURE_IDS.secondaryDirectory
+        ? { ...directory, checkout_path: secondaryWorkspacePath }
+        : directory,
+  ),
+  repositories: workspaceRepositories,
+  workspace_directories: workspaceDirectories,
   locations: [
-    { id: FIXTURE_IDS.workspacePrimaryLocation, workspace_id: FIXTURE_IDS.workspace, project_location_id: FIXTURE_IDS.primaryDirectory, location_name: "fixture-repository", source_path: primaryPath, access_mode: "read_write", git_status: "ready", checkout_path: workspacePath, branch: workspace.branch, base_branch: "main", start_commit: workspace.start_commit, remote_name: "origin", remote_branch: "feature/ui-fixture", delivery_mode: "remote_review", delivery_status: "active" },
-    { id: FIXTURE_IDS.workspaceSecondaryLocation, workspace_id: FIXTURE_IDS.workspace, project_location_id: FIXTURE_IDS.secondaryDirectory, location_name: "fixture-api-repository", source_path: secondaryPath, access_mode: "read_write", git_status: "failed", creation_error: "create worktree for fixture-api-repository: simulated fixture failure", branch: workspace.branch, base_branch: "develop", remote_name: "origin", remote_branch: "feature/ui-fixture", delivery_mode: "local_merge", delivery_status: "discarded" },
-    { id: FIXTURE_IDS.workspaceReadonlyLocation, workspace_id: FIXTURE_IDS.workspace, project_location_id: FIXTURE_IDS.attachedDirectory, location_name: "fixture-documentation", source_path: attachedPath, access_mode: "read_only", git_status: "not_git", delivery_mode: "keep", delivery_status: "not_applicable" },
+    {
+      id: FIXTURE_IDS.workspacePrimaryLocation,
+      workspace_id: FIXTURE_IDS.workspace,
+      project_location_id: FIXTURE_IDS.primaryDirectory,
+      location_name: "fixture-repository",
+      source_path: primaryPath,
+      access_mode: "read_write",
+      git_status: "ready",
+      checkout_path: workspacePath,
+      branch: workspace.branch,
+      base_branch: "main",
+      start_commit: workspace.start_commit,
+      remote_name: "origin",
+      remote_branch: "feature/ui-fixture",
+      delivery_mode: "remote_review",
+      delivery_status: "active",
+    },
+    {
+      id: FIXTURE_IDS.workspaceSecondaryLocation,
+      workspace_id: FIXTURE_IDS.workspace,
+      project_location_id: FIXTURE_IDS.secondaryDirectory,
+      location_name: "fixture-api-repository",
+      source_path: secondaryPath,
+      access_mode: "read_write",
+      git_status: "failed",
+      creation_error:
+        "create worktree for fixture-api-repository: simulated fixture failure",
+      branch: workspace.branch,
+      base_branch: "develop",
+      remote_name: "origin",
+      remote_branch: "feature/ui-fixture",
+      delivery_mode: "local_merge",
+      delivery_status: "discarded",
+    },
+    {
+      id: FIXTURE_IDS.workspaceReadonlyLocation,
+      workspace_id: FIXTURE_IDS.workspace,
+      project_location_id: FIXTURE_IDS.attachedDirectory,
+      location_name: "fixture-documentation",
+      source_path: attachedPath,
+      access_mode: "read_only",
+      git_status: "not_git",
+      delivery_mode: "keep",
+      delivery_status: "not_applicable",
+    },
   ],
   sessions: workspaceSessions,
   todos: workspaceTodos,
@@ -330,11 +553,108 @@ const workspaceDetail = {
 const forkDetail = {
   ...fork,
   project,
-  directories: directories.map((directory) => directory.id === FIXTURE_IDS.primaryDirectory ? { ...directory, checkout_path: forkPath } : directory.id === FIXTURE_IDS.secondaryDirectory ? { ...directory, checkout_path: secondaryForkPath } : directory),
+  directories: directories.map((directory) =>
+    directory.id === FIXTURE_IDS.primaryDirectory
+      ? { ...directory, checkout_path: forkPath }
+      : directory.id === FIXTURE_IDS.secondaryDirectory
+        ? { ...directory, checkout_path: secondaryForkPath }
+        : directory,
+  ),
+  repositories: [
+    {
+      id: FIXTURE_IDS.forkPrimaryLocation,
+      workspace_id: FIXTURE_IDS.fork,
+      project_location_id: FIXTURE_IDS.primaryRepository,
+      location_name: "fixture-repository",
+      source_path: primaryPath,
+      access_mode: "read_write",
+      git_status: "ready",
+      checkout_path: forkPath,
+      branch: fork.branch,
+      base_branch: workspace.branch,
+      start_commit: fork.start_commit,
+      delivery_mode: "local_merge",
+      delivery_status: "active",
+    },
+    {
+      id: FIXTURE_IDS.forkSecondaryLocation,
+      workspace_id: FIXTURE_IDS.fork,
+      project_location_id: FIXTURE_IDS.secondaryRepository,
+      location_name: "fixture-api-repository",
+      source_path: secondaryPath,
+      access_mode: "read_write",
+      git_status: "ready",
+      checkout_path: secondaryForkPath,
+      branch: fork.branch,
+      base_branch: workspace.branch,
+      start_commit: fork.start_commit,
+      delivery_mode: "local_merge",
+      delivery_status: "active",
+    },
+  ],
+  workspace_directories: workspaceDirectories.map((directory) => ({
+    ...directory,
+    id: `fork-${directory.project_directory_id}`,
+    workspace_id: FIXTURE_IDS.fork,
+    workspace_repository_id:
+      directory.workspace_repository_id === FIXTURE_IDS.workspacePrimaryLocation
+        ? FIXTURE_IDS.forkPrimaryLocation
+        : directory.workspace_repository_id ===
+            FIXTURE_IDS.workspaceSecondaryLocation
+          ? FIXTURE_IDS.forkSecondaryLocation
+          : undefined,
+    path:
+      directory.workspace_repository_id === FIXTURE_IDS.workspacePrimaryLocation
+        ? directory.relative_path === "."
+          ? forkPath
+          : `${forkPath}/${directory.relative_path}`
+        : directory.workspace_repository_id ===
+            FIXTURE_IDS.workspaceSecondaryLocation
+          ? secondaryForkPath
+          : directory.path,
+  })),
   locations: [
-    { id: FIXTURE_IDS.forkPrimaryLocation, workspace_id: FIXTURE_IDS.fork, project_location_id: FIXTURE_IDS.primaryDirectory, location_name: "fixture-repository", source_path: primaryPath, access_mode: "read_write", git_status: "ready", checkout_path: forkPath, branch: fork.branch, base_branch: workspace.branch, start_commit: fork.start_commit, delivery_mode: "local_merge", delivery_status: "active" },
-    { id: FIXTURE_IDS.forkSecondaryLocation, workspace_id: FIXTURE_IDS.fork, project_location_id: FIXTURE_IDS.secondaryDirectory, location_name: "fixture-api-repository", source_path: secondaryPath, access_mode: "read_write", git_status: "ready", checkout_path: secondaryForkPath, branch: fork.branch, base_branch: workspace.branch, start_commit: fork.start_commit, delivery_mode: "local_merge", delivery_status: "active" },
-    { id: FIXTURE_IDS.forkReadonlyLocation, workspace_id: FIXTURE_IDS.fork, project_location_id: FIXTURE_IDS.attachedDirectory, location_name: "fixture-documentation", source_path: attachedPath, access_mode: "read_only", git_status: "not_git", delivery_mode: "keep", delivery_status: "not_applicable" },
+    {
+      id: FIXTURE_IDS.forkPrimaryLocation,
+      workspace_id: FIXTURE_IDS.fork,
+      project_location_id: FIXTURE_IDS.primaryDirectory,
+      location_name: "fixture-repository",
+      source_path: primaryPath,
+      access_mode: "read_write",
+      git_status: "ready",
+      checkout_path: forkPath,
+      branch: fork.branch,
+      base_branch: workspace.branch,
+      start_commit: fork.start_commit,
+      delivery_mode: "local_merge",
+      delivery_status: "active",
+    },
+    {
+      id: FIXTURE_IDS.forkSecondaryLocation,
+      workspace_id: FIXTURE_IDS.fork,
+      project_location_id: FIXTURE_IDS.secondaryDirectory,
+      location_name: "fixture-api-repository",
+      source_path: secondaryPath,
+      access_mode: "read_write",
+      git_status: "ready",
+      checkout_path: secondaryForkPath,
+      branch: fork.branch,
+      base_branch: workspace.branch,
+      start_commit: fork.start_commit,
+      delivery_mode: "local_merge",
+      delivery_status: "active",
+    },
+    {
+      id: FIXTURE_IDS.forkReadonlyLocation,
+      workspace_id: FIXTURE_IDS.fork,
+      project_location_id: FIXTURE_IDS.attachedDirectory,
+      location_name: "fixture-documentation",
+      source_path: attachedPath,
+      access_mode: "read_only",
+      git_status: "not_git",
+      delivery_mode: "keep",
+      delivery_status: "not_applicable",
+    },
   ],
   sessions: forkSessions,
   todos: [],
@@ -344,12 +664,13 @@ const forkDetail = {
 const projectDetail = {
   ...project,
   directories,
+  repositories,
   locations: directories,
   sessions: projectSessions,
   workspaces: [workspace, archivedWorkspace, fork, archivedFork],
   worktrees: [
     {
-      project_location_id: FIXTURE_IDS.primaryDirectory,
+      project_location_id: FIXTURE_IDS.primaryRepository,
       location_name: "fixture-repository",
       path: primaryPath,
       branch: "main",
@@ -357,7 +678,7 @@ const projectDetail = {
       is_main: true,
     },
     {
-      project_location_id: FIXTURE_IDS.primaryDirectory,
+      project_location_id: FIXTURE_IDS.primaryRepository,
       location_name: "fixture-repository",
       path: workspacePath,
       branch: workspace.branch,
@@ -367,7 +688,7 @@ const projectDetail = {
       workspace_name: FIXTURE_NAMES.workspace,
     },
     {
-      project_location_id: FIXTURE_IDS.primaryDirectory,
+      project_location_id: FIXTURE_IDS.primaryRepository,
       location_name: "fixture-repository",
       path: forkPath,
       branch: fork.branch,
@@ -377,7 +698,7 @@ const projectDetail = {
       workspace_name: FIXTURE_NAMES.fork,
     },
     {
-      project_location_id: FIXTURE_IDS.primaryDirectory,
+      project_location_id: FIXTURE_IDS.primaryRepository,
       location_name: "fixture-repository",
       path: "/tmp/treefold-ui-fixture/worktrees/unmanaged-worktree",
       branch: "fix/unmanaged-worktree",
@@ -385,7 +706,7 @@ const projectDetail = {
       is_main: false,
     },
     {
-      project_location_id: FIXTURE_IDS.secondaryDirectory,
+      project_location_id: FIXTURE_IDS.secondaryRepository,
       location_name: "fixture-api-repository",
       path: secondaryPath,
       branch: "release/api-fixture",
@@ -393,7 +714,7 @@ const projectDetail = {
       is_main: true,
     },
     {
-      project_location_id: FIXTURE_IDS.secondaryDirectory,
+      project_location_id: FIXTURE_IDS.secondaryRepository,
       location_name: "fixture-api-repository",
       path: secondaryWorkspacePath,
       branch: "treefold/w-ui-fixture-api",
@@ -545,10 +866,35 @@ export function createSidebarCoreFixture() {
     },
     gitHistories: {
       [FIXTURE_IDS.project]: { branch: "main", commits: FIXTURE_COMMITS },
-      [FIXTURE_IDS.workspace]: { branch: workspace.branch, commits: FIXTURE_COMMITS },
+      [FIXTURE_IDS.primaryRepository]: {
+        branch: "main",
+        commits: FIXTURE_COMMITS,
+      },
+      [FIXTURE_IDS.secondaryRepository]: {
+        branch: "develop",
+        commits: FIXTURE_COMMITS,
+      },
+      [FIXTURE_IDS.workspace]: {
+        branch: workspace.branch,
+        commits: FIXTURE_COMMITS,
+      },
+      [FIXTURE_IDS.workspacePrimaryLocation]: {
+        branch: workspace.branch,
+        commits: FIXTURE_COMMITS,
+      },
       [FIXTURE_IDS.fork]: { branch: fork.branch, commits: FIXTURE_COMMITS },
     },
-    deliveryPreflights: { [FIXTURE_IDS.workspacePrimaryLocation]: { ...deliveryPreflight, id: "delivery-preflight-workspace-ui-fixture", workspace_id: FIXTURE_IDS.workspace, workspace_location_id: FIXTURE_IDS.workspacePrimaryLocation, code_action: "remote_merged", target_branch: "main" }, [FIXTURE_IDS.forkPrimaryLocation]: deliveryPreflight },
+    deliveryPreflights: {
+      [FIXTURE_IDS.workspacePrimaryLocation]: {
+        ...deliveryPreflight,
+        id: "delivery-preflight-workspace-ui-fixture",
+        workspace_id: FIXTURE_IDS.workspace,
+        workspace_location_id: FIXTURE_IDS.workspacePrimaryLocation,
+        code_action: "remote_merged",
+        target_branch: "main",
+      },
+      [FIXTURE_IDS.forkPrimaryLocation]: deliveryPreflight,
+    },
     gitOperations: { [FIXTURE_IDS.fork]: gitOperations },
   });
 }

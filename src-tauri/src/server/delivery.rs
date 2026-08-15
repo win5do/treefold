@@ -11,7 +11,14 @@ async fn update_workspace_location_rebase(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RebaseInput>,
 ) -> Result<Json<RebaseOperation>> {
-    blocking_git_operation(move || update_workspace_location_rebase_impl(state, id, input)).await
+    let common = state
+        .store
+        .repository(&state.store.workspace_location(&id)?.project_location_id)?
+        .git_common_dir;
+    blocking_git_operation_for(common, move || {
+        update_workspace_location_rebase_impl(state, id, input)
+    })
+    .await
 }
 
 fn update_workspace_location_rebase_impl(
@@ -21,7 +28,9 @@ fn update_workspace_location_rebase_impl(
 ) -> Result<Json<RebaseOperation>> {
     let location = state.store.workspace_location(&id)?;
     let path = workspace_location_git_path(&location)?.to_owned();
-    let project_location = state.store.directory(&location.project_location_id)?;
+    let project_location = state
+        .store
+        .repository_as_directory(&location.project_location_id)?;
     let operation = match input.action.as_str() {
         "start" => {
             ensure_clean_workspace(&path, "Workspace location")?;
@@ -169,7 +178,14 @@ async fn reset_workspace_location(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<ResetWorkspace>,
 ) -> Result<(StatusCode, Json<ResetOperation>)> {
-    blocking_git_operation(move || reset_workspace_location_impl(state, id, input)).await
+    let common = state
+        .store
+        .repository(&state.store.workspace_location(&id)?.project_location_id)?
+        .git_common_dir;
+    blocking_git_operation_for(common, move || {
+        reset_workspace_location_impl(state, id, input)
+    })
+    .await
 }
 
 fn reset_workspace_location_impl(
@@ -207,7 +223,9 @@ fn reset_workspace_location_impl(
     };
     let target_head = resolve_commit(&path, &revision)?;
     let before_head = git_head(&path)?;
-    let project_location = state.store.directory(&location.project_location_id)?;
+    let project_location = state
+        .store
+        .repository_as_directory(&location.project_location_id)?;
     let operation_id = id_for_operation();
     let recovery_ref = format!("refs/treefold/recovery/reset-{operation_id}");
     command_output(
@@ -250,7 +268,14 @@ async fn restore_workspace_location_reset(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RestoreReset>,
 ) -> Result<Json<ResetOperation>> {
-    blocking_git_operation(move || restore_workspace_location_reset_impl(state, id, input)).await
+    let common = state
+        .store
+        .repository(&state.store.workspace_location(&id)?.project_location_id)?
+        .git_common_dir;
+    blocking_git_operation_for(common, move || {
+        restore_workspace_location_reset_impl(state, id, input)
+    })
+    .await
 }
 
 fn restore_workspace_location_reset_impl(
@@ -291,7 +316,19 @@ async fn finish_workspace_location(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<FinishWorkspace>,
 ) -> Result<Json<WorkspaceLocation>> {
-    blocking_git_operation(move || finish_workspace_location_impl(state, id, input)).await
+    let location = state.store.workspace_location(&id)?;
+    let workspace = state.store.workspace(&location.workspace_id)?;
+    let project_id = workspace.project_id;
+    let common = state
+        .store
+        .repository(&location.project_location_id)?
+        .git_common_dir;
+    let result = blocking_git_operation_for(common, move || {
+        finish_workspace_location_impl(state, id, input)
+    })
+    .await;
+    project_worktrees_cache().invalidate(&project_id).await;
+    result
 }
 
 fn finish_workspace_location_impl(
@@ -366,7 +403,9 @@ fn finish_workspace_location_impl(
         _ => unreachable!(),
     };
     if input.delete_worktree || input.code_action == "discard" {
-        let project_location = state.store.directory(&location.project_location_id)?;
+        let project_location = state
+            .store
+            .repository_as_directory(&location.project_location_id)?;
         remove_worktree_if_present(&project_location.path, &source_path)?;
         if input.delete_branch || input.code_action == "discard" {
             let target = location.base_branch.as_deref().unwrap_or("HEAD");
@@ -409,7 +448,9 @@ fn workspace_location_delivery_target(
             parent.branch.unwrap_or_default(),
         ));
     }
-    let project_location = state.store.directory(&location.project_location_id)?;
+    let project_location = state
+        .store
+        .repository_as_directory(&location.project_location_id)?;
     ensure_location_ready(&project_location)?;
     Ok((
         project_location.path,

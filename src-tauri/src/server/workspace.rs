@@ -115,6 +115,7 @@ struct UpdateProject {
     name: Option<String>,
     description: Option<String>,
     status: Option<String>,
+    #[serde(rename = "default_directory_id", alias = "default_location_id")]
     default_location_id: Option<String>,
     default_base_branch: Option<String>,
     default_delivery_mode: Option<String>,
@@ -224,22 +225,19 @@ async fn get_project(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectDetail>> {
     let mut detail = state.store.project_detail(&id)?;
-    for directory in &mut detail.locations {
-        directory.role =
-            if detail.project.default_location_id.as_deref() == Some(directory.id.as_str()) {
-                "default".into()
-            } else {
-                "additional".into()
-            };
-    }
     let tracked_workspaces = state.store.workspaces(&id)?;
     let mut tracked_workspace_locations = Vec::new();
     for workspace in &tracked_workspaces {
         tracked_workspace_locations.extend(state.store.workspace_locations(&workspace.id)?);
     }
     let cache_key = id.clone();
-    let locations = detail.locations.clone();
-    detail.worktrees = PROJECT_WORKTREES
+    let locations = state
+        .store
+        .repositories(&id)?
+        .iter()
+        .map(|repository| state.store.repository_as_directory(&repository.id))
+        .collect::<Result<Vec<_>>>()?;
+    detail.worktrees = project_worktrees_cache()
         .get_with(cache_key, async move {
             blocking_git_operation(move || {
                 Ok(project_worktrees(
@@ -608,7 +606,7 @@ async fn delete_worktree(
 ) -> Result<StatusCode> {
     let project_id = state.store.directory(&directory_id)?.project_id;
     let status = blocking_git_operation(move || delete_worktree_impl(state, directory_id, input)).await?;
-    PROJECT_WORKTREES.invalidate(&project_id).await;
+    project_worktrees_cache().invalidate(&project_id).await;
     Ok(status)
 }
 
@@ -704,19 +702,26 @@ struct CreateDirectory {
 #[derive(Deserialize)]
 struct InspectProjectLocation {
     path: String,
+    project_id: Option<String>,
 }
 
 #[derive(Serialize)]
 struct ProjectLocationInspection {
     path: String,
     name: String,
+    directory_type: String,
     git_status: String,
+    source_root: Option<String>,
+    git_common_dir: Option<String>,
+    relative_path: Option<String>,
+    repository_id: Option<String>,
     repository_url: Option<String>,
     preferred_remote_name: Option<String>,
     base_branch: Option<String>,
 }
 
 async fn inspect_project_location(
+    State(state): State<AppState>,
     ApiJson(input): ApiJson<InspectProjectLocation>,
 ) -> Result<Json<ProjectLocationInspection>> {
     let (path, is_git) = inspect_path(&input.path)?;
@@ -746,41 +751,73 @@ async fn inspect_project_location(
         dirty: false,
     };
     refresh_location_observation(&mut location)?;
+    let source_root = location.checkout_path.clone();
+    let relative_path = source_root.as_deref().map(|root| {
+        Path::new(&location.path)
+            .strip_prefix(root)
+            .ok()
+            .filter(|value| !value.as_os_str().is_empty())
+            .map(|value| value.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|| ".".into())
+    });
+    let repository_id = input.project_id.as_deref().and_then(|project_id| {
+        location.git_common_dir.as_deref().and_then(|common| {
+            state.store.repositories(project_id).ok().and_then(|repositories| {
+                repositories
+                    .into_iter()
+                    .find(|repository| repository.git_common_dir == common)
+                    .map(|repository| repository.id)
+            })
+        })
+    });
     Ok(Json(ProjectLocationInspection {
         path: location.path,
         name: location.name,
+        directory_type: if location.git_status == "ready" {
+            "git_scope"
+        } else {
+            "external"
+        }
+        .into(),
         git_status: location.git_status,
+        source_root,
+        git_common_dir: location.git_common_dir,
+        relative_path,
+        repository_id,
         repository_url: location.repository_url,
         preferred_remote_name: location.preferred_remote_name,
         base_branch: location.base_branch,
     }))
 }
 
-async fn list_project_locations(
+async fn list_project_directories(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
-) -> Result<Json<Vec<ProjectLocation>>> {
+) -> Result<Json<Vec<ProjectDirectory>>> {
     state.store.project(&project_id)?;
-    let mut locations = state.store.directories(&project_id)?;
-    for location in &mut locations {
-        let _ = refresh_location_observation(location);
-    }
-    Ok(Json(locations))
+    Ok(Json(state.store.project_directories(&project_id)?))
 }
 
-async fn get_project_location(
+async fn get_project_directory(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
-) -> Result<Json<ProjectLocation>> {
-    let cache_key = id.clone();
-    let location = LOCATION_OBSERVATIONS.try_get_with(cache_key, async move {
-        blocking_git_operation(move || {
-            let mut location = state.store.directory(&id)?;
-            refresh_location_observation(&mut location)?;
-            Ok(location)
-        }).await.map_err(|error| error.to_string())
-    }).await.map_err(|error| AppError::BadRequest((*error).clone()))?;
-    Ok(Json(location))
+) -> Result<Json<ProjectDirectory>> {
+    Ok(Json(state.store.directory_record(&id)?))
+}
+
+async fn list_project_repositories(
+    State(state): State<AppState>,
+    AxumPath(project_id): AxumPath<String>,
+) -> Result<Json<Vec<ProjectRepository>>> {
+    state.store.project(&project_id)?;
+    Ok(Json(state.store.repositories(&project_id)?))
+}
+
+async fn get_project_repository(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<ProjectRepository>> {
+    Ok(Json(state.store.repository(&id)?))
 }
 async fn create_directory(
     State(state): State<AppState>,
@@ -852,8 +889,11 @@ async fn create_directory(
         directory.delivery_mode = Some("remote_review".into());
     }
     state.store.create_directory(&directory)?;
-    LOCATION_OBSERVATIONS.insert(directory.id.clone(), directory.clone()).await;
-    PROJECT_WORKTREES.invalidate(&directory.project_id).await;
+    let directory = state.store.directory(&directory.id)?;
+    location_observations_cache()
+        .insert(directory.id.clone(), directory.clone())
+        .await;
+    project_worktrees_cache().invalidate(&directory.project_id).await;
     Ok((StatusCode::CREATED, Json(directory)))
 }
 
@@ -861,7 +901,7 @@ async fn refresh_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectLocation>> {
-    LOCATION_OBSERVATIONS.invalidate(&id).await;
+    location_observations_cache().invalidate(&id).await;
     let mut location = state.store.directory(&id)?;
     ensure_active_project(&state.store.project(&location.project_id)?)?;
     let was_git = location.git_common_dir.is_some();
@@ -878,9 +918,33 @@ async fn refresh_project_location(
     }
     location.updated_at = now();
     state.store.refresh_project_location(&location)?;
-    LOCATION_OBSERVATIONS.insert(id, location.clone()).await;
-    PROJECT_WORKTREES.invalidate(&location.project_id).await;
+    location_observations_cache()
+        .insert(id, location.clone())
+        .await;
+    project_worktrees_cache().invalidate(&location.project_id).await;
     Ok(Json(location))
+}
+
+async fn refresh_project_repository(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<ProjectRepository>> {
+    let repository = state.store.repository(&id)?;
+    ensure_active_project(&state.store.project(&repository.project_id)?)?;
+    let mut observed = state.store.repository_as_directory(&id)?;
+    refresh_location_observation(&mut observed)?;
+    let mut updated = repository;
+    updated.name = basename(&updated.source_root);
+    updated.git_status = observed.git_status;
+    updated.repository_url = observed.repository_url;
+    updated.preferred_remote_name = observed.preferred_remote_name;
+    updated.last_checked_at = observed.last_checked_at;
+    updated.updated_at = now();
+    if let Some(root) = observed.checkout_path { updated.source_root = root; }
+    if let Some(common) = observed.git_common_dir { updated.git_common_dir = common; }
+    state.store.refresh_repository(&updated)?;
+    project_worktrees_cache().invalidate(&updated.project_id).await;
+    Ok(Json(state.store.repository(&id)?))
 }
 
 #[derive(Deserialize)]
@@ -893,7 +957,7 @@ async fn reattach_project_location(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<ReattachProjectLocation>,
 ) -> Result<Json<ProjectLocation>> {
-    let current = state.store.directory(&id)?;
+    let current = state.store.repository_as_directory(&id)?;
     ensure_active_project(&state.store.project(&current.project_id)?)?;
     if current.git_common_dir.is_none() {
         return Err(AppError::BadRequest(
@@ -968,14 +1032,26 @@ async fn reattach_project_location(
         command_output(Path::new(&candidate), "git", &args)
             .map_err(|error| AppError::BadRequest(format!("worktree repair failed: {error}")))?;
     }
-    state.store.reattach_project_location(
+    state.store.reattach_repository(
         &id,
         &candidate,
         &common_dir,
         observed.repository_url.as_deref(),
         observed.preferred_remote_name.as_deref(),
     )?;
-    refresh_project_location(State(state), AxumPath(id)).await
+    let repository = refresh_project_repository(State(state.clone()), AxumPath(id)).await?;
+    Ok(Json(state.store.repository_as_directory(&repository.id)?))
+}
+
+async fn delete_project_repository(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<StatusCode> {
+    let repository = state.store.repository(&id)?;
+    ensure_active_project(&state.store.project(&repository.project_id)?)?;
+    state.store.delete_repository(&id)?;
+    project_worktrees_cache().invalidate(&repository.project_id).await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn delete_project_location(
@@ -985,22 +1061,9 @@ async fn delete_project_location(
     let location = state.store.directory(&id)?;
     let project = state.store.project(&location.project_id)?;
     ensure_active_project(&project)?;
-    if project.default_location_id.as_deref() == Some(&id) {
-        if state.store.directories(&project.id)?.len() > 1 {
-            return Err(AppError::BadRequest(
-                "choose another primary Git repository before deleting this location".into(),
-            ));
-        }
-        state.store.update_project_defaults(
-            &project.id,
-            None,
-            &project.default_base_branch,
-            &project.default_delivery_mode,
-        )?;
-    }
     state.store.delete_project_location(&id)?;
-    LOCATION_OBSERVATIONS.invalidate(&id).await;
-    PROJECT_WORKTREES.invalidate(&project.id).await;
+    location_observations_cache().invalidate(&id).await;
+    project_worktrees_cache().invalidate(&project.id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1056,6 +1119,53 @@ async fn update_directory(
     Ok(Json(directory))
 }
 
+#[derive(Deserialize)]
+struct UpdateProjectRepository {
+    setup_command: Option<String>,
+    setup_workdir: Option<String>,
+    base_branch: Option<String>,
+    delivery_mode: Option<String>,
+}
+
+async fn update_project_repository(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<UpdateProjectRepository>,
+) -> Result<Json<ProjectRepository>> {
+    let current = state.store.repository(&id)?;
+    ensure_active_project(&state.store.project(&current.project_id)?)?;
+    let base_branch = trimmed(input.base_branch).filter(|value| !value.is_empty()).unwrap_or(current.base_branch);
+    let delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty()).unwrap_or(current.delivery_mode);
+    if delivery_mode != "remote_review" && delivery_mode != "local_merge" {
+        return Err(AppError::BadRequest("delivery_mode must be remote_review or local_merge".into()));
+    }
+    let setup_workdir = validate_setup_workdir(
+        &current.source_root,
+        trimmed(input.setup_workdir).filter(|value| !value.is_empty()).as_deref().unwrap_or(&current.setup_workdir),
+    )?;
+    state.store.update_repository(
+        &id,
+        trimmed(input.setup_command).unwrap_or(current.setup_command).as_str(),
+        &setup_workdir,
+        &base_branch,
+        &delivery_mode,
+    )?;
+    Ok(Json(state.store.repository(&id)?))
+}
+
+fn validate_setup_workdir(source_root: &str, value: &str) -> Result<String> {
+    let relative = if value.trim().is_empty() { "." } else { value.trim() };
+    let candidate = std::fs::canonicalize(Path::new(source_root).join(relative))
+        .map_err(|error| AppError::BadRequest(format!("invalid setup workdir: {error}")))?;
+    let root = std::fs::canonicalize(source_root)
+        .map_err(|error| AppError::BadRequest(format!("invalid Repository source root: {error}")))?;
+    if !candidate.is_dir() || !candidate.starts_with(&root) {
+        return Err(AppError::BadRequest("setup workdir must be an existing directory inside the Repository".into()));
+    }
+    let relative = candidate.strip_prefix(root).map_err(|_| AppError::BadRequest("setup workdir escapes the Repository".into()))?;
+    Ok(if relative.as_os_str().is_empty() { ".".into() } else { relative.to_string_lossy().replace('\\', "/") })
+}
+
 #[derive(Serialize)]
 struct GitRemoteBranches {
     name: String,
@@ -1074,7 +1184,7 @@ async fn list_directory_branches(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitBranches>> {
     blocking_git_operation(move || {
-        let directory = state.store.directory(&id)?;
+        let directory = state.store.repository_as_directory(&id)?;
         ensure_git_directory(&directory)?;
         Ok(Json(directory_branches(&directory.path)?))
     })
@@ -1101,7 +1211,7 @@ fn checkout_directory_branch_impl(
     id: String,
     input: CheckoutDirectoryBranch,
 ) -> Result<Json<Directory>> {
-    let mut directory = state.store.directory(&id)?;
+    let mut directory = state.store.repository_as_directory(&id)?;
     ensure_active_project(&state.store.project(&directory.project_id)?)?;
     ensure_git_directory(&directory)?;
     let branches = directory_branches(&directory.path)?;
@@ -1171,6 +1281,8 @@ struct WorkspaceWorktreePlan {
     checkout_path: String,
     branch: String,
     start_ref: String,
+    setup_directory_id: String,
+    setup_workdir: String,
 }
 
 struct WorkspaceWorktreeOutcome {
@@ -1201,7 +1313,7 @@ async fn create_workspace(
     let created =
         blocking_git_operation(move || create_workspace_impl(operation_state, project_id, input))
             .await?;
-    PROJECT_WORKTREES.invalidate(&cache_key).await;
+    project_worktrees_cache().invalidate(&cache_key).await;
     spawn_workspace_setup_shells(
         state.clone(),
         created.workspace.clone(),
@@ -1227,7 +1339,12 @@ fn create_workspace_impl(
             "cannot create a Workspace in an archived Project".into(),
         ));
     }
-    let mut locations = state.store.directories(&project_id)?;
+    let directories = state.store.project_directories(&project_id)?;
+    let repositories = state.store.repositories(&project_id)?;
+    let mut locations = repositories
+        .iter()
+        .map(|repository| state.store.repository_as_directory(&repository.id))
+        .collect::<Result<Vec<_>>>()?;
     for location in &mut locations {
         refresh_location_observation(location)?;
     }
@@ -1235,9 +1352,14 @@ fn create_workspace_impl(
         .default_location_id
         .as_deref()
         .ok_or_else(|| AppError::BadRequest("Project has no default Git location".into()))?;
+    let default_repository_id = directories
+        .iter()
+        .find(|directory| directory.id == default_id)
+        .and_then(|directory| directory.repository_id.as_deref())
+        .ok_or_else(|| AppError::BadRequest("default Directory has no Repository".into()))?;
     if !locations
         .iter()
-        .any(|location| location.id == default_id && location.git_status == "ready")
+        .any(|location| location.id == default_repository_id && location.git_status == "ready")
     {
         return Err(AppError::BadRequest(
             "default Project location is unavailable".into(),
@@ -1257,7 +1379,7 @@ fn create_workspace_impl(
     let branch = choose_shared_branch(&locations, explicit_branch.as_deref(), input.name.trim())?;
     let default_delivery_mode = locations
         .iter()
-        .find(|location| location.id == default_id)
+        .find(|location| location.id == default_repository_id)
         .and_then(|location| location.delivery_mode.clone())
         .unwrap_or_else(|| "remote_review".into());
     let root = state
@@ -1269,14 +1391,6 @@ fn create_workspace_impl(
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
     for location in &locations {
-        if location.git_status != "ready" {
-            snapshots.push(read_only_workspace_location(
-                &workspace_id,
-                location,
-                &timestamp,
-            ));
-            continue;
-        }
         let base_branch = location
             .base_branch
             .clone()
@@ -1289,7 +1403,7 @@ fn create_workspace_impl(
             .join(format!("{}-{}", slug(&location.name), &location.id[..6]))
             .to_string_lossy()
             .into_owned();
-        let remote_name = if location.id == default_id {
+        let remote_name = if location.id == default_repository_id {
             trimmed(input.remote_name.clone())
                 .filter(|v| !v.is_empty())
                 .or_else(|| location.preferred_remote_name.clone())
@@ -1322,6 +1436,16 @@ fn create_workspace_impl(
             checkout_path,
             branch: branch.clone(),
             start_ref: base_branch.clone(),
+            setup_directory_id: directories
+                .iter()
+                .find(|directory| directory.repository_id.as_deref() == Some(&location.id))
+                .map(|directory| directory.id.clone())
+                .unwrap_or_default(),
+            setup_workdir: repositories
+                .iter()
+                .find(|repository| repository.id == location.id)
+                .map(|repository| repository.setup_workdir.clone())
+                .unwrap_or_else(|| ".".into()),
         });
         snapshots.push(snapshot);
     }
@@ -1462,11 +1586,13 @@ fn record_workspace_worktree_outcomes(
         )?;
         let command = outcome.plan.location.worktree_setup_command.trim();
         if !command.is_empty() {
+            let setup_path = Path::new(&outcome.plan.checkout_path).join(&outcome.plan.setup_workdir);
+            let command = format!("cd {} && {command}", shell_quote(&setup_path.to_string_lossy()));
             setup_shells.push(WorkspaceSetupShell {
                 workspace_location_id: outcome.plan.workspace_location_id,
-                project_location_id: outcome.plan.location.id,
+                project_location_id: outcome.plan.setup_directory_id,
                 location_name: outcome.plan.location.name,
-                command: command.into(),
+                command,
             });
         }
     }
@@ -1518,7 +1644,7 @@ async fn get_workspace(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<WorkspaceDetail>> {
     let mut detail = state.store.workspace_detail(&id)?;
-    for location in &mut detail.locations {
+    for location in &mut detail.repositories {
         if location.access_mode == "read_only" {
             location.git_status = if Path::new(&location.source_path).is_dir() {
                 "not_git"

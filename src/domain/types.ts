@@ -5,6 +5,7 @@ export type Project = {
   name: string;
   description: string;
   status: "active" | "archived";
+  default_directory_id?: string;
   default_location_id?: string;
   default_base_branch: string;
   primary_directory_id: string;
@@ -18,8 +19,13 @@ export type Project = {
 export type Directory = {
   id: string;
   project_id: string;
+  repository_id?: string;
+  repository_name?: string;
   name: string;
   description: string;
+  relative_path?: string;
+  external_path?: string;
+  status?: "ready" | "not_git" | "missing" | "broken" | "mismatch";
   worktree_setup_command: string;
   path: string;
   repository_url?: string;
@@ -27,7 +33,14 @@ export type Directory = {
   base_branch?: string;
   delivery_mode?: "remote_review" | "local_merge";
   git_common_dir?: string;
-  git_status: "creating" | "ready" | "failed" | "not_git" | "missing" | "broken" | "mismatch";
+  git_status:
+    | "creating"
+    | "ready"
+    | "failed"
+    | "not_git"
+    | "missing"
+    | "broken"
+    | "mismatch";
   last_checked_at?: string;
   checkout_path?: string;
   role: "primary" | "attached";
@@ -39,6 +52,23 @@ export type Directory = {
   dirty: boolean;
 };
 
+export type ProjectRepository = {
+  id: string;
+  project_id: string;
+  name: string;
+  source_root: string;
+  git_common_dir: string;
+  repository_url?: string;
+  preferred_remote_name?: string;
+  base_branch: string;
+  delivery_mode: "remote_review" | "local_merge";
+  setup_command: string;
+  setup_workdir: string;
+  git_status: Directory["git_status"];
+  last_checked_at?: string;
+  created_at: string;
+  updated_at: string;
+};
 
 export type Session = {
   id: string;
@@ -107,7 +137,14 @@ export type WorkspaceLocation = {
   location_name: string;
   source_path: string;
   access_mode: "read_write" | "read_only";
-  git_status: "creating" | "ready" | "failed" | "not_git" | "missing" | "broken" | "mismatch";
+  git_status:
+    | "creating"
+    | "ready"
+    | "failed"
+    | "not_git"
+    | "missing"
+    | "broken"
+    | "mismatch";
   creation_error?: string;
   checkout_path?: string;
   branch?: string;
@@ -120,7 +157,26 @@ export type WorkspaceLocation = {
   close_outcome?: string;
 };
 
+export type WorkspaceRepository = WorkspaceLocation;
+
+export type WorkspaceDirectory = {
+  id: string;
+  workspace_id: string;
+  project_directory_id: string;
+  workspace_repository_id?: string;
+  name: string;
+  description: string;
+  relative_path?: string;
+  external_path?: string;
+  path: string;
+  access_mode: "read_write" | "read_only";
+  status: "ready" | "not_git" | "missing" | "broken" | "mismatch";
+  created_at: string;
+  updated_at: string;
+};
+
 export type ProjectDetail = Project & {
+  repositories: ProjectRepository[];
   locations: Directory[];
   directories: Directory[];
   sessions: Session[];
@@ -128,7 +184,10 @@ export type ProjectDetail = Project & {
   worktrees: GitWorktree[];
 };
 
-export type ProjectSummary = Pick<Project, "id" | "name" | "description" | "status" | "updated_at"> & {
+export type ProjectSummary = Pick<
+  Project,
+  "id" | "name" | "description" | "status" | "updated_at"
+> & {
   location_count: number;
   git_location_count: number;
   context_location_count: number;
@@ -137,15 +196,28 @@ export type ProjectSummary = Pick<Project, "id" | "name" | "description" | "stat
   active_workspace_count: number;
 };
 
-export type SidebarWorkspace = Workspace & { sessions: Session[]; locations: WorkspaceLocation[] };
+export type SidebarWorkspace = Workspace & {
+  sessions: Session[];
+  repositories: WorkspaceRepository[];
+  directories: WorkspaceDirectory[];
+  locations?: WorkspaceLocation[];
+};
 export type SidebarProject = Project & {
-  locations: Directory[];
+  repositories: ProjectRepository[];
+  directories: Directory[];
+  locations?: Directory[];
   sessions: Session[];
   workspaces: SidebarWorkspace[];
 };
 export type SidebarData = { projects: SidebarProject[] };
 
-export type Todo = { id: string; workspace_id: string; title: string; description: string; status: string };
+export type Todo = {
+  id: string;
+  workspace_id: string;
+  title: string;
+  description: string;
+  status: string;
+};
 
 export type GitWorktree = {
   project_location_id: string;
@@ -201,7 +273,12 @@ export type GitOperationRecord = {
 export type ProjectLocationInspection = {
   path: string;
   name: string;
+  directory_type: "git_scope" | "external";
   git_status: "ready" | "not_git";
+  source_root?: string;
+  git_common_dir?: string;
+  relative_path?: string;
+  repository_id?: string;
   repository_url?: string;
   preferred_remote_name?: string;
   base_branch?: string;
@@ -221,7 +298,9 @@ export type LocationDraft = {
 export type WorkspaceDetail = Workspace & {
   project: Project;
   directories: Directory[];
+  repositories: WorkspaceRepository[];
   locations: WorkspaceLocation[];
+  workspace_directories: WorkspaceDirectory[];
   sessions: Session[];
   todos: Todo[];
   forks: Workspace[];
@@ -270,7 +349,14 @@ export type BackgroundProcess = {
   name: string;
   command: string[];
   cwd: string;
-  state: "created" | "starting" | "running" | "stopping" | "exited" | "failed" | "unknown";
+  state:
+    | "created"
+    | "starting"
+    | "running"
+    | "stopping"
+    | "exited"
+    | "failed"
+    | "unknown";
   pid: number;
   execution: number;
   created_at: string;

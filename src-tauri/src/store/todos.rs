@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Delivery compatibility helpers remain covered by integration tests.
+
 use rusqlite::{named_params, params, Row};
 
 use super::{now, Store};

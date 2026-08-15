@@ -12,7 +12,9 @@ async fn create_fork(
     let operation_state = state.clone();
     let created =
         blocking_git_operation(move || create_fork_impl(operation_state, parent_id, input)).await?;
-    PROJECT_WORKTREES.invalidate(&created.workspace.project_id).await;
+    project_worktrees_cache()
+        .invalidate(&created.workspace.project_id)
+        .await;
     spawn_workspace_setup_shells(
         state.clone(),
         created.workspace.clone(),
@@ -52,7 +54,13 @@ fn create_fork_impl(
         ));
     }
     let fork_id = id();
-    let project_locations = state.store.directories(&project.id)?;
+    let project_directories = state.store.project_directories(&project.id)?;
+    let project_locations = state
+        .store
+        .repositories(&project.id)?
+        .iter()
+        .map(|repository| state.store.repository_as_directory(&repository.id))
+        .collect::<Result<Vec<_>>>()?;
     let branch = choose_shared_branch(
         &project_locations,
         None,
@@ -67,17 +75,7 @@ fn create_fork_impl(
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
     for parent_location in &parent_locations {
-        let project_location = state
-            .store
-            .directory(&parent_location.project_location_id)?;
-        if parent_location.access_mode == "read_only" {
-            snapshots.push(read_only_workspace_location(
-                &fork_id,
-                &project_location,
-                &timestamp,
-            ));
-            continue;
-        }
+        let project_location = state.store.repository_as_directory(&parent_location.project_location_id)?;
         let checkout_path = root
             .join(format!(
                 "{}-{}",
@@ -145,6 +143,12 @@ fn create_fork_impl(
             checkout_path,
             branch: branch.clone(),
             start_ref: start_commit,
+            setup_directory_id: project_directories
+                .iter()
+                .find(|directory| directory.repository_id.as_deref() == Some(&parent_location.project_location_id))
+                .map(|directory| directory.id.clone())
+                .unwrap_or_default(),
+            setup_workdir: state.store.repository(&parent_location.project_location_id)?.setup_workdir,
         });
         snapshots.push(snapshot);
     }
