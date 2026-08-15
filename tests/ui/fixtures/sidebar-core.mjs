@@ -443,6 +443,7 @@ export function createSidebarCoreFixture() {
     settings: {
       schema_version: 1,
       language: "en-US",
+      theme: "system",
       worktree_root: "/fixture/treefold/worktrees",
       agents: {
         codex: {

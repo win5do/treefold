@@ -68,12 +68,13 @@ async function startFixtureApi() {
     if (request.method === "PATCH" && pathname === "/api/settings") {
       const input = await readJson(request);
       await new Promise((resolve) => setTimeout(resolve, 150));
-      const allowed = new Set(["language", "worktree_root", "agents", "amux"]);
+      const allowed = new Set(["language", "theme", "worktree_root", "agents", "amux"]);
       if (Object.keys(input).some((key) => !allowed.has(key))) {
         sendJson(response, 400, { error: "Unknown settings field" });
         return;
       }
       if (input.language !== undefined) fixture.settings.language = input.language;
+      if (input.theme !== undefined) fixture.settings.theme = input.theme;
       if (input.worktree_root !== undefined) fixture.settings.worktree_root = input.worktree_root;
       if (input.agents?.codex?.extra_args !== undefined) {
         fixture.settings.agents.codex.extra_args = [...input.agents.codex.extra_args];

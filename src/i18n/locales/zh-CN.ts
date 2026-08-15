@@ -109,6 +109,13 @@ export const zhCN = {
       english: "English",
       simplifiedChinese: "简体中文",
     },
+    theme: {
+      title: "外观",
+      description: "跟随系统外观，或固定使用浅色或深色主题。",
+      system: "跟随系统",
+      light: "浅色",
+      dark: "深色",
+    },
     backend: "后端",
     runtime: {
       title: "运行环境",

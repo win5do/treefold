@@ -107,6 +107,13 @@ export const enUS = {
       english: "English",
       simplifiedChinese: "简体中文",
     },
+    theme: {
+      title: "Appearance",
+      description: "Use the system appearance or choose a light or dark theme.",
+      system: "Follow system",
+      light: "Light",
+      dark: "Dark",
+    },
     backend: "Backend",
     runtime: {
       title: "Runtime",

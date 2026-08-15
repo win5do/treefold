@@ -133,6 +133,8 @@ try {
   const settingsDialog = await browser.$('[role="dialog"]');
   await settingsDialog.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await settingsDialog.$('[data-testid="settings-language"]')).getValue(), "en-US", "Settings must reflect the persisted language preference");
+  assert.equal(await (await settingsDialog.$('[data-testid="settings-theme"]')).getValue(), "system", "Settings must reflect the persisted theme preference");
+  await (await settingsDialog.$('[data-testid="settings-theme"]')).selectByAttribute("value", "dark");
   let codexArguments = await settingsDialog.$$('input[aria-label^="Codex argument "]');
   assert.deepEqual(
     await codexArguments.map((argument) => argument.getValue()),
@@ -151,6 +153,7 @@ try {
   await (await browser.$('[data-testid="open-settings"]')).click();
   const reopenedSettingsDialog = await browser.$('[role="dialog"]');
   await reopenedSettingsDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await (await reopenedSettingsDialog.$('[data-testid="settings-theme"]')).getValue(), "dark", "theme changes must survive the atomic settings PATCH");
   codexArguments = await reopenedSettingsDialog.$$('input[aria-label^="Codex argument "]');
   assert.deepEqual(
     await codexArguments.map((argument) => argument.getValue()),

@@ -236,9 +236,12 @@ export type SystemStatus = {
   terminal_runtime: string;
 };
 
+export type ThemePreference = "system" | "light" | "dark";
+
 export type AppSettings = {
   schema_version: number;
   language: LanguagePreference;
+  theme: ThemePreference;
   worktree_root: string;
   agents: {
     codex: {

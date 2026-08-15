@@ -34,6 +34,8 @@ pub struct AmuxSettings {
 pub struct Settings {
     pub schema_version: u32,
     pub language: String,
+    #[serde(default = "default_theme")]
+    pub theme: String,
     pub worktree_root: String,
     #[serde(default)]
     pub agents: AgentsSettings,
@@ -55,6 +57,7 @@ impl Settings {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
             language: "system".into(),
+            theme: default_theme(),
             worktree_root,
             agents: AgentsSettings {
                 codex: CodexAgentSettings { extra_args: vec![] },
@@ -72,6 +75,7 @@ impl Settings {
             );
         }
         validate_language(&self.language)?;
+        validate_theme(&self.theme)?;
         validate_worktree_root(&self.worktree_root)?;
         validate_extra_args(&self.agents.codex.extra_args)?;
         Ok(())
@@ -87,6 +91,7 @@ struct SettingsHeader {
 #[serde(deny_unknown_fields)]
 pub struct SettingsPatch {
     pub language: Option<String>,
+    pub theme: Option<String>,
     pub worktree_root: Option<String>,
     pub agents: Option<AgentsSettingsPatch>,
     pub amux: Option<AmuxSettingsPatch>,
@@ -115,6 +120,9 @@ impl SettingsPatch {
         if let Some(language) = &self.language {
             validate_language(language)?;
         }
+        if let Some(theme) = &self.theme {
+            validate_theme(theme)?;
+        }
         if let Some(worktree_root) = &self.worktree_root {
             validate_worktree_root(worktree_root)?;
         }
@@ -133,6 +141,17 @@ impl SettingsPatch {
 fn validate_language(language: &str) -> anyhow::Result<()> {
     if !["system", "zh-CN", "en-US"].contains(&language) {
         bail!("unsupported language '{language}'; expected system, zh-CN, or en-US");
+    }
+    Ok(())
+}
+
+fn default_theme() -> String {
+    "system".into()
+}
+
+fn validate_theme(theme: &str) -> anyhow::Result<()> {
+    if !["system", "light", "dark"].contains(&theme) {
+        bail!("unsupported theme '{theme}'; expected system, light, or dark");
     }
     Ok(())
 }
@@ -204,6 +223,10 @@ impl SettingsStore {
             settings.language = language;
             document["language"] = value(settings.language.clone());
         }
+        if let Some(theme) = patch.theme {
+            settings.theme = theme;
+            document["theme"] = value(settings.theme.clone());
+        }
         if let Some(worktree_root) = patch.worktree_root {
             settings.worktree_root = worktree_root;
             document["worktree_root"] = value(settings.worktree_root.clone());
@@ -246,6 +269,7 @@ impl SettingsStore {
         let mut document = DocumentMut::new();
         document["schema_version"] = value(i64::from(settings.schema_version));
         document["language"] = value(settings.language.clone());
+        document["theme"] = value(settings.theme.clone());
         document["worktree_root"] = value(settings.worktree_root.clone());
         let mut agents = Table::new();
         agents.set_implicit(true);
@@ -354,6 +378,7 @@ mod tests {
             super::Settings {
                 schema_version: SETTINGS_SCHEMA_VERSION,
                 language: "system".into(),
+                theme: "system".into(),
                 worktree_root: "~/.treefold/worktrees".into(),
                 agents: AgentsSettings {
                     codex: CodexAgentSettings { extra_args: vec![] },
@@ -397,6 +422,7 @@ mod tests {
         let updated = store
             .update(SettingsPatch {
                 language: Some("zh-CN".into()),
+                theme: Some("dark".into()),
                 worktree_root: None,
                 agents: Some(AgentsSettingsPatch {
                     codex: Some(CodexAgentSettingsPatch {
@@ -413,6 +439,7 @@ mod tests {
             })
             .expect("update settings");
         assert_eq!(updated.language, "zh-CN");
+        assert_eq!(updated.theme, "dark");
         assert!(updated.amux.keep_daemon_running_on_exit);
         assert_eq!(
             updated.agents.codex.extra_args,
@@ -421,6 +448,7 @@ mod tests {
         let contents = std::fs::read_to_string(path).expect("read updated settings");
         assert!(contents.contains("# user comment"));
         assert!(contents.contains("future_setting = \"preserve-me\""));
+        assert!(contents.contains("theme = \"dark\""));
         assert!(contents.contains("[agents.codex]"));
         assert!(contents.contains("--dangerously-bypass-approvals-and-sandbox"));
         assert!(contents.contains("[amux]\nkeep_daemon_running_on_exit = true"));
@@ -465,6 +493,29 @@ mod tests {
             })
             .expect_err("reject unsupported language");
         assert!(error.to_string().contains("unsupported language"));
+        assert_eq!(
+            std::fs::read_to_string(path).expect("read settings after update"),
+            before
+        );
+
+        std::fs::remove_dir_all(root).expect("remove settings fixture");
+    }
+
+    #[test]
+    fn rejects_invalid_theme_without_rewriting_the_file() {
+        let (root, user_home) = fixture("invalid-theme");
+        let treefold_home = root.join("home");
+        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let path = treefold_home.join("config/settings.toml");
+        let before = std::fs::read_to_string(&path).expect("read settings before update");
+
+        let error = store
+            .update(SettingsPatch {
+                theme: Some("sepia".into()),
+                ..SettingsPatch::default()
+            })
+            .expect_err("reject unsupported theme");
+        assert!(error.to_string().contains("unsupported theme"));
         assert_eq!(
             std::fs::read_to_string(path).expect("read settings after update"),
             before
