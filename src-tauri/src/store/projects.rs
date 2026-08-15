@@ -288,7 +288,7 @@ fn sidebar_on(db: &Connection) -> Result<SidebarData> {
         let aliased_session_columns = format!("s.{}", SESSION_COLUMNS.replace(',', ",s."));
         let mut project_sessions_statement = transaction.prepare(&format!(
             "SELECT {aliased_session_columns} FROM sessions s JOIN workspaces w ON w.id=s.workspace_id
-             WHERE w.project_id=? AND w.kind='base' AND s.sidebar_visible=1
+             WHERE w.project_id=? AND w.kind='base' AND s.visibility='visible'
              ORDER BY s.sort_order,s.created_at DESC"
         ))?;
         let sessions = project_sessions_statement
@@ -306,7 +306,7 @@ fn sidebar_on(db: &Connection) -> Result<SidebarData> {
         for mut workspace in workspaces.drain(..) {
             hydrate_workspace_compat(&transaction, &mut workspace)?;
             let mut sessions_statement = transaction.prepare(&format!(
-                "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? AND sidebar_visible=1
+                "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? AND visibility='visible'
                  ORDER BY sort_order,created_at DESC"
             ))?;
             let sessions = sessions_statement

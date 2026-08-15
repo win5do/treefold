@@ -70,15 +70,20 @@ CREATE TABLE IF NOT EXISTS sessions (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  name TEXT NOT NULL, kind TEXT NOT NULL, cwd TEXT NOT NULL, original_cwd TEXT NOT NULL,
  initial_prompt TEXT NOT NULL DEFAULT '',
- codex_session_id TEXT, sidebar_visible INTEGER NOT NULL DEFAULT 1,
- hidden_at TEXT, evicted_at TEXT, process_id TEXT NOT NULL DEFAULT '',
- process_name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, pid INTEGER NOT NULL DEFAULT 0,
- process_group_id INTEGER NOT NULL DEFAULT 0, exit_code INTEGER, exit_signal TEXT NOT NULL DEFAULT '',
- command TEXT NOT NULL DEFAULT '[]', launch_started_at TEXT NOT NULL, last_attached_at TEXT,
+ codex_session_id TEXT, visibility TEXT NOT NULL DEFAULT 'visible' CHECK(visibility IN ('visible','hidden')),
+ hidden_at TEXT, evicted_at TEXT,
+ amux_workspace_name TEXT NOT NULL DEFAULT '', amux_process_name TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL CHECK(status IN ('running','stopped','exited','failed')),
+ exit_code INTEGER, exit_signal TEXT NOT NULL DEFAULT '',
+ argv TEXT NOT NULL DEFAULT '[]', io_mode TEXT NOT NULL DEFAULT 'tty' CHECK(io_mode IN ('pipe','tty')),
+ launch_started_at TEXT NOT NULL, last_attached_at TEXT,
  sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS sessions_workspace_visible_order
- ON sessions(workspace_id,sidebar_visible,sort_order);
+ ON sessions(workspace_id,visibility,sort_order);
+CREATE UNIQUE INDEX IF NOT EXISTS sessions_amux_identity
+ ON sessions(amux_workspace_name,amux_process_name)
+ WHERE amux_workspace_name!='' AND amux_process_name!='';
 CREATE TABLE IF NOT EXISTS session_additional_directories (
  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, path TEXT NOT NULL,
  access_mode TEXT NOT NULL DEFAULT 'read_write',
@@ -220,6 +225,7 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
                 [],
             )?;
         }
+        migrate_session_lifecycle_schema(connection)?;
         return Ok(());
     }
 
@@ -255,6 +261,92 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
          PRAGMA foreign_keys=ON;",
     )?;
     Ok(())
+}
+
+fn migrate_session_lifecycle_schema(connection: &Connection) -> Result<()> {
+    if !table_exists(connection, "sessions")? {
+        return Ok(());
+    }
+    if table_has_column(connection, "sessions", "sidebar_visible")? {
+        connection.execute(
+            "ALTER TABLE sessions RENAME COLUMN sidebar_visible TO visibility",
+            [],
+        )?;
+        connection.execute(
+            "UPDATE sessions SET visibility=CASE WHEN visibility=1 OR visibility='1' THEN 'visible' ELSE 'hidden' END",
+            [],
+        )?;
+    }
+    if !table_has_column(connection, "sessions", "amux_workspace_name")? {
+        connection.execute(
+            "ALTER TABLE sessions ADD COLUMN amux_workspace_name TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+    }
+    if !table_has_column(connection, "sessions", "amux_process_name")? {
+        connection.execute(
+            "ALTER TABLE sessions ADD COLUMN amux_process_name TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+        if table_has_column(connection, "sessions", "process_name")? {
+            connection.execute(
+                "UPDATE sessions SET amux_process_name=CASE WHEN process_name!='' THEN process_name ELSE id END",
+                [],
+            )?;
+        }
+    }
+    if !table_has_column(connection, "sessions", "argv")? {
+        connection.execute(
+            "ALTER TABLE sessions ADD COLUMN argv TEXT NOT NULL DEFAULT '[]'",
+            [],
+        )?;
+        if table_has_column(connection, "sessions", "command")? {
+            connection.execute("UPDATE sessions SET argv=command", [])?;
+        }
+    }
+    if !table_has_column(connection, "sessions", "io_mode")? {
+        connection.execute(
+            "ALTER TABLE sessions ADD COLUMN io_mode TEXT NOT NULL DEFAULT 'tty'",
+            [],
+        )?;
+    }
+    connection.execute(
+        "UPDATE sessions SET status=CASE WHEN status='running' THEN 'running' WHEN status='exited' THEN 'exited' WHEN status='failed' THEN 'failed' ELSE 'stopped' END",
+        [],
+    )?;
+    // Existing Shell/Codex process names have always been their Session IDs. The
+    // workspace name is filled lazily from cwd by the Store because SQLite has no
+    // portable path hashing primitive.
+    connection.execute(
+        "UPDATE sessions SET amux_process_name=id WHERE amux_process_name=''",
+        [],
+    )?;
+    let mut statement =
+        connection.prepare("SELECT id,cwd FROM sessions WHERE amux_workspace_name=''")?;
+    let sessions = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(statement);
+    for (id, cwd) in sessions {
+        connection.execute(
+            "UPDATE sessions SET amux_workspace_name=? WHERE id=?",
+            [stable_amux_workspace_name(&cwd), id],
+        )?;
+    }
+    Ok(())
+}
+
+fn stable_amux_workspace_name(root_dir: &str) -> String {
+    let normalized =
+        std::fs::canonicalize(root_dir).unwrap_or_else(|_| std::path::PathBuf::from(root_dir));
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in normalized.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("treefold-ws-{hash:016x}")
 }
 
 fn table_exists(connection: &Connection, table: &str) -> Result<bool> {
@@ -303,6 +395,13 @@ mod workspace_schema_tests {
         assert!(table_has_column(&connection, "workspace_locations", "creation_error").unwrap());
         assert!(!table_has_column(&connection, "sessions", "yolo").unwrap());
         assert!(table_has_column(&connection, "sessions", "sort_order").unwrap());
+        assert!(table_has_column(&connection, "sessions", "visibility").unwrap());
+        assert!(table_has_column(&connection, "sessions", "amux_workspace_name").unwrap());
+        assert!(table_has_column(&connection, "sessions", "amux_process_name").unwrap());
+        assert!(table_has_column(&connection, "sessions", "argv").unwrap());
+        assert!(table_has_column(&connection, "sessions", "io_mode").unwrap());
+        assert!(!table_has_column(&connection, "sessions", "sidebar_visible").unwrap());
+        assert!(!table_has_column(&connection, "sessions", "process_id").unwrap());
         assert!(
             table_has_column(&connection, "delivery_operations", "workspace_location_id").unwrap()
         );
@@ -329,7 +428,7 @@ mod workspace_schema_tests {
                    launch_started_at,created_at,updated_at,yolo
                  ) VALUES(
                    'session-1','workspace-1','Saved Codex','codex','/tmp/worktree',
-                   '/tmp/worktree','closed','now','now','now',1
+                   '/tmp/worktree','stopped','now','now','now',1
                  );
                  PRAGMA foreign_keys=ON;",
             )
@@ -350,6 +449,67 @@ mod workspace_schema_tests {
     }
 
     #[test]
+    fn migrates_legacy_session_visibility_status_and_amux_identity() {
+        let (root, path) = temporary_database("session-lifecycle-migration");
+        let connection = Connection::open(&path).expect("create legacy database");
+        connection.execute_batch(
+            "CREATE TABLE projects(
+               id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL, status TEXT NOT NULL,
+               default_location_id TEXT, default_base_branch TEXT NOT NULL, default_delivery_mode TEXT NOT NULL,
+               created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             CREATE TABLE project_locations(
+               id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+               worktree_setup_command TEXT NOT NULL DEFAULT '', path TEXT NOT NULL, repository_url TEXT,
+               preferred_remote_name TEXT, base_branch TEXT, delivery_mode TEXT, git_common_dir TEXT,
+               git_status TEXT NOT NULL, last_checked_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             CREATE TABLE workspaces(
+               id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL,
+               status TEXT NOT NULL, kind TEXT NOT NULL, parent_workspace_id TEXT, runtime_id TEXT NOT NULL DEFAULT '',
+               runtime_name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             CREATE TABLE workspace_locations(
+               id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, project_location_id TEXT NOT NULL,
+               location_name TEXT NOT NULL, source_path TEXT NOT NULL, access_mode TEXT NOT NULL,
+               git_status TEXT NOT NULL, creation_error TEXT, worktree_id TEXT, checkout_path TEXT, branch TEXT,
+               base_branch TEXT, start_commit TEXT, forked_from_commit TEXT, remote_name TEXT, remote_branch TEXT,
+               branch_ownership TEXT NOT NULL, delivery_mode TEXT NOT NULL, delivery_status TEXT NOT NULL,
+               close_outcome TEXT, integrated_commit TEXT, closed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             CREATE TABLE sessions(
+               id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL,
+               cwd TEXT NOT NULL, original_cwd TEXT NOT NULL, initial_prompt TEXT NOT NULL DEFAULT '',
+               codex_session_id TEXT, sidebar_visible INTEGER NOT NULL DEFAULT 1, hidden_at TEXT, evicted_at TEXT,
+               process_id TEXT NOT NULL DEFAULT '', process_name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+               pid INTEGER NOT NULL DEFAULT 0, process_group_id INTEGER NOT NULL DEFAULT 0, exit_code INTEGER,
+               exit_signal TEXT NOT NULL DEFAULT '', command TEXT NOT NULL DEFAULT '[]', launch_started_at TEXT NOT NULL,
+               last_attached_at TEXT, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+             );
+             INSERT INTO projects VALUES('p','P','','active',NULL,'main','remote_review','now','now');
+             INSERT INTO workspaces VALUES('w','p','W','','active','workspace',NULL,'','','now','now');
+             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,codex_session_id,sidebar_visible,
+               hidden_at,process_id,process_name,status,pid,process_group_id,command,launch_started_at,created_at,updated_at)
+             VALUES('s','w','Saved','codex','/tmp/worktree','/tmp/worktree','resume-id',0,'hidden-at',
+               'proc_generated','codex-old','starting',123,123,'[\"codex\"]','now','now','now');",
+        ).expect("seed legacy Session schema");
+        drop(connection);
+
+        let store = Store::open(&path).expect("migrate legacy Session schema");
+        let session = store.session("s").expect("preserve migrated Session");
+        assert_eq!(session.visibility, "hidden");
+        assert_eq!(session.status, "stopped");
+        assert_eq!(session.codex_session_id.as_deref(), Some("resume-id"));
+        assert_eq!(session.amux_process_name, "codex-old");
+        assert!(session.amux_workspace_name.starts_with("treefold-ws-"));
+        assert_eq!(session.argv, vec!["codex"]);
+        assert_eq!(session.io_mode, "tty");
+        assert_eq!(session.hidden_at.as_deref(), Some("hidden-at"));
+        drop(store);
+        std::fs::remove_dir_all(root).expect("remove migration fixture");
+    }
+
+    #[test]
     fn persists_session_order_within_workspace() {
         let (root, path) = temporary_database("session-order");
         let store = Store::open(&path).expect("create current database");
@@ -363,7 +523,7 @@ mod workspace_schema_tests {
              INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,launch_started_at,created_at,updated_at)
              VALUES('s1','w','First','shell','/tmp','/tmp','running','now','2026-01-01','now');
              INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,launch_started_at,created_at,updated_at)
-             VALUES('s2','w','Second','codex','/tmp','/tmp','closed','now','2026-01-02','now');",
+             VALUES('s2','w','Second','codex','/tmp','/tmp','stopped','now','2026-01-02','now');",
         ).expect("seed Workspace Sessions");
         drop(connection);
 
@@ -399,7 +559,7 @@ mod workspace_schema_tests {
              INSERT INTO workspace_locations(id,workspace_id,project_location_id,location_name,source_path,access_mode,git_status,created_at,updated_at)
              VALUES('wl','w','l','repo','/source','read_only','not_git','now','now');
              INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,launch_started_at,created_at,updated_at)
-             VALUES('s','w','History','codex','/source','/source','closed','now','now','now');
+             VALUES('s','w','History','codex','/source','/source','stopped','now','now','now');
              INSERT INTO todos(id,workspace_id,title,status,created_at,updated_at)
              VALUES('t','w','History','done','now','now');",
         ).expect("seed archived Workspace");
@@ -482,9 +642,9 @@ mod workspace_schema_tests {
              VALUES('w','p','Workspace','','active','workspace',NULL,'now','now'),
                    ('f','p','Fork','','active','fork','w','now','now'),
                    ('old','p','Old','','archived','workspace',NULL,'now','now');
-             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,sidebar_visible,launch_started_at,created_at,updated_at)
-             VALUES('visible','w','Visible','shell','/tmp','/tmp','running',1,'now','now','now'),
-                   ('hidden','w','Hidden','codex','/tmp','/tmp','closed',0,'now','now','now');"
+             INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,visibility,launch_started_at,created_at,updated_at)
+             VALUES('visible','w','Visible','shell','/tmp','/tmp','running','visible','now','now','now'),
+                   ('hidden','w','Hidden','codex','/tmp','/tmp','stopped','hidden','now','now','now');"
         ).expect("seed navigation records");
         drop(connection);
 

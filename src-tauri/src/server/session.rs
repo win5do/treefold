@@ -20,8 +20,8 @@ async fn list_project_sessions(
     AxumPath(project_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
     state.store.project(&project_id)?;
-    let sessions = state.store.project_sessions(&project_id)?;
-    Ok(Json(refresh_session_records(&state, sessions).await?))
+    reconcile_daemon_sessions(&state).await?;
+    Ok(Json(state.store.project_sessions(&project_id)?))
 }
 
 fn sync_project_session_workspace(state: &AppState, project_id: &str) -> Result<Workspace> {
@@ -136,8 +136,8 @@ async fn list_sessions(
     AxumPath(workspace_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
     state.store.workspace(&workspace_id)?;
-    let sessions = state.store.sessions(&workspace_id)?;
-    Ok(Json(refresh_session_records(&state, sessions).await?))
+    reconcile_daemon_sessions(&state).await?;
+    Ok(Json(state.store.sessions(&workspace_id)?))
 }
 
 #[derive(Deserialize)]
@@ -281,20 +281,19 @@ async fn create_session_for_workspace(
         name,
         kind: kind.clone(),
         original_cwd: cwd.clone(),
-        cwd,
+        cwd: cwd.clone(),
         initial_prompt: trimmed(input.initial_prompt).unwrap_or_default(),
         codex_session_id: None,
-        sidebar_visible: true,
+        visibility: "visible".into(),
         hidden_at: None,
         evicted_at: None,
-        process_id: session_id.clone(),
-        process_name: format!("{}-{}", kind, &session_id[..10]),
-        status: "starting".into(),
-        pid: 0,
-        process_group_id: 0,
+        amux_workspace_name: crate::terminal::TerminalManager::workspace_name(&cwd),
+        amux_process_name: session_id.clone(),
+        status: "stopped".into(),
         exit_code: None,
         exit_signal: String::new(),
-        command: vec![],
+        argv: vec![],
+        io_mode: "tty".into(),
         launch_started_at: timestamp.clone(),
         last_attached_at: None,
         created_at: timestamp.clone(),
@@ -317,16 +316,19 @@ async fn create_session_for_workspace(
         .await
     {
         Ok(process) => {
-            session.process_id = process.id;
-            session.process_name = process.name;
-            session.pid = process.pid.into();
-            session.process_group_id = process.process_group_id.into();
-            session.command = process.command;
+            session.argv = process.command;
             session.status = "running".into();
             persist_amux_process(&state.store, &session.id, &session)?;
         }
         Err(error) => {
-            let _ = state.store.delete_session(&session.id);
+            session.status = "failed".into();
+            state.store.set_session_runtime(
+                &session.id,
+                "failed",
+                None,
+                "",
+                &session.argv,
+            )?;
             return Err(AppError::BadRequest(error.to_string()));
         }
     }
@@ -337,22 +339,8 @@ async fn get_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
-    let mut session = state.store.session(&id)?;
-    if session.kind == "shell" && terminal_session_status(&session.status) {
-        let _ = state.terminals.remove(&id).await;
-        state.store.delete_session(&id)?;
-        return Err(AppError::NotFound);
-    }
-    if let Ok(process) = state.terminals.inspect(&id).await {
-        apply_amux_process(&mut session, process);
-        if session.kind == "shell" && terminal_session_status(&session.status) {
-            let _ = state.terminals.remove(&id).await;
-            state.store.delete_session(&id)?;
-            return Err(AppError::NotFound);
-        }
-        persist_amux_process(&state.store, &id, &session)?;
-    }
-    Ok(Json(session))
+    reconcile_daemon_sessions(&state).await?;
+    Ok(Json(state.store.session(&id)?))
 }
 
 #[derive(Deserialize)]
@@ -377,13 +365,12 @@ async fn stop_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
-    if state.terminals.is_running(&id).await {
-        state
-            .terminals
-            .stop(&id)
-            .await
-            .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    }
+    let session = state.store.session(&id)?;
+    state.terminals
+        .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
+        .await
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    state.store.set_session_status(&id, "stopped")?;
     Ok(StatusCode::NO_CONTENT)
 }
 async fn restart_session(
@@ -395,7 +382,7 @@ async fn restart_session(
     capture_codex_session_id(&state.store, &mut session)?;
     state
         .terminals
-        .remove(&id)
+        .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     let mut workspace = state.store.workspace(&session.workspace_id)?;
@@ -439,11 +426,7 @@ async fn restart_session(
         )
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    session.process_id = process.id;
-    session.process_name = process.name;
-    session.pid = process.pid.into();
-    session.process_group_id = process.process_group_id.into();
-    session.command = process.command;
+    session.argv = process.command;
     session.status = "running".into();
     persist_amux_process(&state.store, &id, &session)?;
     Ok(Json(session))
@@ -453,21 +436,19 @@ async fn close_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id)?;
-    if session.kind == "shell" {
-        let _ = state.terminals.remove(&id).await;
+    if session.kind == "shell" || session.kind == "command" {
+        let _ = state.terminals.remove_existing(&session.amux_workspace_name, &session.amux_process_name).await;
         state.store.delete_session(&id)?;
-        session.sidebar_visible = false;
-        session.status = "closed".into();
-        session.pid = 0;
+        session.visibility = "hidden".into();
+        session.status = "stopped".into();
         return Ok(Json(session));
     }
     capture_codex_session_id(&state.store, &mut session)?;
-    if state.terminals.is_running(&id).await {
-        let _ = state.terminals.stop(&id).await;
-    }
-    state.store.set_session_visible(&id, false)?;
+    let _ = state.terminals.remove_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+    state.store.set_session_status(&id, "stopped")?;
+    state.store.set_session_visibility(&id, "hidden")?;
     let mut session = state.store.session(&id)?;
-    session.sidebar_visible = false;
+    session.visibility = "hidden".into();
     Ok(Json(session))
 }
 async fn open_session(
@@ -475,14 +456,16 @@ async fn open_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
     ensure_session_owner_active(&state, &state.store.session(&id)?)?;
-    state.store.set_session_visible(&id, true)?;
+    state.store.set_session_visibility(&id, "visible")?;
     get_session(State(state), AxumPath(id)).await
 }
 async fn delete_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
-    let _ = state.terminals.remove(&id).await;
+    if let Ok(session) = state.store.session(&id) {
+        let _ = state.terminals.remove_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+    }
     state.store.delete_session(&id)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -575,59 +558,197 @@ async fn terminal_socket(
 }
 
 fn apply_amux_process(session: &mut Session, process: amux::model::Process) {
-    session.process_id = process.id;
-    session.process_name = process.name;
-    session.status = format!("{:?}", process.state).to_ascii_lowercase();
-    session.pid = process.pid.into();
-    session.process_group_id = process.process_group_id.into();
+    session.status = strict_process_status(&format!("{:?}", process.state).to_ascii_lowercase()).into();
     session.exit_code = process.exit_code.map(Into::into);
     session.exit_signal = process.exit_signal;
-    session.command = process.command;
+    session.argv = process.command;
 }
 
-fn terminal_session_status(status: &str) -> bool {
-    matches!(status, "exited" | "failed" | "closed" | "evicted")
+fn strict_process_status(status: &str) -> &'static str {
+    match status {
+        "created" | "starting" | "running" => "running",
+        "exited" => "exited",
+        "failed" => "failed",
+        _ => "stopped",
+    }
+}
+
+pub(super) async fn reconcile_daemon_sessions(state: &AppState) -> Result<()> {
+    // A query must never revive the daemon. Persisted activity is stale whenever
+    // the named daemon is absent, and a fresh snapshot is authoritative when it exists.
+    state.store.stop_active_sessions()?;
+    let Some(processes) = state.terminals.existing_processes().await? else {
+        return Ok(());
+    };
+    for process in processes {
+        reconcile_process(state, &process, false)?;
+    }
+    Ok(())
+}
+
+pub(super) fn reconcile_process_event(
+    state: &AppState,
+    event: crate::terminal::TreefoldProcessEvent,
+) -> Result<()> {
+    let removed = matches!(
+        event.event.kind,
+        amux::model::ProcessEventKind::ProcessRemoved
+    );
+    let process = crate::terminal::treefold_process_view(&event.event.process, event.session_id);
+    reconcile_process(state, &process, removed)
+}
+
+fn reconcile_process(
+    state: &AppState,
+    process: &crate::terminal::TreefoldProcessView,
+    removed: bool,
+) -> Result<()> {
+    let status = if removed {
+        "stopped"
+    } else {
+        strict_process_status(&process.state)
+    };
+    if let Some(mut session) = state
+        .store
+        .session_by_amux_identity(&process.workspace_name, &process.name)?
+    {
+        session.status = reconciled_status(&session.status, status).into();
+        session.exit_code = process.exit_code.map(Into::into);
+        session.exit_signal = process.exit_signal.clone();
+        session.argv = process.command.clone();
+        return persist_amux_process(&state.store, &session.id, &session);
+    }
+
+    // Removal is only a lifecycle update for an already known Session. In
+    // particular, a late removal event after Close must not rediscover the
+    // Command that Close just deleted.
+    if removed {
+        return Ok(());
+    }
+
+    // A root marker identifies Treefold's own Shell/Codex process. It is not a
+    // separately discoverable Command Session.
+    if process.session_root {
+        if let Some(session_id) = process.session_id.as_deref() {
+            if let Ok(mut session) = state.store.session(session_id) {
+                if session.amux_process_name == process.name {
+                    session.status = reconciled_status(&session.status, status).into();
+                    session.exit_code = process.exit_code.map(Into::into);
+                    session.exit_signal = process.exit_signal.clone();
+                    session.argv = process.command.clone();
+                    return persist_amux_process(&state.store, &session.id, &session);
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    let workspace_id = process
+        .session_id
+        .as_deref()
+        .and_then(|id| state.store.session(id).ok())
+        .map(|session| session.workspace_id)
+        .or_else(|| workspace_for_process_cwd(&state.store, &process.cwd).ok().flatten());
+    let Some(workspace_id) = workspace_id else {
+        return Ok(());
+    };
+    let timestamp = process
+        .started_at
+        .clone()
+        .unwrap_or_else(|| process.created_at.clone());
+    let session = Session {
+        id: id(),
+        workspace_id,
+        name: process.name.clone(),
+        kind: "command".into(),
+        cwd: process.cwd.clone(),
+        original_cwd: process.cwd.clone(),
+        initial_prompt: String::new(),
+        codex_session_id: None,
+        visibility: "visible".into(),
+        hidden_at: None,
+        evicted_at: None,
+        amux_workspace_name: process.workspace_name.clone(),
+        amux_process_name: process.name.clone(),
+        status: status.into(),
+        exit_code: process.exit_code.map(Into::into),
+        exit_signal: process.exit_signal.clone(),
+        argv: process.command.clone(),
+        io_mode: process.io_mode.clone(),
+        launch_started_at: timestamp,
+        last_attached_at: None,
+        created_at: process.created_at.clone(),
+        updated_at: now(),
+        additional_directories: vec![],
+    };
+    match state.store.create_session(&session) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Snapshot and event reconciliation may race. The stable unique key
+            // makes a concurrent insert harmless and the winner is refreshed.
+            if let Some(mut existing) = state
+                .store
+                .session_by_amux_identity(&process.workspace_name, &process.name)?
+            {
+                existing.status = reconciled_status(&existing.status, status).into();
+                existing.argv = process.command.clone();
+                existing.exit_code = process.exit_code.map(Into::into);
+                existing.exit_signal = process.exit_signal.clone();
+                persist_amux_process(&state.store, &existing.id, &existing)
+            } else {
+                Err(AppError::BadRequest(
+                    "failed to persist discovered Command Session".into(),
+                ))
+            }
+        }
+    }
+}
+
+fn reconciled_status<'a>(current: &'a str, observed: &'a str) -> &'a str {
+    // Stop is an explicit user action. The daemon may emit its terminal event
+    // after the handler persisted `stopped`; that late event must not turn the
+    // Session into a natural exit. A later running observation (Restart) still
+    // transitions it back to running.
+    if current == "stopped" && matches!(observed, "exited" | "failed") {
+        "stopped"
+    } else {
+        observed
+    }
+}
+
+fn workspace_for_process_cwd(store: &Store, cwd: &str) -> Result<Option<String>> {
+    let cwd = std::fs::canonicalize(cwd).unwrap_or_else(|_| PathBuf::from(cwd));
+    Ok(store
+        .session_workspace_candidates()?
+        .into_iter()
+        .filter_map(|(workspace_id, path)| {
+            let path = std::fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(path));
+            cwd.starts_with(&path)
+                .then_some((path.components().count(), workspace_id))
+        })
+        .max_by_key(|(depth, _)| *depth)
+        .map(|(_, workspace_id)| workspace_id))
 }
 
 async fn refresh_session_records(state: &AppState, sessions: Vec<Session>) -> Result<Vec<Session>> {
-    let mut active = Vec::with_capacity(sessions.len());
-    for mut session in sessions {
-        if session.kind == "shell" && terminal_session_status(&session.status) {
-            let _ = state.terminals.remove(&session.id).await;
-            state.store.delete_session(&session.id)?;
-            continue;
-        }
-        if let Ok(process) = state.terminals.inspect(&session.id).await {
-            apply_amux_process(&mut session, process);
-            if session.kind == "shell" && terminal_session_status(&session.status) {
-                let _ = state.terminals.remove(&session.id).await;
-                state.store.delete_session(&session.id)?;
-                continue;
-            }
-            persist_amux_process(&state.store, &session.id, &session)?;
-        }
-        active.push(session);
-    }
-    Ok(active)
+    reconcile_daemon_sessions(state).await?;
+    sessions.into_iter().map(|session| state.store.session(&session.id)).collect()
 }
 
 fn persist_amux_process(store: &Store, id: &str, session: &Session) -> Result<()> {
-    store.set_session_process_runtime(
+    store.set_session_runtime(
         id,
-        &session.process_id,
-        &session.process_name,
         &session.status,
-        session.pid,
-        session.process_group_id,
         session.exit_code,
         &session.exit_signal,
-        &session.command,
+        &session.argv,
     )?;
     Ok(())
 }
 
 async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
-    let Ok(amux_socket) = state.terminals.attach(&id).await else {
+    let Ok(session) = state.store.session(&id) else { return; };
+    let Ok(Some(amux_socket)) = state.terminals.attach_existing(&session.amux_workspace_name, &session.amux_process_name).await else {
         return;
     };
     let _ = state.store.touch_session(&id);
@@ -676,18 +797,13 @@ async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
             }
         }
     }
-    if let Ok(process) = state.terminals.inspect(&id).await {
+    if let Ok(Some(process)) = state.terminals.inspect_existing(&session.amux_workspace_name, &session.amux_process_name).await {
         let mut session = match state.store.session(&id) {
             Ok(session) => session,
             Err(_) => return,
         };
         apply_amux_process(&mut session, process);
-        if session.kind == "shell" && terminal_session_status(&session.status) {
-            let _ = state.terminals.remove(&id).await;
-            let _ = state.store.delete_session(&id);
-        } else {
-            let _ = persist_amux_process(&state.store, &id, &session);
-        }
+        let _ = persist_amux_process(&state.store, &id, &session);
     }
 }
 

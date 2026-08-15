@@ -16,6 +16,7 @@ export const projectSummariesQuery = () => queryOptions({
 
 export const sidebarQuery = () => queryOptions({
   queryKey: projectKeys.sidebar,
+  refetchInterval: 1_000,
   queryFn: async ({ signal }) => {
     const value = await projectsApi.sidebar(signal);
     return value.projects.map((project) => {

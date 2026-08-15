@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Bot, RotateCcw, Square, TerminalSquare, X } from "lucide-react";
+import { Bot, PanelsTopLeft, RotateCcw, Square, TerminalSquare, X } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { sessionsApi } from "@/api/sessions";
@@ -11,15 +11,17 @@ import { Button } from "@/components/ui/button";
 import type { Session } from "@/domain/types";
 
 export function SessionWorkspace({ session, busy, onStop, onRestart, onClose, onExit }: { session: Session; busy: boolean; onStop: () => void; onRestart: () => void; onClose: () => void; onExit: () => void }) {
-  const terminalState = ["exited", "failed", "closed", "evicted"].includes(session.status);
+  const running = session.status === "running";
+  const icon = session.kind === "codex" ? <Bot className="size-3.5 shrink-0" /> : session.kind === "command" ? <PanelsTopLeft className="size-3.5 shrink-0" /> : <TerminalSquare className="size-3.5 shrink-0" />;
   return <div className="flex h-full min-h-0 flex-col bg-[#111315]">
     <div className="flex h-10 shrink-0 items-center border-b border-white/10 bg-[#191b1e] px-3">
-      <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-neutral-200">{session.kind === "codex" ? <Bot className="size-3.5 shrink-0" /> : <TerminalSquare className="size-3.5 shrink-0" />}<span className="truncate font-medium">{session.name}</span><StatusDot status={session.status} /><span className="text-[10px] text-neutral-500">{session.status}</span></div>
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-neutral-200">{icon}<span className="truncate font-medium">{session.name}</span><StatusDot status={session.status} /><span className="text-[10px] text-neutral-500">{session.status}</span></div>
       <div className="flex items-center gap-1 px-2">
-        {session.kind === "shell" ? <Button size="sm" variant="terminal" disabled={busy} onClick={onClose}><X data-icon="inline-start" />Close Shell</Button> : terminalState ? <Button size="sm" variant="secondary" disabled={busy} onClick={onRestart}><RotateCcw data-icon="inline-start" />Resume</Button> : <Button size="sm" variant="terminal" disabled={busy} onClick={onStop}><Square data-icon="inline-start" />Stop</Button>}
+        {running ? <Button size="sm" variant="terminal" disabled={busy} onClick={onStop}><Square data-icon="inline-start" />Stop</Button> : <Button size="sm" variant="secondary" disabled={busy || (session.kind === "codex" && !session.codex_session_id)} onClick={onRestart}><RotateCcw data-icon="inline-start" />Restart</Button>}
+        <Button size="icon-sm" variant="terminal" disabled={busy} aria-label="Close Session" title="Close Session" onClick={onClose}><X /></Button>
       </div>
     </div>
-    <WebTerminal key={session.id} session={session} onExit={onExit} />
+    {running ? <WebTerminal key={session.id} session={session} onExit={onExit} /> : <div data-testid="session-terminal-state" className="grid min-h-0 flex-1 place-items-center p-8 text-neutral-300"><div className="w-full max-w-2xl rounded-lg border border-white/10 bg-white/[0.03] p-5"><p className="text-sm font-medium">Session is {session.status}</p><dl className="mt-4 grid gap-3 text-xs"><div><dt className="text-neutral-500">Command</dt><dd className="mt-1 break-all font-mono">{session.argv.join(" ") || "—"}</dd></div><div><dt className="text-neutral-500">Working directory</dt><dd className="mt-1 break-all font-mono">{session.cwd}</dd></div><div><dt className="text-neutral-500">I/O mode</dt><dd className="mt-1 font-mono">{session.io_mode}</dd></div></dl></div></div>}
   </div>;
 }
 
@@ -78,7 +80,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
         }
       };
       socket.onclose = () => {
-        if (!disposed && !["exited", "failed", "closed", "evicted"].includes(session.status)) reconnectTimer = window.setTimeout(connect, 1200);
+        if (!disposed && session.status === "running") reconnectTimer = window.setTimeout(connect, 1200);
       };
       socket.onerror = () => socket?.close();
     };

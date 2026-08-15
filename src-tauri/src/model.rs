@@ -201,20 +201,19 @@ pub struct Session {
     pub initial_prompt: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub codex_session_id: Option<String>,
-    pub sidebar_visible: bool,
+    pub visibility: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hidden_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evicted_at: Option<String>,
-    pub process_id: String,
-    pub process_name: String,
+    pub amux_workspace_name: String,
+    pub amux_process_name: String,
     pub status: String,
-    pub pid: i64,
-    pub process_group_id: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i64>,
     pub exit_signal: String,
-    pub command: Vec<String>,
+    pub argv: Vec<String>,
+    pub io_mode: String,
     pub launch_started_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_attached_at: Option<String>,

@@ -7,6 +7,20 @@ use crate::{
 };
 
 impl Store {
+    pub fn session_workspace_candidates(&self) -> Result<Vec<(String, String)>> {
+        let db = self.0.lock();
+        let mut stmt = db.prepare(
+            "SELECT wl.workspace_id,COALESCE(wl.checkout_path,wl.source_path)
+             FROM workspace_locations wl JOIN workspaces w ON w.id=wl.workspace_id
+             JOIN projects p ON p.id=w.project_id
+             WHERE w.status='active' AND p.status='active'",
+        )?;
+        let values = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(values)
+    }
+
     pub fn project_sessions(&self, project_id: &str) -> Result<Vec<Session>> {
         match self.project_session_workspace(project_id)? {
             Some(workspace) => self.sessions(&workspace.id),
@@ -46,8 +60,8 @@ impl Store {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         tx.execute(
-            "INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at)
-             VALUES(:id,:workspace_id,:name,:kind,:cwd,:original_cwd,:initial_prompt,:codex_session_id,:sidebar_visible,:hidden_at,:evicted_at,:process_id,:process_name,:status,:pid,:process_group_id,:exit_code,:exit_signal,:command,:launch_started_at,:last_attached_at,:created_at,:updated_at)",
+            "INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at)
+             VALUES(:id,:workspace_id,:name,:kind,:cwd,:original_cwd,:initial_prompt,:codex_session_id,:visibility,:hidden_at,:evicted_at,:amux_workspace_name,:amux_process_name,:status,:exit_code,:exit_signal,:argv,:io_mode,:launch_started_at,:last_attached_at,:created_at,:updated_at)",
             named_params! {
                 ":id": s.id,
                 ":workspace_id": s.workspace_id,
@@ -57,17 +71,16 @@ impl Store {
                 ":original_cwd": s.original_cwd,
                 ":initial_prompt": s.initial_prompt,
                 ":codex_session_id": s.codex_session_id,
-                ":sidebar_visible": s.sidebar_visible,
+                ":visibility": s.visibility,
                 ":hidden_at": s.hidden_at,
                 ":evicted_at": s.evicted_at,
-                ":process_id": s.process_id,
-                ":process_name": s.process_name,
+                ":amux_workspace_name": s.amux_workspace_name,
+                ":amux_process_name": s.amux_process_name,
                 ":status": s.status,
-                ":pid": s.pid,
-                ":process_group_id": s.process_group_id,
                 ":exit_code": s.exit_code,
                 ":exit_signal": s.exit_signal,
-                ":command": serde_json::to_string(&s.command).unwrap_or_default(),
+                ":argv": serde_json::to_string(&s.argv).unwrap_or_default(),
+                ":io_mode": s.io_mode,
                 ":launch_started_at": s.launch_started_at,
                 ":last_attached_at": s.last_attached_at,
                 ":created_at": s.created_at,
@@ -85,29 +98,21 @@ impl Store {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn set_session_process_runtime(
+    pub fn set_session_runtime(
         &self,
         id: &str,
-        process_id: &str,
-        process_name: &str,
         status: &str,
-        pid: i64,
-        process_group_id: i64,
         exit_code: Option<i64>,
         exit_signal: &str,
-        command: &[String],
+        argv: &[String],
     ) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE sessions SET process_id=?,process_name=?,status=?,pid=?,process_group_id=?,exit_code=?,exit_signal=?,command=?,updated_at=? WHERE id=?",
+            "UPDATE sessions SET status=?,exit_code=?,exit_signal=?,argv=?,updated_at=? WHERE id=?",
             params![
-                process_id,
-                process_name,
                 status,
-                pid,
-                process_group_id,
                 exit_code,
                 exit_signal,
-                serde_json::to_string(command).unwrap_or_default(),
+                serde_json::to_string(argv).unwrap_or_default(),
                 now(),
                 id
             ],
@@ -115,13 +120,13 @@ impl Store {
         Ok(())
     }
 
-    pub fn set_session_visible(&self, id: &str, visible: bool) -> Result<()> {
+    pub fn set_session_visibility(&self, id: &str, visibility: &str) -> Result<()> {
         let timestamp = now();
         self.0.lock().execute(
-            "UPDATE sessions SET sidebar_visible=?,hidden_at=?,updated_at=? WHERE id=?",
+            "UPDATE sessions SET visibility=?,hidden_at=?,updated_at=? WHERE id=?",
             params![
-                visible,
-                if visible {
+                visibility,
+                if visibility == "visible" {
                     None::<String>
                 } else {
                     Some(timestamp.clone())
@@ -131,6 +136,40 @@ impl Store {
             ],
         )?;
         Ok(())
+    }
+
+    pub fn set_session_status(&self, id: &str, status: &str) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE sessions SET status=?,updated_at=? WHERE id=?",
+            params![status, now(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn stop_active_sessions(&self) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE sessions SET status='stopped',updated_at=? WHERE status='running'",
+            [now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn session_by_amux_identity(
+        &self,
+        workspace: &str,
+        process: &str,
+    ) -> Result<Option<Session>> {
+        let db = self.0.lock();
+        let value = db.query_row(
+            &format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE amux_workspace_name=? AND amux_process_name=?"),
+            params![workspace, process],
+            session_row,
+        );
+        match value {
+            Ok(session) => Ok(Some(session)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
     }
 
     pub fn rename_session(&self, id: &str, name: &str) -> Result<()> {
@@ -199,7 +238,7 @@ impl Store {
                 "DELETE FROM sessions WHERE workspace_id=? AND kind='shell'",
                 [workspace_id],
             )?;
-            db.execute("UPDATE sessions SET cwd=?,sidebar_visible=0,hidden_at=?,status='closed',pid=0,updated_at=? WHERE workspace_id=? AND kind='codex'", params![resume_cwd,timestamp,timestamp,workspace_id])?;
+            db.execute("UPDATE sessions SET cwd=?,visibility='hidden',hidden_at=?,status='stopped',updated_at=? WHERE workspace_id=? AND kind='codex'", params![resume_cwd,timestamp,timestamp,workspace_id])?;
         } else {
             db.execute("DELETE FROM sessions WHERE workspace_id=?", [workspace_id])?;
         }
@@ -248,9 +287,9 @@ impl Store {
     }
 }
 
-pub(super) const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,sidebar_visible,hidden_at,evicted_at,process_id,process_name,status,pid,process_group_id,exit_code,exit_signal,command,launch_started_at,last_attached_at,created_at,updated_at";
+pub(super) const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
 pub(super) fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
-    let command: String = r.get("command")?;
+    let argv: String = r.get("argv")?;
     Ok(Session {
         id: r.get("id")?,
         workspace_id: r.get("workspace_id")?,
@@ -260,17 +299,16 @@ pub(super) fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
         original_cwd: r.get("original_cwd")?,
         initial_prompt: r.get("initial_prompt")?,
         codex_session_id: r.get("codex_session_id")?,
-        sidebar_visible: r.get("sidebar_visible")?,
+        visibility: r.get("visibility")?,
         hidden_at: r.get("hidden_at")?,
         evicted_at: r.get("evicted_at")?,
-        process_id: r.get("process_id")?,
-        process_name: r.get("process_name")?,
+        amux_workspace_name: r.get("amux_workspace_name")?,
+        amux_process_name: r.get("amux_process_name")?,
         status: r.get("status")?,
-        pid: r.get("pid")?,
-        process_group_id: r.get("process_group_id")?,
         exit_code: r.get("exit_code")?,
         exit_signal: r.get("exit_signal")?,
-        command: serde_json::from_str(&command).unwrap_or_default(),
+        argv: serde_json::from_str(&argv).unwrap_or_default(),
+        io_mode: r.get("io_mode")?,
         launch_started_at: r.get("launch_started_at")?,
         last_attached_at: r.get("last_attached_at")?,
         created_at: r.get("created_at")?,

@@ -1448,11 +1448,9 @@ async fn finish_workspace_steps(
         for mut session in state.store.sessions(id)? {
             capture_codex_session_id(&state.store, &mut session)?;
             if input.keep_session_history && session.kind == "codex" {
-                if state.terminals.is_running(&session.id).await {
-                    let _ = state.terminals.stop(&session.id).await;
-                }
+                let _ = state.terminals.stop_existing(&session.amux_workspace_name, &session.amux_process_name).await;
             } else {
-                let _ = state.terminals.remove(&session.id).await;
+                let _ = state.terminals.remove_existing(&session.amux_workspace_name, &session.amux_process_name).await;
             }
         }
         let resume_cwd = if input.delete_worktree {

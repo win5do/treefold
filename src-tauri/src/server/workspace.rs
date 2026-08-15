@@ -9,6 +9,7 @@ async fn list_project_summaries(
 }
 
 async fn get_sidebar(State(state): State<AppState>) -> Result<Json<SidebarData>> {
+    reconcile_daemon_sessions(&state).await?;
     Ok(Json(state.store.sidebar_async().await?))
 }
 
@@ -187,15 +188,8 @@ async fn update_project(
         for workspace in state.store.workspaces(&id)? {
             for mut session in state.store.sessions(&workspace.id)? {
                 capture_codex_session_id(&state.store, &mut session)?;
-                if session.kind == "shell" {
-                    let _ = state.terminals.remove(&session.id).await;
-                    state.store.delete_session(&session.id)?;
-                } else {
-                    if state.terminals.is_running(&session.id).await {
-                        let _ = state.terminals.stop(&session.id).await;
-                    }
-                    state.store.set_session_visible(&session.id, false)?;
-                }
+                let _ = state.terminals.stop_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+                state.store.set_session_status(&session.id, "stopped")?;
             }
         }
     }
@@ -1593,7 +1587,12 @@ async fn delete_workspace(
         ));
     }
     for session in state.store.sessions(&id)? {
-        if state.terminals.is_running(&session.id).await {
+        if state
+            .terminals
+            .inspect_existing(&session.amux_workspace_name, &session.amux_process_name)
+            .await?
+            .is_some_and(|process| matches!(process.state, amux::model::ProcessState::Created | amux::model::ProcessState::Starting | amux::model::ProcessState::Running | amux::model::ProcessState::Stopping))
+        {
             return Err(AppError::BadRequest(
                 "Close all running Sessions before deleting this Workspace".into(),
             ));

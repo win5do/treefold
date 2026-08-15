@@ -53,6 +53,25 @@ static LOCATION_OBSERVATIONS: LazyLock<Cache<String, ProjectLocation>> = LazyLoc
 });
 
 pub async fn serve(state: AppState) -> anyhow::Result<()> {
+    let mut process_events = state.terminals.subscribe_process_events();
+    state.terminals.connect_existing().await;
+    reconcile_daemon_sessions(&state).await?;
+    let bridge_state = state.clone();
+    tokio::spawn(async move {
+        loop {
+            match process_events.recv().await {
+                Ok(event) => {
+                    if let Err(error) = reconcile_process_event(&bridge_state, event) {
+                        log::error!("failed to reconcile amux process event: {error}");
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    let _ = reconcile_daemon_sessions(&bridge_state).await;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
     let app = app(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:7331").await?;
     log::info!("Rust API listening on http://127.0.0.1:7331");

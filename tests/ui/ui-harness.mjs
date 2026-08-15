@@ -112,12 +112,12 @@ async function startFixtureApi() {
           return {
             ...project,
             locations: detail.locations,
-            sessions: detail.sessions.filter((session) => session.sidebar_visible),
+            sessions: detail.sessions.filter((session) => session.visibility === "visible"),
             workspaces: detail.workspaces
               .filter((workspace) => workspace.kind !== "base" && workspace.status === "active")
               .map((workspace) => ({
                 ...workspace,
-                sessions: (fixture.workspaceDetails[workspace.id]?.sessions ?? []).filter((session) => session.sidebar_visible),
+                sessions: (fixture.workspaceDetails[workspace.id]?.sessions ?? []).filter((session) => session.visibility === "visible"),
                 locations: fixture.workspaceDetails[workspace.id]?.locations ?? [],
               })),
           };
@@ -245,10 +245,10 @@ async function startFixtureApi() {
       if (input.status === "archived") {
         const projectSessions = fixture.projectDetails[projectMatch[1]].sessions;
         fixture.projectDetails[projectMatch[1]].sessions = projectSessions.filter((session) => session.kind !== "shell");
-        fixture.projectDetails[projectMatch[1]].sessions.forEach((session) => { session.sidebar_visible = false; session.status = "closed"; });
+        fixture.projectDetails[projectMatch[1]].sessions.forEach((session) => { session.status = "stopped"; });
         Object.values(fixture.workspaceDetails).filter((detail) => detail.project_id === projectMatch[1]).forEach((detail) => {
           detail.sessions = detail.sessions.filter((session) => session.kind !== "shell");
-          detail.sessions.forEach((session) => { session.sidebar_visible = false; session.status = "closed"; });
+          detail.sessions.forEach((session) => { session.status = "stopped"; });
         });
       }
       sendJson(response, 200, project);
@@ -291,18 +291,18 @@ async function startFixtureApi() {
           ...detail.sessions[0],
           id: kind === "codex" ? "session-created-project-codex-ui-fixture" : "session-created-project-shell-ui-fixture",
           workspace_id: `project-base-${detail.id}`,
-          process_id: kind === "codex" ? "session-created-project-codex-ui-fixture" : "session-created-project-shell-ui-fixture",
-          process_name: `${kind}-project-fixture`,
+          amux_workspace_name: `treefold-project-base-${detail.id}`,
+          amux_process_name: kind === "codex" ? "session-created-project-codex-ui-fixture" : "session-created-project-shell-ui-fixture",
           name: kind === "shell" ? `shell · ${directory.name}` : "codex",
           kind,
           cwd: directory.path,
           original_cwd: directory.path,
           initial_prompt: "",
           codex_session_id: kind === "codex" ? "codex-created-project-ui-fixture" : undefined,
-          sidebar_visible: true,
+          visibility: "visible",
           status: "running",
-          pid: 4343,
-          process_group_id: 4343,
+          argv: kind === "codex" ? ["codex"] : ["/bin/zsh", "-l"],
+          io_mode: "tty",
           created_at: "2026-08-10T08:12:00.000Z",
           updated_at: "2026-08-10T08:12:00.000Z",
         };
@@ -449,8 +449,8 @@ async function startFixtureApi() {
           ...detail.sessions[0],
           id: createdId,
           workspace_id: detail.id,
-          process_id: createdId,
-          process_name: `${kind}-created-ui-fixture`,
+          amux_workspace_name: `treefold-${detail.id}`,
+          amux_process_name: createdId,
           name: kind,
           kind,
           cwd: input.project_directory_id
@@ -460,8 +460,9 @@ async function startFixtureApi() {
           initial_prompt: "",
           codex_session_id: undefined,
           status: "running",
-          pid: 4242,
-          process_group_id: 4242,
+          visibility: "visible",
+          argv: kind === "codex" ? ["codex"] : ["/bin/zsh", "-l"],
+          io_mode: "tty",
           created_at: "2026-08-10T08:10:00.000Z",
           updated_at: "2026-08-10T08:10:00.000Z",
         };
@@ -501,17 +502,17 @@ async function startFixtureApi() {
         sendJson(response, 404, { error: "Session not found" });
         return;
       }
-      if (sessionActionMatch[2] === "close" && session.kind === "shell") {
+      if (sessionActionMatch[2] === "close" && session.kind !== "codex") {
         collections.forEach((items) => {
           const index = items.findIndex((item) => item.id === session.id);
           if (index >= 0) items.splice(index, 1);
         });
-        sendJson(response, 200, { ...session, sidebar_visible: false, status: "closed" });
+        sendJson(response, 200, { ...session, visibility: "hidden", status: "stopped" });
         return;
       }
-      if (sessionActionMatch[2] === "close") session.sidebar_visible = false;
-      if (sessionActionMatch[2] === "open") session.sidebar_visible = true;
-      if (sessionActionMatch[2] === "stop" || sessionActionMatch[2] === "close") session.status = "closed";
+      if (sessionActionMatch[2] === "close") session.visibility = "hidden";
+      if (sessionActionMatch[2] === "open") session.visibility = "visible";
+      if (sessionActionMatch[2] === "stop" || sessionActionMatch[2] === "close") session.status = "stopped";
       if (sessionActionMatch[2] === "restart") session.status = "running";
       sendJson(response, 200, session);
       return;
@@ -605,9 +606,17 @@ async function startFixtureApi() {
     setProcessState(id, state) {
       const process = fixture.processes.find((item) => item.id === id);
       if (process) process.state = state;
+      for (const detail of Object.values(fixture.workspaceDetails)) {
+        const session = detail.sessions.find((item) => item.id === id);
+        if (session) session.status = state;
+      }
     },
     removeProcess(id) {
       fixture.processes = fixture.processes.filter((item) => item.id !== id);
+      for (const detail of Object.values(fixture.workspaceDetails)) {
+        const session = detail.sessions.find((item) => item.id === id);
+        if (session) session.status = "stopped";
+      }
     },
     unexpectedRequests,
     async close() {

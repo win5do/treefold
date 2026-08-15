@@ -404,7 +404,7 @@ try {
   const workspaceShellRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceShell}"]`);
   await pointerDragSession(browser, workspaceCodexRow, workspaceShellRow, "before");
   await browser.waitUntil(() => harness.sessionOrderRequests.length > 0, { timeout: 3_000, timeoutMsg: "Session drag did not persist its order" });
-  assert.deepEqual(harness.sessionOrderRequests.at(-1), { workspaceId: FIXTURE_IDS.workspace, session_ids: [FIXTURE_IDS.workspaceCodex, FIXTURE_IDS.workspaceShell] }, "Session order must stay scoped to its Workspace");
+  assert.deepEqual(harness.sessionOrderRequests.at(-1), { workspaceId: FIXTURE_IDS.workspace, session_ids: [FIXTURE_IDS.workspaceCodex, FIXTURE_IDS.workspaceShell, FIXTURE_IDS.sessionDevServer] }, "Session order must stay scoped to its Workspace and include Command Sessions");
   const reorderedWorkspaceRows = await workspaceChildren.$$('[data-testid^="sidebar-session-"]');
   const reorderedWorkspaceIds = [];
   for (const row of reorderedWorkspaceRows) reorderedWorkspaceIds.push(await row.getAttribute("data-testid"));
@@ -413,7 +413,7 @@ try {
   const reorderedWorkspaceShellRow = await workspaceChildren.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceShell}"]`);
   await pointerDragSession(browser, reorderedWorkspaceCodexRow, reorderedWorkspaceShellRow, "after");
   await browser.waitUntil(() => harness.sessionOrderRequests.length > 1, { timeout: 3_000, timeoutMsg: "Downward Session drag did not persist its order" });
-  assert.deepEqual(harness.sessionOrderRequests.at(-1), { workspaceId: FIXTURE_IDS.workspace, session_ids: [FIXTURE_IDS.workspaceShell, FIXTURE_IDS.workspaceCodex] }, "Session drag must support moving a tab downward");
+  assert.deepEqual(harness.sessionOrderRequests.at(-1), { workspaceId: FIXTURE_IDS.workspace, session_ids: [FIXTURE_IDS.workspaceShell, FIXTURE_IDS.workspaceCodex, FIXTURE_IDS.sessionDevServer] }, "Session drag must support moving a tab downward");
   const restoredWorkspaceRows = await workspaceChildren.$$('[data-testid^="sidebar-session-"]');
   const restoredWorkspaceIds = [];
   for (const row of restoredWorkspaceRows) restoredWorkspaceIds.push(await row.getAttribute("data-testid"));
@@ -475,7 +475,7 @@ try {
   await renameSession(browser, "session-created-shell-ui-fixture", "Renamed Shell Session");
   assert.equal((await (await browser.$('[data-testid="sidebar-session-session-created-shell-ui-fixture"]')).getText()).includes("Renamed Shell Session"), true, "Shell Rename must refresh the sidebar");
   assert.deepEqual(harness.renameRequests.at(-1), { kind: "session", id: "session-created-shell-ui-fixture", name: "Renamed Shell Session" });
-  await (await browser.$("button=Close Shell")).click();
+  await (await browser.$('main button[aria-label="Close Session"]')).click();
   await browser.waitUntil(async () => (await browser.getUrl()).endsWith(`#/workspaces/${FIXTURE_IDS.workspace}`), {
     timeout: 3_000,
     timeoutMsg: "closing a Workspace Shell did not return to the Workspace",
@@ -599,8 +599,8 @@ try {
   const restoredProjectLink = await browser.$('[data-testid="sidebar-project-link"]');
   await restoredProjectLink.waitForDisplayed({ timeout: 3_000 });
   await browser.$(`button[aria-label="Expand Project ${FIXTURE_NAMES.project}"]`).click();
-  assert.equal((await sidebar.getText()).includes("Parent Shell Session"), false, "archiving must close and hide Shell Sessions");
-  assert.equal((await sidebar.getText()).includes("Parent Codex Session"), false, "archiving must close and hide Codex Sessions");
+  assert.equal((await sidebar.getText()).includes("Parent Shell Session"), false, "the explicitly closed Shell must remain deleted after restore");
+  assert.match(await sidebar.getText(), /Parent Codex Session.*stopped/s, "archiving must retain Codex Sessions as stopped");
   overviewRow = await browser.$('[data-testid="project-overview-row"]');
   assert.equal(await overviewRow.getAttribute("data-project-status"), "active", "restored Project must become active on Overview");
   assert.equal(await (await overviewRow.$('[data-testid="restore-project-action"]')).isExisting(), false, "active Project must not expose Restore to sidebar");
@@ -658,7 +658,7 @@ try {
     timeout: 1_000,
     timeoutMsg: "Project Shell did not open in the managed Web terminal",
   });
-  const closeProjectShell = await browser.$("button=Close Shell");
+  const closeProjectShell = await browser.$('main button[aria-label="Close Session"]');
   await closeProjectShell.waitForDisplayed({ timeout: 3_000 });
   await closeProjectShell.click();
   await browser.waitUntil(async () => (await browser.getUrl()).endsWith(`#/projects/${FIXTURE_IDS.project}`), {

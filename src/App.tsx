@@ -19,6 +19,7 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  PanelsTopLeft,
   Pencil,
   Plus,
   RefreshCw,
@@ -59,7 +60,7 @@ import { WorkspaceInspector } from "@/features/review/WorkspaceInspector";
 import { FinishWorkspaceDialog } from "@/features/delivery/FinishWorkspaceDialog";
 import { CreateForkDialog } from "@/features/fork/CreateForkDialog";
 import { StatusDot } from "@/components/app/StatusDot";
-import { appKeys, backgroundProcessesQuery, settingsQuery, systemQuery } from "@/features/app/queries";
+import { appKeys, settingsQuery, systemQuery } from "@/features/app/queries";
 import { projectDetailQuery, projectKeys, projectSessionsQuery, projectSummariesQuery, sidebarQuery } from "@/features/projects/queries";
 import { workspaceDetailQuery, workspaceKeys, workspaceSessionsQuery } from "@/features/workspace/queries";
 import { watchSystemTheme } from "@/lib/theme";
@@ -91,7 +92,6 @@ function Workspace() {
   const workspaceSessions = useQuery({ ...workspaceSessionsQuery(params.workspaceId ?? ""), enabled: Boolean(params.workspaceId) });
   const systemQueryResult = useQuery(systemQuery());
   const settingsQueryResult = useQuery(settingsQuery());
-  const backgroundProcesses = useQuery(backgroundProcessesQuery());
   const system = systemQueryResult.data ?? null;
   const settings = settingsQueryResult.data ?? null;
   const workspace = workspaceDetail.data
@@ -210,7 +210,9 @@ function Workspace() {
         queryClient.invalidateQueries({ queryKey: projectKeys.summaries }),
         queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
         params.projectId ? queryClient.invalidateQueries({ queryKey: projectKeys.detail(params.projectId) }) : Promise.resolve(),
+        params.projectId ? queryClient.invalidateQueries({ queryKey: projectKeys.sessions(params.projectId) }) : Promise.resolve(),
         params.workspaceId ? queryClient.invalidateQueries({ queryKey: workspaceKeys.detail(params.workspaceId) }) : Promise.resolve(),
+        params.workspaceId ? queryClient.invalidateQueries({ queryKey: workspaceKeys.sessions(params.workspaceId) }) : Promise.resolve(),
       ]);
       setError("");
       return true;
@@ -360,7 +362,7 @@ function Workspace() {
 
   async function reorderSessions(stream: Workspace, sourceId: string, targetId: string, position: SessionDropPosition) {
     const allSessions = (stream as SidebarStream).sessions ?? [];
-    const sessions = allSessions.filter((session) => session.sidebar_visible);
+    const sessions = allSessions.filter((session) => session.visibility === "visible");
     const source = sessions.find((session) => session.id === sourceId);
     if (!source) return;
     const reordered = sessions.filter((session) => session.id !== sourceId);
@@ -368,7 +370,7 @@ function Workspace() {
     if (targetIndex < 0) return;
     reordered.splice(targetIndex + (position === "after" ? 1 : 0), 0, source);
     if (reordered.every((session, index) => session.id === sessions[index]?.id)) return;
-    const nextSessions = [...reordered, ...allSessions.filter((session) => !session.sidebar_visible)];
+    const nextSessions = [...reordered, ...allSessions.filter((session) => session.visibility !== "visible")];
     queryClient.setQueryData<Session[]>(workspaceKeys.sessions(stream.id), nextSessions);
     queryClient.setQueryData<ProjectDetail[]>(projectKeys.sidebar, (current = []) => updateProjectWorkspaceSessions(current, stream.id, nextSessions));
     try {
@@ -448,7 +450,7 @@ function Workspace() {
       await queryClient.invalidateQueries({ queryKey: workspaceKeys.sessions(stream.id) });
       setError(cause instanceof Error ? cause.message : "关闭 Session 失败");
     } finally {
-      if (session.kind === "shell") {
+      if (session.kind !== "codex") {
         queryClient.setQueryData<Session[]>(workspaceKeys.sessions(stream.id), (current = []) => current.filter((item) => item.id !== session.id));
       }
       setClosingSessionIds((current) => {
@@ -472,7 +474,7 @@ function Workspace() {
       await queryClient.invalidateQueries({ queryKey: projectKeys.sessions(project.id) });
       setError(cause instanceof Error ? cause.message : "关闭 Session 失败");
     } finally {
-      if (session.kind === "shell") {
+      if (session.kind !== "codex") {
         queryClient.setQueryData<Session[]>(projectKeys.sessions(project.id), (current = []) => current.filter((candidate) => candidate.id !== session.id));
       }
       setClosingSessionIds((current) => {
@@ -484,7 +486,7 @@ function Workspace() {
   }
 
   async function openHistorySession(stream: WorkspaceDetail, session: Session) {
-    if (!session.sidebar_visible) {
+    if (session.visibility !== "visible") {
       const ok = await act(() => sessionsApi.open(session.id));
       if (!ok) return;
     }
@@ -492,7 +494,7 @@ function Workspace() {
   }
 
   async function openProjectHistorySession(project: ProjectDetail, session: Session) {
-    if (!session.sidebar_visible) {
+    if (session.visibility !== "visible") {
       const ok = await act(() => sessionsApi.open(session.id));
       if (!ok) return;
     }
@@ -541,7 +543,6 @@ function Workspace() {
         {mobileSidebar && <button className="absolute inset-0 z-30 bg-black/30 md:hidden" onClick={() => setMobileSidebar(false)} aria-label={t("workspace.closeNavigation")} />}
         <WorkspaceSidebar
           projects={projects}
-          backgroundProcesses={backgroundProcesses.data ?? []}
           busy={busy}
           selectedProjectId={params.projectId}
           selectedWorkspaceId={workspace?.id}
@@ -596,9 +597,6 @@ function Workspace() {
                 onRestart={() => void act(() => sessionsApi.restart(selectedSession.id))}
                 onClose={() => workspace ? void closeSidebarSession(workspace, selectedSession) : selectedProject ? void closeProjectSession(selectedProject, selectedSession) : undefined}
                 onExit={() => {
-                  if (selectedSession.kind === "shell") {
-                    navigate(workspace ? `/workspaces/${workspace.id}` : `/projects/${selectedProject!.id}`);
-                  }
                   void refresh();
                 }}
               />
@@ -687,17 +685,14 @@ function Workspace() {
 }
 
 function WorkspaceHome({ detail, busy, onOpen, onOpenFork, onDeleteFork, onDeleteForkBlocked, onConfigureUpstream, onClearUpstream }: { detail: WorkspaceDetail; busy: boolean; onOpen: (session: Session) => void; onOpenFork: (fork: Workspace) => void; onDeleteFork: (fork: Workspace) => void; onDeleteForkBlocked: (fork: Workspace) => void; onConfigureUpstream: (location: WorkspaceLocation) => void; onClearUpstream: (location: WorkspaceLocation) => void }) {
-  const [filter, setFilter] = useState<"all" | "codex" | "shell">("all");
+  const [filter, setFilter] = useState<"all" | "codex" | "shell" | "command">("all");
   const sessions = detail.sessions.filter((session) => filter === "all" || session.kind === filter);
   const actionLabel = (session: Session) => {
-    if (session.status === "closed" && session.kind === "shell") return "";
-    if (session.status === "evicted") return "Resume";
-    if (!session.sidebar_visible && session.kind === "codex") return session.status === "running" || session.status === "starting" ? "Show in sidebar" : "Open";
+    if (session.visibility !== "visible" && session.kind === "codex") return session.status === "running" ? "Show in sidebar" : "Open";
     return "Open";
   };
   const displayStatus = (session: Session) => {
-    if (session.status === "evicted") return "Ready to resume";
-    if (!session.sidebar_visible && session.kind === "codex" && ["running", "starting"].includes(session.status)) return "Background";
+    if (session.visibility !== "visible" && session.kind === "codex" && session.status === "running") return "Background";
     return session.status;
   };
   const formatTime = (value?: string) => value ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
@@ -710,7 +705,7 @@ function WorkspaceHome({ detail, busy, onOpen, onOpenFork, onDeleteFork, onDelet
       {detail.kind === "workspace" && <section data-testid="workspace-forks-section" className="mt-8"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Forks</h2><span className="text-[11px] text-muted-foreground">{detail.forks.length}</span></div><div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">{detail.forks.map((fork) => <div key={fork.id} data-testid={`fork-list-row-${fork.id}`} className="flex items-center gap-1"><button className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left hover:bg-muted/50" onClick={() => onOpenFork(fork)}><GitBranch className="size-4 text-muted-foreground" /><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="truncate text-sm font-medium">{fork.name}</span><Badge variant={fork.status === "active" ? "success" : "neutral"}>{fork.delivery_status}</Badge></div><p className="mt-1 truncate text-xs text-muted-foreground">{fork.branch}</p></div><ChevronRight className="size-4 text-muted-foreground/60" /></button><div className="pr-2"><RecordActionMenu kind="fork" name={fork.name} status={fork.status} busy={busy} onDelete={() => onDeleteFork(fork)} onDeleteBlocked={() => onDeleteForkBlocked(fork)} /></div></div>)}{detail.forks.length === 0 && <p className="px-4 py-8 text-center text-xs text-muted-foreground">No Forks</p>}</div></section>}
       <section data-testid="workspace-todos-section" className="mt-8"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Todos</h2><span className="text-[11px] text-muted-foreground">{detail.todos.length}</span></div><div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">{detail.todos.map((todo) => <div key={todo.id} className="flex items-center gap-3 px-4 py-3"><span className={cn("size-2 rounded-full", todo.status === "done" ? "bg-success" : "bg-warning")} /><span className="min-w-0 flex-1 truncate text-sm">{todo.title}</span><Badge>{todo.status}</Badge></div>)}{detail.todos.length === 0 && <p className="px-4 py-8 text-center text-xs text-muted-foreground">No Todos</p>}</div></section>
       <div className="mt-8 flex items-center justify-between border-b border-border">
-        <div className="flex gap-5">{([['all', 'All'], ['codex', 'Agent'], ['shell', 'Shell']] as const).map(([value, label]) => <button key={value} className={cn("border-b-2 px-1 pb-3 text-xs font-medium", filter === value ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => setFilter(value)}>{label}</button>)}</div>
+        <div className="flex gap-5">{([['all', 'All'], ['codex', 'Agent'], ['shell', 'Shell'], ['command', 'Command']] as const).map(([value, label]) => <button key={value} className={cn("border-b-2 px-1 pb-3 text-xs font-medium", filter === value ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")} onClick={() => setFilter(value)}>{label}</button>)}</div>
         <span className="pb-3 text-[11px] text-muted-foreground">{sessions.length} sessions</span>
       </div>
       <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
@@ -720,13 +715,13 @@ function WorkspaceHome({ detail, busy, onOpen, onOpenFork, onDeleteFork, onDelet
         {sessions.map((session) => {
           const label = actionLabel(session);
           return <div key={session.id} data-testid={`workspace-session-${session.id}`} className="grid gap-3 border-b border-border/60 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] md:items-center">
-            <div className="flex min-w-0 items-center gap-3"><div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">{session.kind === "codex" ? <Bot className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{session.name}</p><p className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">{session.codex_session_id || session.id}</p></div></div>
-            <div><Badge>{session.kind === "codex" ? "Agent" : "Shell"}</Badge></div>
+            <div className="flex min-w-0 items-center gap-3"><div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">{session.kind === "codex" ? <Bot className="size-4" /> : session.kind === "command" ? <PanelsTopLeft className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-medium">{session.name}</p><p className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">{session.codex_session_id || session.id}</p></div></div>
+            <div><Badge>{session.kind === "codex" ? "Agent" : session.kind === "command" ? "Command" : "Shell"}</Badge></div>
             <div className="flex items-center gap-2 text-xs text-foreground"><StatusDot status={session.status} />{displayStatus(session)}</div>
             <span className="hidden text-xs text-muted-foreground md:block">{formatTime(session.launch_started_at)}</span>
             <span className="hidden text-xs text-muted-foreground md:block">{formatTime(session.hidden_at || session.last_attached_at || session.updated_at || session.created_at)}</span>
             <code className="hidden truncate text-[10px] text-muted-foreground md:block" title={session.cwd}>{session.cwd}</code>
-            <div className="flex justify-end">{label && detail.status === "active" && <Button size="sm" variant={session.status === "evicted" ? "default" : "secondary"} disabled={busy || (session.kind === "codex" && !session.codex_session_id)} onClick={() => onOpen(session)}>{session.status === "evicted" && <RotateCcw className="size-3" />}{label}</Button>}</div>
+            <div className="flex justify-end">{label && detail.status === "active" && <Button size="sm" variant="secondary" disabled={busy || (session.kind === "codex" && session.visibility !== "visible" && !session.codex_session_id)} onClick={() => onOpen(session)}>{label}</Button>}</div>
           </div>;
         })}
         {sessions.length === 0 && <div className="py-16 text-center"><TerminalSquare className="mx-auto size-6 text-muted-foreground/60" /><p className="mt-3 text-sm font-medium">没有符合筛选条件的 Session</p></div>}
@@ -874,7 +869,7 @@ function ProjectHome({ project, busy, onOpen, onDeleteWorkspace, onDeleteWorkspa
     <section className="mt-10"><div className="flex items-center justify-between gap-3"><div><h2 className="text-sm font-semibold">Repositories</h2><p className="mt-1 text-xs text-muted-foreground">Expand a repository to inspect its worktrees; non-Git locations remain read-only context.</p></div>{project.status === "active" && <Button data-testid="project-add-location" size="sm" onClick={onAddDirectory}><Plus data-icon="inline-start" />Add location</Button>}</div>
       <div data-testid="project-repository-tree" className="relative z-10 mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">{project.directories.map((directory) => <ProjectLocationTreeRow key={directory.id} directory={directory} worktrees={project.worktrees.filter((item) => item.project_location_id === directory.id)} busy={busy} readOnly={project.status === "archived"} onOpen={onOpen} onEdit={() => onEditDirectory(directory)} onRefresh={() => onRefreshLocation(directory)} onMakeDefault={() => onMakeDefault(directory)} onReattach={() => onReattach(directory)} onDeleteWorktree={onDeleteWorktree} />)}{project.directories.length === 0 && <div className="py-10 text-center text-xs text-muted-foreground">Add a Git location before creating a Workspace.</div>}</div>
     </section>
-    <section data-testid="project-sessions-section" className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Project Sessions</h2><p className="mt-1 text-xs text-warning">These Sessions operate directly in Project locations. Shell records disappear when closed; Codex history is retained.</p></div><span className="text-[11px] text-muted-foreground">{project.sessions.length}</span></div><div className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">{project.sessions.map((session) => <div key={session.id} data-testid={`project-session-${session.id}`} className="flex items-center gap-3 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">{session.kind === "codex" ? <Bot className="size-4 text-muted-foreground" /> : <TerminalSquare className="size-4 text-muted-foreground" />}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{session.name}</p><Badge>{session.kind === "codex" ? "Codex" : "Shell"}</Badge><Badge variant={session.status === "running" ? "success" : "neutral"}>{session.sidebar_visible ? session.status : "history"}</Badge></div><code className="mt-1 block truncate text-[10px] text-muted-foreground" title={session.cwd}>{session.cwd}</code></div>{project.status === "active" && <Button size="sm" variant="secondary" disabled={busy || (session.kind === "codex" && !session.codex_session_id)} onClick={() => onOpenSession(session)}>{session.sidebar_visible ? "Open" : "Resume"}</Button>}</div>)}{project.sessions.length === 0 && <div className="py-10 text-center text-xs text-muted-foreground">No active Shell or saved Codex Sessions</div>}</div></section>
+    <section data-testid="project-sessions-section" className="mt-10"><div className="flex items-center justify-between"><div><h2 className="text-sm font-semibold">Project Sessions</h2><p className="mt-1 text-xs text-warning">These Sessions operate directly in Project locations. Shell and Command records are deleted only when closed; Codex history is retained.</p></div><span className="text-[11px] text-muted-foreground">{project.sessions.length}</span></div><div className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">{project.sessions.map((session) => <div key={session.id} data-testid={`project-session-${session.id}`} className="flex items-center gap-3 p-4"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">{session.kind === "codex" ? <Bot className="size-4 text-muted-foreground" /> : session.kind === "command" ? <PanelsTopLeft className="size-4 text-muted-foreground" /> : <TerminalSquare className="size-4 text-muted-foreground" />}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{session.name}</p><Badge>{session.kind === "codex" ? "Codex" : session.kind === "command" ? "Command" : "Shell"}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "destructive" : "neutral"}>{session.visibility === "visible" ? session.status : "history"}</Badge></div><code className="mt-1 block truncate text-[10px] text-muted-foreground" title={session.cwd}>{session.cwd}</code></div>{project.status === "active" && <Button size="sm" variant="secondary" disabled={busy || (session.kind === "codex" && session.visibility !== "visible" && !session.codex_session_id)} onClick={() => onOpenSession(session)}>{session.visibility === "visible" ? "Open" : "Resume"}</Button>}</div>)}{project.sessions.length === 0 && <div className="py-10 text-center text-xs text-muted-foreground">No Sessions</div>}</div></section>
     <section className="mt-10"><div className="flex items-center justify-between"><h2 className="text-sm font-semibold">Workspaces</h2><span className="text-[11px] text-muted-foreground">{rootWorkspaces.length}</span></div><div className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">{rootWorkspaces.map((stream) => <div key={stream.id} data-testid={`workspace-list-row-${stream.id}`} className="flex items-center gap-1"><button onClick={() => onOpen(stream.id)} className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left hover:bg-muted/50"><div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted"><Workflow className="size-4 text-muted-foreground" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="truncate text-sm font-semibold">{stream.name}</p>{stream.status === "archived" && <Badge>archived</Badge>}</div><p className="mt-1 truncate text-xs text-muted-foreground">{stream.description || stream.checkout_path}</p></div><ChevronRight className="size-4 shrink-0 text-muted-foreground/60" /></button><div className="pr-2"><RecordActionMenu kind="workspace" name={stream.name} status={stream.status} busy={busy} onDelete={() => onDeleteWorkspace(stream)} onDeleteBlocked={() => onDeleteWorkspaceBlocked(stream)} /></div></div>)}{rootWorkspaces.length === 0 && <div className="py-12 text-center text-xs text-muted-foreground">No Workspaces yet</div>}</div></section>
   </div></div>;
 }

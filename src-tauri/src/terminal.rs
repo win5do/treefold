@@ -61,15 +61,19 @@ pub struct TreefoldProcessView {
     pub parent_process_id: Option<String>,
     pub session_id: Option<String>,
     pub session_root: bool,
+    pub workspace_name: String,
     pub name: String,
     pub command: Vec<String>,
     pub cwd: String,
+    pub io_mode: String,
     pub state: String,
     pub pid: i32,
     pub execution: u64,
     pub created_at: String,
     pub started_at: Option<String>,
     pub finished_at: Option<String>,
+    pub exit_code: Option<i32>,
+    pub exit_signal: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -195,30 +199,31 @@ impl TerminalManager {
             .read()
             .await
             .values()
-            .map(|(view, session_id)| {
-                let process = &view.process;
-                TreefoldProcessView {
-                    id: process.id.clone(),
-                    workspace_id: process.workspace_id.clone(),
-                    group_id: process.group_id.clone(),
-                    parent_process_id: process.parent_process_id.clone(),
-                    session_id: session_id.clone(),
-                    session_root: process
-                        .env
-                        .get("TREEFOLD_SESSION_ID")
-                        .is_some_and(|value| !value.is_empty()),
-                    name: process.name.clone(),
-                    command: process.command.clone(),
-                    cwd: process.cwd.clone(),
-                    state: process_state_name(&process.state).into(),
-                    pid: process.pid,
-                    execution: process.execution,
-                    created_at: process.created_at.to_rfc3339(),
-                    started_at: process.started_at.map(|value| value.to_rfc3339()),
-                    finished_at: process.finished_at.map(|value| value.to_rfc3339()),
-                }
-            })
+            .map(|(view, session_id)| treefold_process_view(view, session_id.clone()))
             .collect()
+    }
+
+    /// Returns a fresh daemon snapshot without starting a missing daemon.
+    pub async fn existing_processes(&self) -> anyhow::Result<Option<Vec<TreefoldProcessView>>> {
+        if !self.client.ready().await {
+            return Ok(None);
+        }
+        let bytes = self
+            .client
+            .do_empty(Method::GET, "/v1/processes/snapshot")
+            .await?;
+        let snapshot = serde_json::from_slice::<ProcessSnapshot>(&bytes)?;
+        let views = snapshot
+            .processes
+            .into_iter()
+            .map(|view| (view.process.id.clone(), view))
+            .collect::<BTreeMap<_, _>>();
+        Ok(Some(
+            views
+                .values()
+                .map(|view| treefold_process_view(view, resolve_session(&view.process.id, &views)))
+                .collect(),
+        ))
     }
 
     fn start_event_bridge(&self) {
@@ -266,12 +271,16 @@ impl TerminalManager {
     ) -> anyhow::Result<Process> {
         self.ensure_runtime().await?;
         self.start_event_bridge();
-        let workspace = Self::workspace_name(&session.cwd);
+        let workspace = if session.amux_workspace_name.is_empty() {
+            Self::workspace_name(&session.cwd)
+        } else {
+            session.amux_workspace_name.clone()
+        };
         self.ensure_workspace(&workspace, &session.cwd).await?;
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
         let command = if session.kind == "shell" {
             shell_command(&shell, &session.initial_prompt)
-        } else {
+        } else if session.kind == "codex" {
             let mut command = vec!["codex".into()];
             command.extend(codex_arguments(
                 session,
@@ -279,18 +288,22 @@ impl TerminalManager {
                 codex_extra_args,
             ));
             command
+        } else {
+            session.argv.clone()
         };
         let mut env = BTreeMap::from([
             ("TERM".into(), "xterm-256color".into()),
             ("COLORTERM".into(), "truecolor".into()),
-            ("TREEFOLD_SESSION_ID".into(), session.id.clone()),
-            ("TREEFOLD_API_TOKEN".into(), session.id.clone()),
             ("TREEFOLD_API_URL".into(), "http://127.0.0.1:7331".into()),
             ("TREEFOLD_WORKSPACE_ID".into(), session.workspace_id.clone()),
             ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
             ("AMUX_DAEMON".into(), self.daemon_name.as_ref().clone()),
             ("AMUX_WORKSPACE".into(), workspace.clone()),
         ]);
+        if session.kind != "command" {
+            env.insert("TREEFOLD_SESSION_ID".into(), session.id.clone());
+            env.insert("TREEFOLD_API_TOKEN".into(), session.id.clone());
+        }
         if session.kind == "shell" && !session.initial_prompt.trim().is_empty() {
             env.insert("SHELL".into(), shell);
             env.insert(
@@ -304,12 +317,16 @@ impl TerminalManager {
                 Method::POST,
                 &format!("/v1/workspaces/{workspace}/processes"),
                 Some(&RunRequest {
-                    name: session.id.clone(),
+                    name: session.amux_process_name.clone(),
                     parent_process_id: None,
                     command,
                     cwd: session.cwd.clone(),
                     env,
-                    io_mode: IoMode::Tty,
+                    io_mode: if session.io_mode == "pipe" {
+                        IoMode::Pipe
+                    } else {
+                        IoMode::Tty
+                    },
                     runtime: "host".into(),
                     initial_rows: 40,
                     initial_cols: 120,
@@ -330,6 +347,7 @@ impl TerminalManager {
         format!("treefold-ws-{hash:016x}")
     }
 
+    #[cfg(test)]
     pub async fn inspect(&self, id: &str) -> anyhow::Result<Process> {
         self.ensure_runtime().await?;
         let bytes = self
@@ -339,6 +357,23 @@ impl TerminalManager {
         response_process(&bytes)
     }
 
+    pub async fn inspect_existing(
+        &self,
+        workspace: &str,
+        process: &str,
+    ) -> anyhow::Result<Option<Process>> {
+        if !self.client.ready().await {
+            return Ok(None);
+        }
+        let path = format!("/v1/processes/{workspace}/{process}");
+        match self.client.do_empty(Method::GET, &path).await {
+            Ok(bytes) => Ok(Some(response_process(&bytes)?)),
+            Err(error) if error.to_string().contains("process_not_found") => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    #[cfg(test)]
     pub async fn is_running(&self, id: &str) -> bool {
         self.inspect(id)
             .await
@@ -351,24 +386,34 @@ impl TerminalManager {
             .unwrap_or(false)
     }
 
-    pub async fn stop(&self, id: &str) -> anyhow::Result<()> {
-        self.ensure_runtime().await?;
+    pub async fn stop_existing(&self, workspace: &str, process: &str) -> anyhow::Result<bool> {
+        let Some(current) = self.inspect_existing(workspace, process).await? else {
+            return Ok(false);
+        };
+        if !matches!(
+            current.state,
+            ProcessState::Created | ProcessState::Starting | ProcessState::Running
+        ) {
+            return Ok(false);
+        }
         self.client
             .do_json(
                 Method::POST,
-                &process_path(id, "stop"),
+                &format!("/v1/processes/{workspace}/{process}/stop"),
                 Some(&StopRequest { grace_millis: 500 }),
             )
             .await?;
-        Ok(())
+        Ok(true)
     }
 
-    pub async fn remove(&self, id: &str) -> anyhow::Result<()> {
-        self.ensure_runtime().await?;
-        let process = match self.inspect(id).await {
-            Ok(process) => process,
-            Err(error) if error.to_string().contains("process_not_found") => return Ok(()),
-            Err(error) => return Err(error),
+    /// Removes a process only when its daemon already exists.
+    pub async fn remove_existing(
+        &self,
+        workspace: &str,
+        process_name: &str,
+    ) -> anyhow::Result<bool> {
+        let Some(process) = self.inspect_existing(workspace, process_name).await? else {
+            return Ok(false);
         };
         if matches!(
             process.state,
@@ -378,29 +423,70 @@ impl TerminalManager {
                 | ProcessState::Stopping
         ) {
             if process.state != ProcessState::Stopping {
-                self.stop(id).await?;
+                self.stop_existing(workspace, process_name).await?;
             }
             self.client
-                .do_empty(Method::GET, &process_path(id, "wait"))
+                .do_empty(
+                    Method::GET,
+                    &format!("/v1/processes/{workspace}/{process_name}/wait"),
+                )
                 .await?;
         }
         self.client
-            .do_empty(Method::DELETE, &process_path(id, ""))
+            .do_empty(
+                Method::DELETE,
+                &format!("/v1/processes/{workspace}/{process_name}"),
+            )
             .await?;
-        Ok(())
+        Ok(true)
     }
 
-    pub async fn attach(
+    pub async fn attach_existing(
         &self,
-        id: &str,
-    ) -> anyhow::Result<WebSocketStream<tokio::net::UnixStream>> {
-        self.ensure_runtime().await?;
-        self.client
-            .attach(&format!(
-                "{}?takeover=true&replay_bytes={REPLAY_BYTES}",
-                process_path(id, "attach")
-            ))
-            .await
+        workspace: &str,
+        process: &str,
+    ) -> anyhow::Result<Option<WebSocketStream<tokio::net::UnixStream>>> {
+        if !self.client.ready().await {
+            return Ok(None);
+        }
+        Ok(Some(
+            self.client
+                .attach(&format!(
+                    "/v1/processes/{workspace}/{process}/attach?takeover=true&replay_bytes={REPLAY_BYTES}"
+                ))
+                .await?,
+        ))
+    }
+}
+
+pub(crate) fn treefold_process_view(
+    view: &ProcessView,
+    session_id: Option<String>,
+) -> TreefoldProcessView {
+    let process = &view.process;
+    TreefoldProcessView {
+        id: process.id.clone(),
+        workspace_id: process.workspace_id.clone(),
+        group_id: process.group_id.clone(),
+        parent_process_id: process.parent_process_id.clone(),
+        session_id,
+        session_root: process
+            .env
+            .get("TREEFOLD_SESSION_ID")
+            .is_some_and(|value| !value.is_empty()),
+        workspace_name: view.workspace_name.clone(),
+        name: process.name.clone(),
+        command: process.command.clone(),
+        cwd: process.cwd.clone(),
+        io_mode: format!("{:?}", process.io_mode).to_ascii_lowercase(),
+        state: process_state_name(&process.state).into(),
+        pid: process.pid,
+        execution: process.execution,
+        created_at: process.created_at.to_rfc3339(),
+        started_at: process.started_at.map(|value| value.to_rfc3339()),
+        finished_at: process.finished_at.map(|value| value.to_rfc3339()),
+        exit_code: process.exit_code,
+        exit_signal: process.exit_signal.clone(),
     }
 }
 
@@ -449,6 +535,7 @@ impl Default for TerminalManager {
     }
 }
 
+#[cfg(test)]
 fn process_path(target: &str, action: &str) -> String {
     format!(
         "/v1/processes/{target}{}",
@@ -616,17 +703,16 @@ mod tests {
             original_cwd: "/tmp/primary worktree".into(),
             initial_prompt: "Implement the feature".into(),
             codex_session_id: None,
-            sidebar_visible: true,
+            visibility: "visible".into(),
             hidden_at: None,
             evicted_at: None,
-            process_id: String::new(),
-            process_name: String::new(),
-            status: "starting".into(),
-            pid: 0,
-            process_group_id: 0,
+            amux_workspace_name: TerminalManager::workspace_name("/tmp/primary worktree"),
+            amux_process_name: "session-1".into(),
+            status: "stopped".into(),
             exit_code: None,
             exit_signal: String::new(),
-            command: Vec::new(),
+            argv: Vec::new(),
+            io_mode: "tty".into(),
             launch_started_at: String::new(),
             last_attached_at: None,
             created_at: String::new(),

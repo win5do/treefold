@@ -22,27 +22,26 @@ try {
   await workspace.waitForDisplayed({ timeout: 3_000 });
   await (await workspace.$('[data-testid="sidebar-tree-toggle"]')).click();
 
-  const devServer = await browser.$(`[data-testid="sidebar-background-process-${FIXTURE_IDS.sessionDevServer}"]`);
+  const devServer = await browser.$(`[data-testid="sidebar-session-${FIXTURE_IDS.sessionDevServer}"]`);
   await devServer.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await devServer.getText(), /npm run dev -- --host/, "Session descendants must render under their owning Session with a recognizable command");
-  assert.match(await devServer.getAttribute("title"), /running$/, "The process row must expose its current state");
-  assert.equal(await (await browser.$('[data-testid="sidebar-background-process-process-session-root-ui-fixture"]')).isExisting(), false, "Treefold's own Session process must not be duplicated as a background child");
+  assert.match(await devServer.getText(), /web-dev-server.*running/s, "Discovered Commands must render as worktree-level Sessions with their state");
+  assert.equal(await (await browser.$('[data-testid="sidebar-session-process-session-root-ui-fixture"]')).isExisting(), false, "Treefold's own root process must not be duplicated as a Command Session");
 
   const fork = await browser.$('[data-testid="sidebar-fork-node"]');
   await fork.waitForDisplayed({ timeout: 3_000 });
-  assert.equal(await (await browser.$(`[data-testid="sidebar-background-process-${FIXTURE_IDS.forkBackgroundProcess}"]`)).isExisting(), false, "Worktree processes must remain contextual to their collapsed owner");
+  assert.equal(await (await browser.$(`[data-testid="sidebar-session-${FIXTURE_IDS.forkBackgroundProcess}"]`)).isExisting(), false, "Commands must remain contextual to their collapsed worktree owner");
   await (await fork.$('[data-testid="sidebar-tree-toggle"]')).click();
-  const forkProcess = await browser.$(`[data-testid="sidebar-background-process-${FIXTURE_IDS.forkBackgroundProcess}"]`);
+  const forkProcess = await browser.$(`[data-testid="sidebar-session-${FIXTURE_IDS.forkBackgroundProcess}"]`);
   await forkProcess.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await forkProcess.getText(), /cargo watch -x check/, "An unassociated process must fall back to its matching worktree");
+  assert.match(await forkProcess.getText(), /typecheck-watch.*exited/s, "An unassociated process must become a Command Session in its matching worktree");
 
   harness.setProcessState(FIXTURE_IDS.sessionDevServer, "exited");
-  await browser.waitUntil(async () => (await devServer.getAttribute("title"))?.endsWith("exited"), { timeout: 4_000, timeoutMsg: "Process state did not refresh from the backend snapshot" });
+  await browser.waitUntil(async () => (await devServer.getText()).includes("exited"), { timeout: 4_000, timeoutMsg: "Command Session state did not refresh from the backend snapshot" });
   harness.removeProcess(FIXTURE_IDS.sessionDevServer);
-  await devServer.waitForExist({ reverse: true, timeout: 4_000 });
+  await browser.waitUntil(async () => (await devServer.getText()).includes("stopped"), { timeout: 4_000, timeoutMsg: "Removed Commands must remain visible as stopped Sessions" });
 
   harness.assertNoUnexpectedRequests();
-  console.log("✓ daemon snapshot processes attach to Sessions/worktrees and refresh lifecycle state");
+  console.log("✓ daemon Commands are first-class worktree Sessions and retain lifecycle state");
 } finally {
   if (browser) await browser.deleteSession();
   await harness.close();

@@ -16,6 +16,7 @@ async fn amux_status(State(state): State<AppState>) -> Json<crate::terminal::Dae
 
 async fn stop_amux(State(state): State<AppState>) -> Result<StatusCode> {
     state.terminals.stop_daemon().await?;
+    state.store.stop_active_sessions()?;
     Ok(StatusCode::NO_CONTENT)
 }
 

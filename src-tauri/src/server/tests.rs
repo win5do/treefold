@@ -14,7 +14,8 @@ mod current_workspace_tests {
         app, close_session, command_output, create_delivery_preflight_impl, create_directory,
         create_fork, create_project, create_project_session, create_session, create_workspace,
         delete_project_location, finish_workspace_impl, get_project, pull_workspace,
-        push_workspace, refresh_project_location, update_project, update_workspace_location,
+        push_workspace, reconcile_process, refresh_project_location, stop_session, update_project,
+        update_workspace_location,
         ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject,
         CreateSession, CreateWorkspace, FinishWorkspace, UpdateProject, UpdateWorkspaceLocation,
     };
@@ -22,7 +23,7 @@ mod current_workspace_tests {
         model::{Session, Todo},
         settings::SettingsStore,
         store::{now, Store},
-        terminal::TerminalManager,
+        terminal::{TerminalManager, TreefoldProcessView},
     };
 
     fn test_state(root: &Path) -> AppState {
@@ -71,6 +72,106 @@ mod current_workspace_tests {
             .await
             .expect("read response");
         assert_eq!(serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(), serde_json::json!([]));
+    }
+
+    #[tokio::test]
+    async fn discovered_processes_become_idempotent_worktree_command_sessions() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-command-discovery-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        initialize_repository(&repository);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Command Project".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_base_branch: None,
+                default_target_branch: None,
+                default_delivery_mode: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create command discovery Project");
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateWorkspace {
+                name: "Command Workspace".into(),
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("create command discovery Workspace");
+        let process = TreefoldProcessView {
+            id: "proc_generated".into(),
+            workspace_id: "amux-internal-workspace".into(),
+            group_id: "group".into(),
+            parent_process_id: None,
+            session_id: None,
+            session_root: false,
+            workspace_name: TerminalManager::workspace_name(&workspace.checkout_path),
+            name: "web-dev-server".into(),
+            command: vec!["npm".into(), "run".into(), "dev".into()],
+            cwd: workspace.checkout_path.clone(),
+            io_mode: "pipe".into(),
+            state: "running".into(),
+            pid: 4242,
+            execution: 1,
+            created_at: now(),
+            started_at: Some(now()),
+            finished_at: None,
+            exit_code: None,
+            exit_signal: String::new(),
+        };
+        reconcile_process(&state, &process, false).expect("discover Command");
+        reconcile_process(&state, &process, false).expect("rediscover Command");
+        let sessions = state.store.sessions(&workspace.id).expect("list Sessions");
+        assert_eq!(sessions.len(), 1, "stable amux identity must deduplicate snapshots and events");
+        assert_eq!(sessions[0].kind, "command");
+        assert_eq!(sessions[0].visibility, "visible");
+        assert_eq!(sessions[0].argv, process.command);
+        assert_eq!(sessions[0].io_mode, "pipe");
+
+        assert!(!state.terminals.daemon_status().await.running);
+        stop_session(
+            State(state.clone()),
+            axum::extract::Path(sessions[0].id.clone()),
+        )
+        .await
+        .expect("stop without starting a missing daemon");
+        assert!(!state.terminals.daemon_status().await.running);
+        assert_eq!(state.store.session(&sessions[0].id).unwrap().status, "stopped");
+
+        let mut late_exit = process.clone();
+        late_exit.state = "exited".into();
+        late_exit.exit_signal = "TERM".into();
+        reconcile_process(&state, &late_exit, false).expect("reconcile late Stop exit");
+        assert_eq!(state.store.session(&sessions[0].id).unwrap().status, "stopped");
+
+        reconcile_process(&state, &process, false).expect("reconcile explicit Restart");
+        assert_eq!(state.store.session(&sessions[0].id).unwrap().status, "running");
+        reconcile_process(&state, &process, true).expect("remove Command runtime");
+        assert_eq!(state.store.session(&sessions[0].id).unwrap().status, "stopped");
+        state.store.delete_session(&sessions[0].id).expect("close Command Session");
+        reconcile_process(&state, &process, true).expect("ignore late removal after Close");
+        assert!(state.store.sessions(&workspace.id).unwrap().is_empty());
+        let mut root_process = process.clone();
+        root_process.name = "treefold-root".into();
+        root_process.session_root = true;
+        root_process.session_id = Some("missing-root-session".into());
+        reconcile_process(&state, &root_process, false).expect("ignore Treefold root");
+        assert!(state.store.sessions(&workspace.id).unwrap().is_empty());
+        std::fs::remove_dir_all(root).expect("remove Command discovery fixture");
     }
 
     #[tokio::test]
@@ -272,17 +373,16 @@ mod current_workspace_tests {
             original_cwd: repository.to_string_lossy().into_owned(),
             initial_prompt: "Keep this context".into(),
             codex_session_id: Some("codex-session-id".into()),
-            sidebar_visible: true,
+            visibility: "visible".into(),
             hidden_at: None,
             evicted_at: None,
-            process_id: "saved-project-codex".into(),
-            process_name: "codex-history".into(),
+            amux_workspace_name: TerminalManager::workspace_name(&repository.to_string_lossy()),
+            amux_process_name: "saved-project-codex".into(),
             status: "exited".into(),
-            pid: 0,
-            process_group_id: 0,
             exit_code: Some(0),
             exit_signal: String::new(),
-            command: vec!["codex".into()],
+            argv: vec!["codex".into()],
+            io_mode: "tty".into(),
             launch_started_at: timestamp.clone(),
             last_attached_at: None,
             created_at: timestamp.clone(),
@@ -297,7 +397,7 @@ mod current_workspace_tests {
             .store
             .session(&codex.id)
             .expect("retain Codex history");
-        assert!(!saved.sidebar_visible);
+        assert_eq!(saved.visibility, "hidden");
         assert_eq!(state.store.project_sessions(&project.id).unwrap().len(), 1);
 
         let mut finalized_shell = codex.clone();
@@ -305,7 +405,8 @@ mod current_workspace_tests {
         finalized_shell.name = "Finalized Shell".into();
         finalized_shell.kind = "shell".into();
         finalized_shell.codex_session_id = None;
-        finalized_shell.sidebar_visible = true;
+        finalized_shell.visibility = "visible".into();
+        finalized_shell.amux_process_name = finalized_shell.id.clone();
         state.store.create_session(&finalized_shell).unwrap();
         state
             .store
@@ -314,7 +415,7 @@ mod current_workspace_tests {
         assert!(state.store.session(&finalized_shell.id).is_err());
         assert_eq!(
             state.store.session(&codex.id).unwrap().status,
-            "closed",
+            "stopped",
             "Codex remains resumable while Shell history is removed"
         );
 
@@ -742,7 +843,7 @@ mod current_workspace_tests {
                 .into_iter()
                 .find(|session| {
                     session.name == "setup · repo-z"
-                        && session.command.iter().any(|value| value == "-lc")
+                        && session.argv.iter().any(|value| value == "-lc")
                 });
             if setup_shell.is_some() {
                 break;
@@ -764,7 +865,7 @@ mod current_workspace_tests {
                 .checkout_path
                 .unwrap()
         );
-        assert!(setup_shell.command.iter().any(|value| value == "-lc"));
+        assert!(setup_shell.argv.iter().any(|value| value == "-lc"));
         assert!(state.terminals.is_running(&setup_shell.id).await);
 
         let _ = close_session(State(state.clone()), axum::extract::Path(setup_shell.id))
@@ -1055,17 +1156,16 @@ mod tests {
                 original_cwd: workspace.checkout_path.clone(),
                 initial_prompt: String::new(),
                 codex_session_id: None,
-                sidebar_visible: true,
+                visibility: "visible".into(),
                 hidden_at: None,
                 evicted_at: None,
-                process_id: String::new(),
-                process_name: String::new(),
+                amux_workspace_name: TerminalManager::workspace_name(&workspace.checkout_path),
+                amux_process_name: format!("session-{name}"),
                 status: "running".into(),
-                pid: 0,
-                process_group_id: 0,
                 exit_code: None,
                 exit_signal: String::new(),
-                command: vec![],
+                argv: vec![],
+                io_mode: "tty".into(),
                 launch_started_at: timestamp.clone(),
                 last_attached_at: None,
                 created_at: timestamp.clone(),
@@ -1364,13 +1464,10 @@ mod tests {
         codex.name = "Archive Codex".into();
         codex.kind = "codex".into();
         codex.codex_session_id = Some("archive-codex-session".into());
-        codex.process_id = codex.id.clone();
-        codex.process_name = "codex-history".into();
+        codex.amux_process_name = codex.id.clone();
         codex.status = "exited".into();
-        codex.pid = 0;
-        codex.process_group_id = 0;
         codex.exit_code = Some(0);
-        codex.command.clear();
+        codex.argv.clear();
         state
             .store
             .create_session(&codex)
@@ -1392,20 +1489,9 @@ mod tests {
         .expect("archive Project");
         assert_eq!(archived.status, "archived");
         assert!(!state.terminals.is_running(&shell.id).await);
-        assert!(
-            !state
-                .store
-                .session(&shell.id)
-                .expect("read Shell")
-                .sidebar_visible
-        );
-        assert!(
-            !state
-                .store
-                .session(&codex.id)
-                .expect("read Codex")
-                .sidebar_visible
-        );
+        assert_eq!(state.store.session(&shell.id).expect("read Shell").visibility, "visible");
+        assert_eq!(state.store.session(&shell.id).expect("read Shell").status, "stopped");
+        assert_eq!(state.store.session(&codex.id).expect("read Codex").visibility, "visible");
         assert!(update_project(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
@@ -1436,13 +1522,7 @@ mod tests {
         .await
         .expect("restore Project");
         assert_eq!(restored.status, "active");
-        assert!(
-            !state
-                .store
-                .session(&shell.id)
-                .expect("read Shell")
-                .sidebar_visible
-        );
+        assert_eq!(state.store.session(&shell.id).expect("read Shell").visibility, "visible");
         assert!(delete_project(
             State(state.clone()),
             axum::extract::Path(project.id.clone())
@@ -1594,17 +1674,16 @@ mod tests {
             original_cwd: fixture.fork.checkout_path.clone(),
             initial_prompt: "Implement the requested change".into(),
             codex_session_id: None,
-            sidebar_visible: true,
+            visibility: "visible".into(),
             hidden_at: None,
             evicted_at: None,
-            process_id: String::new(),
-            process_name: String::new(),
-            status: "starting".into(),
-            pid: 0,
-            process_group_id: 0,
+            amux_workspace_name: TerminalManager::workspace_name(&fixture.fork.checkout_path),
+            amux_process_name: "codex-runtime-session".into(),
+            status: "stopped".into(),
             exit_code: None,
             exit_signal: String::new(),
-            command: Vec::new(),
+            argv: Vec::new(),
+            io_mode: "tty".into(),
             launch_started_at: timestamp.clone(),
             last_attached_at: None,
             created_at: timestamp.clone(),
@@ -1686,17 +1765,16 @@ mod tests {
                 original_cwd: fork.checkout_path.clone(),
                 initial_prompt: "Keep this session".into(),
                 codex_session_id: Some("rebase-session-id".into()),
-                sidebar_visible: false,
+                visibility: "hidden".into(),
                 hidden_at: Some(timestamp.clone()),
                 evicted_at: None,
-                process_id: String::new(),
-                process_name: String::new(),
-                status: "closed".into(),
-                pid: 0,
-                process_group_id: 0,
+                amux_workspace_name: TerminalManager::workspace_name(&fork.checkout_path),
+                amux_process_name: id.clone(),
+                status: "stopped".into(),
                 exit_code: Some(0),
                 exit_signal: String::new(),
-                command: vec!["codex".into()],
+                argv: vec!["codex".into()],
+                io_mode: "tty".into(),
                 launch_started_at: timestamp.clone(),
                 last_attached_at: None,
                 created_at: timestamp.clone(),
@@ -2667,17 +2745,16 @@ mod tests {
             original_cwd: fork.checkout_path.clone(),
             initial_prompt: "Continue the independent part".into(),
             codex_session_id: Some("codex-session-for-resume".into()),
-            sidebar_visible: true,
+            visibility: "visible".into(),
             hidden_at: None,
             evicted_at: None,
-            process_id: String::new(),
-            process_name: String::new(),
+            amux_workspace_name: TerminalManager::workspace_name(&fork.checkout_path),
+            amux_process_name: "archived-codex".into(),
             status: "exited".into(),
-            pid: 0,
-            process_group_id: 0,
             exit_code: Some(0),
             exit_signal: String::new(),
-            command: vec!["codex".into()],
+            argv: vec!["codex".into()],
+            io_mode: "tty".into(),
             launch_started_at: timestamp.clone(),
             last_attached_at: None,
             created_at: timestamp.clone(),
@@ -2846,8 +2923,8 @@ mod tests {
             1
         );
         let archived_session = state.store.session(&session.id).expect("session history");
-        assert_eq!(archived_session.status, "closed");
-        assert!(!archived_session.sidebar_visible);
+        assert_eq!(archived_session.status, "stopped");
+        assert_eq!(archived_session.visibility, "hidden");
         assert_eq!(archived_session.cwd, workspace.checkout_path);
         assert_eq!(archived_session.original_cwd, fork.checkout_path);
         assert_eq!(
@@ -2855,7 +2932,7 @@ mod tests {
             Some("codex-session-for-resume")
         );
         let archived_shell = state.store.session(&fork_shell.id).expect("Shell history");
-        assert_eq!(archived_shell.status, "closed");
+        assert_eq!(archived_shell.status, "stopped");
         assert_eq!(archived_shell.cwd, workspace.checkout_path);
         let branches = command_output(Path::new(&repository), "git", &["branch", "--list"])
             .expect("list branches");

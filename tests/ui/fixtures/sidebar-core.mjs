@@ -131,7 +131,7 @@ const directories = [
   },
 ];
 
-function session({ id, workspaceId, name, kind, cwd, status, codexSessionId, sidebarVisible = true }) {
+function session({ id, workspaceId, name, kind, cwd, status, codexSessionId, visible = true, argv }) {
   return {
     id,
     workspace_id: workspaceId,
@@ -141,15 +141,14 @@ function session({ id, workspaceId, name, kind, cwd, status, codexSessionId, sid
     original_cwd: cwd,
     initial_prompt: kind === "codex" ? "Verify the deterministic UI fixture." : "",
     codex_session_id: codexSessionId,
-    sidebar_visible: sidebarVisible,
-    process_id: id,
-    process_name: `${kind}-fixture`,
+    visibility: visible ? "visible" : "hidden",
+    amux_workspace_name: `treefold-${workspaceId}`,
+    amux_process_name: id,
     status,
-    pid: 0,
-    process_group_id: 0,
     exit_code: status === "exited" ? 0 : undefined,
     exit_signal: "",
-    command: kind === "codex" ? ["codex", "resume", codexSessionId] : ["/bin/zsh"],
+    argv: argv ?? (kind === "codex" ? ["codex", "resume", codexSessionId] : ["/bin/zsh"]),
+    io_mode: kind === "command" ? "pipe" : "tty",
     launch_started_at: timestamp,
     last_attached_at: timestamp,
     created_at: timestamp,
@@ -167,7 +166,7 @@ const projectSessions = [
     cwd: primaryPath,
     status: "exited",
     codexSessionId: "codex-project-ui-fixture-session",
-    sidebarVisible: false,
+    visible: false,
   }),
 ];
 
@@ -258,6 +257,15 @@ const workspaceSessions = [
     status: "running",
   }),
   session({
+    id: FIXTURE_IDS.sessionDevServer,
+    workspaceId: FIXTURE_IDS.workspace,
+    name: "web-dev-server",
+    kind: "command",
+    cwd: `${workspacePath}/apps/web`,
+    status: "running",
+    argv: ["npm", "run", "dev", "--", "--host"],
+  }),
+  session({
     id: FIXTURE_IDS.workspaceCodex,
     workspaceId: FIXTURE_IDS.workspace,
     name: "Parent Codex Session with a deliberately long resumable label",
@@ -276,6 +284,15 @@ const forkSessions = [
     kind: "shell",
     cwd: forkPath,
     status: "running",
+  }),
+  session({
+    id: FIXTURE_IDS.forkBackgroundProcess,
+    workspaceId: FIXTURE_IDS.fork,
+    name: "typecheck-watch",
+    kind: "command",
+    cwd: `${forkPath}/src-tauri`,
+    status: "exited",
+    argv: ["cargo", "watch", "-x", "check"],
   }),
 ];
 

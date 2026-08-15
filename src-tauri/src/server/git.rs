@@ -341,10 +341,8 @@ async fn archive_workspace(
     state.store.archive_workspace(&id)?;
     for mut session in state.store.sessions(&id)? {
         capture_codex_session_id(&state.store, &mut session)?;
-        if state.terminals.is_running(&session.id).await {
-            let _ = state.terminals.stop(&session.id).await;
-        }
-        state.store.set_session_visible(&session.id, false)?;
+        let _ = state.terminals.stop_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+        state.store.set_session_status(&session.id, "stopped")?;
     }
     Ok(Json(state.store.workspace(&id)?))
 }

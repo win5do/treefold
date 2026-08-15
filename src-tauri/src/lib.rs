@@ -159,11 +159,7 @@ pub fn run() {
             let (daemon_name, daemon_config) = amux_identity(&home)?;
             let terminals = terminal::TerminalManager::new_named(daemon_config, daemon_name);
             *shutdown_state.lock().expect("lock shutdown state") =
-                Some((settings.clone(), terminals.clone()));
-            let reconnect = terminals.clone();
-            tauri::async_runtime::spawn(async move {
-                reconnect.connect_existing().await;
-            });
+                Some((settings.clone(), terminals.clone(), store.clone()));
             let state = server::AppState {
                 store,
                 settings,
@@ -187,7 +183,8 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {}
                 _ => return,
             }
-            let Some((settings, terminals)) = shutdown.lock().expect("lock shutdown state").clone()
+            let Some((settings, terminals, store)) =
+                shutdown.lock().expect("lock shutdown state").clone()
             else {
                 return;
             };
@@ -202,6 +199,9 @@ pub fn run() {
                 return;
             }
             let result = tauri::async_runtime::block_on(terminals.stop_daemon());
+            if let Err(error) = store.stop_active_sessions() {
+                log::error!("failed to stop persisted Sessions during Treefold exit: {error}");
+            }
             if let Err(error) = result {
                 daemon_stopped.store(false, std::sync::atomic::Ordering::SeqCst);
                 log::error!("failed to stop amux daemon during Treefold exit: {error:#}");
