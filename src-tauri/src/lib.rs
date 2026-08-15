@@ -8,7 +8,29 @@ mod terminal;
 
 use anyhow::Context;
 use sha2::{Digest, Sha256};
-use tauri::Manager;
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::TrayIconBuilder,
+    Manager,
+};
+
+const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_OPEN_ID: &str = "tray-open";
+const TRAY_QUIT_ID: &str = "tray-quit";
+
+fn show_main_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
+        log::error!("cannot open Treefold: main window is missing");
+        return;
+    };
+    if let Err(error) = window
+        .unminimize()
+        .and_then(|_| window.show())
+        .and_then(|_| window.set_focus())
+    {
+        log::error!("failed to open Treefold window: {error}");
+    }
+}
 
 fn amux_identity(home: &std::path::Path) -> anyhow::Result<(String, amux::config::Config)> {
     let normalized = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
@@ -76,6 +98,17 @@ pub fn run() {
     let daemon_stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .on_window_event(|window, event| {
+            if window.label() != MAIN_WINDOW_LABEL {
+                return;
+            }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Err(error) = window.hide() {
+                    log::error!("failed to hide Treefold window: {error}");
+                }
+            }
+        })
         .setup(move |app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -89,6 +122,25 @@ pub fn run() {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| user_home.join(".treefold"));
             let settings = settings::SettingsStore::open(&home, &user_home)?;
+            let open_item =
+                MenuItem::with_id(app, TRAY_OPEN_ID, "Open Treefold", true, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit_item =
+                MenuItem::with_id(app, TRAY_QUIT_ID, "Quit Treefold", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&open_item, &separator, &quit_item])?;
+            let mut tray = TrayIconBuilder::with_id("treefold")
+                .menu(&tray_menu)
+                .show_menu_on_left_click(true)
+                .tooltip("Treefold")
+                .on_menu_event(|app, event| match event.id() {
+                    id if id == TRAY_OPEN_ID => show_main_window(app),
+                    id if id == TRAY_QUIT_ID => app.exit(0),
+                    _ => {}
+                });
+            if let Some(icon) = app.default_window_icon().cloned() {
+                tray = tray.icon(icon);
+            }
+            tray.build(app)?;
             let store = store::Store::open(&home.join("data/treefold.db"))
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
             let (daemon_name, daemon_config) = amux_identity(&home)?;
@@ -113,12 +165,14 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building Treefold")
-        .run(move |_app, event| {
-            if !matches!(
-                event,
-                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
-            ) {
-                return;
+        .run(move |app, event| {
+            match event {
+                tauri::RunEvent::Reopen { .. } => {
+                    show_main_window(app);
+                    return;
+                }
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {}
+                _ => return,
             }
             let Some((settings, terminals)) = shutdown.lock().expect("lock shutdown state").clone()
             else {
