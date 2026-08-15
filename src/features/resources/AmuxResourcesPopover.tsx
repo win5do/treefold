@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next";
 import { appApi } from "@/api/app";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AmuxStatus } from "@/domain/types";
 import { amuxQuery, appKeys } from "@/features/app/queries";
@@ -68,33 +68,28 @@ export function AmuxResourcesPopover() {
         <Network data-icon="inline-start" />
       </PopoverTrigger>
       <PopoverContent data-testid="amux-resources-popover" side="top" align="start" sideOffset={8} className="w-80 p-3">
-        <PopoverHeader>
-          <PopoverTitle>amux Daemon</PopoverTitle>
-          <PopoverDescription>{t("resources.description")}</PopoverDescription>
-        </PopoverHeader>
-        <Card data-testid="amux-resource-card" size="sm">
-          <CardHeader className="border-b">
-            <CardTitle>amux Daemon</CardTitle>
-            <CardAction>
-              {running
-                ? <Button data-testid="amux-running-status" size="xs" variant="ghost" onClick={() => setConfirmStop(true)}><span className="size-2 rounded-full bg-success" />{t("resources.running")}</Button>
-                : <Tooltip>
-                    <TooltipTrigger render={<span data-testid="amux-stopped-status" tabIndex={0} className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" />}>
-                      <span className="size-2 rounded-full bg-muted-foreground/50" />{t("resources.notStarted")}
-                    </TooltipTrigger>
-                    <TooltipContent side="top">{t("resources.lazyStartTip")}</TooltipContent>
-                  </Tooltip>}
-            </CardAction>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-              <dt className="text-muted-foreground">{t("resources.name")}</dt><dd className="truncate font-mono" title={status?.name}>{status?.name ?? "—"}</dd>
-              <dt className="text-muted-foreground">{t("resources.uptime")}</dt><dd>{formatDaemonUptime(status, t)}</dd>
-              <dt className="text-muted-foreground">Groups</dt><dd>{status?.active_groups ?? 0}</dd>
-              <dt className="text-muted-foreground">Processes</dt><dd>{status?.active_processes ?? 0}</dd>
-            </dl>
-          </CardContent>
-        </Card>
+        <div className="flex items-start justify-between gap-4">
+          <PopoverHeader className="min-w-0">
+            <PopoverTitle>amux Daemon</PopoverTitle>
+            <PopoverDescription>{t("resources.description")}</PopoverDescription>
+          </PopoverHeader>
+          {running
+            ? <Button data-testid="amux-running-status" size="xs" variant="ghost" onClick={() => setConfirmStop(true)}><span className="size-2 rounded-full bg-success" />{t("resources.running")}</Button>
+            : <Tooltip>
+                <TooltipTrigger render={<span data-testid="amux-stopped-status" tabIndex={0} className="flex shrink-0 items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" />}>
+                  <span className="size-2 rounded-full bg-muted-foreground/50" />{t("resources.notStarted")}
+                </TooltipTrigger>
+                <TooltipContent side="top">{t("resources.lazyStartTip")}</TooltipContent>
+              </Tooltip>}
+        </div>
+        <Table data-testid="amux-resource-table" className="table-fixed">
+          <TableBody>
+            <TableRow><TableCell className="w-20 text-muted-foreground">{t("resources.name")}</TableCell><TableCell className="truncate font-mono" title={status?.name}>{status?.name ?? "—"}</TableCell></TableRow>
+            <TableRow><TableCell className="text-muted-foreground">{t("resources.uptime")}</TableCell><TableCell>{formatDaemonUptime(status, t)}</TableCell></TableRow>
+            <TableRow><TableCell className="text-muted-foreground">Groups</TableCell><TableCell>{status?.active_groups ?? 0}</TableCell></TableRow>
+            <TableRow><TableCell className="text-muted-foreground">Processes</TableCell><TableCell>{status?.active_processes ?? 0}</TableCell></TableRow>
+          </TableBody>
+        </Table>
         {statusQuery.error && <p role="alert" className="text-xs text-destructive">{statusQuery.error.message}</p>}
       </PopoverContent>
     </Popover>

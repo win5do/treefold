@@ -51,10 +51,10 @@ try {
   assert.ok(popoverLocation.y + popoverSize.height <= triggerLocation.y, "Resources popover must open above its icon");
   assert.ok(popoverLocation.x >= triggerLocation.x - 4, "Resources popover must extend right from its icon");
   assert.ok(popoverSize.width <= 360, "Resources popover must remain compact");
-  const card = await resourcePopover.$('[data-testid="amux-resource-card"]');
-  assert.match(await card.getText(), /treefold-a8c7fixture/);
-  assert.match(await card.getText(), /Groups\s*3/);
-  assert.match(await card.getText(), /Processes\s*8/);
+  const resourceTable = await resourcePopover.$('[data-testid="amux-resource-table"]');
+  assert.match(await resourceTable.getText(), /treefold-a8c7fixture/);
+  assert.match(await resourceTable.getText(), /Groups\s*3/);
+  assert.match(await resourceTable.getText(), /Processes\s*8/);
 
   await (await resourcePopover.$('[data-testid="amux-running-status"]')).click();
   const confirmation = await browser.$('[data-testid="stop-amux-dialog"]');
