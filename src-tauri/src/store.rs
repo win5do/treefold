@@ -12,6 +12,8 @@ mod sessions;
 mod todos;
 mod workspaces;
 
+pub(crate) use operations::ParentOperationUpdate;
+
 #[derive(Clone)]
 pub struct Store(Arc<Mutex<Connection>>, Pool);
 

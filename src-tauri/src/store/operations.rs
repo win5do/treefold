@@ -9,6 +9,16 @@ use crate::{
     model::*,
 };
 
+pub(crate) struct ParentOperationUpdate<'a> {
+    pub id: &'a str,
+    pub status: &'a str,
+    pub phase: &'a str,
+    pub result_head: Option<&'a str>,
+    pub error: &'a str,
+    pub terminal: bool,
+    pub undo_available: bool,
+}
+
 impl Store {
     pub fn set_delivery_status(&self, id: &str, status: &str) -> Result<()> {
         let location_id = self.resolve_workspace_location_id(id)?;
@@ -260,20 +270,21 @@ impl Store {
         Ok(())
     }
 
-    pub fn update_parent_operation(
-        &self,
-        id: &str,
-        status: &str,
-        phase: &str,
-        result_head: Option<&str>,
-        error: &str,
-        terminal: bool,
-        undo_available: bool,
-    ) -> Result<()> {
+    pub fn update_parent_operation(&self, update: ParentOperationUpdate<'_>) -> Result<()> {
         let timestamp = now();
         self.0.lock().execute(
             "UPDATE parent_operations SET status=?,phase=?,result_head=COALESCE(?,result_head),error=?,undo_available=?,updated_at=?,completed_at=CASE WHEN ? THEN COALESCE(completed_at,?) ELSE completed_at END WHERE id=?",
-            params![status, phase, result_head, error, undo_available, timestamp, terminal, timestamp, id],
+            params![
+                update.status,
+                update.phase,
+                update.result_head,
+                update.error,
+                update.undo_available,
+                timestamp,
+                update.terminal,
+                timestamp,
+                update.id
+            ],
         )?;
         Ok(())
     }

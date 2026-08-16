@@ -171,13 +171,13 @@ pub(super) async fn abort_parent_operation(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ParentOperation>> {
     let operation = state.store.parent_operation(&id)?;
-    if let Some(session_id) = operation.resolver_session_id.as_deref() {
-        if let Ok(session) = state.store.session(session_id) {
-            let _ = state
-                .terminals
-                .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
-                .await;
-        }
+    if let Some(session_id) = operation.resolver_session_id.as_deref()
+        && let Ok(session) = state.store.session(session_id)
+    {
+        let _ = state
+            .terminals
+            .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
+            .await;
     }
     let common = state
         .store
@@ -320,16 +320,14 @@ pub(super) fn parent_operation_preview_impl(
     if let Some(active) = state.store.active_parent_operation_for_target(
         &context.location.project_location_id,
         &context.target_path,
-    )? {
-        if operation
-            .as_ref()
-            .is_none_or(|current| current.id != active.id)
-        {
-            blockers.push(format!(
-                "another parent operation ({}) is active on this target",
-                active.id
-            ));
-        }
+    )? && operation
+        .as_ref()
+        .is_none_or(|current| current.id != active.id)
+    {
+        blockers.push(format!(
+            "another parent operation ({}) is active on this target",
+            active.id
+        ));
     }
     let outcome = parent_operation_outcome(
         if direction == "update" {
@@ -497,15 +495,15 @@ pub(super) fn execute_parent_operation(
             if git_operation_in_progress(&operation.target_path)?
                 || has_unmerged_paths(&operation.target_path)? =>
         {
-            state.store.update_parent_operation(
-                &operation.id,
-                "conflicted",
-                "conflicted",
-                None,
-                &error,
-                false,
-                false,
-            )?;
+            state.store.update_parent_operation(ParentOperationUpdate {
+                id: &operation.id,
+                status: "conflicted",
+                phase: "conflicted",
+                result_head: None,
+                error: &error,
+                terminal: false,
+                undo_available: false,
+            })?;
             state.store.parent_operation(&operation.id)
         }
         Err(error) => {
@@ -517,26 +515,26 @@ pub(super) fn execute_parent_operation(
                         .path,
                     &operation.recovery_ref,
                 )?;
-                state.store.update_parent_operation(
-                    &operation.id,
-                    "failed",
-                    "failed",
-                    None,
-                    &error,
-                    true,
-                    false,
-                )?;
+                state.store.update_parent_operation(ParentOperationUpdate {
+                    id: &operation.id,
+                    status: "failed",
+                    phase: "failed",
+                    result_head: None,
+                    error: &error,
+                    terminal: true,
+                    undo_available: false,
+                })?;
                 Err(AppError::BadRequest(error))
             } else {
-                state.store.update_parent_operation(
-                    &operation.id,
-                    "recovery_required",
-                    "command_failed_after_head_moved",
-                    None,
-                    &error,
-                    false,
-                    false,
-                )?;
+                state.store.update_parent_operation(ParentOperationUpdate {
+                    id: &operation.id,
+                    status: "recovery_required",
+                    phase: "command_failed_after_head_moved",
+                    result_head: None,
+                    error: &error,
+                    terminal: false,
+                    undo_available: false,
+                })?;
                 state.store.parent_operation(&operation.id)
             }
         }
@@ -569,19 +567,19 @@ pub(super) fn reconcile_parent_operation(
         } else {
             "running"
         };
-        state.store.update_parent_operation(
-            &operation.id,
+        state.store.update_parent_operation(ParentOperationUpdate {
+            id: &operation.id,
             status,
             phase,
-            None,
-            if conflicted {
+            result_head: None,
+            error: if conflicted {
                 "Git has unresolved conflicts"
             } else {
                 ""
             },
-            false,
-            false,
-        )?;
+            terminal: false,
+            undo_available: false,
+        })?;
         return state.store.parent_operation(&operation.id);
     }
     let current_branch = command_output(
@@ -592,18 +590,18 @@ pub(super) fn reconcile_parent_operation(
     .map_err(AppError::BadRequest)?;
     let current_head = git_head(&operation.target_path)?;
     if current_branch != operation.target_branch {
-        state.store.update_parent_operation(
-            &operation.id,
-            "recovery_required",
-            "branch_moved",
-            None,
-            &format!(
+        state.store.update_parent_operation(ParentOperationUpdate {
+            id: &operation.id,
+            status: "recovery_required",
+            phase: "branch_moved",
+            result_head: None,
+            error: &format!(
                 "expected branch {}, found {}",
                 operation.target_branch, current_branch
             ),
-            false,
-            false,
-        )?;
+            terminal: false,
+            undo_available: false,
+        })?;
         return state.store.parent_operation(&operation.id);
     }
     let incoming = if operation.direction == "update" {
@@ -635,37 +633,37 @@ pub(super) fn reconcile_parent_operation(
         true
     };
     if valid && merge_parents_valid && !has_unmerged_paths(&operation.target_path)? {
-        state.store.update_parent_operation(
-            &operation.id,
-            "completed",
-            "completed",
-            Some(&current_head),
-            "",
-            true,
-            true,
-        )?;
+        state.store.update_parent_operation(ParentOperationUpdate {
+            id: &operation.id,
+            status: "completed",
+            phase: "completed",
+            result_head: Some(&current_head),
+            error: "",
+            terminal: true,
+            undo_available: true,
+        })?;
     } else if current_head == operation.before_head
         && matches!(operation.status.as_str(), "conflicted" | "resolving")
     {
-        state.store.update_parent_operation(
-            &operation.id,
-            "aborted",
-            "aborted",
-            None,
-            "",
-            true,
-            false,
-        )?;
+        state.store.update_parent_operation(ParentOperationUpdate {
+            id: &operation.id,
+            status: "aborted",
+            phase: "aborted",
+            result_head: None,
+            error: "",
+            terminal: true,
+            undo_available: false,
+        })?;
     } else {
-        state.store.update_parent_operation(
-            &operation.id,
-            "recovery_required",
-            "verification_failed",
-            Some(&current_head),
-            "Git operation ended but the fixed heads or merge parents do not match",
-            false,
-            false,
-        )?;
+        state.store.update_parent_operation(ParentOperationUpdate {
+            id: &operation.id,
+            status: "recovery_required",
+            phase: "verification_failed",
+            result_head: Some(&current_head),
+            error: "Git operation ended but the fixed heads or merge parents do not match",
+            terminal: false,
+            undo_available: false,
+        })?;
     }
     state.store.parent_operation(&operation.id)
 }
@@ -715,15 +713,15 @@ pub(super) fn abort_parent_operation_impl(
             .path,
         &operation.recovery_ref,
     )?;
-    state.store.update_parent_operation(
-        &operation.id,
-        "aborted",
-        "aborted",
-        None,
-        "",
-        true,
-        false,
-    )?;
+    state.store.update_parent_operation(ParentOperationUpdate {
+        id: &operation.id,
+        status: "aborted",
+        phase: "aborted",
+        result_head: None,
+        error: "",
+        terminal: true,
+        undo_available: false,
+    })?;
     state.store.parent_operation(&operation.id)
 }
 
@@ -768,15 +766,15 @@ pub(super) fn undo_parent_operation_impl(
             .path,
         &operation.recovery_ref,
     )?;
-    state.store.update_parent_operation(
-        &operation.id,
-        "undone",
-        "undone",
-        Some(&operation.before_head),
-        "",
-        true,
-        false,
-    )?;
+    state.store.update_parent_operation(ParentOperationUpdate {
+        id: &operation.id,
+        status: "undone",
+        phase: "undone",
+        result_head: Some(&operation.before_head),
+        error: "",
+        terminal: true,
+        undo_available: false,
+    })?;
     state.store.parent_operation(&operation.id)
 }
 

@@ -320,10 +320,10 @@ pub(super) fn create_delivery_preflight_impl(
     if input.code_action == "remote_merged" && !source_status.is_empty() {
         blockers.push("remote delivery requires a clean Workspace checkout".into());
     }
-    if let Some(rebase) = state.store.latest_rebase_operation(id)? {
-        if rebase_operation_blocks(&rebase) {
-            blockers.push(format!("Workspace rebase is {}", rebase.status));
-        }
+    if let Some(rebase) = state.store.latest_rebase_operation(id)?
+        && rebase_operation_blocks(&rebase)
+    {
+        blockers.push(format!("Workspace rebase is {}", rebase.status));
     }
 
     let mut warnings = Vec::new();

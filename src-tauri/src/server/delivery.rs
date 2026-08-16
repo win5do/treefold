@@ -473,12 +473,12 @@ pub(super) fn start_rebase(state: &AppState, id: &str) -> Result<RebaseOperation
             "cannot rebase while reset recovery is required".into(),
         ));
     }
-    if let Some(operation) = state.store.latest_rebase_operation(id)? {
-        if rebase_operation_blocks(&operation) {
-            return rebase_status_impl(state, id)?.ok_or_else(|| {
-                AppError::Internal(anyhow::anyhow!("active rebase operation disappeared"))
-            });
-        }
+    if let Some(operation) = state.store.latest_rebase_operation(id)?
+        && rebase_operation_blocks(&operation)
+    {
+        return rebase_status_impl(state, id)?.ok_or_else(|| {
+            AppError::Internal(anyhow::anyhow!("active rebase operation disappeared"))
+        });
     }
 
     ensure_clean_workspace(&workspace.checkout_path, "Workspace")?;
@@ -1137,20 +1137,20 @@ pub(super) fn ensure_no_git_operation_in_progress(
             "cannot {action} while delivery is in progress"
         )));
     }
-    if let Some(rebase) = state.store.latest_rebase_operation(id)? {
-        if rebase_operation_blocks(&rebase) {
-            return Err(AppError::BadRequest(format!(
-                "cannot {action} while rebase is {}",
-                rebase.status
-            )));
-        }
+    if let Some(rebase) = state.store.latest_rebase_operation(id)?
+        && rebase_operation_blocks(&rebase)
+    {
+        return Err(AppError::BadRequest(format!(
+            "cannot {action} while rebase is {}",
+            rebase.status
+        )));
     }
-    if let Some(reset) = state.store.latest_reset_operation(id)? {
-        if reset.status == "active" {
-            return Err(AppError::BadRequest(format!(
-                "cannot {action} while reset recovery is required"
-            )));
-        }
+    if let Some(reset) = state.store.latest_reset_operation(id)?
+        && reset.status == "active"
+    {
+        return Err(AppError::BadRequest(format!(
+            "cannot {action} while reset recovery is required"
+        )));
     }
     Ok(())
 }
@@ -1217,10 +1217,10 @@ pub(super) async fn finish_workspace_impl(
     fail_after_phase: Option<&str>,
 ) -> Result<Workspace> {
     let result = finish_workspace_steps(state, id, input, fail_after_phase).await;
-    if let Err(error) = &result {
-        if state.store.delivery_operation(id).ok().flatten().is_some() {
-            let _ = state.store.set_delivery_error(id, &error.to_string());
-        }
+    if let Err(error) = &result
+        && state.store.delivery_operation(id).ok().flatten().is_some()
+    {
+        let _ = state.store.set_delivery_error(id, &error.to_string());
     }
     result
 }

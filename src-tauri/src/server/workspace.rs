@@ -454,54 +454,53 @@ pub(super) fn reconcile_project(
             ));
         }
 
-        if let Some(registered) = registered {
-            if workspace.status == "active"
-                && branch_exists
-                && registered.branch != workspace.branch
-            {
-                issues.push(reconciliation_issue(
-                    "managed_branch_mismatch",
-                    "error",
-                    format!(
-                        "Workspace '{}' expects branch {}, but its worktree has {}",
-                        workspace.name, workspace.branch, registered.branch
-                    ),
-                    Some(workspace),
-                    Some(&workspace.checkout_path),
-                    Vec::new(),
-                ));
-            }
+        if let Some(registered) = registered
+            && workspace.status == "active"
+            && branch_exists
+            && registered.branch != workspace.branch
+        {
+            issues.push(reconciliation_issue(
+                "managed_branch_mismatch",
+                "error",
+                format!(
+                    "Workspace '{}' expects branch {}, but its worktree has {}",
+                    workspace.name, workspace.branch, registered.branch
+                ),
+                Some(workspace),
+                Some(&workspace.checkout_path),
+                Vec::new(),
+            ));
         }
 
-        if let Some(operation) = state.store.delivery_operation(&workspace.id)? {
-            if operation.phase != "archived" {
-                issues.push(reconciliation_issue(
-                    "delivery_interrupted",
-                    "warning",
-                    format!(
-                        "Workspace '{}' has an unfinished delivery at phase {}",
-                        workspace.name, operation.phase
-                    ),
-                    Some(workspace),
-                    Some(&workspace.checkout_path),
-                    Vec::new(),
-                ));
-            }
+        if let Some(operation) = state.store.delivery_operation(&workspace.id)?
+            && operation.phase != "archived"
+        {
+            issues.push(reconciliation_issue(
+                "delivery_interrupted",
+                "warning",
+                format!(
+                    "Workspace '{}' has an unfinished delivery at phase {}",
+                    workspace.name, operation.phase
+                ),
+                Some(workspace),
+                Some(&workspace.checkout_path),
+                Vec::new(),
+            ));
         }
-        if let Some(operation) = state.store.latest_rebase_operation(&workspace.id)? {
-            if rebase_operation_blocks(&operation) {
-                issues.push(reconciliation_issue(
-                    "rebase_interrupted",
-                    "warning",
-                    format!(
-                        "Workspace '{}' has an unfinished rebase with status {}",
-                        workspace.name, operation.status
-                    ),
-                    Some(workspace),
-                    Some(&workspace.checkout_path),
-                    Vec::new(),
-                ));
-            }
+        if let Some(operation) = state.store.latest_rebase_operation(&workspace.id)?
+            && rebase_operation_blocks(&operation)
+        {
+            issues.push(reconciliation_issue(
+                "rebase_interrupted",
+                "warning",
+                format!(
+                    "Workspace '{}' has an unfinished rebase with status {}",
+                    workspace.name, operation.status
+                ),
+                Some(workspace),
+                Some(&workspace.checkout_path),
+                Vec::new(),
+            ));
         }
         let reset_operation = state.store.latest_reset_operation(&workspace.id)?;
         let reset_operation = if workspace.status == "active"
@@ -513,31 +512,31 @@ pub(super) fn reconcile_project(
         } else {
             reset_operation
         };
-        if let Some(operation) = reset_operation {
-            if operation.status == "active" || operation.status == "failed" {
-                issues.push(reconciliation_issue(
-                    if operation.status == "active" {
-                        "reset_interrupted"
+        if let Some(operation) = reset_operation
+            && (operation.status == "active" || operation.status == "failed")
+        {
+            issues.push(reconciliation_issue(
+                if operation.status == "active" {
+                    "reset_interrupted"
+                } else {
+                    "reset_failed"
+                },
+                "warning",
+                format!(
+                    "Workspace '{}' has reset status {} with recovery ref {}{}",
+                    workspace.name,
+                    operation.status,
+                    operation.recovery_ref,
+                    if operation.error.is_empty() {
+                        String::new()
                     } else {
-                        "reset_failed"
-                    },
-                    "warning",
-                    format!(
-                        "Workspace '{}' has reset status {} with recovery ref {}{}",
-                        workspace.name,
-                        operation.status,
-                        operation.recovery_ref,
-                        if operation.error.is_empty() {
-                            String::new()
-                        } else {
-                            format!(": {}", operation.error)
-                        }
-                    ),
-                    Some(workspace),
-                    Some(&workspace.checkout_path),
-                    Vec::new(),
-                ));
-            }
+                        format!(": {}", operation.error)
+                    }
+                ),
+                Some(workspace),
+                Some(&workspace.checkout_path),
+                Vec::new(),
+            ));
         }
     }
 
@@ -861,12 +860,13 @@ pub(super) async fn create_directory(
     }
     let name = basename(&path);
     let requested_delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
-    if let Some(mode) = requested_delivery_mode.as_deref() {
-        if mode != "remote_review" && mode != "local_merge" {
-            return Err(AppError::BadRequest(
-                "delivery_mode must be remote_review or local_merge".into(),
-            ));
-        }
+    if let Some(mode) = requested_delivery_mode.as_deref()
+        && mode != "remote_review"
+        && mode != "local_merge"
+    {
+        return Err(AppError::BadRequest(
+            "delivery_mode must be remote_review or local_merge".into(),
+        ));
     }
     let directory = Directory {
         id: id(),
@@ -1038,12 +1038,11 @@ pub(super) async fn reattach_project_location(
     if let (Some(expected), Some(actual)) = (
         current.repository_url.as_deref(),
         observed.repository_url.as_deref(),
-    ) {
-        if !repository_identity_matches(expected, actual) {
-            return Err(AppError::BadRequest(
-                "reattach repository identity does not match".into(),
-            ));
-        }
+    ) && !repository_identity_matches(expected, actual)
+    {
+        return Err(AppError::BadRequest(
+            "reattach repository identity does not match".into(),
+        ));
     }
     let known_paths = state
         .store
@@ -1127,12 +1126,13 @@ pub(super) async fn update_directory(
             "Git settings can only be configured for a Git location".into(),
         ));
     }
-    if let Some(mode) = delivery_mode.as_deref() {
-        if mode != "remote_review" && mode != "local_merge" {
-            return Err(AppError::BadRequest(
-                "delivery_mode must be remote_review or local_merge".into(),
-            ));
-        }
+    if let Some(mode) = delivery_mode.as_deref()
+        && mode != "remote_review"
+        && mode != "local_merge"
+    {
+        return Err(AppError::BadRequest(
+            "delivery_mode must be remote_review or local_merge".into(),
+        ));
     }
     state.store.update_directory(
         &id,

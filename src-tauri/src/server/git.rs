@@ -800,11 +800,10 @@ pub(super) fn refresh_location_observation(location: &mut ProjectLocation) -> Re
     if let (Some(expected), Some(observed)) = (
         location.repository_url.as_deref(),
         repository_url.as_deref(),
-    ) {
-        if !repository_identity_matches(expected, observed) {
-            location.git_status = "mismatch".into();
-            return Ok(());
-        }
+    ) && !repository_identity_matches(expected, observed)
+    {
+        location.git_status = "mismatch".into();
+        return Ok(());
     }
     location.git_common_dir = Some(common_dir);
     location.checkout_path = Some(source_root);

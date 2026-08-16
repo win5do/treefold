@@ -30,7 +30,7 @@ use crate::{
     git,
     model::*,
     settings::{SettingsPatch, SettingsStore},
-    store::{Store, now},
+    store::{ParentOperationUpdate, Store, now},
     terminal::TerminalManager,
 };
 

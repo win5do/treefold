@@ -300,10 +300,11 @@ pub(super) async fn create_session_for_workspace(
     let mut name = trimmed(input.name)
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| kind.clone());
-    if kind == "shell" && name == "shell" {
-        if let Some(selected) = selected_name {
-            name = format!("shell · {selected}");
-        }
+    if kind == "shell"
+        && name == "shell"
+        && let Some(selected) = selected_name
+    {
+        name = format!("shell · {selected}");
     }
     let mut session = Session {
         id: session_id.clone(),
@@ -670,16 +671,15 @@ pub(super) fn reconcile_process(
     // A root marker identifies Treefold's own Shell/Codex process. It is not a
     // separately discoverable Command Session.
     if process.session_root {
-        if let Some(session_id) = process.session_id.as_deref() {
-            if let Ok(mut session) = state.store.session(session_id) {
-                if session.amux_process_name == process.name {
-                    session.status = reconciled_status(&session.status, status).into();
-                    session.exit_code = process.exit_code.map(Into::into);
-                    session.exit_signal = process.exit_signal.clone();
-                    session.argv = process.command.clone();
-                    return persist_amux_process(&state.store, &session.id, &session);
-                }
-            }
+        if let Some(session_id) = process.session_id.as_deref()
+            && let Ok(mut session) = state.store.session(session_id)
+            && session.amux_process_name == process.name
+        {
+            session.status = reconciled_status(&session.status, status).into();
+            session.exit_code = process.exit_code.map(Into::into);
+            session.exit_signal = process.exit_signal.clone();
+            session.argv = process.command.clone();
+            return persist_amux_process(&state.store, &session.id, &session);
         }
         return Ok(());
     }
@@ -915,7 +915,7 @@ pub(super) fn discover_codex_session_id(session: &Session) -> Option<String> {
                 continue;
             };
             let distance = (timestamp.timestamp() - launch.timestamp()).abs();
-            if distance <= 300 && best.as_ref().map_or(true, |current| distance < current.0) {
+            if distance <= 300 && best.as_ref().is_none_or(|current| distance < current.0) {
                 best = Some((distance, session_id.to_owned()));
             }
         }
