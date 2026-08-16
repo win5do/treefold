@@ -306,7 +306,9 @@ export function ParentOperationPanel({
             <Button size="sm" variant="destructive" disabled={busy} onClick={onAbort}>Stop AI & Abort</Button>
           )}
           {operation.status === "completed" && operation.undo_available && (
-            <Button size="sm" variant="outline" disabled={busy} onClick={onUndo}>Undo Integration</Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={onUndo}>
+              {operation.direction === "update" ? "Undo Update" : "Undo Integration"}
+            </Button>
           )}
           {operation.status === "completed" && operation.origin === "finish" && onResumeFinish && (
             <Button size="sm" disabled={busy} onClick={onResumeFinish}>Resume Finish</Button>
