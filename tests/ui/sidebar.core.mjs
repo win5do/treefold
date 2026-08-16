@@ -1079,6 +1079,21 @@ try {
       timeoutMsg: "Codex Session inspector did not open",
     },
   );
+  await codexInspector.$('button[role="tab"]*=History').click();
+  const singleRepositoryHistorySelect = await codexInspector.$(
+    '[data-testid="git-history-repository"]',
+  );
+  await singleRepositoryHistorySelect.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(
+    await singleRepositoryHistorySelect.getValue(),
+    FIXTURE_IDS.workspacePrimaryLocation,
+    "Workspace Git History must use its primary repository id",
+  );
+  assert.equal(
+    await singleRepositoryHistorySelect.isEnabled(),
+    false,
+    "Git History repository selection must be disabled when only one repository is available",
+  );
   await (await browser.$('button[aria-label="Hide right sidebar"]')).click();
   const createdCodexSidebarRow = await browser.$(
     '[data-testid="sidebar-session-session-created-codex-ui-fixture"]',
@@ -2305,6 +2320,20 @@ try {
     "toolbar must remain visible with the right sidebar open",
   );
   await browser.$('button[role="tab"]*=History').click();
+  const historyRepository = await browser.$(
+    '[data-testid="git-history-repository"]',
+  );
+  await historyRepository.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(
+    await historyRepository.getValue(),
+    FIXTURE_IDS.primaryRepository,
+    "Git History must default to the Project primary repository",
+  );
+  assert.equal(
+    await historyRepository.isEnabled(),
+    true,
+    "Git History repository selection must be available for multiple repositories",
+  );
   await browser.waitUntil(
     async () =>
       (await browser.$$('[data-testid="git-history-commit"]')).length ===
@@ -2314,6 +2343,14 @@ try {
       timeoutMsg: "Git History tab did not render fixture commits",
     },
   );
+  await historyRepository.selectByAttribute(
+    "value",
+    FIXTURE_IDS.secondaryRepository,
+  );
+  await browser.waitUntil(async () => (await rightSidebar.getText()).includes("develop"), {
+    timeout: 3_000,
+    timeoutMsg: "Git History did not load the selected repository",
+  });
   await browser.$('button[aria-label="Hide right sidebar"]').click();
   await browser.waitUntil(
     async () => (await rightSidebar.getAttribute("aria-hidden")) === "true",
@@ -2471,25 +2508,6 @@ try {
   const forkInspector = await browser.$('[data-testid="right-sidebar"]');
   const historyTab = await forkInspector.$('button[role="tab"]:nth-child(2)');
   await historyTab.waitForDisplayed({ timeout: 3_000 });
-  await browser.$('button[role="tab"]*=Operations').click();
-  await browser.waitUntil(
-    async () =>
-      (await browser.$$('[data-testid="git-operation-record"]')).length === 2,
-    {
-      timeout: 3_000,
-      timeoutMsg:
-        "Git Operations did not render deterministic reset and rebase history",
-    },
-  );
-  const operationRecords = await browser.$$(
-    '[data-testid="git-operation-record"]',
-  );
-  assert.match(await operationRecords[0].getText(), /reset/);
-  assert.match(await operationRecords[0].getText(), /restored/);
-  assert.match(
-    await operationRecords[0].getText(),
-    /refs\/treefold\/recovery\/reset-ui-fixture/,
-  );
   const restoredForkNode = await browser.$('[data-testid="sidebar-fork-node"]');
   await restoredForkNode.moveTo();
   await (

@@ -2,7 +2,6 @@ import { request } from "./client";
 import type {
   DeliveryPreflight,
   GitHistory,
-  GitOperationRecord,
   Session,
   Workspace,
   WorkspaceDetail,
@@ -55,16 +54,8 @@ export const workspacesApi = {
       `/api/workspace-repositories/${id}/delivery-preflight`,
       { method: "POST", json: { code_action: codeAction }, signal },
     ),
-  history: (id: string, signal?: AbortSignal) =>
-    request<GitHistory>(`/api/workspace-repositories/${id}/git-history`, {
-      signal,
-    }),
   locationHistory: (id: string, signal?: AbortSignal) =>
     request<GitHistory>(`/api/workspace-repositories/${id}/git-history`, {
-      signal,
-    }),
-  operations: (id: string, signal?: AbortSignal) =>
-    request<GitOperationRecord[]>(`/api/workspaces/${id}/git-operations`, {
       signal,
     }),
 };

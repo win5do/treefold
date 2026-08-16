@@ -256,10 +256,6 @@ fn app(state: AppState) -> Router {
         .route("/api/workspaces/{id}/archive", post(archive_workspace))
         .route("/api/workspaces/{id}/reveal", post(reveal_workspace))
         .route(
-            "/api/workspaces/{id}/git-operations",
-            get(get_git_operations),
-        )
-        .route(
             "/api/workspaces/{id}/sessions",
             get(list_sessions).post(create_session),
         )

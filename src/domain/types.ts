@@ -256,20 +256,6 @@ export type DeliveryPreflight = {
   warnings: string[];
 };
 
-export type GitOperationRecord = {
-  id: string;
-  kind: "delivery" | "rebase" | "reset";
-  action: string;
-  status: string;
-  before_head: string;
-  target_head: string;
-  result_head?: string;
-  recovery_ref?: string;
-  error: string;
-  started_at: string;
-  updated_at: string;
-};
-
 export type ProjectLocationInspection = {
   path: string;
   name: string;

@@ -747,35 +747,6 @@ const deliveryPreflight = {
   created_at: timestamp,
 };
 
-const gitOperations = [
-  {
-    id: "reset-operation-ui-fixture",
-    kind: "reset",
-    action: "parent",
-    status: "restored",
-    before_head: "abcdef1234567890abcdef1234567890abcdef12",
-    target_head: "0123456789abcdef0123456789abcdef01234567",
-    result_head: "0123456789abcdef0123456789abcdef01234567",
-    recovery_ref: "refs/treefold/recovery/reset-ui-fixture",
-    error: "",
-    started_at: timestamp,
-    updated_at: timestamp,
-  },
-  {
-    id: "rebase-operation-ui-fixture",
-    kind: "rebase",
-    action: "onto_parent",
-    status: "completed",
-    before_head: "1111111111111111111111111111111111111111",
-    target_head: "2222222222222222222222222222222222222222",
-    result_head: "3333333333333333333333333333333333333333",
-    recovery_ref: "refs/treefold/recovery/rebase-ui-fixture",
-    error: "",
-    started_at: "2026-08-09T08:00:00.000Z",
-    updated_at: "2026-08-09T08:01:00.000Z",
-  },
-];
-
 export function createSidebarCoreFixture() {
   return structuredClone({
     settings: {
@@ -865,7 +836,6 @@ export function createSidebarCoreFixture() {
       [FIXTURE_IDS.fork]: forkDetail,
     },
     gitHistories: {
-      [FIXTURE_IDS.project]: { branch: "main", commits: FIXTURE_COMMITS },
       [FIXTURE_IDS.primaryRepository]: {
         branch: "main",
         commits: FIXTURE_COMMITS,
@@ -874,15 +844,18 @@ export function createSidebarCoreFixture() {
         branch: "develop",
         commits: FIXTURE_COMMITS,
       },
-      [FIXTURE_IDS.workspace]: {
-        branch: workspace.branch,
-        commits: FIXTURE_COMMITS,
-      },
       [FIXTURE_IDS.workspacePrimaryLocation]: {
         branch: workspace.branch,
         commits: FIXTURE_COMMITS,
       },
-      [FIXTURE_IDS.fork]: { branch: fork.branch, commits: FIXTURE_COMMITS },
+      [FIXTURE_IDS.forkPrimaryLocation]: {
+        branch: fork.branch,
+        commits: FIXTURE_COMMITS,
+      },
+      [FIXTURE_IDS.forkSecondaryLocation]: {
+        branch: fork.branch,
+        commits: FIXTURE_COMMITS,
+      },
     },
     deliveryPreflights: {
       [FIXTURE_IDS.workspacePrimaryLocation]: {
@@ -895,6 +868,5 @@ export function createSidebarCoreFixture() {
       },
       [FIXTURE_IDS.forkPrimaryLocation]: deliveryPreflight,
     },
-    gitOperations: { [FIXTURE_IDS.fork]: gitOperations },
   });
 }

@@ -925,18 +925,6 @@ async function startFixtureApi() {
       return;
     }
 
-    const operationsMatch = pathname.match(
-      /^\/api\/workspaces\/([^/]+)\/git-operations$/,
-    );
-    if (
-      request.method === "GET" &&
-      operationsMatch &&
-      fixture.gitOperations[operationsMatch[1]]
-    ) {
-      sendJson(response, 200, fixture.gitOperations[operationsMatch[1]]);
-      return;
-    }
-
     const preflightMatch = pathname.match(
       /^\/api\/workspace-repositories\/([^/]+)\/delivery-preflight$/,
     );

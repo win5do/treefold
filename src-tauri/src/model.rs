@@ -494,20 +494,3 @@ pub struct ResetOperation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<String>,
 }
-
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct GitOperationRecord {
-    pub id: String,
-    pub kind: String,
-    pub action: String,
-    pub status: String,
-    pub before_head: String,
-    pub target_head: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result_head: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub recovery_ref: Option<String>,
-    pub error: String,
-    pub started_at: String,
-    pub updated_at: String,
-}
