@@ -326,13 +326,25 @@ async fn list_background_processes(
     Json(state.terminals.process_snapshot().await)
 }
 
-include!("server/agent.rs");
-include!("server/workspace.rs");
-include!("server/fork.rs");
-include!("server/git.rs");
-include!("server/delivery.rs");
-include!("server/parent_operation.rs");
-include!("server/verification.rs");
-include!("server/session.rs");
-include!("server/hosting.rs");
-include!("server/tests.rs");
+mod agent;
+mod delivery;
+mod fork;
+#[path = "server/git.rs"]
+mod git_routes;
+mod hosting;
+mod parent_operation;
+mod session;
+#[cfg(test)]
+mod tests;
+mod verification;
+mod workspace;
+
+use agent::*;
+use delivery::*;
+use fork::*;
+use git_routes::*;
+use hosting::*;
+use parent_operation::*;
+use session::*;
+use verification::*;
+use workspace::*;

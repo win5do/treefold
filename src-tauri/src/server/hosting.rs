@@ -1,4 +1,6 @@
-fn treefold_runtime_snapshot(
+use super::*;
+
+pub(super) fn treefold_runtime_snapshot(
     state: &AppState,
     session: &Session,
     workspace: &Workspace,
@@ -64,7 +66,7 @@ fn treefold_runtime_snapshot(
     }))
 }
 
-fn treefold_developer_instructions(
+pub(super) fn treefold_developer_instructions(
     state: &AppState,
     session: &Session,
     workspace: &Workspace,
@@ -88,7 +90,7 @@ fn treefold_developer_instructions(
     )))
 }
 
-fn git_runtime_snapshot(path: &str) -> Value {
+pub(super) fn git_runtime_snapshot(path: &str) -> Value {
     let exists = Path::new(path).is_dir();
     let is_git = exists
         && command_output(
@@ -113,7 +115,7 @@ fn git_runtime_snapshot(path: &str) -> Value {
     })
 }
 
-fn reveal_in_file_manager(path: &str) -> Result<()> {
+pub(super) fn reveal_in_file_manager(path: &str) -> Result<()> {
     if !Path::new(path).exists() {
         return Err(AppError::BadRequest(format!("path does not exist: {path}")));
     }
@@ -129,4 +131,3 @@ fn reveal_in_file_manager(path: &str) -> Result<()> {
         .map_err(|error| AppError::BadRequest(format!("failed to open path: {error}")))?;
     Ok(())
 }
-

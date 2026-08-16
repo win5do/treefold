@@ -1,4 +1,6 @@
-async fn get_workspace_location_rebase(
+use super::*;
+
+pub(super) async fn get_workspace_location_rebase(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Option<RebaseOperation>>> {
@@ -12,7 +14,7 @@ async fn get_workspace_location_rebase(
     Ok(Json(operation))
 }
 
-async fn update_workspace_location_rebase(
+pub(super) async fn update_workspace_location_rebase(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RebaseInput>,
@@ -27,7 +29,7 @@ async fn update_workspace_location_rebase(
     .await
 }
 
-fn update_workspace_location_rebase_impl(
+pub(super) fn update_workspace_location_rebase_impl(
     state: AppState,
     id: String,
     input: RebaseInput,
@@ -42,9 +44,12 @@ fn update_workspace_location_rebase_impl(
             None,
         )?),
         "continue" | "abort" => {
-            let current = state.store.latest_parent_operation(&id, "update")?.ok_or_else(|| {
-                AppError::BadRequest("no rebase operation exists for this location".into())
-            })?;
+            let current = state
+                .store
+                .latest_parent_operation(&id, "update")?
+                .ok_or_else(|| {
+                    AppError::BadRequest("no rebase operation exists for this location".into())
+                })?;
             let operation = if input.action == "continue" {
                 reconcile_parent_operation(&state, &current)?
             } else {
@@ -55,13 +60,13 @@ fn update_workspace_location_rebase_impl(
         _ => {
             return Err(AppError::BadRequest(
                 "rebase action must be start, continue, or abort".into(),
-            ))
+            ));
         }
     };
     Ok(Json(operation))
 }
 
-fn parent_operation_as_rebase(operation: ParentOperation) -> RebaseOperation {
+pub(super) fn parent_operation_as_rebase(operation: ParentOperation) -> RebaseOperation {
     RebaseOperation {
         id: operation.id,
         workspace_location_id: operation.workspace_repository_id,
@@ -79,7 +84,7 @@ fn parent_operation_as_rebase(operation: ParentOperation) -> RebaseOperation {
     }
 }
 
-async fn get_workspace_location_reset(
+pub(super) async fn get_workspace_location_reset(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Option<ResetOperation>>> {
@@ -87,7 +92,7 @@ async fn get_workspace_location_reset(
     Ok(Json(state.store.latest_reset_operation(&id)?))
 }
 
-async fn reset_workspace_location(
+pub(super) async fn reset_workspace_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<ResetWorkspace>,
@@ -102,7 +107,7 @@ async fn reset_workspace_location(
     .await
 }
 
-fn reset_workspace_location_impl(
+pub(super) fn reset_workspace_location_impl(
     state: AppState,
     id: String,
     input: ResetWorkspace,
@@ -132,7 +137,7 @@ fn reset_workspace_location_impl(
         _ => {
             return Err(AppError::BadRequest(
                 "reset mode must be creation, target, or commit".into(),
-            ))
+            ));
         }
     };
     let target_head = resolve_commit(&path, &revision)?;
@@ -177,7 +182,7 @@ fn reset_workspace_location_impl(
     ))
 }
 
-async fn restore_workspace_location_reset(
+pub(super) async fn restore_workspace_location_reset(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RestoreReset>,
@@ -192,7 +197,7 @@ async fn restore_workspace_location_reset(
     .await
 }
 
-fn restore_workspace_location_reset_impl(
+pub(super) fn restore_workspace_location_reset_impl(
     state: AppState,
     id: String,
     input: RestoreReset,
@@ -224,8 +229,7 @@ fn restore_workspace_location_reset_impl(
     Ok(Json(state.store.reset_operation(&operation.id)?))
 }
 
-
-async fn finish_workspace_location(
+pub(super) async fn finish_workspace_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<FinishWorkspace>,
@@ -245,7 +249,7 @@ async fn finish_workspace_location(
     result
 }
 
-fn finish_workspace_location_impl(
+pub(super) fn finish_workspace_location_impl(
     state: AppState,
     id: String,
     input: FinishWorkspace,
@@ -257,7 +261,10 @@ fn finish_workspace_location_impl(
             "read-only locations do not require Finish".into(),
         ));
     }
-    if !matches!(location.delivery_status.as_str(), "active" | "failed" | "conflicted") {
+    if !matches!(
+        location.delivery_status.as_str(),
+        "active" | "failed" | "conflicted"
+    ) {
         return Ok(Json(FinishProgress {
             status: "finished".into(),
             location,
@@ -302,7 +309,9 @@ fn finish_workspace_location_impl(
     let mut linked_operation = None;
     let (status, outcome, integrated) = match input.code_action.as_str() {
         "local_merge" => {
-            let previous = state.store.latest_parent_operation(&location.id, "integrate")?;
+            let previous = state
+                .store
+                .latest_parent_operation(&location.id, "integrate")?;
             let operation = start_parent_operation_impl(
                 &state,
                 &location.id,
@@ -311,8 +320,13 @@ fn finish_workspace_location_impl(
                 "finish",
                 Some(&location.id),
             )?;
-            if matches!(operation.status.as_str(), "conflicted" | "resolving" | "recovery_required" | "active") {
-                state.store.set_delivery_status(&location.id, "conflicted")?;
+            if matches!(
+                operation.status.as_str(),
+                "conflicted" | "resolving" | "recovery_required" | "active"
+            ) {
+                state
+                    .store
+                    .set_delivery_status(&location.id, "conflicted")?;
                 return Ok(Json(FinishProgress {
                     status: "paused".into(),
                     location: state.store.workspace_location(&location.id)?,
@@ -325,9 +339,9 @@ fn finish_workspace_location_impl(
                     operation.status
                 )));
             }
-            let resumed = previous
-                .as_ref()
-                .is_some_and(|previous| previous.id == operation.id && previous.status == "completed");
+            let resumed = previous.as_ref().is_some_and(|previous| {
+                previous.id == operation.id && previous.status == "completed"
+            });
             if resumed && !input.resume_finish {
                 return Ok(Json(FinishProgress {
                     status: "awaiting_resume".into(),
@@ -335,10 +349,9 @@ fn finish_workspace_location_impl(
                     operation: Some(operation),
                 }));
             }
-            let head = operation
-                .result_head
-                .clone()
-                .ok_or_else(|| AppError::BadRequest("completed integration has no result HEAD".into()))?;
+            let head = operation.result_head.clone().ok_or_else(|| {
+                AppError::BadRequest("completed integration has no result HEAD".into())
+            })?;
             linked_operation = Some(operation);
             ("delivered", "local_merge", Some(head))
         }
@@ -385,7 +398,7 @@ fn finish_workspace_location_impl(
     }))
 }
 
-fn workspace_location_delivery_target(
+pub(super) fn workspace_location_delivery_target(
     state: &AppState,
     workspace: &Workspace,
     location: &WorkspaceLocation,
@@ -417,20 +430,19 @@ fn workspace_location_delivery_target(
     ))
 }
 
-
 #[derive(Deserialize)]
-struct RebaseInput {
+pub(super) struct RebaseInput {
     action: String,
 }
 
-async fn get_rebase_status(
+pub(super) async fn get_rebase_status(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Option<RebaseOperation>>> {
     Ok(Json(rebase_status_impl(&state, &id)?))
 }
 
-async fn update_rebase(
+pub(super) async fn update_rebase(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RebaseInput>,
@@ -449,7 +461,7 @@ async fn update_rebase(
     .await
 }
 
-fn start_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
+pub(super) fn start_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
     let (workspace, directory) = rebase_context(state, id)?;
     if state.store.delivery_operation(id)?.is_some() {
         return Err(AppError::BadRequest(
@@ -516,7 +528,7 @@ fn start_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
     )
 }
 
-fn continue_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
+pub(super) fn continue_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
     let operation = rebase_status_impl(state, id)?.ok_or_else(|| {
         AppError::BadRequest("no rebase operation exists for this Workspace".into())
     })?;
@@ -555,7 +567,7 @@ fn continue_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
     }
 }
 
-fn abort_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
+pub(super) fn abort_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
     let operation = state.store.latest_rebase_operation(id)?.ok_or_else(|| {
         AppError::BadRequest("no rebase operation exists for this Workspace".into())
     })?;
@@ -596,7 +608,7 @@ fn abort_rebase(state: &AppState, id: &str) -> Result<RebaseOperation> {
     latest_rebase_required(state, id)
 }
 
-fn rebase_status_impl(state: &AppState, id: &str) -> Result<Option<RebaseOperation>> {
+pub(super) fn rebase_status_impl(state: &AppState, id: &str) -> Result<Option<RebaseOperation>> {
     let Some(operation) = state.store.latest_rebase_operation(id)? else {
         let _ = rebase_context(state, id)?;
         return Ok(None);
@@ -667,7 +679,7 @@ fn rebase_status_impl(state: &AppState, id: &str) -> Result<Option<RebaseOperati
     Ok(Some(latest_rebase_required(state, id)?))
 }
 
-fn execute_rebase(
+pub(super) fn execute_rebase(
     state: &AppState,
     workspace: &Workspace,
     directory: &Directory,
@@ -704,7 +716,7 @@ fn execute_rebase(
     }
 }
 
-fn finalize_rebase(
+pub(super) fn finalize_rebase(
     state: &AppState,
     workspace: &Workspace,
     directory: &Directory,
@@ -739,7 +751,7 @@ fn finalize_rebase(
     latest_rebase_required(state, &workspace.id)
 }
 
-fn rebase_context(state: &AppState, id: &str) -> Result<(Workspace, Directory)> {
+pub(super) fn rebase_context(state: &AppState, id: &str) -> Result<(Workspace, Directory)> {
     let workspace = state.store.workspace(id)?;
     if workspace.status != "active" || workspace.kind == "base" || workspace.branch.is_empty() {
         return Err(AppError::BadRequest(
@@ -751,26 +763,26 @@ fn rebase_context(state: &AppState, id: &str) -> Result<(Workspace, Directory)> 
     Ok((workspace, directory))
 }
 
-fn latest_rebase_required(state: &AppState, id: &str) -> Result<RebaseOperation> {
+pub(super) fn latest_rebase_required(state: &AppState, id: &str) -> Result<RebaseOperation> {
     state
         .store
         .latest_rebase_operation(id)?
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("rebase operation disappeared")))
 }
 
-fn rebase_operation_is_final(operation: &RebaseOperation) -> bool {
+pub(super) fn rebase_operation_is_final(operation: &RebaseOperation) -> bool {
     matches!(operation.status.as_str(), "completed" | "aborted")
 }
 
-fn rebase_operation_blocks(operation: &RebaseOperation) -> bool {
+pub(super) fn rebase_operation_blocks(operation: &RebaseOperation) -> bool {
     !rebase_operation_is_final(operation)
 }
 
-fn id_for_operation() -> String {
+pub(super) fn id_for_operation() -> String {
     Uuid::new_v4().simple().to_string()
 }
 
-fn rebase_in_progress(workspace: &str) -> Result<bool> {
+pub(super) fn rebase_in_progress(workspace: &str) -> Result<bool> {
     for name in ["rebase-merge", "rebase-apply"] {
         let path = command_output(
             Path::new(workspace),
@@ -791,7 +803,7 @@ fn rebase_in_progress(workspace: &str) -> Result<bool> {
     Ok(false)
 }
 
-fn has_unmerged_paths(workspace: &str) -> Result<bool> {
+pub(super) fn has_unmerged_paths(workspace: &str) -> Result<bool> {
     let paths = command_output(
         Path::new(workspace),
         "git",
@@ -801,7 +813,7 @@ fn has_unmerged_paths(workspace: &str) -> Result<bool> {
     Ok(!paths.is_empty())
 }
 
-fn git_is_ancestor(workspace: &str, ancestor: &str, descendant: &str) -> Result<bool> {
+pub(super) fn git_is_ancestor(workspace: &str, ancestor: &str, descendant: &str) -> Result<bool> {
     let status = git::status(
         Path::new(workspace),
         &["merge-base", "--is-ancestor", ancestor, descendant],
@@ -816,7 +828,11 @@ fn git_is_ancestor(workspace: &str, ancestor: &str, descendant: &str) -> Result<
     }
 }
 
-async fn git_is_ancestor_async(workspace: &str, ancestor: &str, descendant: &str) -> Result<bool> {
+pub(super) async fn git_is_ancestor_async(
+    workspace: &str,
+    ancestor: &str,
+    descendant: &str,
+) -> Result<bool> {
     let status = git::status_async(
         Path::new(workspace),
         &["merge-base", "--is-ancestor", ancestor, descendant],
@@ -832,7 +848,7 @@ async fn git_is_ancestor_async(workspace: &str, ancestor: &str, descendant: &str
     }
 }
 
-fn delete_recovery_ref(repository: &str, recovery_ref: &str) -> Result<()> {
+pub(super) fn delete_recovery_ref(repository: &str, recovery_ref: &str) -> Result<()> {
     command_output(
         Path::new(repository),
         "git",
@@ -842,7 +858,7 @@ fn delete_recovery_ref(repository: &str, recovery_ref: &str) -> Result<()> {
     Ok(())
 }
 
-fn git_rebase_output(dir: &Path, args: &[&str]) -> std::result::Result<String, String> {
+pub(super) fn git_rebase_output(dir: &Path, args: &[&str]) -> std::result::Result<String, String> {
     let mut command_args = Vec::with_capacity(args.len() + 1);
     command_args.push("rebase");
     command_args.extend_from_slice(args);
@@ -854,19 +870,19 @@ fn git_rebase_output(dir: &Path, args: &[&str]) -> std::result::Result<String, S
 }
 
 #[derive(Deserialize)]
-struct ResetWorkspace {
+pub(super) struct ResetWorkspace {
     mode: String,
     commit: Option<String>,
     confirm: bool,
 }
 
 #[derive(Deserialize)]
-struct RestoreReset {
+pub(super) struct RestoreReset {
     operation_id: String,
     confirm: bool,
 }
 
-async fn reset_workspace(
+pub(super) async fn reset_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<ResetWorkspace>,
@@ -877,14 +893,14 @@ async fn reset_workspace(
     .await
 }
 
-async fn get_reset_status(
+pub(super) async fn get_reset_status(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Option<ResetOperation>>> {
     reset_status_impl(&state, &id).map(Json)
 }
 
-async fn restore_workspace_reset(
+pub(super) async fn restore_workspace_reset(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RestoreReset>,
@@ -892,7 +908,11 @@ async fn restore_workspace_reset(
     blocking_git_operation(move || restore_reset(&state, &id, &input).map(Json)).await
 }
 
-fn start_reset(state: &AppState, id: &str, input: &ResetWorkspace) -> Result<ResetOperation> {
+pub(super) fn start_reset(
+    state: &AppState,
+    id: &str,
+    input: &ResetWorkspace,
+) -> Result<ResetOperation> {
     if !input.confirm {
         return Err(AppError::BadRequest(
             "reset requires explicit confirmation".into(),
@@ -986,7 +1006,11 @@ fn start_reset(state: &AppState, id: &str, input: &ResetWorkspace) -> Result<Res
     state.store.reset_operation(&operation.id)
 }
 
-fn restore_reset(state: &AppState, id: &str, input: &RestoreReset) -> Result<ResetOperation> {
+pub(super) fn restore_reset(
+    state: &AppState,
+    id: &str,
+    input: &RestoreReset,
+) -> Result<ResetOperation> {
     if !input.confirm {
         return Err(AppError::BadRequest(
             "reset restore requires explicit confirmation".into(),
@@ -1053,7 +1077,7 @@ fn restore_reset(state: &AppState, id: &str, input: &RestoreReset) -> Result<Res
     state.store.reset_operation(&operation.id)
 }
 
-fn reset_status_impl(state: &AppState, id: &str) -> Result<Option<ResetOperation>> {
+pub(super) fn reset_status_impl(state: &AppState, id: &str) -> Result<Option<ResetOperation>> {
     let Some(operation) = state.store.latest_reset_operation(id)? else {
         let _ = reset_context(state, id)?;
         return Ok(None);
@@ -1091,7 +1115,7 @@ fn reset_status_impl(state: &AppState, id: &str) -> Result<Option<ResetOperation
     Ok(Some(state.store.reset_operation(&operation.id)?))
 }
 
-fn reset_context(state: &AppState, id: &str) -> Result<(Workspace, Directory)> {
+pub(super) fn reset_context(state: &AppState, id: &str) -> Result<(Workspace, Directory)> {
     let workspace = state.store.workspace(id)?;
     if workspace.status != "active" || workspace.kind == "base" || workspace.branch.is_empty() {
         return Err(AppError::BadRequest(
@@ -1103,7 +1127,11 @@ fn reset_context(state: &AppState, id: &str) -> Result<(Workspace, Directory)> {
     Ok((workspace, directory))
 }
 
-fn ensure_no_git_operation_in_progress(state: &AppState, id: &str, action: &str) -> Result<()> {
+pub(super) fn ensure_no_git_operation_in_progress(
+    state: &AppState,
+    id: &str,
+    action: &str,
+) -> Result<()> {
     if state.store.delivery_operation(id)?.is_some() {
         return Err(AppError::BadRequest(format!(
             "cannot {action} while delivery is in progress"
@@ -1127,7 +1155,7 @@ fn ensure_no_git_operation_in_progress(state: &AppState, id: &str, action: &str)
     Ok(())
 }
 
-fn resolve_commit(repository: &str, revision: &str) -> Result<String> {
+pub(super) fn resolve_commit(repository: &str, revision: &str) -> Result<String> {
     command_output(
         Path::new(repository),
         "git",
@@ -1136,7 +1164,10 @@ fn resolve_commit(repository: &str, revision: &str) -> Result<String> {
     .map_err(|error| AppError::BadRequest(format!("resolve reset target {revision}: {error}")))
 }
 
-fn workspace_delivery_target(state: &AppState, workspace: &Workspace) -> Result<(String, String)> {
+pub(super) fn workspace_delivery_target(
+    state: &AppState,
+    workspace: &Workspace,
+) -> Result<(String, String)> {
     if workspace.kind == "fork" {
         let parent_id = workspace.parent_workspace_id.as_deref().ok_or_else(|| {
             AppError::Internal(anyhow::anyhow!("Fork is missing its parent Workspace"))
@@ -1155,21 +1186,21 @@ fn workspace_delivery_target(state: &AppState, workspace: &Workspace) -> Result<
 
 #[derive(Clone, Deserialize)]
 
-struct FinishWorkspace {
-    code_action: String,
-    todo_action: String,
+pub(super) struct FinishWorkspace {
+    pub(super) code_action: String,
+    pub(super) todo_action: String,
     #[serde(default)]
-    push_after_merge: bool,
-    keep_session_history: bool,
-    delete_worktree: bool,
-    delete_branch: bool,
-    commit_message: Option<String>,
-    preflight_id: Option<String>,
+    pub(super) push_after_merge: bool,
+    pub(super) keep_session_history: bool,
+    pub(super) delete_worktree: bool,
+    pub(super) delete_branch: bool,
+    pub(super) commit_message: Option<String>,
+    pub(super) preflight_id: Option<String>,
     #[serde(default)]
-    resume_finish: bool,
+    pub(super) resume_finish: bool,
 }
 
-async fn finish_workspace(
+pub(super) async fn finish_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<FinishWorkspace>,
@@ -1179,7 +1210,7 @@ async fn finish_workspace(
         .map(Json)
 }
 
-async fn finish_workspace_impl(
+pub(super) async fn finish_workspace_impl(
     state: &AppState,
     id: &str,
     input: &FinishWorkspace,
@@ -1194,7 +1225,7 @@ async fn finish_workspace_impl(
     result
 }
 
-async fn finish_workspace_steps(
+pub(super) async fn finish_workspace_steps(
     state: &AppState,
     id: &str,
     input: &FinishWorkspace,
@@ -1447,9 +1478,15 @@ async fn finish_workspace_steps(
         for mut session in state.store.sessions(id)? {
             capture_codex_session_id(&state.store, &mut session)?;
             if input.keep_session_history && session.kind == "codex" {
-                let _ = state.terminals.stop_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+                let _ = state
+                    .terminals
+                    .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
+                    .await;
             } else {
-                let _ = state.terminals.remove_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+                let _ = state
+                    .terminals
+                    .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
+                    .await;
             }
         }
         let resume_cwd = if input.delete_worktree {
@@ -1531,8 +1568,7 @@ async fn finish_workspace_steps(
     state.store.workspace(id)
 }
 
-
-fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
+pub(super) fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
     if !["local_merge", "remote_merged", "keep", "discard"].contains(&input.code_action.as_str()) {
         return Err(AppError::BadRequest("invalid code action".into()));
     }
@@ -1567,7 +1603,10 @@ fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
     Ok(())
 }
 
-fn ensure_delivery_matches(operation: &DeliveryOperation, input: &FinishWorkspace) -> Result<()> {
+pub(super) fn ensure_delivery_matches(
+    operation: &DeliveryOperation,
+    input: &FinishWorkspace,
+) -> Result<()> {
     let commit_message = trimmed(input.commit_message.clone()).unwrap_or_default();
     if operation.code_action != input.code_action
         || operation.todo_action != input.todo_action
@@ -1584,7 +1623,7 @@ fn ensure_delivery_matches(operation: &DeliveryOperation, input: &FinishWorkspac
     Ok(())
 }
 
-fn delivery_phase_at_least(current: &str, expected: &str) -> Result<bool> {
+pub(super) fn delivery_phase_at_least(current: &str, expected: &str) -> Result<bool> {
     const PHASES: [&str; 7] = [
         "preflight_passed",
         "code_integrated",
@@ -1603,7 +1642,7 @@ fn delivery_phase_at_least(current: &str, expected: &str) -> Result<bool> {
     Ok(rank(current)? >= rank(expected)?)
 }
 
-fn fail_delivery_after(actual: Option<&str>, phase: &str) -> Result<()> {
+pub(super) fn fail_delivery_after(actual: Option<&str>, phase: &str) -> Result<()> {
     if actual == Some(phase) {
         return Err(AppError::BadRequest(format!(
             "injected delivery failure after {phase}"
@@ -1612,11 +1651,15 @@ fn fail_delivery_after(actual: Option<&str>, phase: &str) -> Result<()> {
     Ok(())
 }
 
-fn ensure_target_branch(path: &str, target_branch: &str) -> Result<()> {
+pub(super) fn ensure_target_branch(path: &str, target_branch: &str) -> Result<()> {
     ensure_checked_out_branch(path, target_branch, "merge target")
 }
 
-fn ensure_checked_out_branch(path: &str, expected_branch: &str, label: &str) -> Result<()> {
+pub(super) fn ensure_checked_out_branch(
+    path: &str,
+    expected_branch: &str,
+    label: &str,
+) -> Result<()> {
     let checked_out = command_output(Path::new(path), "git", &["branch", "--show-current"])
         .map_err(AppError::BadRequest)?;
     if checked_out != expected_branch {
@@ -1627,11 +1670,11 @@ fn ensure_checked_out_branch(path: &str, expected_branch: &str, label: &str) -> 
     Ok(())
 }
 
-fn git_head(path: &str) -> Result<String> {
+pub(super) fn git_head(path: &str) -> Result<String> {
     command_output(Path::new(path), "git", &["rev-parse", "HEAD"]).map_err(AppError::BadRequest)
 }
 
-fn remove_worktree_if_present(
+pub(super) fn remove_worktree_if_present(
     repository: &str,
     checkout_path: &str,
     discard_changes: bool,
@@ -1646,12 +1689,7 @@ fn remove_worktree_if_present(
             args.push("--force");
         }
         args.push(checkout_path);
-        command_output(
-            Path::new(repository),
-            "git",
-            &args,
-        )
-        .map_err(|error| {
+        command_output(Path::new(repository), "git", &args).map_err(|error| {
             AppError::BadRequest(format!(
                 "code was delivered but the worktree could not be removed: {error}"
             ))
@@ -1664,7 +1702,7 @@ fn remove_worktree_if_present(
     Ok(())
 }
 
-fn delete_delivered_branch_if_present(
+pub(super) fn delete_delivered_branch_if_present(
     repository: &str,
     branch: &str,
     target_branch: &str,
@@ -1698,7 +1736,7 @@ fn delete_delivered_branch_if_present(
     Ok(())
 }
 
-fn ensure_clean_workspace(path: &str, label: &str) -> Result<()> {
+pub(super) fn ensure_clean_workspace(path: &str, label: &str) -> Result<()> {
     let status = command_output(Path::new(path), "git", &["status", "--porcelain"])
         .map_err(AppError::BadRequest)?;
     if !status.is_empty() {
@@ -1709,7 +1747,7 @@ fn ensure_clean_workspace(path: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
-fn commit_source_if_needed(workspace: &Workspace, message: Option<&str>) -> Result<()> {
+pub(super) fn commit_source_if_needed(workspace: &Workspace, message: Option<&str>) -> Result<()> {
     let status = command_output(
         Path::new(&workspace.checkout_path),
         "git",

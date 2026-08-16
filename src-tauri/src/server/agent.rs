@@ -1,8 +1,10 @@
-async fn health() -> Json<Value> {
+use super::*;
+
+pub(super) async fn health() -> Json<Value> {
     Json(json!({"status":"ok","time":now()}))
 }
 
-async fn system_status() -> Result<Json<Value>> {
+pub(super) async fn system_status() -> Result<Json<Value>> {
     let codex = command_output(Path::new("."), "codex", &["--version"]).ok();
     Ok(Json(json!({
         "platform":"darwin", "codex_available":codex.is_some(), "codex_version":codex,
@@ -10,22 +12,24 @@ async fn system_status() -> Result<Json<Value>> {
     })))
 }
 
-async fn amux_status(State(state): State<AppState>) -> Json<crate::terminal::DaemonResourceStatus> {
+pub(super) async fn amux_status(
+    State(state): State<AppState>,
+) -> Json<crate::terminal::DaemonResourceStatus> {
     Json(state.terminals.daemon_status().await)
 }
 
-async fn stop_amux(State(state): State<AppState>) -> Result<StatusCode> {
+pub(super) async fn stop_amux(State(state): State<AppState>) -> Result<StatusCode> {
     state.terminals.stop_daemon().await?;
     state.store.stop_active_sessions()?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-struct AgentContext {
+pub(super) struct AgentContext {
     session: Session,
     workspace: Workspace,
 }
 
-fn agent_context(state: &AppState, headers: &HeaderMap) -> Result<AgentContext> {
+pub(super) fn agent_context(state: &AppState, headers: &HeaderMap) -> Result<AgentContext> {
     let token = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -59,7 +63,7 @@ fn agent_context(state: &AppState, headers: &HeaderMap) -> Result<AgentContext> 
     Ok(AgentContext { session, workspace })
 }
 
-fn agent_owned_todos(state: &AppState, workspace_id: &str) -> Result<Vec<Todo>> {
+pub(super) fn agent_owned_todos(state: &AppState, workspace_id: &str) -> Result<Vec<Todo>> {
     let workspace = state.store.workspace(workspace_id)?;
     if workspace.kind == "base" {
         return Ok(Vec::new());
@@ -67,7 +71,7 @@ fn agent_owned_todos(state: &AppState, workspace_id: &str) -> Result<Vec<Todo>> 
     state.store.todos(workspace_id)
 }
 
-fn agent_todo(state: &AppState, context: &AgentContext, id: &str) -> Result<Todo> {
+pub(super) fn agent_todo(state: &AppState, context: &AgentContext, id: &str) -> Result<Todo> {
     if context.workspace.kind == "base" {
         return Err(AppError::api(
             StatusCode::FORBIDDEN,
@@ -86,7 +90,10 @@ fn agent_todo(state: &AppState, context: &AgentContext, id: &str) -> Result<Todo
     Ok(todo)
 }
 
-fn ensure_todo_not_owned_by_another_session(context: &AgentContext, todo: &Todo) -> Result<()> {
+pub(super) fn ensure_todo_not_owned_by_another_session(
+    context: &AgentContext,
+    todo: &Todo,
+) -> Result<()> {
     if todo
         .session_id
         .as_deref()
@@ -101,7 +108,10 @@ fn ensure_todo_not_owned_by_another_session(context: &AgentContext, todo: &Todo)
     Ok(())
 }
 
-async fn agent_current(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>> {
+pub(super) async fn agent_current(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Value>> {
     let context = agent_context(&state, &headers)?;
     Ok(Json(treefold_runtime_snapshot(
         &state,
@@ -110,7 +120,7 @@ async fn agent_current(State(state): State<AppState>, headers: HeaderMap) -> Res
     )?))
 }
 
-async fn agent_list_todos(
+pub(super) async fn agent_list_todos(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Result<Json<Vec<Todo>>> {
@@ -118,7 +128,7 @@ async fn agent_list_todos(
     Ok(Json(agent_owned_todos(&state, &context.workspace.id)?))
 }
 
-async fn agent_get_todo(
+pub(super) async fn agent_get_todo(
     State(state): State<AppState>,
     headers: HeaderMap,
     AxumPath(id): AxumPath<String>,
@@ -128,12 +138,12 @@ async fn agent_get_todo(
 }
 
 #[derive(Deserialize)]
-struct AgentCreateTodo {
+pub(super) struct AgentCreateTodo {
     title: String,
     description: Option<String>,
 }
 
-async fn agent_create_todo(
+pub(super) async fn agent_create_todo(
     State(state): State<AppState>,
     headers: HeaderMap,
     ApiJson(input): ApiJson<AgentCreateTodo>,
@@ -166,12 +176,12 @@ async fn agent_create_todo(
 }
 
 #[derive(Deserialize)]
-struct AgentEditTodo {
+pub(super) struct AgentEditTodo {
     title: Option<String>,
     description: Option<String>,
 }
 
-async fn agent_edit_todo(
+pub(super) async fn agent_edit_todo(
     State(state): State<AppState>,
     headers: HeaderMap,
     AxumPath(id): AxumPath<String>,
@@ -195,7 +205,7 @@ async fn agent_edit_todo(
     Ok(Json(state.store.todo(&id)?))
 }
 
-async fn agent_delete_todo(
+pub(super) async fn agent_delete_todo(
     State(state): State<AppState>,
     headers: HeaderMap,
     AxumPath(id): AxumPath<String>,
@@ -206,7 +216,7 @@ async fn agent_delete_todo(
     Ok(Json(json!({"removed":true, "id":id})))
 }
 
-async fn agent_claim_todo(
+pub(super) async fn agent_claim_todo(
     State(state): State<AppState>,
     headers: HeaderMap,
     AxumPath(id): AxumPath<String>,
@@ -224,7 +234,7 @@ async fn agent_claim_todo(
     Ok(Json(state.store.todo(&id)?))
 }
 
-async fn agent_release_todo(
+pub(super) async fn agent_release_todo(
     State(state): State<AppState>,
     headers: HeaderMap,
     AxumPath(id): AxumPath<String>,
@@ -242,7 +252,7 @@ async fn agent_release_todo(
     Ok(Json(state.store.todo(&id)?))
 }
 
-async fn agent_done_todo(
+pub(super) async fn agent_done_todo(
     State(state): State<AppState>,
     headers: HeaderMap,
     AxumPath(id): AxumPath<String>,
@@ -257,11 +267,11 @@ async fn agent_done_todo(
 }
 
 #[derive(Deserialize)]
-struct AgentBlockTodo {
+pub(super) struct AgentBlockTodo {
     reason: String,
 }
 
-async fn agent_block_todo(
+pub(super) async fn agent_block_todo(
     State(state): State<AppState>,
     headers: HeaderMap,
     AxumPath(id): AxumPath<String>,

@@ -1,12 +1,14 @@
+use super::*;
+
 #[derive(Deserialize)]
-struct CreateSession {
-    name: Option<String>,
-    kind: Option<String>,
-    project_directory_id: Option<String>,
-    initial_prompt: Option<String>,
+pub(super) struct CreateSession {
+    pub(super) name: Option<String>,
+    pub(super) kind: Option<String>,
+    pub(super) project_directory_id: Option<String>,
+    pub(super) initial_prompt: Option<String>,
 }
 
-async fn create_project_session(
+pub(super) async fn create_project_session(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateSession>,
@@ -15,7 +17,7 @@ async fn create_project_session(
     create_session_for_workspace(&state, workspace, input).await
 }
 
-async fn list_project_sessions(
+pub(super) async fn list_project_sessions(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
@@ -24,7 +26,10 @@ async fn list_project_sessions(
     Ok(Json(state.store.project_sessions(&project_id)?))
 }
 
-fn sync_project_session_workspace(state: &AppState, project_id: &str) -> Result<Workspace> {
+pub(super) fn sync_project_session_workspace(
+    state: &AppState,
+    project_id: &str,
+) -> Result<Workspace> {
     let project = state.store.project(project_id)?;
     if project.status != "active" {
         return Err(AppError::BadRequest(
@@ -89,7 +94,7 @@ fn sync_project_session_workspace(state: &AppState, project_id: &str) -> Result<
     state.store.workspace(&workspace.id)
 }
 
-fn project_session_location(
+pub(super) fn project_session_location(
     workspace_id: &str,
     location: &ProjectLocation,
     timestamp: &str,
@@ -110,7 +115,12 @@ fn project_session_location(
         git_status: location.git_status.clone(),
         creation_error: None,
         worktree_id: None,
-        checkout_path: tracked_git.then(|| location.checkout_path.clone().unwrap_or_else(|| location.path.clone())),
+        checkout_path: tracked_git.then(|| {
+            location
+                .checkout_path
+                .clone()
+                .unwrap_or_else(|| location.path.clone())
+        }),
         branch: location.branch.clone(),
         base_branch: location.base_branch.clone(),
         start_commit: location.head_commit.clone(),
@@ -128,7 +138,7 @@ fn project_session_location(
     }
 }
 
-async fn create_session(
+pub(super) async fn create_session(
     State(state): State<AppState>,
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateSession>,
@@ -137,7 +147,7 @@ async fn create_session(
     create_session_for_workspace(&state, workspace, input).await
 }
 
-async fn list_sessions(
+pub(super) async fn list_sessions(
     State(state): State<AppState>,
     AxumPath(workspace_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
@@ -147,11 +157,11 @@ async fn list_sessions(
 }
 
 #[derive(Deserialize)]
-struct ReorderSessions {
+pub(super) struct ReorderSessions {
     session_ids: Vec<String>,
 }
 
-async fn reorder_sessions(
+pub(super) async fn reorder_sessions(
     State(state): State<AppState>,
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<ReorderSessions>,
@@ -172,7 +182,7 @@ async fn reorder_sessions(
     Ok(Json(state.store.sessions(&workspace_id)?))
 }
 
-async fn create_session_for_workspace(
+pub(super) async fn create_session_for_workspace(
     state: &AppState,
     workspace: Workspace,
     input: CreateSession,
@@ -231,10 +241,13 @@ async fn create_session_for_workspace(
             })
             .ok_or_else(|| AppError::BadRequest("Workspace has no usable location".into()))?
     };
-    let selected_repository = selected_directory.workspace_repository_id.as_deref().and_then(|id| {
-        repositories.iter().find(|repository| repository.id == id)
-    });
-    if let Some(repository) = selected_repository.filter(|repository| repository.git_status != "ready") {
+    let selected_repository = selected_directory
+        .workspace_repository_id
+        .as_deref()
+        .and_then(|id| repositories.iter().find(|repository| repository.id == id));
+    if let Some(repository) =
+        selected_repository.filter(|repository| repository.git_status != "ready")
+    {
         return Err(AppError::BadRequest(format!(
             "Workspace Repository '{}' is unavailable: {}",
             repository.location_name,
@@ -261,7 +274,10 @@ async fn create_session_for_workspace(
     let selected_name = Some(selected_directory.name.clone());
     let mut seen_repository_roots = std::collections::HashSet::new();
     for repository in &repositories {
-        let root = repository.checkout_path.clone().unwrap_or_else(|| repository.source_path.clone());
+        let root = repository
+            .checkout_path
+            .clone()
+            .unwrap_or_else(|| repository.source_path.clone());
         if repository.git_status == "ready"
             && seen_repository_roots.insert(normalized_path(&root))
             && normalized_path(&root) != normalized_path(&cwd)
@@ -336,20 +352,16 @@ async fn create_session_for_workspace(
         }
         Err(error) => {
             session.status = "failed".into();
-            state.store.set_session_runtime(
-                &session.id,
-                "failed",
-                None,
-                "",
-                &session.argv,
-            )?;
+            state
+                .store
+                .set_session_runtime(&session.id, "failed", None, "", &session.argv)?;
             return Err(AppError::BadRequest(error.to_string()));
         }
     }
     Ok((StatusCode::CREATED, Json(session)))
 }
 
-async fn get_session(
+pub(super) async fn get_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
@@ -358,11 +370,11 @@ async fn get_session(
 }
 
 #[derive(Deserialize)]
-struct UpdateSession {
+pub(super) struct UpdateSession {
     name: String,
 }
 
-async fn update_session(
+pub(super) async fn update_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateSession>,
@@ -375,19 +387,20 @@ async fn update_session(
     state.store.rename_session(&id, name)?;
     Ok(Json(state.store.session(&id)?))
 }
-async fn stop_session(
+pub(super) async fn stop_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
     let session = state.store.session(&id)?;
-    state.terminals
+    state
+        .terminals
         .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     state.store.set_session_status(&id, "stopped")?;
     Ok(StatusCode::NO_CONTENT)
 }
-async fn restart_session(
+pub(super) async fn restart_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
@@ -445,27 +458,33 @@ async fn restart_session(
     persist_amux_process(&state.store, &id, &session)?;
     Ok(Json(session))
 }
-async fn close_session(
+pub(super) async fn close_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id)?;
     if session.kind == "shell" || session.kind == "command" {
-        let _ = state.terminals.remove_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+        let _ = state
+            .terminals
+            .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
+            .await;
         state.store.delete_session(&id)?;
         session.visibility = "hidden".into();
         session.status = "stopped".into();
         return Ok(Json(session));
     }
     capture_codex_session_id(&state.store, &mut session)?;
-    let _ = state.terminals.remove_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+    let _ = state
+        .terminals
+        .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
+        .await;
     state.store.set_session_status(&id, "stopped")?;
     state.store.set_session_visibility(&id, "hidden")?;
     let mut session = state.store.session(&id)?;
     session.visibility = "hidden".into();
     Ok(Json(session))
 }
-async fn open_session(
+pub(super) async fn open_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
@@ -473,24 +492,27 @@ async fn open_session(
     state.store.set_session_visibility(&id, "visible")?;
     get_session(State(state), AxumPath(id)).await
 }
-async fn delete_session(
+pub(super) async fn delete_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
     if let Ok(session) = state.store.session(&id) {
-        let _ = state.terminals.remove_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+        let _ = state
+            .terminals
+            .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
+            .await;
     }
     state.store.delete_session(&id)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]
-struct CreateTodo {
+pub(super) struct CreateTodo {
     title: String,
     description: Option<String>,
     session_id: Option<String>,
 }
-async fn create_todo(
+pub(super) async fn create_todo(
     State(state): State<AppState>,
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateTodo>,
@@ -519,11 +541,11 @@ async fn create_todo(
     Ok((StatusCode::CREATED, Json(todo)))
 }
 #[derive(Deserialize)]
-struct UpdateTodo {
+pub(super) struct UpdateTodo {
     status: String,
     session_id: Option<String>,
 }
-async fn update_todo(
+pub(super) async fn update_todo(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateTodo>,
@@ -539,19 +561,23 @@ async fn update_todo(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn ensure_session_owner_active(state: &AppState, session: &Session) -> Result<()> {
+pub(super) fn ensure_session_owner_active(state: &AppState, session: &Session) -> Result<()> {
     let workspace = state.store.workspace(&session.workspace_id)?;
-    if workspace.status != "active" || state.store.project(&workspace.project_id)?.status != "active" {
+    if workspace.status != "active"
+        || state.store.project(&workspace.project_id)?.status != "active"
+    {
         return Err(AppError::BadRequest(
             "Archived Projects, Workspaces, and Forks are read-only".into(),
         ));
     }
     Ok(())
 }
-async fn get_settings(State(state): State<AppState>) -> Result<Json<crate::settings::Settings>> {
+pub(super) async fn get_settings(
+    State(state): State<AppState>,
+) -> Result<Json<crate::settings::Settings>> {
     Ok(Json(state.settings.load()?))
 }
-async fn update_settings(
+pub(super) async fn update_settings(
     State(state): State<AppState>,
     ApiJson(input): ApiJson<SettingsPatch>,
 ) -> Result<Json<crate::settings::Settings>> {
@@ -561,7 +587,7 @@ async fn update_settings(
     Ok(Json(state.settings.update(input)?))
 }
 
-async fn terminal_socket(
+pub(super) async fn terminal_socket(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     Query(_): Query<HashMap<String, String>>,
@@ -571,14 +597,15 @@ async fn terminal_socket(
     Ok(ws.on_upgrade(move |socket| proxy_terminal(socket, state, id)))
 }
 
-fn apply_amux_process(session: &mut Session, process: amux::model::Process) {
-    session.status = strict_process_status(&format!("{:?}", process.state).to_ascii_lowercase()).into();
+pub(super) fn apply_amux_process(session: &mut Session, process: amux::model::Process) {
+    session.status =
+        strict_process_status(&format!("{:?}", process.state).to_ascii_lowercase()).into();
     session.exit_code = process.exit_code.map(Into::into);
     session.exit_signal = process.exit_signal;
     session.argv = process.command;
 }
 
-fn strict_process_status(status: &str) -> &'static str {
+pub(super) fn strict_process_status(status: &str) -> &'static str {
     match status {
         "created" | "starting" | "running" => "running",
         "exited" => "exited",
@@ -612,7 +639,7 @@ pub(super) fn reconcile_process_event(
     reconcile_process(state, &process, removed)
 }
 
-fn reconcile_process(
+pub(super) fn reconcile_process(
     state: &AppState,
     process: &crate::terminal::TreefoldProcessView,
     removed: bool,
@@ -662,7 +689,11 @@ fn reconcile_process(
         .as_deref()
         .and_then(|id| state.store.session(id).ok())
         .map(|session| session.workspace_id)
-        .or_else(|| workspace_for_process_cwd(&state.store, &process.cwd).ok().flatten());
+        .or_else(|| {
+            workspace_for_process_cwd(&state.store, &process.cwd)
+                .ok()
+                .flatten()
+        });
     let Some(workspace_id) = workspace_id else {
         return Ok(());
     };
@@ -718,7 +749,7 @@ fn reconcile_process(
     }
 }
 
-fn reconciled_status<'a>(current: &'a str, observed: &'a str) -> &'a str {
+pub(super) fn reconciled_status<'a>(current: &'a str, observed: &'a str) -> &'a str {
     // Stop is an explicit user action. The daemon may emit its terminal event
     // after the handler persisted `stopped`; that late event must not turn the
     // Session into a natural exit. A later running observation (Restart) still
@@ -730,7 +761,7 @@ fn reconciled_status<'a>(current: &'a str, observed: &'a str) -> &'a str {
     }
 }
 
-fn workspace_for_process_cwd(store: &Store, cwd: &str) -> Result<Option<String>> {
+pub(super) fn workspace_for_process_cwd(store: &Store, cwd: &str) -> Result<Option<String>> {
     let cwd = std::fs::canonicalize(cwd).unwrap_or_else(|_| PathBuf::from(cwd));
     Ok(store
         .session_workspace_candidates()?
@@ -744,12 +775,18 @@ fn workspace_for_process_cwd(store: &Store, cwd: &str) -> Result<Option<String>>
         .map(|(_, workspace_id)| workspace_id))
 }
 
-async fn refresh_session_records(state: &AppState, sessions: Vec<Session>) -> Result<Vec<Session>> {
+pub(super) async fn refresh_session_records(
+    state: &AppState,
+    sessions: Vec<Session>,
+) -> Result<Vec<Session>> {
     reconcile_daemon_sessions(state).await?;
-    sessions.into_iter().map(|session| state.store.session(&session.id)).collect()
+    sessions
+        .into_iter()
+        .map(|session| state.store.session(&session.id))
+        .collect()
 }
 
-fn persist_amux_process(store: &Store, id: &str, session: &Session) -> Result<()> {
+pub(super) fn persist_amux_process(store: &Store, id: &str, session: &Session) -> Result<()> {
     store.set_session_runtime(
         id,
         &session.status,
@@ -760,9 +797,15 @@ fn persist_amux_process(store: &Store, id: &str, session: &Session) -> Result<()
     Ok(())
 }
 
-async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
-    let Ok(session) = state.store.session(&id) else { return; };
-    let Ok(Some(amux_socket)) = state.terminals.attach_existing(&session.amux_workspace_name, &session.amux_process_name).await else {
+pub(super) async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
+    let Ok(session) = state.store.session(&id) else {
+        return;
+    };
+    let Ok(Some(amux_socket)) = state
+        .terminals
+        .attach_existing(&session.amux_workspace_name, &session.amux_process_name)
+        .await
+    else {
         return;
     };
     let _ = state.store.touch_session(&id);
@@ -811,7 +854,11 @@ async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
             }
         }
     }
-    if let Ok(Some(process)) = state.terminals.inspect_existing(&session.amux_workspace_name, &session.amux_process_name).await {
+    if let Ok(Some(process)) = state
+        .terminals
+        .inspect_existing(&session.amux_workspace_name, &session.amux_process_name)
+        .await
+    {
         let mut session = match state.store.session(&id) {
             Ok(session) => session,
             Err(_) => return,
@@ -821,8 +868,7 @@ async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
     }
 }
 
-
-fn discover_codex_session_id(session: &Session) -> Option<String> {
+pub(super) fn discover_codex_session_id(session: &Session) -> Option<String> {
     let codex_home = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))?;
@@ -877,7 +923,7 @@ fn discover_codex_session_id(session: &Session) -> Option<String> {
     best.map(|(_, session_id)| session_id)
 }
 
-fn capture_codex_session_id(store: &Store, session: &mut Session) -> Result<()> {
+pub(super) fn capture_codex_session_id(store: &Store, session: &mut Session) -> Result<()> {
     if session.kind != "codex" || session.codex_session_id.is_some() {
         return Ok(());
     }

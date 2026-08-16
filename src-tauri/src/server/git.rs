@@ -1,15 +1,19 @@
-async fn get_workspace_git_history(
+use super::*;
+
+pub(super) async fn get_workspace_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
     blocking_git_operation(move || {
         let repository = state.store.default_workspace_location(&id)?;
-        Ok(Json(git_history(workspace_location_git_path(&repository)?)?))
+        Ok(Json(git_history(workspace_location_git_path(
+            &repository,
+        )?)?))
     })
     .await
 }
 
-async fn get_project_location_git_history(
+pub(super) async fn get_project_location_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
@@ -22,7 +26,7 @@ async fn get_project_location_git_history(
     .await
 }
 
-async fn get_workspace_location_git_history(
+pub(super) async fn get_workspace_location_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
@@ -34,9 +38,9 @@ async fn get_workspace_location_git_history(
     .await
 }
 
-const MAX_DIFF_PATCH_BYTES: usize = 8 * 1024 * 1024;
+pub(super) const MAX_DIFF_PATCH_BYTES: usize = 8 * 1024 * 1024;
 
-async fn compare_project_location_commits(
+pub(super) async fn compare_project_location_commits(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffComparisonInput>,
@@ -55,7 +59,7 @@ async fn compare_project_location_commits(
     .await
 }
 
-async fn compare_workspace_location_commits(
+pub(super) async fn compare_workspace_location_commits(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffComparisonInput>,
@@ -73,7 +77,7 @@ async fn compare_workspace_location_commits(
     .await
 }
 
-async fn pull_project_location(
+pub(super) async fn pull_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -85,12 +89,14 @@ async fn pull_project_location(
         .clone()
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
     git::with_repository_lock(Path::new(&common), || async {
-        Ok(Json(sync_project_location(&location, &project, "pull").await?))
+        Ok(Json(
+            sync_project_location(&location, &project, "pull").await?,
+        ))
     })
     .await
 }
 
-async fn push_project_location(
+pub(super) async fn push_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -102,12 +108,14 @@ async fn push_project_location(
         .clone()
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
     git::with_repository_lock(Path::new(&common), || async {
-        Ok(Json(sync_project_location(&location, &project, "push").await?))
+        Ok(Json(
+            sync_project_location(&location, &project, "push").await?,
+        ))
     })
     .await
 }
 
-async fn pull_workspace_location(
+pub(super) async fn pull_workspace_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -123,7 +131,7 @@ async fn pull_workspace_location(
     .await
 }
 
-async fn push_workspace_location(
+pub(super) async fn push_workspace_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -139,19 +147,19 @@ async fn push_workspace_location(
     .await
 }
 
-async fn pull_all_project(
+pub(super) async fn pull_all_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
     sync_all_project_locations(&state, &id, "pull").await
 }
-async fn push_all_project(
+pub(super) async fn push_all_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
     sync_all_project_locations(&state, &id, "push").await
 }
-async fn sync_all_project_locations(
+pub(super) async fn sync_all_project_locations(
     state: &AppState,
     project_id: &str,
     action: &str,
@@ -183,19 +191,19 @@ async fn sync_all_project_locations(
     Ok(Json(results))
 }
 
-async fn pull_all_workspace(
+pub(super) async fn pull_all_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
     sync_all_workspace_locations(&state, &id, "pull").await
 }
-async fn push_all_workspace(
+pub(super) async fn push_all_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
     sync_all_workspace_locations(&state, &id, "push").await
 }
-async fn sync_all_workspace_locations(
+pub(super) async fn sync_all_workspace_locations(
     state: &AppState,
     workspace_id: &str,
     action: &str,
@@ -247,7 +255,7 @@ async fn sync_all_workspace_locations(
     Ok(Json(results))
 }
 
-fn ensure_location_ready(location: &ProjectLocation) -> Result<()> {
+pub(super) fn ensure_location_ready(location: &ProjectLocation) -> Result<()> {
     let mut observed = location.clone();
     refresh_location_observation(&mut observed)?;
     if observed.git_status != "ready" {
@@ -259,7 +267,7 @@ fn ensure_location_ready(location: &ProjectLocation) -> Result<()> {
     Ok(())
 }
 
-async fn sync_project_location(
+pub(super) async fn sync_project_location(
     location: &ProjectLocation,
     project: &Project,
     action: &str,
@@ -306,7 +314,7 @@ async fn sync_project_location(
     ))
 }
 
-fn workspace_location_git_path(location: &WorkspaceLocation) -> Result<&str> {
+pub(super) fn workspace_location_git_path(location: &WorkspaceLocation) -> Result<&str> {
     if location.access_mode != "read_write" || location.git_status != "ready" {
         return Err(AppError::BadRequest(
             "workspace location is not Git-enabled".into(),
@@ -332,7 +340,7 @@ fn workspace_location_git_path(location: &WorkspaceLocation) -> Result<&str> {
     Ok(path)
 }
 
-async fn sync_workspace_location(
+pub(super) async fn sync_workspace_location(
     location: &WorkspaceLocation,
     action: &str,
 ) -> Result<GitSyncResult> {
@@ -379,21 +387,23 @@ async fn sync_workspace_location(
     ))
 }
 
-
-async fn archive_workspace(
+pub(super) async fn archive_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Workspace>> {
     state.store.archive_workspace(&id)?;
     for mut session in state.store.sessions(&id)? {
         capture_codex_session_id(&state.store, &mut session)?;
-        let _ = state.terminals.stop_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+        let _ = state
+            .terminals
+            .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
+            .await;
         state.store.set_session_status(&session.id, "stopped")?;
     }
     Ok(Json(state.store.workspace(&id)?))
 }
 
-async fn pull_project(
+pub(super) async fn pull_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -434,7 +444,7 @@ async fn pull_project(
     )))
 }
 
-async fn push_project(
+pub(super) async fn push_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -466,7 +476,7 @@ async fn push_project(
     )))
 }
 
-async fn pull_workspace(
+pub(super) async fn pull_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -517,7 +527,7 @@ async fn pull_workspace(
     )))
 }
 
-async fn push_workspace(
+pub(super) async fn push_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -550,14 +560,14 @@ async fn push_workspace(
     )))
 }
 
-fn ensure_active_workspace(workspace: &Workspace) -> Result<()> {
+pub(super) fn ensure_active_workspace(workspace: &Workspace) -> Result<()> {
     if workspace.status != "active" || workspace.kind == "base" {
         return Err(AppError::BadRequest("Workspace is not active".into()));
     }
     Ok(())
 }
 
-fn workspace_upstream(workspace: &Workspace) -> Result<(String, String)> {
+pub(super) fn workspace_upstream(workspace: &Workspace) -> Result<(String, String)> {
     let remote = workspace
         .remote_name
         .clone()
@@ -569,7 +579,7 @@ fn workspace_upstream(workspace: &Workspace) -> Result<(String, String)> {
     Ok((remote, branch))
 }
 
-fn fetch_remote_branch(repository: &str, remote: &str, branch: &str) -> Result<()> {
+pub(super) fn fetch_remote_branch(repository: &str, remote: &str, branch: &str) -> Result<()> {
     command_output(
         Path::new(repository),
         "git",
@@ -579,7 +589,11 @@ fn fetch_remote_branch(repository: &str, remote: &str, branch: &str) -> Result<(
     Ok(())
 }
 
-async fn fetch_remote_branch_async(repository: &str, remote: &str, branch: &str) -> Result<()> {
+pub(super) async fn fetch_remote_branch_async(
+    repository: &str,
+    remote: &str,
+    branch: &str,
+) -> Result<()> {
     git::output_async(
         Path::new(repository),
         &["fetch", "--no-tags", remote, branch],
@@ -589,7 +603,7 @@ async fn fetch_remote_branch_async(repository: &str, remote: &str, branch: &str)
     Ok(())
 }
 
-fn sync_result(
+pub(super) fn sync_result(
     scope: &str,
     action: &str,
     branch: &str,
@@ -616,7 +630,7 @@ fn sync_result(
     }
 }
 
-async fn get_git_operations(
+pub(super) async fn get_git_operations(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitOperationRecord>>> {
@@ -624,7 +638,7 @@ async fn get_git_operations(
     Ok(Json(git_operation_history(&state, &id)?))
 }
 
-fn git_operation_history(state: &AppState, id: &str) -> Result<Vec<GitOperationRecord>> {
+pub(super) fn git_operation_history(state: &AppState, id: &str) -> Result<Vec<GitOperationRecord>> {
     let mut records = Vec::new();
     if let Some(operation) = state.store.delivery_operation(id)? {
         records.push(GitOperationRecord {
@@ -709,23 +723,23 @@ fn git_operation_history(state: &AppState, id: &str) -> Result<Vec<GitOperationR
     records.sort_by(|left, right| right.started_at.cmp(&left.started_at));
     Ok(records)
 }
-fn id() -> String {
+pub(super) fn id() -> String {
     Uuid::new_v4().simple().to_string()
 }
-fn trimmed(value: Option<String>) -> Option<String> {
+pub(super) fn trimmed(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned())
 }
-fn shell_quote(value: &str) -> String {
+pub(super) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
-fn basename(path: &str) -> String {
+pub(super) fn basename(path: &str) -> String {
     Path::new(path)
         .file_name()
         .and_then(|v| v.to_str())
         .unwrap_or("workspace")
         .to_owned()
 }
-fn inspect_path(value: &str) -> Result<(String, bool)> {
+pub(super) fn inspect_path(value: &str) -> Result<(String, bool)> {
     let path = std::fs::canonicalize(value)
         .map_err(|e| AppError::BadRequest(format!("invalid workspace path: {e}")))?;
     if !path.is_dir() {
@@ -738,7 +752,7 @@ fn inspect_path(value: &str) -> Result<(String, bool)> {
     Ok((string, is_git))
 }
 
-fn refresh_location_observation(location: &mut ProjectLocation) -> Result<()> {
+pub(super) fn refresh_location_observation(location: &mut ProjectLocation) -> Result<()> {
     location.last_checked_at = Some(now());
     let path = Path::new(&location.path);
     if !path.exists() {
@@ -807,7 +821,7 @@ fn refresh_location_observation(location: &mut ProjectLocation) -> Result<()> {
     Ok(())
 }
 
-fn repository_identity_matches(expected: &str, observed: &str) -> bool {
+pub(super) fn repository_identity_matches(expected: &str, observed: &str) -> bool {
     fn normalize(value: &str) -> String {
         value
             .trim()
@@ -819,7 +833,11 @@ fn repository_identity_matches(expected: &str, observed: &str) -> bool {
     }
     normalize(expected) == normalize(observed)
 }
-fn command_output(dir: &Path, program: &str, args: &[&str]) -> std::result::Result<String, String> {
+pub(super) fn command_output(
+    dir: &Path,
+    program: &str,
+    args: &[&str],
+) -> std::result::Result<String, String> {
     if program == "git" {
         return git::output(dir, args);
     }
@@ -834,7 +852,7 @@ fn command_output(dir: &Path, program: &str, args: &[&str]) -> std::result::Resu
     Ok(String::from_utf8_lossy(&output.stdout).trim().into())
 }
 
-async fn blocking_git_operation<T, F>(operation: F) -> Result<T>
+pub(super) async fn blocking_git_operation<T, F>(operation: F) -> Result<T>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T> + Send + 'static,
@@ -844,7 +862,10 @@ where
         .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
 }
 
-async fn blocking_git_operation_for<T, F>(git_common_dir: String, operation: F) -> Result<T>
+pub(super) async fn blocking_git_operation_for<T, F>(
+    git_common_dir: String,
+    operation: F,
+) -> Result<T>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T> + Send + 'static,
@@ -854,16 +875,15 @@ where
         .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
 }
 
-
 #[derive(Debug, PartialEq)]
-struct ParsedGitWorktree {
-    path: String,
-    branch: String,
-    head_commit: String,
-    is_main: bool,
+pub(super) struct ParsedGitWorktree {
+    pub(super) path: String,
+    pub(super) branch: String,
+    pub(super) head_commit: String,
+    pub(super) is_main: bool,
 }
 
-fn normalized_path(value: &str) -> PathBuf {
+pub(super) fn normalized_path(value: &str) -> PathBuf {
     let path = PathBuf::from(value);
     if let Ok(canonical) = std::fs::canonicalize(&path) {
         return canonical;
@@ -890,7 +910,7 @@ fn normalized_path(value: &str) -> PathBuf {
     normalized
 }
 
-fn ensure_git_directory(directory: &Directory) -> Result<()> {
+pub(super) fn ensure_git_directory(directory: &Directory) -> Result<()> {
     if !directory.is_git
         || command_output(
             Path::new(&directory.path),
@@ -906,7 +926,7 @@ fn ensure_git_directory(directory: &Directory) -> Result<()> {
     Ok(())
 }
 
-fn git_ref_names(repository: &str, prefix: &str) -> Result<Vec<String>> {
+pub(super) fn git_ref_names(repository: &str, prefix: &str) -> Result<Vec<String>> {
     let output = command_output(
         Path::new(repository),
         "git",
@@ -921,7 +941,7 @@ fn git_ref_names(repository: &str, prefix: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-fn git_remote_names(repository: &str) -> Result<Vec<String>> {
+pub(super) fn git_remote_names(repository: &str) -> Result<Vec<String>> {
     let output =
         command_output(Path::new(repository), "git", &["remote"]).map_err(AppError::BadRequest)?;
     Ok(output
@@ -932,7 +952,7 @@ fn git_remote_names(repository: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-fn directory_branches(repository: &str) -> Result<GitBranches> {
+pub(super) fn directory_branches(repository: &str) -> Result<GitBranches> {
     let mut local = git_ref_names(repository, "refs/heads")?;
     local.sort();
     let current = command_output(Path::new(repository), "git", &["branch", "--show-current"])
@@ -964,7 +984,7 @@ fn directory_branches(repository: &str) -> Result<GitBranches> {
     })
 }
 
-fn git_worktrees(repository: &str) -> Result<Vec<ParsedGitWorktree>> {
+pub(super) fn git_worktrees(repository: &str) -> Result<Vec<ParsedGitWorktree>> {
     let output = command_output(
         Path::new(repository),
         "git",
@@ -974,7 +994,7 @@ fn git_worktrees(repository: &str) -> Result<Vec<ParsedGitWorktree>> {
     Ok(parse_git_worktrees(&output))
 }
 
-fn git_history(repository: &str) -> Result<GitHistory> {
+pub(super) fn git_history(repository: &str) -> Result<GitHistory> {
     let branch = command_output(Path::new(repository), "git", &["branch", "--show-current"])
         .map_err(AppError::BadRequest)?;
     let branch = if branch.is_empty() {
@@ -1011,7 +1031,7 @@ fn git_history(repository: &str) -> Result<GitHistory> {
     })
 }
 
-fn compare_git_commits(
+pub(super) fn compare_git_commits(
     repository: &str,
     repository_name: &str,
     input: &GitDiffComparisonInput,
@@ -1070,7 +1090,7 @@ fn compare_git_commits(
     })
 }
 
-fn resolve_full_commit(repository: &Path, value: &str) -> Result<String> {
+pub(super) fn resolve_full_commit(repository: &Path, value: &str) -> Result<String> {
     let object_format = command_output(repository, "git", &["rev-parse", "--show-object-format"])
         .map_err(AppError::BadRequest)?;
     let expected_length = match object_format.as_str() {
@@ -1079,7 +1099,7 @@ fn resolve_full_commit(repository: &Path, value: &str) -> Result<String> {
         _ => {
             return Err(AppError::BadRequest(format!(
                 "unsupported Git object format: {object_format}"
-            )))
+            )));
         }
     };
     if value.len() != expected_length || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
@@ -1101,7 +1121,7 @@ fn resolve_full_commit(repository: &Path, value: &str) -> Result<String> {
     Ok(resolved)
 }
 
-fn empty_tree_hash(repository: &Path) -> Result<String> {
+pub(super) fn empty_tree_hash(repository: &Path) -> Result<String> {
     let mut child = Command::new("git")
         .current_dir(repository)
         .args(["hash-object", "-t", "tree", "--stdin"])
@@ -1122,7 +1142,7 @@ fn empty_tree_hash(repository: &Path) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().into())
 }
 
-fn parse_git_history(output: &str) -> Vec<GitCommit> {
+pub(super) fn parse_git_history(output: &str) -> Vec<GitCommit> {
     output
         .split('\x1e')
         .filter_map(|record| {
@@ -1138,7 +1158,7 @@ fn parse_git_history(output: &str) -> Vec<GitCommit> {
         .collect()
 }
 
-fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
+pub(super) fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
     output
         .split("\n\n")
         .enumerate()
@@ -1179,7 +1199,7 @@ fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
         .collect()
 }
 
-fn project_worktrees(
+pub(super) fn project_worktrees(
     directories: &[Directory],
     workspaces: &[Workspace],
     workspace_locations: &[WorkspaceLocation],
@@ -1225,7 +1245,7 @@ fn project_worktrees(
     result
 }
 
-fn enrich_directory(directory: &mut Directory, workspace: Option<&str>) {
+pub(super) fn enrich_directory(directory: &mut Directory, workspace: Option<&str>) {
     let inspect_path = workspace.unwrap_or(&directory.path).to_owned();
     directory.checkout_path = workspace.map(str::to_owned);
     directory.is_git = command_output(
@@ -1278,7 +1298,7 @@ fn enrich_directory(directory: &mut Directory, workspace: Option<&str>) {
     directory.dirty = command_output(Path::new(&inspect_path), "git", &["status", "--porcelain"])
         .is_ok_and(|v| !v.is_empty());
 }
-fn slug(value: &str) -> String {
+pub(super) fn slug(value: &str) -> String {
     let result = value
         .to_ascii_lowercase()
         .chars()
@@ -1296,7 +1316,7 @@ fn slug(value: &str) -> String {
     }
 }
 
-fn choose_shared_branch(
+pub(super) fn choose_shared_branch(
     locations: &[ProjectLocation],
     explicit: Option<&str>,
     label: &str,
@@ -1350,7 +1370,7 @@ fn choose_shared_branch(
     ))
 }
 
-fn read_only_workspace_location(
+pub(super) fn read_only_workspace_location(
     workspace_id: &str,
     location: &ProjectLocation,
     timestamp: &str,
@@ -1384,7 +1404,7 @@ fn read_only_workspace_location(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn git_workspace_location(
+pub(super) fn git_workspace_location(
     workspace_id: &str,
     location: &ProjectLocation,
     timestamp: &str,
@@ -1431,7 +1451,7 @@ mod git_diff_comparison_tests {
 
     use tempfile::TempDir;
 
-    use super::{compare_git_commits, GitDiffComparisonInput};
+    use super::{GitDiffComparisonInput, compare_git_commits};
     use crate::error::AppError;
 
     struct TestRepository {
@@ -1443,7 +1463,10 @@ mod git_diff_comparison_tests {
             let directory = tempfile::tempdir().expect("create temporary repository");
             run(directory.path(), &["init", "-b", "main"]);
             run(directory.path(), &["config", "user.name", "Treefold Test"]);
-            run(directory.path(), &["config", "user.email", "treefold@example.test"]);
+            run(
+                directory.path(),
+                &["config", "user.email", "treefold@example.test"],
+            );
             Self { directory }
         }
 
@@ -1472,7 +1495,11 @@ mod git_diff_comparison_tests {
             .args(args)
             .output()
             .expect("run git command");
-        assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     fn output(path: &Path, args: &[&str]) -> String {
@@ -1481,11 +1508,23 @@ mod git_diff_comparison_tests {
             .args(args)
             .output()
             .expect("run git command");
-        assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
-        String::from_utf8(output.stdout).expect("UTF-8 git output").trim().into()
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout)
+            .expect("UTF-8 git output")
+            .trim()
+            .into()
     }
 
-    fn compare(repository: &TestRepository, start: &str, end: &str, count: usize) -> super::GitDiffComparison {
+    fn compare(
+        repository: &TestRepository,
+        start: &str,
+        end: &str,
+        count: usize,
+    ) -> super::GitDiffComparison {
         compare_git_commits(
             repository.path().to_str().expect("UTF-8 path"),
             "test-repository",
@@ -1502,13 +1541,19 @@ mod git_diff_comparison_tests {
     #[test]
     fn compares_root_normal_range_rename_binary_and_empty_commits() {
         let repository = TestRepository::new();
-        repository.write("README.md", b"one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n");
+        repository.write(
+            "README.md",
+            b"one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n",
+        );
         let root = repository.commit("root");
         let root_diff = compare(&repository, &root, &root, 1);
         assert!(root_diff.patch.contains("new file mode"));
         assert_ne!(root_diff.resolved_base, root);
 
-        repository.write("README.md", b"one\ntwo changed\nthree\nfour\nfive\nsix\nseven\neight\n");
+        repository.write(
+            "README.md",
+            b"one\ntwo changed\nthree\nfour\nfive\nsix\nseven\neight\n",
+        );
         let normal = repository.commit("normal");
         let normal_diff = compare(&repository, &normal, &normal, 1);
         assert!(normal_diff.patch.contains("two changed"));
@@ -1544,7 +1589,10 @@ mod git_diff_comparison_tests {
         run(repository.path(), &["checkout", "main"]);
         repository.write("main.txt", b"main\n");
         repository.commit("main");
-        run(repository.path(), &["merge", "--no-ff", "feature", "-m", "merge"]);
+        run(
+            repository.path(),
+            &["merge", "--no-ff", "feature", "-m", "merge"],
+        );
         let merge = output(repository.path(), &["rev-parse", "HEAD"]);
         let first_parent = output(repository.path(), &["rev-parse", "HEAD^1"]);
         let result = compare(&repository, &merge, &merge, 1);
@@ -1580,6 +1628,12 @@ mod git_diff_comparison_tests {
             },
             1,
         );
-        assert!(matches!(oversized, Err(AppError::Api { code: "DIFF_TOO_LARGE", .. })));
+        assert!(matches!(
+            oversized,
+            Err(AppError::Api {
+                code: "DIFF_TOO_LARGE",
+                ..
+            })
+        ));
     }
 }

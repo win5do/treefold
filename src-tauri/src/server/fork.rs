@@ -1,10 +1,12 @@
+use super::*;
+
 #[derive(Deserialize)]
-struct CreateFork {
-    name: String,
-    description: Option<String>,
+pub(super) struct CreateFork {
+    pub(super) name: String,
+    pub(super) description: Option<String>,
 }
 
-async fn create_fork(
+pub(super) async fn create_fork(
     State(state): State<AppState>,
     AxumPath(parent_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateFork>,
@@ -26,7 +28,7 @@ async fn create_fork(
     ))
 }
 
-fn create_fork_impl(
+pub(super) fn create_fork_impl(
     state: AppState,
     parent_id: String,
     input: CreateFork,
@@ -75,7 +77,9 @@ fn create_fork_impl(
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
     for parent_location in &parent_locations {
-        let project_location = state.store.repository_as_directory(&parent_location.project_location_id)?;
+        let project_location = state
+            .store
+            .repository_as_directory(&parent_location.project_location_id)?;
         let checkout_path = root
             .join(format!(
                 "{}-{}",
@@ -145,10 +149,15 @@ fn create_fork_impl(
             start_ref: start_commit,
             setup_directory_id: project_directories
                 .iter()
-                .find(|directory| directory.repository_id.as_deref() == Some(&parent_location.project_location_id))
+                .find(|directory| {
+                    directory.repository_id.as_deref() == Some(&parent_location.project_location_id)
+                })
                 .map(|directory| directory.id.clone())
                 .unwrap_or_default(),
-            setup_workdir: state.store.repository(&parent_location.project_location_id)?.setup_workdir,
+            setup_workdir: state
+                .store
+                .repository(&parent_location.project_location_id)?
+                .setup_workdir,
         });
         snapshots.push(snapshot);
     }

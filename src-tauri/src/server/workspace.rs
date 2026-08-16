@@ -1,31 +1,33 @@
-async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project>>> {
+use super::*;
+
+pub(super) async fn list_projects(State(state): State<AppState>) -> Result<Json<Vec<Project>>> {
     Ok(Json(state.store.projects()?))
 }
 
-async fn list_project_summaries(
+pub(super) async fn list_project_summaries(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ProjectSummary>>> {
     Ok(Json(state.store.project_summaries_async().await?))
 }
 
-async fn get_sidebar(State(state): State<AppState>) -> Result<Json<SidebarData>> {
+pub(super) async fn get_sidebar(State(state): State<AppState>) -> Result<Json<SidebarData>> {
     reconcile_daemon_sessions(&state).await?;
     Ok(Json(state.store.sidebar_async().await?))
 }
 
 #[derive(Deserialize)]
-struct CreateProject {
-    name: Option<String>,
-    description: Option<String>,
-    path: Option<String>,
-    preferred_remote: Option<String>,
-    default_base_branch: Option<String>,
-    default_target_branch: Option<String>,
-    default_delivery_mode: Option<String>,
-    directory_description: Option<String>,
-    directory_worktree_setup_command: Option<String>,
+pub(super) struct CreateProject {
+    pub(super) name: Option<String>,
+    pub(super) description: Option<String>,
+    pub(super) path: Option<String>,
+    pub(super) preferred_remote: Option<String>,
+    pub(super) default_base_branch: Option<String>,
+    pub(super) default_target_branch: Option<String>,
+    pub(super) default_delivery_mode: Option<String>,
+    pub(super) directory_description: Option<String>,
+    pub(super) directory_worktree_setup_command: Option<String>,
 }
-async fn create_project(
+pub(super) async fn create_project(
     State(state): State<AppState>,
     ApiJson(input): ApiJson<CreateProject>,
 ) -> Result<(StatusCode, Json<Project>)> {
@@ -111,17 +113,17 @@ async fn create_project(
 }
 
 #[derive(Deserialize)]
-struct UpdateProject {
-    name: Option<String>,
-    description: Option<String>,
-    status: Option<String>,
+pub(super) struct UpdateProject {
+    pub(super) name: Option<String>,
+    pub(super) description: Option<String>,
+    pub(super) status: Option<String>,
     #[serde(rename = "default_directory_id", alias = "default_location_id")]
-    default_location_id: Option<String>,
-    default_base_branch: Option<String>,
-    default_delivery_mode: Option<String>,
+    pub(super) default_location_id: Option<String>,
+    pub(super) default_base_branch: Option<String>,
+    pub(super) default_delivery_mode: Option<String>,
 }
 
-async fn update_project(
+pub(super) async fn update_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateProject>,
@@ -189,7 +191,10 @@ async fn update_project(
         for workspace in state.store.workspaces(&id)? {
             for mut session in state.store.sessions(&workspace.id)? {
                 capture_codex_session_id(&state.store, &mut session)?;
-                let _ = state.terminals.stop_existing(&session.amux_workspace_name, &session.amux_process_name).await;
+                let _ = state
+                    .terminals
+                    .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
+                    .await;
                 state.store.set_session_status(&session.id, "stopped")?;
             }
         }
@@ -220,7 +225,7 @@ async fn update_project(
     Ok(Json(state.store.project(&id)?))
 }
 
-async fn get_project(
+pub(super) async fn get_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectDetail>> {
@@ -254,7 +259,7 @@ async fn get_project(
     Ok(Json(detail))
 }
 
-async fn get_project_git_history(
+pub(super) async fn get_project_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
@@ -269,7 +274,7 @@ async fn get_project_git_history(
     Ok(Json(git_history(&directory.path)?))
 }
 
-async fn reveal_project(
+pub(super) async fn reveal_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
@@ -279,7 +284,7 @@ async fn reveal_project(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn reveal_workspace(
+pub(super) async fn reveal_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
@@ -288,7 +293,7 @@ async fn reveal_workspace(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn get_project_reconciliation(
+pub(super) async fn get_project_reconciliation(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ReconciliationReport>> {
@@ -296,12 +301,12 @@ async fn get_project_reconciliation(
 }
 
 #[derive(Deserialize)]
-struct RepairProject {
+pub(super) struct RepairProject {
     issue_id: String,
     action: String,
 }
 
-async fn repair_project(
+pub(super) async fn repair_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<RepairProject>,
@@ -309,7 +314,7 @@ async fn repair_project(
     repair_project_impl(&state, &id, &input).map(Json)
 }
 
-fn repair_project_impl(
+pub(super) fn repair_project_impl(
     state: &AppState,
     project_id: &str,
     input: &RepairProject,
@@ -370,7 +375,10 @@ fn repair_project_impl(
     })
 }
 
-fn reconcile_project(state: &AppState, project_id: &str) -> Result<ReconciliationReport> {
+pub(super) fn reconcile_project(
+    state: &AppState,
+    project_id: &str,
+) -> Result<ReconciliationReport> {
     let project = state.store.project(project_id)?;
     let directory = state.store.directory(&project.primary_directory_id)?;
     if !directory.is_git {
@@ -571,7 +579,7 @@ fn reconcile_project(state: &AppState, project_id: &str) -> Result<Reconciliatio
     })
 }
 
-fn reconciliation_issue(
+pub(super) fn reconciliation_issue(
     kind: &str,
     severity: &str,
     message: String,
@@ -595,11 +603,11 @@ fn reconciliation_issue(
 }
 
 #[derive(Deserialize)]
-struct DeleteWorktree {
+pub(super) struct DeleteWorktree {
     path: String,
 }
 
-async fn delete_worktree(
+pub(super) async fn delete_worktree(
     State(state): State<AppState>,
     AxumPath(repository_id): AxumPath<String>,
     ApiJson(input): ApiJson<DeleteWorktree>,
@@ -611,7 +619,7 @@ async fn delete_worktree(
     Ok(status)
 }
 
-fn delete_worktree_impl(
+pub(super) fn delete_worktree_impl(
     state: AppState,
     repository_id: String,
     input: DeleteWorktree,
@@ -662,12 +670,8 @@ fn delete_worktree_impl(
     }
 
     if Path::new(&input.path).exists() {
-        let status = command_output(
-            Path::new(&input.path),
-            "git",
-            &["status", "--porcelain"],
-        )
-        .map_err(AppError::BadRequest)?;
+        let status = command_output(Path::new(&input.path), "git", &["status", "--porcelain"])
+            .map_err(AppError::BadRequest)?;
         if !status.is_empty() {
             return Err(AppError::BadRequest(
                 "worktree has uncommitted changes; commit, stash, or discard them before deleting it"
@@ -686,7 +690,7 @@ fn delete_worktree_impl(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn delete_project(
+pub(super) async fn delete_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
@@ -695,9 +699,12 @@ async fn delete_project(
             "Archive the Project before permanently deleting it".into(),
         ));
     }
-    if state.store.workspaces(&id)?.iter().any(|workspace| {
-        workspace.kind != "base" && workspace.status == "active"
-    }) {
+    if state
+        .store
+        .workspaces(&id)?
+        .iter()
+        .any(|workspace| workspace.kind != "base" && workspace.status == "active")
+    {
         return Err(AppError::BadRequest(
             "Finish active Workspaces and Forks before deleting this Project".into(),
         ));
@@ -707,22 +714,22 @@ async fn delete_project(
 }
 
 #[derive(Deserialize)]
-struct CreateDirectory {
-    description: Option<String>,
-    worktree_setup_command: Option<String>,
-    path: String,
-    base_branch: Option<String>,
-    delivery_mode: Option<String>,
+pub(super) struct CreateDirectory {
+    pub(super) description: Option<String>,
+    pub(super) worktree_setup_command: Option<String>,
+    pub(super) path: String,
+    pub(super) base_branch: Option<String>,
+    pub(super) delivery_mode: Option<String>,
 }
 
 #[derive(Deserialize)]
-struct InspectProjectLocation {
+pub(super) struct InspectProjectLocation {
     path: String,
     project_id: Option<String>,
 }
 
 #[derive(Serialize)]
-struct ProjectLocationInspection {
+pub(super) struct ProjectLocationInspection {
     path: String,
     name: String,
     directory_type: String,
@@ -736,7 +743,7 @@ struct ProjectLocationInspection {
     base_branch: Option<String>,
 }
 
-async fn inspect_project_location(
+pub(super) async fn inspect_project_location(
     State(state): State<AppState>,
     ApiJson(input): ApiJson<InspectProjectLocation>,
 ) -> Result<Json<ProjectLocationInspection>> {
@@ -778,12 +785,16 @@ async fn inspect_project_location(
     });
     let repository_id = input.project_id.as_deref().and_then(|project_id| {
         location.git_common_dir.as_deref().and_then(|common| {
-            state.store.repositories(project_id).ok().and_then(|repositories| {
-                repositories
-                    .into_iter()
-                    .find(|repository| repository.git_common_dir == common)
-                    .map(|repository| repository.id)
-            })
+            state
+                .store
+                .repositories(project_id)
+                .ok()
+                .and_then(|repositories| {
+                    repositories
+                        .into_iter()
+                        .find(|repository| repository.git_common_dir == common)
+                        .map(|repository| repository.id)
+                })
         })
     });
     Ok(Json(ProjectLocationInspection {
@@ -806,7 +817,7 @@ async fn inspect_project_location(
     }))
 }
 
-async fn list_project_directories(
+pub(super) async fn list_project_directories(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
 ) -> Result<Json<Vec<ProjectDirectory>>> {
@@ -814,14 +825,14 @@ async fn list_project_directories(
     Ok(Json(state.store.project_directories(&project_id)?))
 }
 
-async fn get_project_directory(
+pub(super) async fn get_project_directory(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectDirectory>> {
     Ok(Json(state.store.directory_record(&id)?))
 }
 
-async fn list_project_repositories(
+pub(super) async fn list_project_repositories(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
 ) -> Result<Json<Vec<ProjectRepository>>> {
@@ -829,13 +840,13 @@ async fn list_project_repositories(
     Ok(Json(state.store.repositories(&project_id)?))
 }
 
-async fn get_project_repository(
+pub(super) async fn get_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectRepository>> {
     Ok(Json(state.store.repository(&id)?))
 }
-async fn create_directory(
+pub(super) async fn create_directory(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDirectory>,
@@ -909,11 +920,13 @@ async fn create_directory(
     location_observations_cache()
         .insert(directory.id.clone(), directory.clone())
         .await;
-    project_worktrees_cache().invalidate(&directory.project_id).await;
+    project_worktrees_cache()
+        .invalidate(&directory.project_id)
+        .await;
     Ok((StatusCode::CREATED, Json(directory)))
 }
 
-async fn refresh_project_location(
+pub(super) async fn refresh_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectLocation>> {
@@ -937,11 +950,13 @@ async fn refresh_project_location(
     location_observations_cache()
         .insert(id, location.clone())
         .await;
-    project_worktrees_cache().invalidate(&location.project_id).await;
+    project_worktrees_cache()
+        .invalidate(&location.project_id)
+        .await;
     Ok(Json(location))
 }
 
-async fn refresh_project_repository(
+pub(super) async fn refresh_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ProjectRepository>> {
@@ -956,19 +971,25 @@ async fn refresh_project_repository(
     updated.preferred_remote_name = observed.preferred_remote_name;
     updated.last_checked_at = observed.last_checked_at;
     updated.updated_at = now();
-    if let Some(root) = observed.checkout_path { updated.source_root = root; }
-    if let Some(common) = observed.git_common_dir { updated.git_common_dir = common; }
+    if let Some(root) = observed.checkout_path {
+        updated.source_root = root;
+    }
+    if let Some(common) = observed.git_common_dir {
+        updated.git_common_dir = common;
+    }
     state.store.refresh_repository(&updated)?;
-    project_worktrees_cache().invalidate(&updated.project_id).await;
+    project_worktrees_cache()
+        .invalidate(&updated.project_id)
+        .await;
     Ok(Json(state.store.repository(&id)?))
 }
 
 #[derive(Deserialize)]
-struct ReattachProjectLocation {
+pub(super) struct ReattachProjectLocation {
     path: String,
 }
 
-async fn reattach_project_location(
+pub(super) async fn reattach_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<ReattachProjectLocation>,
@@ -1059,18 +1080,20 @@ async fn reattach_project_location(
     Ok(Json(state.store.repository_as_directory(&repository.id)?))
 }
 
-async fn delete_project_repository(
+pub(super) async fn delete_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
     let repository = state.store.repository(&id)?;
     ensure_active_project(&state.store.project(&repository.project_id)?)?;
     state.store.delete_repository(&id)?;
-    project_worktrees_cache().invalidate(&repository.project_id).await;
+    project_worktrees_cache()
+        .invalidate(&repository.project_id)
+        .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn delete_project_location(
+pub(super) async fn delete_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
@@ -1084,13 +1107,13 @@ async fn delete_project_location(
 }
 
 #[derive(Deserialize)]
-struct UpdateDirectory {
+pub(super) struct UpdateDirectory {
     description: Option<String>,
     worktree_setup_command: Option<String>,
     base_branch: Option<String>,
     delivery_mode: Option<String>,
 }
-async fn update_directory(
+pub(super) async fn update_directory(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateDirectory>,
@@ -1136,32 +1159,43 @@ async fn update_directory(
 }
 
 #[derive(Deserialize)]
-struct UpdateProjectRepository {
+pub(super) struct UpdateProjectRepository {
     setup_command: Option<String>,
     setup_workdir: Option<String>,
     base_branch: Option<String>,
     delivery_mode: Option<String>,
 }
 
-async fn update_project_repository(
+pub(super) async fn update_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateProjectRepository>,
 ) -> Result<Json<ProjectRepository>> {
     let current = state.store.repository(&id)?;
     ensure_active_project(&state.store.project(&current.project_id)?)?;
-    let base_branch = trimmed(input.base_branch).filter(|value| !value.is_empty()).unwrap_or(current.base_branch);
-    let delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty()).unwrap_or(current.delivery_mode);
+    let base_branch = trimmed(input.base_branch)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(current.base_branch);
+    let delivery_mode = trimmed(input.delivery_mode)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(current.delivery_mode);
     if delivery_mode != "remote_review" && delivery_mode != "local_merge" {
-        return Err(AppError::BadRequest("delivery_mode must be remote_review or local_merge".into()));
+        return Err(AppError::BadRequest(
+            "delivery_mode must be remote_review or local_merge".into(),
+        ));
     }
     let setup_workdir = validate_setup_workdir(
         &current.source_root,
-        trimmed(input.setup_workdir).filter(|value| !value.is_empty()).as_deref().unwrap_or(&current.setup_workdir),
+        trimmed(input.setup_workdir)
+            .filter(|value| !value.is_empty())
+            .as_deref()
+            .unwrap_or(&current.setup_workdir),
     )?;
     state.store.update_repository(
         &id,
-        trimmed(input.setup_command).unwrap_or(current.setup_command).as_str(),
+        trimmed(input.setup_command)
+            .unwrap_or(current.setup_command)
+            .as_str(),
         &setup_workdir,
         &base_branch,
         &delivery_mode,
@@ -1169,33 +1203,46 @@ async fn update_project_repository(
     Ok(Json(state.store.repository(&id)?))
 }
 
-fn validate_setup_workdir(source_root: &str, value: &str) -> Result<String> {
-    let relative = if value.trim().is_empty() { "." } else { value.trim() };
+pub(super) fn validate_setup_workdir(source_root: &str, value: &str) -> Result<String> {
+    let relative = if value.trim().is_empty() {
+        "."
+    } else {
+        value.trim()
+    };
     let candidate = std::fs::canonicalize(Path::new(source_root).join(relative))
         .map_err(|error| AppError::BadRequest(format!("invalid setup workdir: {error}")))?;
-    let root = std::fs::canonicalize(source_root)
-        .map_err(|error| AppError::BadRequest(format!("invalid Repository source root: {error}")))?;
+    let root = std::fs::canonicalize(source_root).map_err(|error| {
+        AppError::BadRequest(format!("invalid Repository source root: {error}"))
+    })?;
     if !candidate.is_dir() || !candidate.starts_with(&root) {
-        return Err(AppError::BadRequest("setup workdir must be an existing directory inside the Repository".into()));
+        return Err(AppError::BadRequest(
+            "setup workdir must be an existing directory inside the Repository".into(),
+        ));
     }
-    let relative = candidate.strip_prefix(root).map_err(|_| AppError::BadRequest("setup workdir escapes the Repository".into()))?;
-    Ok(if relative.as_os_str().is_empty() { ".".into() } else { relative.to_string_lossy().replace('\\', "/") })
+    let relative = candidate
+        .strip_prefix(root)
+        .map_err(|_| AppError::BadRequest("setup workdir escapes the Repository".into()))?;
+    Ok(if relative.as_os_str().is_empty() {
+        ".".into()
+    } else {
+        relative.to_string_lossy().replace('\\', "/")
+    })
 }
 
 #[derive(Serialize)]
-struct GitRemoteBranches {
-    name: String,
-    branches: Vec<String>,
+pub(super) struct GitRemoteBranches {
+    pub(super) name: String,
+    pub(super) branches: Vec<String>,
 }
 
 #[derive(Serialize)]
-struct GitBranches {
-    current: String,
-    local: Vec<String>,
-    remotes: Vec<GitRemoteBranches>,
+pub(super) struct GitBranches {
+    pub(super) current: String,
+    pub(super) local: Vec<String>,
+    pub(super) remotes: Vec<GitRemoteBranches>,
 }
 
-async fn list_directory_branches(
+pub(super) async fn list_directory_branches(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitBranches>> {
@@ -1208,13 +1255,13 @@ async fn list_directory_branches(
 }
 
 #[derive(Deserialize)]
-struct CheckoutDirectoryBranch {
+pub(super) struct CheckoutDirectoryBranch {
     kind: String,
     branch: String,
     remote: Option<String>,
 }
 
-async fn checkout_directory_branch(
+pub(super) async fn checkout_directory_branch(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CheckoutDirectoryBranch>,
@@ -1222,7 +1269,7 @@ async fn checkout_directory_branch(
     blocking_git_operation(move || checkout_directory_branch_impl(state, id, input)).await
 }
 
-fn checkout_directory_branch_impl(
+pub(super) fn checkout_directory_branch_impl(
     state: AppState,
     id: String,
     input: CheckoutDirectoryBranch,
@@ -1282,44 +1329,44 @@ fn checkout_directory_branch_impl(
 }
 
 #[derive(Deserialize)]
-struct CreateWorkspace {
-    name: String,
-    description: Option<String>,
-    branch: Option<String>,
-    remote_name: Option<String>,
-    remote_branch: Option<String>,
+pub(super) struct CreateWorkspace {
+    pub(super) name: String,
+    pub(super) description: Option<String>,
+    pub(super) branch: Option<String>,
+    pub(super) remote_name: Option<String>,
+    pub(super) remote_branch: Option<String>,
 }
 
 #[derive(Clone)]
-struct WorkspaceWorktreePlan {
-    location: ProjectLocation,
-    workspace_location_id: String,
-    checkout_path: String,
-    branch: String,
-    start_ref: String,
-    setup_directory_id: String,
-    setup_workdir: String,
+pub(super) struct WorkspaceWorktreePlan {
+    pub(super) location: ProjectLocation,
+    pub(super) workspace_location_id: String,
+    pub(super) checkout_path: String,
+    pub(super) branch: String,
+    pub(super) start_ref: String,
+    pub(super) setup_directory_id: String,
+    pub(super) setup_workdir: String,
 }
 
-struct WorkspaceWorktreeOutcome {
+pub(super) struct WorkspaceWorktreeOutcome {
     plan: WorkspaceWorktreePlan,
     start_commit: Option<String>,
     error: Option<String>,
 }
 
-struct WorkspaceSetupShell {
+pub(super) struct WorkspaceSetupShell {
     workspace_location_id: String,
     project_location_id: String,
     location_name: String,
     command: String,
 }
 
-struct CreatedWorkspace {
-    workspace: Workspace,
-    setup_shells: Vec<WorkspaceSetupShell>,
+pub(super) struct CreatedWorkspace {
+    pub(super) workspace: Workspace,
+    pub(super) setup_shells: Vec<WorkspaceSetupShell>,
 }
 
-async fn create_workspace(
+pub(super) async fn create_workspace(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateWorkspace>,
@@ -1341,7 +1388,7 @@ async fn create_workspace(
     ))
 }
 
-fn create_workspace_impl(
+pub(super) fn create_workspace_impl(
     state: AppState,
     project_id: String,
     input: CreateWorkspace,
@@ -1507,7 +1554,9 @@ fn create_workspace_impl(
     })
 }
 
-fn create_workspace_worktrees(plans: Vec<WorkspaceWorktreePlan>) -> Vec<WorkspaceWorktreeOutcome> {
+pub(super) fn create_workspace_worktrees(
+    plans: Vec<WorkspaceWorktreePlan>,
+) -> Vec<WorkspaceWorktreeOutcome> {
     std::thread::scope(|scope| {
         let handles = plans
             .into_iter()
@@ -1530,7 +1579,7 @@ fn create_workspace_worktrees(plans: Vec<WorkspaceWorktreePlan>) -> Vec<Workspac
     })
 }
 
-fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> WorkspaceWorktreeOutcome {
+pub(super) fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> WorkspaceWorktreeOutcome {
     let result = (|| {
         let start_commit = command_output(
             Path::new(&plan.location.path),
@@ -1577,7 +1626,7 @@ fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> WorkspaceWorktreeOu
     }
 }
 
-fn record_workspace_worktree_outcomes(
+pub(super) fn record_workspace_worktree_outcomes(
     store: &Store,
     outcomes: Vec<WorkspaceWorktreeOutcome>,
 ) -> Result<Vec<WorkspaceSetupShell>> {
@@ -1602,8 +1651,12 @@ fn record_workspace_worktree_outcomes(
         )?;
         let command = outcome.plan.location.worktree_setup_command.trim();
         if !command.is_empty() {
-            let setup_path = Path::new(&outcome.plan.checkout_path).join(&outcome.plan.setup_workdir);
-            let command = format!("cd {} && {command}", shell_quote(&setup_path.to_string_lossy()));
+            let setup_path =
+                Path::new(&outcome.plan.checkout_path).join(&outcome.plan.setup_workdir);
+            let command = format!(
+                "cd {} && {command}",
+                shell_quote(&setup_path.to_string_lossy())
+            );
             setup_shells.push(WorkspaceSetupShell {
                 workspace_location_id: outcome.plan.workspace_location_id,
                 project_location_id: outcome.plan.setup_directory_id,
@@ -1615,7 +1668,7 @@ fn record_workspace_worktree_outcomes(
     Ok(setup_shells)
 }
 
-async fn start_workspace_setup_shells(
+pub(super) async fn start_workspace_setup_shells(
     state: &AppState,
     workspace: &Workspace,
     setup_shells: Vec<WorkspaceSetupShell>,
@@ -1642,7 +1695,7 @@ async fn start_workspace_setup_shells(
     }
 }
 
-fn spawn_workspace_setup_shells(
+pub(super) fn spawn_workspace_setup_shells(
     state: AppState,
     workspace: Workspace,
     setup_shells: Vec<WorkspaceSetupShell>,
@@ -1655,7 +1708,7 @@ fn spawn_workspace_setup_shells(
     });
 }
 
-async fn get_workspace(
+pub(super) async fn get_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<WorkspaceDetail>> {
@@ -1690,12 +1743,12 @@ async fn get_workspace(
 }
 
 #[derive(Deserialize)]
-struct UpdateWorkspace {
+pub(super) struct UpdateWorkspace {
     name: String,
     description: String,
 }
 
-async fn update_workspace(
+pub(super) async fn update_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateWorkspace>,
@@ -1713,7 +1766,7 @@ async fn update_workspace(
     Ok(Json(state.store.workspace(&id)?))
 }
 
-async fn delete_workspace(
+pub(super) async fn delete_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
@@ -1733,7 +1786,15 @@ async fn delete_workspace(
             .terminals
             .inspect_existing(&session.amux_workspace_name, &session.amux_process_name)
             .await?
-            .is_some_and(|process| matches!(process.state, amux::model::ProcessState::Created | amux::model::ProcessState::Starting | amux::model::ProcessState::Running | amux::model::ProcessState::Stopping))
+            .is_some_and(|process| {
+                matches!(
+                    process.state,
+                    amux::model::ProcessState::Created
+                        | amux::model::ProcessState::Starting
+                        | amux::model::ProcessState::Running
+                        | amux::model::ProcessState::Stopping
+                )
+            })
         {
             return Err(AppError::BadRequest(
                 "Close all running Sessions before deleting this Workspace".into(),
@@ -1744,7 +1805,7 @@ async fn delete_workspace(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn ensure_active_project(project: &Project) -> Result<()> {
+pub(super) fn ensure_active_project(project: &Project) -> Result<()> {
     if project.status != "active" {
         return Err(AppError::BadRequest(
             "Archived Projects are read-only".into(),
@@ -1753,14 +1814,13 @@ fn ensure_active_project(project: &Project) -> Result<()> {
     Ok(())
 }
 
-
 #[derive(Deserialize)]
-struct UpdateWorkspaceLocation {
-    remote_name: Option<String>,
-    remote_branch: Option<String>,
+pub(super) struct UpdateWorkspaceLocation {
+    pub(super) remote_name: Option<String>,
+    pub(super) remote_branch: Option<String>,
 }
 
-async fn update_workspace_location(
+pub(super) async fn update_workspace_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateWorkspaceLocation>,

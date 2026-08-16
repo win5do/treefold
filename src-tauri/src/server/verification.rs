@@ -1,4 +1,6 @@
-async fn create_workspace_location_preflight(
+use super::*;
+
+pub(super) async fn create_workspace_location_preflight(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDeliveryPreflight>,
@@ -6,7 +8,7 @@ async fn create_workspace_location_preflight(
     blocking_git_operation(move || create_workspace_location_preflight_impl(state, id, input)).await
 }
 
-fn create_workspace_location_preflight_impl(
+pub(super) fn create_workspace_location_preflight_impl(
     state: AppState,
     id: String,
     input: CreateDeliveryPreflight,
@@ -128,13 +130,12 @@ fn create_workspace_location_preflight_impl(
     Ok((StatusCode::CREATED, Json(preflight)))
 }
 
-
 #[derive(Clone, Deserialize)]
-struct CreateDeliveryPreflight {
-    code_action: String,
+pub(super) struct CreateDeliveryPreflight {
+    pub(super) code_action: String,
 }
 
-async fn create_delivery_preflight(
+pub(super) async fn create_delivery_preflight(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDeliveryPreflight>,
@@ -146,7 +147,7 @@ async fn create_delivery_preflight(
     .await
 }
 
-fn create_delivery_preflight_impl(
+pub(super) fn create_delivery_preflight_impl(
     state: &AppState,
     id: &str,
     input: &CreateDeliveryPreflight,
@@ -361,7 +362,7 @@ fn create_delivery_preflight_impl(
     Ok(preflight)
 }
 
-async fn validate_preflight_snapshot(
+pub(super) async fn validate_preflight_snapshot(
     state: &AppState,
     workspace: &Workspace,
     target_path: &str,
