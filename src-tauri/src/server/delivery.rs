@@ -3,7 +3,13 @@ async fn get_workspace_location_rebase(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Option<RebaseOperation>>> {
     state.store.workspace_location(&id)?;
-    Ok(Json(state.store.latest_rebase_operation(&id)?))
+    let operation = state
+        .store
+        .latest_parent_operation(&id, "update")?
+        .map(|operation| reconcile_parent_operation(&state, &operation))
+        .transpose()?
+        .map(parent_operation_as_rebase);
+    Ok(Json(operation))
 }
 
 async fn update_workspace_location_rebase(
@@ -26,135 +32,25 @@ fn update_workspace_location_rebase_impl(
     id: String,
     input: RebaseInput,
 ) -> Result<Json<RebaseOperation>> {
-    let location = state.store.workspace_location(&id)?;
-    let path = workspace_location_git_path(&location)?.to_owned();
-    let project_location = state
-        .store
-        .repository_as_directory(&location.project_location_id)?;
     let operation = match input.action.as_str() {
-        "start" => {
-            ensure_clean_workspace(&path, "Workspace location")?;
-            ensure_checked_out_branch(
-                &path,
-                location.branch.as_deref().unwrap_or(""),
-                "Workspace location",
-            )?;
-            let workspace = state.store.workspace(&location.workspace_id)?;
-            let (target_path, _) =
-                workspace_location_delivery_target(&state, &workspace, &location)?;
-            let before_head = git_head(&path)?;
-            let target_head = git_head(&target_path)?;
-            let operation_id = id_for_operation();
-            let recovery_ref = format!("refs/treefold/recovery/rebase-{operation_id}");
-            command_output(
-                Path::new(&project_location.path),
-                "git",
-                &["update-ref", &recovery_ref, &before_head],
-            )
-            .map_err(AppError::BadRequest)?;
-            let timestamp = now();
-            let mut operation = RebaseOperation {
-                id: operation_id,
-                workspace_location_id: id.clone(),
-                workspace_id: location.workspace_id.clone(),
-                status: "active".into(),
-                phase: "rebasing".into(),
-                before_head,
-                target_head: target_head.clone(),
-                rebased_head: None,
-                recovery_ref,
-                error: String::new(),
-                started_at: timestamp.clone(),
-                updated_at: timestamp,
-                completed_at: None,
-            };
-            state.store.create_rebase_operation(&operation)?;
-            match git_rebase_output(Path::new(&path), &[&target_head]) {
-                Ok(_) => {
-                    let head = git_head(&path)?;
-                    state.store.update_rebase_operation(
-                        &operation.id,
-                        "completed",
-                        "completed",
-                        Some(&head),
-                        "",
-                        true,
-                    )?;
-                    operation = state
-                        .store
-                        .latest_rebase_operation(&id)?
-                        .expect("rebase operation exists");
-                }
-                Err(error) if rebase_in_progress(&path)? => {
-                    state.store.update_rebase_operation(
-                        &operation.id,
-                        "conflicts",
-                        "conflicts",
-                        None,
-                        &error,
-                        false,
-                    )?;
-                    operation = state
-                        .store
-                        .latest_rebase_operation(&id)?
-                        .expect("rebase operation exists");
-                }
-                Err(error) => {
-                    state.store.update_rebase_operation(
-                        &operation.id,
-                        "failed",
-                        "failed",
-                        None,
-                        &error,
-                        true,
-                    )?;
-                    return Err(AppError::BadRequest(error));
-                }
-            }
-            operation
-        }
+        "start" => parent_operation_as_rebase(start_parent_operation_impl(
+            &state,
+            &id,
+            "update",
+            "rebase",
+            "standalone",
+            None,
+        )?),
         "continue" | "abort" => {
-            let current = state.store.latest_rebase_operation(&id)?.ok_or_else(|| {
+            let current = state.store.latest_parent_operation(&id, "update")?.ok_or_else(|| {
                 AppError::BadRequest("no rebase operation exists for this location".into())
             })?;
-            let result = if input.action == "continue" {
-                git_rebase_output(Path::new(&path), &["--continue"])
+            let operation = if input.action == "continue" {
+                reconcile_parent_operation(&state, &current)?
             } else {
-                git_rebase_output(Path::new(&path), &["--abort"])
+                abort_parent_operation_impl(&state, &current)?
             };
-            match result {
-                Ok(_) => {
-                    let status = if input.action == "continue" {
-                        "completed"
-                    } else {
-                        "aborted"
-                    };
-                    let head = git_head(&path)?;
-                    state.store.update_rebase_operation(
-                        &current.id,
-                        status,
-                        status,
-                        Some(&head),
-                        "",
-                        true,
-                    )?;
-                }
-                Err(error) => {
-                    state.store.update_rebase_operation(
-                        &current.id,
-                        "conflicts",
-                        "conflicts",
-                        None,
-                        &error,
-                        false,
-                    )?;
-                    return Err(AppError::BadRequest(error));
-                }
-            }
-            state
-                .store
-                .latest_rebase_operation(&id)?
-                .expect("rebase operation exists")
+            parent_operation_as_rebase(operation)
         }
         _ => {
             return Err(AppError::BadRequest(
@@ -163,6 +59,24 @@ fn update_workspace_location_rebase_impl(
         }
     };
     Ok(Json(operation))
+}
+
+fn parent_operation_as_rebase(operation: ParentOperation) -> RebaseOperation {
+    RebaseOperation {
+        id: operation.id,
+        workspace_location_id: operation.workspace_repository_id,
+        workspace_id: operation.workspace_id,
+        status: operation.status,
+        phase: operation.phase,
+        before_head: operation.before_head,
+        target_head: operation.parent_head,
+        rebased_head: operation.result_head,
+        recovery_ref: operation.recovery_ref,
+        error: operation.error,
+        started_at: operation.started_at,
+        updated_at: operation.updated_at,
+        completed_at: operation.completed_at,
+    }
 }
 
 async fn get_workspace_location_reset(
@@ -315,7 +229,7 @@ async fn finish_workspace_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<FinishWorkspace>,
-) -> Result<Json<WorkspaceLocation>> {
+) -> Result<Json<FinishProgress>> {
     let location = state.store.workspace_location(&id)?;
     let workspace = state.store.workspace(&location.workspace_id)?;
     let project_id = workspace.project_id;
@@ -335,17 +249,20 @@ fn finish_workspace_location_impl(
     state: AppState,
     id: String,
     input: FinishWorkspace,
-) -> Result<Json<WorkspaceLocation>> {
+) -> Result<Json<FinishProgress>> {
     validate_delivery_input(&input)?;
     let location = state.store.workspace_location(&id)?;
-    let workspace = state.store.workspace(&location.workspace_id)?;
     if location.access_mode != "read_write" {
         return Err(AppError::BadRequest(
             "read-only locations do not require Finish".into(),
         ));
     }
-    if !matches!(location.delivery_status.as_str(), "active" | "failed") {
-        return Ok(Json(location));
+    if !matches!(location.delivery_status.as_str(), "active" | "failed" | "conflicted") {
+        return Ok(Json(FinishProgress {
+            status: "finished".into(),
+            location,
+            operation: None,
+        }));
     }
     if let Some(preflight_id) = input.preflight_id.as_deref() {
         let preflight = state.store.delivery_preflight(preflight_id)?;
@@ -382,19 +299,47 @@ fn finish_workspace_location_impl(
             .map_err(AppError::BadRequest)?;
     }
     let source_head = git_head(&source_path)?;
+    let mut linked_operation = None;
     let (status, outcome, integrated) = match input.code_action.as_str() {
         "local_merge" => {
-            let (target_path, target_branch) =
-                workspace_location_delivery_target(&state, &workspace, &location)?;
-            ensure_clean_workspace(&target_path, "merge target")?;
-            ensure_checked_out_branch(&target_path, &target_branch, "merge target")?;
-            command_output(
-                Path::new(&target_path),
-                "git",
-                &["merge", "--no-ff", &source_head],
-            )
-            .map_err(AppError::BadRequest)?;
-            let head = git_head(&target_path)?;
+            let previous = state.store.latest_parent_operation(&location.id, "integrate")?;
+            let operation = start_parent_operation_impl(
+                &state,
+                &location.id,
+                "integrate",
+                "merge",
+                "finish",
+                Some(&location.id),
+            )?;
+            if matches!(operation.status.as_str(), "conflicted" | "resolving" | "recovery_required" | "active") {
+                state.store.set_delivery_status(&location.id, "conflicted")?;
+                return Ok(Json(FinishProgress {
+                    status: "paused".into(),
+                    location: state.store.workspace_location(&location.id)?,
+                    operation: Some(operation),
+                }));
+            }
+            if operation.status != "completed" {
+                return Err(AppError::BadRequest(format!(
+                    "integration ended with status {}",
+                    operation.status
+                )));
+            }
+            let resumed = previous
+                .as_ref()
+                .is_some_and(|previous| previous.id == operation.id && previous.status == "completed");
+            if resumed && !input.resume_finish {
+                return Ok(Json(FinishProgress {
+                    status: "awaiting_resume".into(),
+                    location: state.store.workspace_location(&location.id)?,
+                    operation: Some(operation),
+                }));
+            }
+            let head = operation
+                .result_head
+                .clone()
+                .ok_or_else(|| AppError::BadRequest("completed integration has no result HEAD".into()))?;
+            linked_operation = Some(operation);
             ("delivered", "local_merge", Some(head))
         }
         "remote_merged" => ("remote_merged", "remote_merged", Some(source_head.clone())),
@@ -402,6 +347,9 @@ fn finish_workspace_location_impl(
         "discard" => ("discarded", "discard", None),
         _ => unreachable!(),
     };
+    if let Some(operation) = linked_operation.as_ref() {
+        consume_parent_operation(&state, operation)?;
+    }
     if input.delete_worktree || input.code_action == "discard" {
         let project_location = state
             .store
@@ -430,7 +378,11 @@ fn finish_workspace_location_impl(
         integrated.as_deref(),
         &timestamp,
     )?;
-    Ok(Json(state.store.workspace_location(&location.id)?))
+    Ok(Json(FinishProgress {
+        status: "finished".into(),
+        location: state.store.workspace_location(&location.id)?,
+        operation: linked_operation,
+    }))
 }
 
 fn workspace_location_delivery_target(
@@ -1213,6 +1165,8 @@ struct FinishWorkspace {
     delete_branch: bool,
     commit_message: Option<String>,
     preflight_id: Option<String>,
+    #[serde(default)]
+    resume_finish: bool,
 }
 
 async fn finish_workspace(

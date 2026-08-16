@@ -6,12 +6,14 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect as Select } from "@/components/ui/native-select";
-import type { DeliveryPreflight, WorkspaceDetail } from "@/domain/types";
+import type { DeliveryPreflight, ParentOperation, Session, WorkspaceDetail } from "@/domain/types";
 import { workspacesApi } from "@/api/workspaces";
+import { sessionsApi } from "@/api/sessions";
+import { ParentOperationPanel } from "@/features/workspace/ParentOperationDialog";
 
-export type FinishPayload = { code_action: string; todo_action: string; push_after_merge: boolean; keep_session_history: boolean; delete_worktree: boolean; delete_branch: boolean; commit_message?: string; preflight_id?: string };
-export function FinishWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit }: { workspace: WorkspaceDetail | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (locationId: string, payload: FinishPayload) => void }) {
-  const finishable = workspace?.locations.filter((location) => location.access_mode === "read_write" && ["active", "failed"].includes(location.delivery_status)) ?? [];
+export type FinishPayload = { code_action: string; todo_action: string; push_after_merge: boolean; keep_session_history: boolean; delete_worktree: boolean; delete_branch: boolean; commit_message?: string; preflight_id?: string; resume_finish?: boolean };
+export function FinishWorkspaceDialog({ workspace, busy, operation: operationProp, onOperationChange, onOpenChange, onSubmit, onOpenSession }: { workspace: WorkspaceDetail | null; busy: boolean; operation: ParentOperation | null; onOperationChange: (operation: ParentOperation | null) => void; onOpenChange: (open: boolean) => void; onSubmit: (locationId: string, payload: FinishPayload) => void; onOpenSession: (operation: ParentOperation, session: Session) => void }) {
+  const finishable = workspace?.locations.filter((location) => location.access_mode === "read_write" && ["active", "failed", "conflicted"].includes(location.delivery_status)) ?? [];
   const [locationId, setLocationId] = useState("");
   const location = finishable.find((item) => item.id === locationId) ?? finishable[0];
   const [codeAction, setCodeAction] = useState("remote_merged");
@@ -23,12 +25,28 @@ export function FinishWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit 
   const [preflight, setPreflight] = useState<DeliveryPreflight | null>(null);
   const [checking, setChecking] = useState(false);
   const [preflightError, setPreflightError] = useState("");
+  const [operationBusy, setOperationBusy] = useState(false);
+  const [operationError, setOperationError] = useState("");
+  const [resolverSession, setResolverSession] = useState<Session | null>(null);
   const isFork = workspace?.kind === "fork";
-  useEffect(() => { if (!workspace) return; const first = workspace.locations.find((item) => item.access_mode === "read_write" && ["active", "failed"].includes(item.delivery_status)); setLocationId(first?.id ?? ""); }, [workspace?.id]);
+  useEffect(() => { if (!workspace) return; const first = workspace.locations.find((item) => item.access_mode === "read_write" && ["active", "failed", "conflicted"].includes(item.delivery_status)); setLocationId(first?.id ?? ""); }, [workspace?.id]);
   useEffect(() => { if (!workspace || !location) return; setCodeAction(isFork || location.delivery_mode === "local_merge" ? "local_merge" : "remote_merged"); setTodoAction(isFork ? "carry" : "keep"); setKeepSessions(true); setDeleteWorktree(true); setDeleteBranch(true); setCommitMessage(""); }, [workspace?.id, location?.id, isFork]);
   useEffect(() => { if (!location) return; const controller = new AbortController(); setChecking(true); setPreflight(null); setPreflightError(""); void workspacesApi.preflight(location.id, codeAction, controller.signal).then(setPreflight).catch((cause) => { if (!controller.signal.aborted) setPreflightError(cause instanceof Error ? cause.message : "Preflight failed"); }).finally(() => { if (!controller.signal.aborted) setChecking(false); }); return () => controller.abort(); }, [location?.id, codeAction]);
   useEffect(() => { if (codeAction === "keep") { setDeleteWorktree(false); setDeleteBranch(false); } else if (codeAction === "discard") { setDeleteWorktree(true); setDeleteBranch(true); } }, [codeAction]);
+  useEffect(() => {
+    if (!operationProp || !["active", "conflicted", "resolving", "recovery_required"].includes(operationProp.status)) return;
+    const timer = window.setInterval(() => {
+      void workspacesApi.parentOperation(operationProp.id).then(onOperationChange).catch((cause: Error) => setOperationError(cause.message));
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [operationProp?.id, operationProp?.status, onOperationChange]);
   const blocked = !preflight || preflight.blockers.length > 0;
+  const payload = (resumeFinish = false): FinishPayload => ({ code_action: codeAction, todo_action: todoAction, push_after_merge: false, keep_session_history: keepSessions, delete_worktree: codeAction === "discard" || deleteWorktree, delete_branch: codeAction === "discard" || deleteBranch, commit_message: commitMessage || undefined, preflight_id: preflight?.id, resume_finish: resumeFinish });
+  const operationAction = async (action: () => Promise<ParentOperation>) => {
+    setOperationBusy(true);
+    setOperationError("");
+    try { onOperationChange(await action()); } catch (cause) { setOperationError(cause instanceof Error ? cause.message : String(cause)); } finally { setOperationBusy(false); }
+  };
   return <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
     <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-2xl">
       <DialogHeader>
@@ -70,6 +88,25 @@ export function FinishWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit 
             </Field>
           </FieldGroup>
         </FieldSet>
+        {operationProp && (
+          <ParentOperationPanel
+            operation={operationProp}
+            busy={operationBusy || busy}
+            resolverSession={resolverSession}
+            onResolve={() => {
+              setOperationBusy(true);
+              void workspacesApi.resolveParentOperation(operationProp.id).then((session) => { setResolverSession(session); return workspacesApi.parentOperation(operationProp.id); }).then(onOperationChange).catch((cause: Error) => setOperationError(cause.message)).finally(() => setOperationBusy(false));
+            }}
+            onOpenSession={() => {
+              if (resolverSession) onOpenSession(operationProp, resolverSession);
+              else if (operationProp.resolver_session_id) void sessionsApi.get(operationProp.resolver_session_id).then((session) => onOpenSession(operationProp, session)).catch((cause: Error) => setOperationError(cause.message));
+            }}
+            onAbort={() => void operationAction(() => workspacesApi.abortParentOperation(operationProp.id))}
+            onUndo={() => void operationAction(() => workspacesApi.undoParentOperation(operationProp.id))}
+            onResumeFinish={() => location && onSubmit(location.id, payload(true))}
+          />
+        )}
+        {operationError && <p className="text-xs text-destructive">{operationError}</p>}
         <FieldSet className="rounded-lg border p-4">
           <FieldLegend variant="label">Cleanup</FieldLegend>
           <FieldGroup className="gap-3">
@@ -86,7 +123,7 @@ export function FinishWorkspaceDialog({ workspace, busy, onOpenChange, onSubmit 
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>Cancel</Button>
-        <Button data-testid="finish-confirm-action" variant="destructive" disabled={busy || checking || blocked || !location} onClick={() => location && onSubmit(location.id, { code_action: codeAction, todo_action: todoAction, push_after_merge: false, keep_session_history: keepSessions, delete_worktree: codeAction === "discard" || deleteWorktree, delete_branch: codeAction === "discard" || deleteBranch, commit_message: commitMessage || undefined, preflight_id: preflight?.id })}>{busy ? "Finishing…" : `Finish ${location?.location_name ?? "location"}`}</Button>
+        <Button data-testid="finish-confirm-action" variant="destructive" disabled={busy || checking || blocked || !location || Boolean(operationProp && ["active", "conflicted", "resolving", "completed", "recovery_required"].includes(operationProp.status))} onClick={() => location && onSubmit(location.id, payload())}>{busy ? "Finishing…" : `Finish ${location?.location_name ?? "location"}`}</Button>
       </div>
     </DialogContent>
   </Dialog>;

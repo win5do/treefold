@@ -1,8 +1,13 @@
 import { request } from "./client";
 import type {
   DeliveryPreflight,
+  FinishProgress,
   GitHistory,
   GitOperationRecord,
+  ParentOperation,
+  ParentOperationDirection,
+  ParentOperationPreview,
+  ParentOperationStrategy,
   Session,
   Workspace,
   WorkspaceDetail,
@@ -46,9 +51,41 @@ export const workspacesApi = {
       method: "POST",
     }),
   finishLocation: (id: string, json: unknown) =>
-    request(`/api/workspace-repositories/${id}/finish`, {
+    request<FinishProgress>(`/api/workspace-repositories/${id}/finish`, {
       method: "POST",
       json,
+    }),
+  parentOperationPreview: (
+    id: string,
+    direction: ParentOperationDirection,
+    signal?: AbortSignal,
+  ) =>
+    request<ParentOperationPreview>(
+      `/api/workspace-repositories/${id}/parent-operation?direction=${direction}`,
+      { signal },
+    ),
+  startParentOperation: (
+    id: string,
+    direction: ParentOperationDirection,
+    strategy: ParentOperationStrategy,
+  ) =>
+    request<ParentOperation>(
+      `/api/workspace-repositories/${id}/parent-operation?direction=${direction}`,
+      { method: "POST", json: { strategy } },
+    ),
+  parentOperation: (id: string, signal?: AbortSignal) =>
+    request<ParentOperation>(`/api/parent-operations/${id}`, { signal }),
+  resolveParentOperation: (id: string) =>
+    request<Session>(`/api/parent-operations/${id}/resolve-with-codex`, {
+      method: "POST",
+    }),
+  abortParentOperation: (id: string) =>
+    request<ParentOperation>(`/api/parent-operations/${id}/abort`, {
+      method: "POST",
+    }),
+  undoParentOperation: (id: string) =>
+    request<ParentOperation>(`/api/parent-operations/${id}/undo`, {
+      method: "POST",
     }),
   preflight: (id: string, codeAction: string, signal?: AbortSignal) =>
     request<DeliveryPreflight>(

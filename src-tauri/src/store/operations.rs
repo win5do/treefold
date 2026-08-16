@@ -173,6 +173,140 @@ impl Store {
         Ok(())
     }
 
+    pub fn parent_operation(&self, id: &str) -> Result<ParentOperation> {
+        let db = self.0.lock();
+        Ok(db.query_row(
+            &format!("SELECT {PARENT_OPERATION_COLUMNS} FROM parent_operations WHERE id=?"),
+            [id],
+            parent_operation_row,
+        )?)
+    }
+
+    pub fn latest_parent_operation(
+        &self,
+        workspace_repository_id: &str,
+        direction: &str,
+    ) -> Result<Option<ParentOperation>> {
+        let db = self.0.lock();
+        Ok(db
+            .query_row(
+                &format!("SELECT {PARENT_OPERATION_COLUMNS} FROM parent_operations WHERE workspace_repository_id=? AND direction=? ORDER BY updated_at DESC,rowid DESC LIMIT 1"),
+                params![workspace_repository_id, direction],
+                parent_operation_row,
+            )
+            .optional()?)
+    }
+
+    pub fn active_parent_operation_for_target(
+        &self,
+        source_repository_id: &str,
+        target_path: &str,
+    ) -> Result<Option<ParentOperation>> {
+        let db = self.0.lock();
+        Ok(db
+            .query_row(
+                &format!("SELECT {PARENT_OPERATION_COLUMNS} FROM parent_operations WHERE source_repository_id=? AND target_path=? AND status IN ('active','conflicted','resolving','recovery_required') ORDER BY updated_at DESC,rowid DESC LIMIT 1"),
+                params![source_repository_id, target_path],
+                parent_operation_row,
+            )
+            .optional()?)
+    }
+
+    pub fn parent_operations(&self, workspace_id: &str) -> Result<Vec<ParentOperation>> {
+        let db = self.0.lock();
+        let mut statement = db.prepare(&format!(
+            "SELECT {PARENT_OPERATION_COLUMNS} FROM parent_operations WHERE workspace_id=? ORDER BY started_at DESC,rowid DESC"
+        ))?;
+        let operations = statement
+            .query_map([workspace_id], parent_operation_row)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(operations)
+    }
+
+    pub fn create_parent_operation(&self, operation: &ParentOperation) -> Result<()> {
+        self.0.lock().execute(
+            "INSERT INTO parent_operations(id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,undo_available,error,started_at,updated_at,completed_at)
+             VALUES(:id,:workspace_repository_id,:workspace_id,:direction,:strategy,:origin,:source_repository_id,:source_path,:source_branch,:target_scope,:target_workspace_id,:target_path,:target_branch,:source_head,:parent_head,:before_head,:result_head,:recovery_ref,:status,:phase,:resolver_session_id,:delivery_operation_id,:undo_available,:error,:started_at,:updated_at,:completed_at)",
+            named_params! {
+                ":id": operation.id,
+                ":workspace_repository_id": operation.workspace_repository_id,
+                ":workspace_id": operation.workspace_id,
+                ":direction": operation.direction,
+                ":strategy": operation.strategy,
+                ":origin": operation.origin,
+                ":source_repository_id": operation.source_repository_id,
+                ":source_path": operation.source_path,
+                ":source_branch": operation.source_branch,
+                ":target_scope": operation.target_scope,
+                ":target_workspace_id": operation.target_workspace_id,
+                ":target_path": operation.target_path,
+                ":target_branch": operation.target_branch,
+                ":source_head": operation.source_head,
+                ":parent_head": operation.parent_head,
+                ":before_head": operation.before_head,
+                ":result_head": operation.result_head,
+                ":recovery_ref": operation.recovery_ref,
+                ":status": operation.status,
+                ":phase": operation.phase,
+                ":resolver_session_id": operation.resolver_session_id,
+                ":delivery_operation_id": operation.delivery_operation_id,
+                ":undo_available": operation.undo_available,
+                ":error": operation.error,
+                ":started_at": operation.started_at,
+                ":updated_at": operation.updated_at,
+                ":completed_at": operation.completed_at,
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn update_parent_operation(
+        &self,
+        id: &str,
+        status: &str,
+        phase: &str,
+        result_head: Option<&str>,
+        error: &str,
+        terminal: bool,
+        undo_available: bool,
+    ) -> Result<()> {
+        let timestamp = now();
+        self.0.lock().execute(
+            "UPDATE parent_operations SET status=?,phase=?,result_head=COALESCE(?,result_head),error=?,undo_available=?,updated_at=?,completed_at=CASE WHEN ? THEN COALESCE(completed_at,?) ELSE completed_at END WHERE id=?",
+            params![status, phase, result_head, error, undo_available, timestamp, terminal, timestamp, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_parent_operation_resolver(&self, id: &str, session_id: &str) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE parent_operations SET resolver_session_id=?,status='resolving',phase='resolving',error='',updated_at=? WHERE id=?",
+            params![session_id, now(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn supersede_parent_operation_undo(
+        &self,
+        source_repository_id: &str,
+        target_path: &str,
+        except_id: &str,
+    ) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE parent_operations SET undo_available=0,phase=CASE WHEN status='completed' THEN 'superseded' ELSE phase END,updated_at=? WHERE source_repository_id=? AND target_path=? AND id!=? AND undo_available=1",
+            params![now(), source_repository_id, target_path, except_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn consume_parent_operation_undo(&self, id: &str) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE parent_operations SET undo_available=0,phase=CASE WHEN status='completed' THEN 'consumed' ELSE phase END,updated_at=? WHERE id=?",
+            params![now(), id],
+        )?;
+        Ok(())
+    }
+
     pub fn create_delivery_preflight(&self, preflight: &DeliveryPreflight) -> Result<()> {
         self.0.lock().execute(
             "INSERT INTO delivery_preflights(id,workspace_repository_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at)
@@ -306,6 +440,40 @@ fn delivery_operation_row(r: &Row<'_>) -> rusqlite::Result<DeliveryOperation> {
 }
 
 const REBASE_OPERATION_COLUMNS: &str = "id,workspace_repository_id AS workspace_location_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at";
+
+const PARENT_OPERATION_COLUMNS: &str = "id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,undo_available,error,started_at,updated_at,completed_at";
+
+fn parent_operation_row(r: &Row<'_>) -> rusqlite::Result<ParentOperation> {
+    Ok(ParentOperation {
+        id: r.get("id")?,
+        workspace_repository_id: r.get("workspace_repository_id")?,
+        workspace_id: r.get("workspace_id")?,
+        direction: r.get("direction")?,
+        strategy: r.get("strategy")?,
+        origin: r.get("origin")?,
+        source_repository_id: r.get("source_repository_id")?,
+        source_path: r.get("source_path")?,
+        source_branch: r.get("source_branch")?,
+        target_scope: r.get("target_scope")?,
+        target_workspace_id: r.get("target_workspace_id")?,
+        target_path: r.get("target_path")?,
+        target_branch: r.get("target_branch")?,
+        source_head: r.get("source_head")?,
+        parent_head: r.get("parent_head")?,
+        before_head: r.get("before_head")?,
+        result_head: r.get("result_head")?,
+        recovery_ref: r.get("recovery_ref")?,
+        status: r.get("status")?,
+        phase: r.get("phase")?,
+        resolver_session_id: r.get("resolver_session_id")?,
+        delivery_operation_id: r.get("delivery_operation_id")?,
+        undo_available: r.get("undo_available")?,
+        error: r.get("error")?,
+        started_at: r.get("started_at")?,
+        updated_at: r.get("updated_at")?,
+        completed_at: r.get("completed_at")?,
+    })
+}
 
 fn rebase_operation_row(r: &Row<'_>) -> rusqlite::Result<RebaseOperation> {
     Ok(RebaseOperation {

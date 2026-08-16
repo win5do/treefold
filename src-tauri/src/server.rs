@@ -242,6 +242,23 @@ fn app(state: AppState) -> Router {
             get(get_workspace_location_rebase).post(update_workspace_location_rebase),
         )
         .route(
+            "/api/workspace-repositories/{id}/parent-operation",
+            get(get_parent_operation_preview).post(start_parent_operation),
+        )
+        .route("/api/parent-operations/{id}", get(get_parent_operation))
+        .route(
+            "/api/parent-operations/{id}/resolve-with-codex",
+            post(resolve_parent_operation_with_codex),
+        )
+        .route(
+            "/api/parent-operations/{id}/abort",
+            post(abort_parent_operation),
+        )
+        .route(
+            "/api/parent-operations/{id}/undo",
+            post(undo_parent_operation),
+        )
+        .route(
             "/api/workspace-repositories/{id}/reset",
             get(get_workspace_location_reset).post(reset_workspace_location),
         )
@@ -310,6 +327,7 @@ include!("server/workspace.rs");
 include!("server/fork.rs");
 include!("server/git.rs");
 include!("server/delivery.rs");
+include!("server/parent_operation.rs");
 include!("server/verification.rs");
 include!("server/session.rs");
 include!("server/hosting.rs");

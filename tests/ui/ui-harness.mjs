@@ -39,6 +39,10 @@ async function startFixtureApi() {
   const sessionOrderRequests = [];
   const deleteRequests = [];
   const amuxStopRequests = [];
+  const parentOperationRequests = [];
+  const parentOperations = new Map();
+  const parentOperationTimestamp = "2026-08-10T08:00:00.000Z";
+  const parentOperationTargetPath = "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture";
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -571,6 +575,117 @@ async function startFixtureApi() {
       return;
     }
 
+    const parentOperationPreviewMatch = pathname.match(
+      /^\/api\/workspace-repositories\/([^/]+)\/parent-operation$/,
+    );
+    if (parentOperationPreviewMatch) {
+      const direction = new URL(request.url ?? "/", "http://fixture.test").searchParams.get("direction");
+      const locationId = parentOperationPreviewMatch[1];
+      const location = Object.values(fixture.workspaceDetails)
+        .flatMap((detail) => detail.repositories ?? detail.locations)
+        .find((item) => item.id === locationId);
+      const operation = parentOperations.get(`${locationId}:${direction}`);
+      if (request.method === "GET") {
+        parentOperationRequests.push(`GET ${locationId}:${direction}`);
+        sendJson(response, 200, {
+          direction,
+          repository_name: location?.location_name ?? "fixture-repository",
+          source_path: location?.checkout_path ?? "/tmp/source",
+          source_branch: location?.branch ?? "feature/ui-fixture",
+          target_scope: direction === "integrate" ? "parent_workspace" : "workspace",
+          target_path: direction === "integrate" ? parentOperationTargetPath : (location?.checkout_path ?? "/tmp/source"),
+          target_branch: direction === "integrate" ? "treefold/w-ui-fixture" : (location?.branch ?? "feature/ui-fixture"),
+          source_head: "1111111111111111111111111111111111111111",
+          parent_head: "2222222222222222222222222222222222222222",
+          outcome: direction === "integrate" ? "merge_commit" : "fast_forward",
+          blockers: [],
+          operation,
+        });
+        return;
+      }
+      if (request.method === "POST") {
+        const input = await readJson(request);
+        const created = {
+          id: `parent-${direction}-${locationId}`,
+          workspace_repository_id: locationId,
+          workspace_id: location?.workspace_id ?? FIXTURE_IDS.workspace,
+          direction,
+          strategy: input.strategy,
+          origin: "standalone",
+          source_repository_id: FIXTURE_IDS.primaryRepository,
+          source_path: location?.checkout_path ?? "/tmp/source",
+          source_branch: location?.branch ?? "feature/ui-fixture",
+          target_scope: direction === "integrate" ? "parent_workspace" : "workspace",
+          target_workspace_id: FIXTURE_IDS.workspace,
+          target_path: direction === "integrate" ? parentOperationTargetPath : (location?.checkout_path ?? "/tmp/source"),
+          target_branch: direction === "integrate" ? "treefold/w-ui-fixture" : (location?.branch ?? "feature/ui-fixture"),
+          source_head: "1111111111111111111111111111111111111111",
+          parent_head: "2222222222222222222222222222222222222222",
+          before_head: "1111111111111111111111111111111111111111",
+          result_head: direction === "integrate" ? "3333333333333333333333333333333333333333" : undefined,
+          recovery_ref: `refs/treefold/recovery/${direction}-${locationId}`,
+          status: direction === "update" ? "conflicted" : "completed",
+          phase: direction === "update" ? "conflicted" : "completed",
+          undo_available: direction === "integrate",
+          error: direction === "update" ? "Git has unresolved conflicts" : "",
+          started_at: parentOperationTimestamp,
+          updated_at: parentOperationTimestamp,
+          completed_at: direction === "integrate" ? parentOperationTimestamp : undefined,
+        };
+        parentOperations.set(`${locationId}:${direction}`, created);
+        parentOperationRequests.push(`POST ${locationId}:${direction}:${input.strategy}`);
+        sendJson(response, 200, created);
+        return;
+      }
+    }
+
+    const parentOperationMatch = pathname.match(/^\/api\/parent-operations\/([^/]+)$/);
+    if (request.method === "GET" && parentOperationMatch) {
+      const operation = [...parentOperations.values()].find((item) => item.id === parentOperationMatch[1]);
+      if (!operation) return sendJson(response, 404, { error: "Parent operation not found" });
+      sendJson(response, 200, operation);
+      return;
+    }
+    const parentOperationActionMatch = pathname.match(/^\/api\/parent-operations\/([^/]+)\/(resolve-with-codex|abort|undo)$/);
+    if (request.method === "POST" && parentOperationActionMatch) {
+      const operation = [...parentOperations.values()].find((item) => item.id === parentOperationActionMatch[1]);
+      if (!operation) return sendJson(response, 404, { error: "Parent operation not found" });
+      const action = parentOperationActionMatch[2];
+      parentOperationRequests.push(`POST ${operation.id}:${action}`);
+      if (action === "resolve-with-codex") {
+        const session = {
+          id: "parent-resolver-session-ui-fixture",
+          workspace_id: operation.target_workspace_id ?? operation.workspace_id,
+          name: "Resolve parent operation",
+          kind: "codex",
+          cwd: operation.target_path,
+          original_cwd: operation.target_path,
+          initial_prompt: "Resolve fixed parent operation",
+          codex_session_id: "codex-parent-resolver-ui-fixture",
+          visibility: "visible",
+          amux_workspace_name: "treefold-parent-resolver",
+          amux_process_name: "parent-resolver-session-ui-fixture",
+          status: "running",
+          argv: ["codex"],
+          io_mode: "tty",
+          launch_started_at: parentOperationTimestamp,
+          created_at: parentOperationTimestamp,
+          updated_at: parentOperationTimestamp,
+        };
+        fixture.workspaceDetails[FIXTURE_IDS.workspace].sessions.push(session);
+        operation.status = "resolving";
+        operation.phase = "resolving";
+        operation.resolver_session_id = session.id;
+        sendJson(response, 201, session);
+        return;
+      }
+      operation.status = action === "abort" ? "aborted" : "undone";
+      operation.phase = operation.status;
+      operation.undo_available = false;
+      sendJson(response, 200, operation);
+      return;
+    }
+
     const syncMatch = pathname.match(
       /^\/api\/(projects|workspaces)\/([^/]+)\/git\/(pull|push)(-all)?$/,
     );
@@ -893,6 +1008,14 @@ async function startFixtureApi() {
     }
 
     const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)$/);
+    if (request.method === "GET" && sessionMatch) {
+      const session = Object.values(fixture.workspaceDetails)
+        .flatMap((detail) => detail.sessions)
+        .find((item) => item.id === sessionMatch[1]);
+      if (!session) return sendJson(response, 404, { error: "Session not found" });
+      sendJson(response, 200, session);
+      return;
+    }
     if (request.method === "PATCH" && sessionMatch) {
       const sessions = [
         ...Object.values(fixture.projectDetails).flatMap(
@@ -988,6 +1111,7 @@ async function startFixtureApi() {
     sessionOrderRequests,
     deleteRequests,
     amuxStopRequests,
+    parentOperationRequests,
     archiveAllStreams() {
       for (const detail of Object.values(fixture.projectDetails))
         detail.workspaces.forEach((item) => {
@@ -1059,6 +1183,7 @@ export async function startUiHarness() {
       sessionOrderRequests: [],
       deleteRequests: [],
       amuxStopRequests: [],
+      parentOperationRequests: [],
       archiveAllStreams() {},
       restoreActiveStreams() {},
       setProjectStatus() {},
@@ -1110,6 +1235,7 @@ export async function startUiHarness() {
     sessionOrderRequests: fixtureApi.sessionOrderRequests,
     deleteRequests: fixtureApi.deleteRequests,
     amuxStopRequests: fixtureApi.amuxStopRequests,
+    parentOperationRequests: fixtureApi.parentOperationRequests,
     archiveAllStreams: fixtureApi.archiveAllStreams,
     restoreActiveStreams: fixtureApi.restoreActiveStreams,
     setProjectStatus: fixtureApi.setProjectStatus,

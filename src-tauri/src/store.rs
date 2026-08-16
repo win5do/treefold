@@ -132,6 +132,29 @@ CREATE TABLE IF NOT EXISTS rebase_operations (
 );
 CREATE INDEX IF NOT EXISTS rebase_operations_repository_updated
  ON rebase_operations(workspace_repository_id,updated_at DESC);
+CREATE TABLE IF NOT EXISTS parent_operations (
+ id TEXT PRIMARY KEY,
+ workspace_repository_id TEXT NOT NULL REFERENCES workspace_repositories(id) ON DELETE CASCADE,
+ workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+ direction TEXT NOT NULL CHECK(direction IN ('update','integrate')),
+ strategy TEXT NOT NULL CHECK(strategy IN ('rebase','merge')),
+ origin TEXT NOT NULL DEFAULT 'standalone' CHECK(origin IN ('standalone','finish','legacy')),
+ source_repository_id TEXT NOT NULL,
+ source_path TEXT NOT NULL, source_branch TEXT NOT NULL,
+ target_scope TEXT NOT NULL, target_workspace_id TEXT,
+ target_path TEXT NOT NULL, target_branch TEXT NOT NULL,
+ source_head TEXT NOT NULL, parent_head TEXT NOT NULL, before_head TEXT NOT NULL,
+ result_head TEXT, recovery_ref TEXT NOT NULL,
+ status TEXT NOT NULL, phase TEXT NOT NULL,
+ resolver_session_id TEXT, delivery_operation_id TEXT,
+ undo_available INTEGER NOT NULL DEFAULT 0,
+ error TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS parent_operations_repository_updated
+ ON parent_operations(workspace_repository_id,direction,updated_at DESC);
+CREATE INDEX IF NOT EXISTS parent_operations_target_updated
+ ON parent_operations(source_repository_id,target_path,updated_at DESC);
 CREATE TABLE IF NOT EXISTS delivery_preflights (
  id TEXT PRIMARY KEY, workspace_repository_id TEXT NOT NULL REFERENCES workspace_repositories(id) ON DELETE CASCADE,
  code_action TEXT NOT NULL, source_head TEXT NOT NULL, target_head TEXT NOT NULL,
@@ -165,6 +188,7 @@ impl Store {
         migrate_development_schema(&connection, path)?;
         connection.execute_batch("PRAGMA journal_mode=WAL;")?;
         connection.execute_batch(SCHEMA)?;
+        migrate_parent_operations(&connection)?;
         let readers = PoolBuilder::new()
             .path(path)
             .flags(rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -178,6 +202,28 @@ impl Store {
         }
         Ok(Self(Arc::new(Mutex::new(connection)), readers))
     }
+}
+
+fn migrate_parent_operations(connection: &Connection) -> Result<()> {
+    if !table_exists(connection, "rebase_operations")? {
+        return Ok(());
+    }
+    connection.execute_batch(
+        "INSERT OR IGNORE INTO parent_operations(
+           id,workspace_repository_id,workspace_id,direction,strategy,origin,
+           source_repository_id,source_path,source_branch,target_scope,target_path,target_branch,
+           source_head,parent_head,before_head,result_head,recovery_ref,status,phase,
+           undo_available,error,started_at,updated_at,completed_at
+         )
+         SELECT r.id,r.workspace_repository_id,wr.workspace_id,'update','rebase','legacy',
+           wr.project_repository_id,COALESCE(wr.checkout_path,wr.source_root),COALESCE(wr.branch,''),
+           'legacy',COALESCE(wr.checkout_path,wr.source_root),COALESCE(wr.branch,''),r.before_head,r.target_head,r.before_head,r.rebased_head,r.recovery_ref,
+           CASE r.status WHEN 'conflicts' THEN 'conflicted' ELSE r.status END,r.phase,
+           0,r.error,r.started_at,r.updated_at,r.completed_at
+         FROM rebase_operations r
+         JOIN workspace_repositories wr ON wr.id=r.workspace_repository_id;",
+    )?;
+    Ok(())
 }
 
 pub fn now() -> String {
@@ -482,6 +528,44 @@ mod workspace_schema_tests {
         assert!(store.projects().expect("list migrated Projects").is_empty());
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[test]
+    fn migrates_legacy_rebase_operations_into_parent_operations_idempotently() {
+        let (root, path) = temporary_database("parent-operation-migration");
+        drop(Store::open(&path).expect("create current database"));
+        let connection = Connection::open(&path).expect("seed legacy rebase");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys=ON;
+                 INSERT INTO projects(id,name,description,status,created_at,updated_at)
+                 VALUES('p','Project','','active','now','now');
+                 INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,created_at,updated_at)
+                 VALUES('r','p','Repo','/tmp/repo','/tmp/repo/.git','now','now');
+                 INSERT INTO workspaces(id,project_id,name,description,status,kind,created_at,updated_at)
+                 VALUES('w','p','Workspace','','active','workspace','now','now');
+                 INSERT INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,checkout_path,branch,created_at,updated_at)
+                 VALUES('wr','w','r','Repo','/tmp/repo','ready','/tmp/worktree','feature/test','now','now');
+                 INSERT INTO rebase_operations(id,workspace_repository_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at)
+                 VALUES('legacy-rebase','wr','completed','completed','before','parent','result','refs/treefold/recovery/legacy','','now','later','later');",
+            )
+            .expect("seed legacy rebase operation");
+        drop(connection);
+
+        for _ in 0..2 {
+            drop(Store::open(&path).expect("migrate legacy rebase"));
+        }
+        let connection = Connection::open(&path).expect("inspect parent operation migration");
+        let row: (i64, String, String, String) = connection
+            .query_row(
+                "SELECT COUNT(*),direction,strategy,origin FROM parent_operations WHERE id='legacy-rebase'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read migrated operation");
+        assert_eq!(row, (1, "update".into(), "rebase".into(), "legacy".into()));
+        drop(connection);
+        std::fs::remove_dir_all(root).expect("remove migration fixture");
     }
 }
 

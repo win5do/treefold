@@ -13,9 +13,11 @@ mod current_workspace_tests {
     use super::{
         app, close_session, command_output, create_delivery_preflight_impl, create_directory,
         create_fork, create_project, create_project_session, create_session, create_workspace,
-        delete_project_location, finish_workspace_impl, get_project, git_worktrees, normalized_path,
+        delete_project_location, finish_workspace_impl, finish_workspace_location_impl, get_project, git_worktrees, normalized_path,
         pull_workspace, push_workspace, reconcile_process, refresh_project_location, stop_session,
-        update_project, update_workspace_location,
+        update_project, update_workspace_location, abort_parent_operation_impl, git_head,
+        git_is_ancestor, reconcile_parent_operation, start_parent_operation_impl,
+        undo_parent_operation_impl,
         ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject,
         CreateSession, CreateWorkspace, FinishWorkspace, UpdateProject, UpdateWorkspaceLocation,
     };
@@ -738,6 +740,7 @@ mod current_workspace_tests {
                 delete_branch: true,
                 commit_message: Some("finish parallel work".into()),
                 preflight_id: Some(preflight.id),
+                resume_finish: false,
             },
             None,
         )
@@ -763,6 +766,303 @@ mod current_workspace_tests {
 
         drop(state);
         std::fs::remove_dir_all(root).expect("remove test fixture");
+    }
+
+    #[tokio::test]
+    async fn parent_operations_update_integrate_undo_restart_and_abort() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-parent-operations-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        initialize_repository(&repository);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Parent operations".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_target_branch: Some("main".into()),
+                default_base_branch: Some("main".into()),
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create Project");
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateWorkspace {
+                name: "Parent".into(),
+                description: None,
+                branch: Some("feature/parent-operation-parent".into()),
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("create Workspace");
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateFork {
+                name: "Child".into(),
+                description: None,
+            }),
+        )
+        .await
+        .expect("create Fork");
+        let fork_location = state
+            .store
+            .default_workspace_location(&fork.id)
+            .expect("Fork Repository");
+
+        let commit = |path: &str, name: &str, contents: &str, message: &str| {
+            std::fs::write(Path::new(path).join(name), contents).expect("write change");
+            command_output(Path::new(path), "git", &["add", name]).expect("stage change");
+            command_output(Path::new(path), "git", &["commit", "-m", message])
+                .expect("commit change");
+            git_head(path).expect("read committed HEAD")
+        };
+
+        let fork_before = commit(&fork.checkout_path, "fork.txt", "fork\n", "fork change");
+        let parent_head = commit(
+            &workspace.checkout_path,
+            "parent.txt",
+            "parent\n",
+            "parent change",
+        );
+        let update = start_parent_operation_impl(
+            &state,
+            &fork_location.id,
+            "update",
+            "rebase",
+            "standalone",
+            None,
+        )
+        .expect("rebase Fork from parent");
+        assert_eq!(update.status, "completed");
+        assert!(update.undo_available);
+        assert!(git_is_ancestor(
+            &fork.checkout_path,
+            &parent_head,
+            update.result_head.as_deref().expect("updated HEAD")
+        )
+        .expect("parent is ancestor"));
+        let undone_update = undo_parent_operation_impl(&state, &update).expect("undo update");
+        assert_eq!(undone_update.status, "undone");
+        assert_eq!(git_head(&fork.checkout_path).unwrap(), fork_before);
+
+        let integration = start_parent_operation_impl(
+            &state,
+            &fork_location.id,
+            "integrate",
+            "merge",
+            "standalone",
+            None,
+        )
+        .expect("integrate Fork into parent");
+        assert_eq!(integration.status, "completed");
+        let integrated_head = integration.result_head.as_deref().expect("integration HEAD");
+        assert!(git_is_ancestor(&workspace.checkout_path, &fork_before, integrated_head).unwrap());
+        assert!(git_is_ancestor(&workspace.checkout_path, &parent_head, integrated_head).unwrap());
+        let parents = command_output(
+            Path::new(&workspace.checkout_path),
+            "git",
+            &["show", "-s", "--format=%P", integrated_head],
+        )
+        .expect("read merge parents");
+        assert_eq!(parents.split_whitespace().count(), 2);
+        undo_parent_operation_impl(&state, &integration).expect("undo integration");
+        assert_eq!(git_head(&workspace.checkout_path).unwrap(), parent_head);
+
+        commit(
+            &fork.checkout_path,
+            "conflict.txt",
+            "child\n",
+            "child conflict",
+        );
+        commit(
+            &workspace.checkout_path,
+            "conflict.txt",
+            "parent\n",
+            "parent conflict",
+        );
+        let conflicted = start_parent_operation_impl(
+            &state,
+            &fork_location.id,
+            "update",
+            "merge",
+            "standalone",
+            None,
+        )
+        .expect("start conflicted update");
+        assert_eq!(conflicted.status, "conflicted");
+        let restarted = AppState {
+            store: Store::open(&root.join("home/data/treefold.db")).expect("reopen Store"),
+            settings: SettingsStore::open(&root.join("home"), &root).expect("reopen Settings"),
+            terminals: TerminalManager::default(),
+        };
+        let recovered = reconcile_parent_operation(&restarted, &conflicted)
+            .expect("reconcile after restart");
+        assert_eq!(recovered.status, "conflicted");
+        let aborted = abort_parent_operation_impl(&restarted, &recovered).expect("abort update");
+        assert_eq!(aborted.status, "aborted");
+        assert_eq!(git_head(&fork.checkout_path).unwrap(), conflicted.before_head);
+
+        let workspace_location = state
+            .store
+            .default_workspace_location(&workspace.id)
+            .expect("root Workspace Repository");
+        let project_before = git_head(repository.to_str().unwrap()).unwrap();
+        let root_integration = start_parent_operation_impl(
+            &state,
+            &workspace_location.id,
+            "integrate",
+            "merge",
+            "standalone",
+            None,
+        )
+        .expect("integrate root Workspace into Project");
+        assert_eq!(root_integration.status, "completed");
+        assert_eq!(
+            git_head(repository.to_str().unwrap()).unwrap(),
+            root_integration.result_head.clone().unwrap()
+        );
+        let root_undone =
+            undo_parent_operation_impl(&state, &root_integration).expect("undo root integration");
+        assert_eq!(root_undone.status, "undone");
+        assert_eq!(git_head(repository.to_str().unwrap()).unwrap(), project_before);
+
+        drop(restarted);
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove parent-operation fixture");
+    }
+
+    #[tokio::test]
+    async fn finish_local_merge_pauses_for_conflict_and_requires_resume() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-finish-parent-operation-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        initialize_repository(&repository);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Finish conflict".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_target_branch: Some("main".into()),
+                default_base_branch: Some("main".into()),
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateWorkspace {
+                name: "Parent".into(),
+                description: None,
+                branch: Some("feature/finish-parent".into()),
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id),
+            ApiJson(CreateFork {
+                name: "Finish child".into(),
+                description: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let fork_location = state.store.default_workspace_location(&fork.id).unwrap();
+        for (path, contents, message) in [
+            (&fork.checkout_path, "child\n", "child conflict"),
+            (&workspace.checkout_path, "parent\n", "parent conflict"),
+        ] {
+            std::fs::write(Path::new(path).join("shared.txt"), contents).unwrap();
+            command_output(Path::new(path), "git", &["add", "shared.txt"]).unwrap();
+            command_output(Path::new(path), "git", &["commit", "-m", message]).unwrap();
+        }
+        let input = FinishWorkspace {
+            code_action: "local_merge".into(),
+            todo_action: "carry".into(),
+            push_after_merge: false,
+            keep_session_history: true,
+            delete_worktree: false,
+            delete_branch: false,
+            commit_message: None,
+            preflight_id: None,
+            resume_finish: false,
+        };
+        let Json(paused) = finish_workspace_location_impl(
+            state.clone(),
+            fork_location.id.clone(),
+            input.clone(),
+        )
+        .expect("pause Finish on conflict");
+        assert_eq!(paused.status, "paused");
+        let operation = paused.operation.expect("linked integration");
+        assert_eq!(operation.status, "conflicted");
+
+        std::fs::write(
+            Path::new(&workspace.checkout_path).join("shared.txt"),
+            "resolved\n",
+        )
+        .unwrap();
+        command_output(Path::new(&workspace.checkout_path), "git", &["add", "shared.txt"])
+            .unwrap();
+        command_output(
+            Path::new(&workspace.checkout_path),
+            "git",
+            &["-c", "core.editor=true", "merge", "--continue"],
+        )
+        .unwrap();
+        let completed = reconcile_parent_operation(&state, &operation).unwrap();
+        assert_eq!(completed.status, "completed");
+        assert!(completed.undo_available);
+
+        let Json(awaiting) = finish_workspace_location_impl(
+            state.clone(),
+            fork_location.id.clone(),
+            input.clone(),
+        )
+        .expect("wait for explicit Resume Finish");
+        assert_eq!(awaiting.status, "awaiting_resume");
+        let mut resume = input;
+        resume.resume_finish = true;
+        let Json(finished) = finish_workspace_location_impl(
+            state.clone(),
+            fork_location.id,
+            resume,
+        )
+        .expect("resume Finish");
+        assert_eq!(finished.status, "finished");
+        assert_eq!(finished.location.delivery_status, "delivered");
+        assert!(!state
+            .store
+            .parent_operation(&completed.id)
+            .unwrap()
+            .undo_available);
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove Finish conflict fixture");
     }
 
     #[tokio::test]

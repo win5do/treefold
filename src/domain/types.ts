@@ -258,7 +258,7 @@ export type DeliveryPreflight = {
 
 export type GitOperationRecord = {
   id: string;
-  kind: "delivery" | "rebase" | "reset";
+  kind: "delivery" | "parent" | "rebase" | "reset";
   action: string;
   status: string;
   before_head: string;
@@ -268,6 +268,68 @@ export type GitOperationRecord = {
   error: string;
   started_at: string;
   updated_at: string;
+};
+
+export type ParentOperationDirection = "update" | "integrate";
+export type ParentOperationStrategy = "rebase" | "merge";
+
+export type ParentOperation = {
+  id: string;
+  workspace_repository_id: string;
+  workspace_id: string;
+  direction: ParentOperationDirection;
+  strategy: ParentOperationStrategy;
+  origin: "standalone" | "finish" | "legacy";
+  source_repository_id: string;
+  source_path: string;
+  source_branch: string;
+  target_scope: "workspace" | "fork" | "parent_workspace" | "project" | "legacy";
+  target_workspace_id?: string;
+  target_path: string;
+  target_branch: string;
+  source_head: string;
+  parent_head: string;
+  before_head: string;
+  result_head?: string;
+  recovery_ref: string;
+  status:
+    | "active"
+    | "conflicted"
+    | "resolving"
+    | "completed"
+    | "aborted"
+    | "undone"
+    | "failed"
+    | "recovery_required";
+  phase: string;
+  resolver_session_id?: string;
+  delivery_operation_id?: string;
+  undo_available: boolean;
+  error: string;
+  started_at: string;
+  updated_at: string;
+  completed_at?: string;
+};
+
+export type ParentOperationPreview = {
+  direction: ParentOperationDirection;
+  repository_name: string;
+  source_path: string;
+  source_branch: string;
+  target_scope: ParentOperation["target_scope"];
+  target_path: string;
+  target_branch: string;
+  source_head: string;
+  parent_head: string;
+  outcome: "up_to_date" | "fast_forward" | "merge_commit";
+  blockers: string[];
+  operation?: ParentOperation;
+};
+
+export type FinishProgress = {
+  status: "finished" | "paused" | "awaiting_resume";
+  location: WorkspaceLocation;
+  operation?: ParentOperation;
 };
 
 export type ProjectLocationInspection = {

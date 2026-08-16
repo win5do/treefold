@@ -95,6 +95,8 @@ import type {
   ProjectDetail,
   ProjectRepository,
   ProjectSummary,
+  ParentOperationDirection,
+  ParentOperation,
   RenameTarget,
   Session,
   SessionMenuState,
@@ -120,6 +122,7 @@ import {
 import { SessionWorkspace } from "@/features/terminal/SessionWorkspace";
 import { WorkspaceInspector } from "@/features/review/WorkspaceInspector";
 import { FinishWorkspaceDialog } from "@/features/delivery/FinishWorkspaceDialog";
+import { ParentOperationDialog } from "@/features/workspace/ParentOperationDialog";
 import { CreateForkDialog } from "@/features/fork/CreateForkDialog";
 import { StatusDot } from "@/components/app/StatusDot";
 import { appKeys, settingsQuery, systemQuery } from "@/features/app/queries";
@@ -258,6 +261,12 @@ function Workspace() {
     useState<WorkspaceLocation | null>(null);
   const [finishWorkspaceDialog, setFinishWorkspaceDialog] =
     useState<WorkspaceDetail | null>(null);
+  const [finishParentOperation, setFinishParentOperation] =
+    useState<ParentOperation | null>(null);
+  const [parentOperationDialog, setParentOperationDialog] = useState<{
+    workspace: WorkspaceDetail;
+    direction: ParentOperationDirection;
+  } | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<
     | { kind: "project"; value: ProjectDetail | ProjectSummary }
@@ -479,6 +488,25 @@ function Workspace() {
       setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Workspace 加载失败");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openParentOperation(
+    stream: Workspace,
+    direction: ParentOperationDirection,
+  ) {
+    setBusy(true);
+    try {
+      const detail =
+        workspace?.id === stream.id
+          ? workspace
+          : normalizeWorkspace(await workspacesApi.detail(stream.id));
+      setParentOperationDialog({ workspace: detail, direction });
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Workspace failed to load");
     } finally {
       setBusy(false);
     }
@@ -1151,6 +1179,9 @@ function Workspace() {
             void gitSyncWorkspaceLocation(location.id, action)
           }
           onFinishWorkspace={(stream) => void openFinishWorkspace(stream)}
+          onParentOperation={(stream, direction) =>
+            void openParentOperation(stream, direction)
+          }
           onRenameProject={(project) =>
             setRenameTarget({ kind: "project", value: project })
           }
@@ -1524,15 +1555,21 @@ function Workspace() {
       <FinishWorkspaceDialog
         workspace={finishWorkspaceDialog}
         busy={busy}
+        operation={finishParentOperation}
+        onOperationChange={setFinishParentOperation}
         onOpenChange={(open) => {
-          if (!open) setFinishWorkspaceDialog(null);
+          if (!open) {
+            setFinishWorkspaceDialog(null);
+            setFinishParentOperation(null);
+          }
         }}
         onSubmit={async (locationId, payload) => {
           if (!finishWorkspaceDialog) return;
           const owner = finishWorkspaceDialog;
           let updated: WorkspaceDetail | null = null;
           const ok = await act(async () => {
-            await workspacesApi.finishLocation(locationId, payload);
+            const progress = await workspacesApi.finishLocation(locationId, payload);
+            setFinishParentOperation(progress.operation ?? null);
             updated = normalizeWorkspace(await workspacesApi.detail(owner.id));
             if (
               (updated as WorkspaceDetail).locations
@@ -1563,6 +1600,30 @@ function Workspace() {
                 : `/projects/${owner.project.id}`,
             );
           } else if (ok && updated) setFinishWorkspaceDialog(updated);
+        }}
+        onOpenSession={(operation, session) => {
+          setFinishWorkspaceDialog(null);
+          setFinishParentOperation(null);
+          navigate(
+            operation.target_scope === "project"
+              ? `/projects/${finishWorkspaceDialog?.project.id}/sessions/${session.id}`
+              : `/workspaces/${session.workspace_id}/sessions/${session.id}`,
+          );
+        }}
+      />
+      <ParentOperationDialog
+        workspace={parentOperationDialog?.workspace ?? null}
+        direction={parentOperationDialog?.direction ?? null}
+        onOpenChange={(open) => {
+          if (!open) setParentOperationDialog(null);
+        }}
+        onOpenSession={(operation, session) => {
+          setParentOperationDialog(null);
+          navigate(
+            operation.target_scope === "project"
+              ? `/projects/${parentOperationDialog?.workspace.project.id}/sessions/${session.id}`
+              : `/workspaces/${session.workspace_id}/sessions/${session.id}`,
+          );
         }}
       />
       <RenameDialog

@@ -13,6 +13,8 @@ import {
   FolderGit2,
   FolderOpen,
   GitBranch,
+  GitMerge,
+  GitPullRequestArrow,
   PanelsTopLeft,
   Pencil,
   Plus,
@@ -41,6 +43,7 @@ import type {
   Directory,
   ProjectDetail,
   ProjectRepository,
+  ParentOperationDirection,
   Session,
   SessionMenuState,
   Workspace,
@@ -79,6 +82,7 @@ export function WorkspaceSidebar({
   onSyncWorkspace,
   onSyncWorkspaceLocation,
   onFinishWorkspace,
+  onParentOperation,
   onRenameProject,
   onRenameWorkspace,
   onRenameSession,
@@ -125,6 +129,10 @@ export function WorkspaceSidebar({
     action: "pull" | "push",
   ) => void;
   onFinishWorkspace: (stream: Workspace) => void;
+  onParentOperation: (
+    stream: Workspace,
+    direction: ParentOperationDirection,
+  ) => void;
   onRenameProject: (project: ProjectDetail) => void;
   onRenameWorkspace: (stream: Workspace) => void;
   onRenameSession: (session: Session) => void;
@@ -201,6 +209,9 @@ export function WorkspaceSidebar({
       onFinish={() =>
         stream ? onFinishWorkspace(stream) : onArchiveProject(project)
       }
+      onParentOperation={(direction) => {
+        if (stream) onParentOperation(stream, direction);
+      }}
     >
       {trigger}
     </SidebarOwnerContextMenu>
@@ -494,6 +505,7 @@ function SidebarOwnerContextMenu({
   onSync,
   onRename,
   onFinish,
+  onParentOperation,
 }: {
   project: ProjectDetail;
   stream?: SidebarStream;
@@ -507,6 +519,7 @@ function SidebarOwnerContextMenu({
   onSync: (targetId: string | null, action: "pull" | "push") => void;
   onRename: () => void;
   onFinish: () => void;
+  onParentOperation: (direction: ParentOperationDirection) => void;
 }) {
   const { t } = useTranslation();
   const directories = stream?.directories ?? project.directories;
@@ -596,6 +609,29 @@ function SidebarOwnerContextMenu({
             </ContextMenuSub>
           ))}
         </ContextMenuGroup>
+        {stream?.status === "active" && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
+              <ContextMenuItem
+                data-testid="update-from-parent-action"
+                disabled={busy}
+                onClick={() => onParentOperation("update")}
+              >
+                <GitPullRequestArrow />
+                Update from Parent…
+              </ContextMenuItem>
+              <ContextMenuItem
+                data-testid="integrate-into-parent-action"
+                disabled={busy}
+                onClick={() => onParentOperation("integrate")}
+              >
+                <GitMerge />
+                Integrate into Parent…
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </>
+        )}
         {syncTargets && (
           <>
             <ContextMenuSeparator />
