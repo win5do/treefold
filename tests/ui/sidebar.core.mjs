@@ -427,16 +427,14 @@ try {
   );
   await browser.keys(Key.Escape);
   await browser.execute(() => {
-    document
-      .querySelector('[data-testid="sidebar-fork-node"]')
-      ?.dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          cancelable: true,
-          clientX: window.innerWidth - 2,
-          clientY: window.innerHeight - 2,
-        }),
-      );
+    document.querySelector('[data-testid="sidebar-fork-node"]')?.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: window.innerWidth - 2,
+        clientY: window.innerHeight - 2,
+      }),
+    );
   });
   nodeContextMenu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
@@ -1765,7 +1763,7 @@ try {
   assert.equal(
     await primaryRepositoryToggle.getAttribute("aria-expanded"),
     "true",
-    "primary repository worktrees must be expanded by default",
+    "primary repository children must be expanded by default",
   );
   assert.match(
     await primaryLocation.getText(),
@@ -1821,7 +1819,7 @@ try {
       .$(`[data-testid="project-directory-${FIXTURE_IDS.primaryDirectory}"]`)
       .isExisting(),
     true,
-    "repository rows must expose directory children before worktrees",
+    "repository rows must expose directory children",
   );
   assert.equal(
     await primaryDirectories
@@ -1831,12 +1829,28 @@ try {
     "multiple directories must remain grouped under their repository",
   );
   let primaryWorktrees = await primaryLocation.$(
-    `[data-testid="project-directory-worktrees-${FIXTURE_IDS.primaryDirectory}"]`,
+    `[data-testid="project-repository-worktrees-${FIXTURE_IDS.primaryRepository}"]`,
   );
   assert.equal(
     (await primaryWorktrees.$$('[data-testid="project-worktree-row"]')).length,
     4,
-    "primary worktrees must be grouped below the default directory",
+    "repository worktrees must render once as peers of its directories",
+  );
+  assert.equal(
+    await primaryDirectories
+      .$(
+        `[data-testid="project-directory-toggle-${FIXTURE_IDS.primaryDirectory}"]`,
+      )
+      .isExisting(),
+    false,
+    "directories must not own nested worktree toggles",
+  );
+  assert.equal(
+    await primaryWorktrees
+      .$('[data-testid="project-worktree-row"][data-project-directory-id]')
+      .isExisting(),
+    false,
+    "worktree rows must not be attributed to a directory",
   );
   assert.match(
     await primaryWorktrees.getText(),
@@ -1866,7 +1880,7 @@ try {
       )
       .isExisting(),
     false,
-    "collapsed repositories must hide their worktrees",
+    "collapsed repositories must hide their directories and worktrees",
   );
   const secondaryActionsTrigger = await secondaryLocation.$(
     `[data-testid="project-location-actions-${FIXTURE_IDS.secondaryRepository}-trigger"]`,
@@ -1953,7 +1967,7 @@ try {
   assert.equal(
     await primaryRepositoryToggle.getAttribute("aria-expanded"),
     "false",
-    "repository worktrees must collapse independently",
+    "repository children must collapse together",
   );
   await secondaryRepositoryToggle.click();
   const secondaryDirectory = await secondaryLocation.$(
@@ -1991,12 +2005,8 @@ try {
   );
   await browser.keys(Key.Escape);
   await editDirectoryDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
-  const secondaryDirectoryToggle = await secondaryDirectory.$(
-    `[data-testid="project-directory-toggle-${FIXTURE_IDS.secondaryDirectory}"]`,
-  );
-  await secondaryDirectoryToggle.click();
   const secondaryWorktrees = await secondaryLocation.$(
-    `[data-testid="project-directory-worktrees-${FIXTURE_IDS.secondaryDirectory}"]`,
+    `[data-testid="project-repository-worktrees-${FIXTURE_IDS.secondaryRepository}"]`,
   );
   await secondaryWorktrees.waitForDisplayed({ timeout: 3_000 });
   assert.equal(
@@ -2014,11 +2024,20 @@ try {
     2,
     "worktree rows must retain their repository identity",
   );
-  await secondaryDirectoryToggle.click();
+  assert.equal(
+    await secondaryDirectory
+      .$(
+        `[data-testid="project-directory-toggle-${FIXTURE_IDS.secondaryDirectory}"]`,
+      )
+      .isExisting(),
+    false,
+    "directory rows must remain leaves beside worktree rows",
+  );
+  await secondaryRepositoryToggle.click();
   await secondaryWorktrees.waitForExist({ reverse: true, timeout: 3_000 });
   await primaryRepositoryToggle.click();
   primaryWorktrees = await primaryLocation.$(
-    `[data-testid="project-directory-worktrees-${FIXTURE_IDS.primaryDirectory}"]`,
+    `[data-testid="project-repository-worktrees-${FIXTURE_IDS.primaryRepository}"]`,
   );
   await primaryWorktrees.waitForDisplayed({ timeout: 3_000 });
   const addLocationButton = await browser.$(
