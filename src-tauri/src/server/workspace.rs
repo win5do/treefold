@@ -601,21 +601,22 @@ struct DeleteWorktree {
 
 async fn delete_worktree(
     State(state): State<AppState>,
-    AxumPath(directory_id): AxumPath<String>,
+    AxumPath(repository_id): AxumPath<String>,
     ApiJson(input): ApiJson<DeleteWorktree>,
 ) -> Result<StatusCode> {
-    let project_id = state.store.directory(&directory_id)?.project_id;
-    let status = blocking_git_operation(move || delete_worktree_impl(state, directory_id, input)).await?;
+    let project_id = state.store.repository(&repository_id)?.project_id;
+    let status =
+        blocking_git_operation(move || delete_worktree_impl(state, repository_id, input)).await?;
     project_worktrees_cache().invalidate(&project_id).await;
     Ok(status)
 }
 
 fn delete_worktree_impl(
     state: AppState,
-    directory_id: String,
+    repository_id: String,
     input: DeleteWorktree,
 ) -> Result<StatusCode> {
-    let directory = state.store.directory(&directory_id)?;
+    let directory = state.store.repository_as_directory(&repository_id)?;
     ensure_active_project(&state.store.project(&directory.project_id)?)?;
     if !directory.is_git {
         return Err(AppError::BadRequest(

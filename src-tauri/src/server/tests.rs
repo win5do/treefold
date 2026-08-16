@@ -13,9 +13,9 @@ mod current_workspace_tests {
     use super::{
         app, close_session, command_output, create_delivery_preflight_impl, create_directory,
         create_fork, create_project, create_project_session, create_session, create_workspace,
-        delete_project_location, finish_workspace_impl, get_project, pull_workspace,
-        push_workspace, reconcile_process, refresh_project_location, stop_session, update_project,
-        update_workspace_location,
+        delete_project_location, finish_workspace_impl, get_project, git_worktrees, normalized_path,
+        pull_workspace, push_workspace, reconcile_process, refresh_project_location, stop_session,
+        update_project, update_workspace_location,
         ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject,
         CreateSession, CreateWorkspace, FinishWorkspace, UpdateProject, UpdateWorkspaceLocation,
     };
@@ -72,6 +72,79 @@ mod current_workspace_tests {
             .await
             .expect("read response");
         assert_eq!(serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(), serde_json::json!([]));
+    }
+
+    #[tokio::test]
+    async fn delete_worktree_cleans_up_a_stale_repository_registration() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-delete-stale-worktree-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        let stale_worktree = root.join("stale-worktree");
+        let stale_worktree_path = stale_worktree.to_string_lossy().into_owned();
+        initialize_repository(&repository);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Stale worktree".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_base_branch: Some("main".into()),
+                default_target_branch: None,
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create Project");
+        let repository_id = state
+            .store
+            .repositories(&project.id)
+            .expect("list Project repositories")
+            .into_iter()
+            .next()
+            .expect("Project repository")
+            .id;
+        command_output(
+            &repository,
+            "git",
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "stale-worktree",
+                &stale_worktree_path,
+            ],
+        )
+        .expect("create stale worktree");
+        std::fs::remove_dir_all(&stale_worktree).expect("remove worktree outside Treefold");
+
+        let response = app(state.clone())
+            .oneshot(
+                Request::delete(format!(
+                    "/api/project-repositories/{repository_id}/worktrees"
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "path": stale_worktree_path }).to_string(),
+                ))
+                .expect("build delete worktree request"),
+            )
+            .await
+            .expect("delete stale worktree registration");
+
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert!(!git_worktrees(&repository.to_string_lossy())
+            .expect("list remaining worktrees")
+            .iter()
+            .any(|worktree| normalized_path(&worktree.path) == normalized_path(&stale_worktree_path)));
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove stale worktree fixture");
     }
 
     #[tokio::test]
