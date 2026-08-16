@@ -2551,7 +2551,7 @@ function ProjectRepositoryTreeRow({
             data-testid={`project-location-toggle-${repository.id}`}
             className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-expanded={expanded}
-            aria-controls={`project-repository-directories-${repository.id}`}
+            aria-controls={`project-repository-children-${repository.id}`}
             aria-label={`${expanded ? "Collapse" : "Expand"} repository ${repository.name}`}
             onClick={() => setExpanded((value) => !value)}
           >
@@ -2581,7 +2581,8 @@ function ProjectRepositoryTreeRow({
                 </Badge>
                 {repository.setup_command && <Badge>Setup</Badge>}
                 <span className="text-[10px] text-muted-foreground">
-                  {directories.length} {directories.length === 1 ? "dir" : "dirs"}
+                  {directories.length}{" "}
+                  {directories.length === 1 ? "dir" : "dirs"}
                 </span>
               </div>
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
@@ -2656,27 +2657,117 @@ function ProjectRepositoryTreeRow({
         </div>
         {expanded && (
           <CollapsibleContent
-            id={`project-repository-directories-${repository.id}`}
-            data-testid={`project-repository-directories-${repository.id}`}
+            id={`project-repository-children-${repository.id}`}
+            data-testid={`project-repository-children-${repository.id}`}
             role="group"
-            aria-label={`Directories for ${repository.name}`}
+            aria-label={`Directories and worktrees for ${repository.name}`}
             className="border-t border-border/60 bg-muted/60 px-4 py-2"
           >
             <div className="ml-5 border-l border-border">
-              {directories.map((directory) => (
-                <ProjectDirectoryTreeRow
-                  key={directory.id}
-                  directory={directory}
-                  repository={repository}
-                  worktrees={orderedWorktrees}
-                  busy={busy}
-                  readOnly={readOnly}
-                  onOpen={onOpen}
-                  onEdit={() => onEditDirectory(directory)}
-                  onMakeDefault={() => onMakeDefault(directory)}
-                  onDeleteWorktree={onDeleteWorktree}
-                />
-              ))}
+              <div
+                data-testid={`project-repository-directories-${repository.id}`}
+                role="group"
+                aria-label={`Directories for ${repository.name}`}
+              >
+                {directories.map((directory) => (
+                  <ProjectDirectoryTreeRow
+                    key={directory.id}
+                    directory={directory}
+                    busy={busy}
+                    readOnly={readOnly}
+                    onEdit={() => onEditDirectory(directory)}
+                    onMakeDefault={() => onMakeDefault(directory)}
+                  />
+                ))}
+              </div>
+              <div
+                data-testid={`project-repository-worktrees-${repository.id}`}
+                role="group"
+                aria-label={`Worktrees for ${repository.name}`}
+                className="divide-y divide-border border-t border-border"
+              >
+                {orderedWorktrees.map((item) => (
+                  <div
+                    key={item.path}
+                    data-testid="project-worktree-row"
+                    data-project-location-id={repository.id}
+                    className="flex min-w-0 items-center gap-3 py-3 pl-5"
+                  >
+                    <GitBranch className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-semibold">
+                          {item.branch || "detached"}
+                        </span>
+                        {item.is_main && <Badge>Main checkout</Badge>}
+                      </div>
+                      <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+                        {item.head_commit && (
+                          <>
+                            <span className="font-mono">
+                              {item.head_commit.slice(0, 10)}
+                            </span>
+                            <span>·</span>
+                          </>
+                        )}
+                        <code className="min-w-0 truncate" title={item.path}>
+                          {item.path}
+                        </code>
+                      </div>
+                    </div>
+                    {item.workspace_id && (
+                      <Badge
+                        variant="outline"
+                        className="max-w-48"
+                        render={
+                          <button
+                            type="button"
+                            aria-label={`Open Workspace ${item.workspace_name || item.workspace_id}`}
+                            title={`Open Workspace “${item.workspace_name || item.workspace_id}”`}
+                            onClick={() => onOpen(item.workspace_id!)}
+                          />
+                        }
+                      >
+                        <Workflow data-icon="inline-start" />
+                        <span className="truncate">
+                          {item.workspace_name || "Workspace"}
+                        </span>
+                      </Badge>
+                    )}
+                    {!readOnly && !item.is_main && (
+                      <Button
+                        size="icon"
+                        variant={
+                          item.workspace_id ? "muted" : "destructive-ghost"
+                        }
+                        disabled={busy}
+                        aria-disabled={Boolean(item.workspace_id)}
+                        data-worktree-delete-state={
+                          item.workspace_id ? "blocked" : "available"
+                        }
+                        aria-label={
+                          item.workspace_id
+                            ? `Cannot delete worktree ${item.path}: active Workspace ${item.workspace_name || item.workspace_id}`
+                            : `Delete worktree ${item.path}`
+                        }
+                        title={
+                          item.workspace_id
+                            ? `Finish Workspace “${item.workspace_name || item.workspace_id}” before deleting this worktree`
+                            : `Delete worktree ${item.path}`
+                        }
+                        onClick={() => onDeleteWorktree(item)}
+                      >
+                        <Trash2 data-icon="inline-start" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {orderedWorktrees.length === 0 && (
+                  <div className="py-4 pl-5 text-xs text-muted-foreground">
+                    No worktrees found for this repository.
+                  </div>
+                )}
+              </div>
             </div>
           </CollapsibleContent>
         )}
@@ -2687,191 +2778,65 @@ function ProjectRepositoryTreeRow({
 
 function ProjectDirectoryTreeRow({
   directory,
-  repository,
-  worktrees,
   busy,
   readOnly,
-  onOpen,
   onEdit,
   onMakeDefault,
-  onDeleteWorktree,
 }: {
   directory: Directory;
-  repository: ProjectRepository;
-  worktrees: GitWorktree[];
   busy: boolean;
   readOnly: boolean;
-  onOpen: (id: string) => void;
   onEdit: () => void;
   onMakeDefault: () => void;
-  onDeleteWorktree: (worktree: GitWorktree) => void;
 }) {
-  const [expanded, setExpanded] = useState(directory.role === "primary");
-  const scopedPath = (root: string) =>
-    directory.relative_path && directory.relative_path !== "."
-      ? `${root}/${directory.relative_path}`
-      : root;
-
   return (
-    <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <div
-        data-testid={`project-directory-${directory.id}`}
-        className="flex min-w-0 items-center gap-3 py-2 pl-5"
-      >
-        <button
-          type="button"
-          data-testid={`project-directory-toggle-${directory.id}`}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-expanded={expanded}
-          aria-controls={`project-directory-worktrees-${directory.id}`}
-          aria-label={`${expanded ? "Collapse" : "Expand"} directory ${directory.name}`}
-          onClick={() => setExpanded((value) => !value)}
+    <div
+      data-testid={`project-directory-${directory.id}`}
+      className="flex min-w-0 items-center gap-3 py-2 pl-5"
+    >
+      <Folder className="size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{directory.name}</span>
+          {directory.role === "primary" && <Badge>Default</Badge>}
+        </div>
+        <code
+          className="mt-1 block truncate text-[10px] text-muted-foreground"
+          title={directory.path}
         >
-          {expanded ? (
-            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-          )}
-          <Folder className="size-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-medium">
-                {directory.name}
-              </span>
-              {directory.role === "primary" && <Badge>Default</Badge>}
-            </div>
-            <code
-              className="mt-1 block truncate text-[10px] text-muted-foreground"
-              title={directory.path}
-            >
-              {directory.relative_path ?? "."}
-            </code>
-            {directory.description && (
-              <p className="mt-1 truncate text-xs text-muted-foreground">
-                {directory.description}
-              </p>
-            )}
-          </div>
-        </button>
-        {!readOnly && (
-          <ActionMenu
-            label={`Actions for directory ${directory.name}`}
-            testId={`project-directory-actions-${directory.id}`}
-            disabled={busy}
-          >
-            {directory.role !== "primary" && (
-              <ActionMenuItem
-                icon={<Folder className="size-3.5" />}
-                testId={`project-directory-make-default-${directory.id}`}
-                onClick={onMakeDefault}
-              >
-                Make default
-              </ActionMenuItem>
-            )}
-            <ActionMenuItem
-              icon={<Pencil className="size-3.5" />}
-              testId={`project-directory-edit-${directory.id}`}
-              onClick={onEdit}
-            >
-              Edit directory
-            </ActionMenuItem>
-          </ActionMenu>
+          {directory.relative_path ?? "."}
+        </code>
+        {directory.description && (
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {directory.description}
+          </p>
         )}
       </div>
-      {expanded && (
-        <CollapsibleContent
-          id={`project-directory-worktrees-${directory.id}`}
-          data-testid={`project-directory-worktrees-${directory.id}`}
-          role="group"
-          aria-label={`Worktrees for ${directory.name}`}
-          className="ml-8 divide-y divide-border border-l border-border"
+      {!readOnly && (
+        <ActionMenu
+          label={`Actions for directory ${directory.name}`}
+          testId={`project-directory-actions-${directory.id}`}
+          disabled={busy}
         >
-          {worktrees.map((item) => (
-            <div
-              key={`${directory.id}:${item.path}`}
-              data-testid="project-worktree-row"
-              data-project-location-id={repository.id}
-              data-project-directory-id={directory.id}
-              className="flex min-w-0 items-center gap-3 py-3 pl-5"
+          {directory.role !== "primary" && (
+            <ActionMenuItem
+              icon={<Folder className="size-3.5" />}
+              testId={`project-directory-make-default-${directory.id}`}
+              onClick={onMakeDefault}
             >
-              <GitBranch className="size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold">
-                    {item.branch || "detached"}
-                  </span>
-                  {item.is_main && <Badge>Main checkout</Badge>}
-                </div>
-                <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
-                  {item.head_commit && (
-                    <>
-                      <span className="font-mono">
-                        {item.head_commit.slice(0, 10)}
-                      </span>
-                      <span>·</span>
-                    </>
-                  )}
-                  <code
-                    className="min-w-0 truncate"
-                    title={scopedPath(item.path)}
-                  >
-                    {scopedPath(item.path)}
-                  </code>
-                </div>
-              </div>
-              {item.workspace_id && (
-                <Badge
-                  variant="outline"
-                  className="max-w-48"
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`Open Workspace ${item.workspace_name || item.workspace_id}`}
-                      title={`Open Workspace “${item.workspace_name || item.workspace_id}”`}
-                      onClick={() => onOpen(item.workspace_id!)}
-                    />
-                  }
-                >
-                  <Workflow data-icon="inline-start" />
-                  <span className="truncate">
-                    {item.workspace_name || "Workspace"}
-                  </span>
-                </Badge>
-              )}
-              {!readOnly && !item.is_main && (
-                <Button
-                  size="icon"
-                  variant={item.workspace_id ? "muted" : "destructive-ghost"}
-                  disabled={busy}
-                  aria-disabled={Boolean(item.workspace_id)}
-                  data-worktree-delete-state={
-                    item.workspace_id ? "blocked" : "available"
-                  }
-                  aria-label={
-                    item.workspace_id
-                      ? `Cannot delete worktree ${item.path}: active Workspace ${item.workspace_name || item.workspace_id}`
-                      : `Delete worktree ${item.path}`
-                  }
-                  title={
-                    item.workspace_id
-                      ? `Finish Workspace “${item.workspace_name || item.workspace_id}” before deleting this worktree`
-                      : `Delete worktree ${item.path}`
-                  }
-                  onClick={() => onDeleteWorktree(item)}
-                >
-                  <Trash2 data-icon="inline-start" />
-                </Button>
-              )}
-            </div>
-          ))}
-          {worktrees.length === 0 && (
-            <div className="py-4 pl-5 text-xs text-muted-foreground">
-              No worktrees found for this directory.
-            </div>
+              Make default
+            </ActionMenuItem>
           )}
-        </CollapsibleContent>
+          <ActionMenuItem
+            icon={<Pencil className="size-3.5" />}
+            testId={`project-directory-edit-${directory.id}`}
+            onClick={onEdit}
+          >
+            Edit directory
+          </ActionMenuItem>
+        </ActionMenu>
       )}
-    </Collapsible>
+    </div>
   );
 }
 
@@ -2937,8 +2902,7 @@ function ProjectHome({
             <div>
               <h2 className="text-sm font-semibold">Repositories</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Repositories contain directories; each directory expands to
-                its corresponding worktrees.
+                Each repository contains peer directory and worktree rows.
               </p>
             </div>
             {project.status === "active" && (
@@ -2973,9 +2937,7 @@ function ProjectHome({
                   onOpen={onOpen}
                   onEditRepository={() => onEditRepository(repository)}
                   onEditDirectory={onEditDirectory}
-                  onRefresh={() =>
-                    scopes[0] && onRefreshLocation(scopes[0])
-                  }
+                  onRefresh={() => scopes[0] && onRefreshLocation(scopes[0])}
                   onMakeDefault={onMakeDefault}
                   onReattach={() => scopes[0] && onReattach(scopes[0])}
                   onDeleteWorktree={onDeleteWorktree}
@@ -4165,10 +4127,7 @@ function EditDirectoryDialog({
         </DialogDescription>
         {directory && (
           <form
-            key={JSON.stringify([
-              directory.id,
-              directory.description,
-            ])}
+            key={JSON.stringify([directory.id, directory.description])}
             className="mt-6 flex flex-col gap-3"
             onSubmit={onSubmit}
           >
