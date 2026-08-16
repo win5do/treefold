@@ -39,6 +39,7 @@ async function startFixtureApi() {
   const sessionOrderRequests = [];
   const deleteRequests = [];
   const amuxStopRequests = [];
+  const compareRequests = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -452,6 +453,25 @@ async function startFixtureApi() {
       return;
     }
 
+    const projectCompareMatch = pathname.match(
+      /^\/api\/project-repositories\/([^/]+)\/compare$/,
+    );
+    if (request.method === "POST" && projectCompareMatch) {
+      const input = await readJson(request);
+      const comparison = fixture.gitComparisons[projectCompareMatch[1]];
+      compareRequests.push({ repositoryId: projectCompareMatch[1], ...input });
+      if (!comparison) {
+        sendJson(response, 404, { error: { code: "NOT_FOUND", message: "Comparison fixture not found" } });
+        return;
+      }
+      sendJson(response, 200, {
+        ...comparison,
+        resolved_head: input.end_commit,
+        commit_count: input.commit_count,
+      });
+      return;
+    }
+
     const projectSessionsMatch = pathname.match(
       /^\/api\/projects\/([^/]+)\/sessions$/,
     );
@@ -849,6 +869,25 @@ async function startFixtureApi() {
       return;
     }
 
+    const workspaceCompareMatch = pathname.match(
+      /^\/api\/workspace-repositories\/([^/]+)\/compare$/,
+    );
+    if (request.method === "POST" && workspaceCompareMatch) {
+      const input = await readJson(request);
+      const comparison = fixture.gitComparisons[workspaceCompareMatch[1]];
+      compareRequests.push({ repositoryId: workspaceCompareMatch[1], ...input });
+      if (!comparison) {
+        sendJson(response, 404, { error: { code: "NOT_FOUND", message: "Comparison fixture not found" } });
+        return;
+      }
+      sendJson(response, 200, {
+        ...comparison,
+        resolved_head: input.end_commit,
+        commit_count: input.commit_count,
+      });
+      return;
+    }
+
     const sessionActionMatch = pathname.match(
       /^\/api\/sessions\/([^/]+)\/(close|open|stop|restart)$/,
     );
@@ -976,6 +1015,7 @@ async function startFixtureApi() {
     sessionOrderRequests,
     deleteRequests,
     amuxStopRequests,
+    compareRequests,
     archiveAllStreams() {
       for (const detail of Object.values(fixture.projectDetails))
         detail.workspaces.forEach((item) => {
@@ -1047,6 +1087,7 @@ export async function startUiHarness() {
       sessionOrderRequests: [],
       deleteRequests: [],
       amuxStopRequests: [],
+      compareRequests: [],
       archiveAllStreams() {},
       restoreActiveStreams() {},
       setProjectStatus() {},
@@ -1098,6 +1139,7 @@ export async function startUiHarness() {
     sessionOrderRequests: fixtureApi.sessionOrderRequests,
     deleteRequests: fixtureApi.deleteRequests,
     amuxStopRequests: fixtureApi.amuxStopRequests,
+    compareRequests: fixtureApi.compareRequests,
     archiveAllStreams: fixtureApi.archiveAllStreams,
     restoreActiveStreams: fixtureApi.restoreActiveStreams,
     setProjectStatus: fixtureApi.setProjectStatus,

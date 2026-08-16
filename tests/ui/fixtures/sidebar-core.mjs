@@ -49,6 +49,13 @@ export const FIXTURE_COMMITS = Object.freeze([
     author: "win5do",
     authored_at: "2026-08-07T10:42:00+08:00",
   },
+  {
+    hash: "9a4beef1234567890abcdef1234567890abcdef1",
+    short_hash: "9a4beef",
+    subject: "Add the first workspace implementation",
+    author: "win5do",
+    authored_at: "2026-08-07T09:15:00+08:00",
+  },
 ]);
 
 const timestamp = "2026-08-10T08:00:00.000Z";
@@ -855,6 +862,29 @@ export function createSidebarCoreFixture() {
       [FIXTURE_IDS.forkSecondaryLocation]: {
         branch: fork.branch,
         commits: FIXTURE_COMMITS,
+      },
+    },
+    gitComparisons: {
+      [FIXTURE_IDS.primaryRepository]: {
+        repository: "fixture-repository",
+        resolved_base: "1111111111111111111111111111111111111111",
+        patch: `diff --git a/src/alpha.ts b/src/alpha.ts
+index 1111111..2222222 100644
+--- a/src/alpha.ts
++++ b/src/alpha.ts
+@@ -1 +1 @@
+-const value = 1;
++const value = 2;
+diff --git a/assets/logo.png b/assets/logo.png
+new file mode 100644
+index 0000000..3333333
+Binary files /dev/null and b/assets/logo.png differ
+`,
+      },
+      [FIXTURE_IDS.secondaryRepository]: {
+        repository: "secondary-api-repository",
+        resolved_base: "2222222222222222222222222222222222222222",
+        patch: "",
       },
     },
     deliveryPreflights: {

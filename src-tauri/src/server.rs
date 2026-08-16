@@ -182,6 +182,10 @@ fn app(state: AppState) -> Router {
             get(get_project_location_git_history),
         )
         .route(
+            "/api/project-repositories/{id}/compare",
+            post(compare_project_location_commits),
+        )
+        .route(
             "/api/project-repositories/{id}/git/pull",
             post(pull_project_location),
         )
@@ -220,6 +224,10 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/workspace-repositories/{id}/git-history",
             get(get_workspace_location_git_history),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/compare",
+            post(compare_workspace_location_commits),
         )
         .route(
             "/api/workspace-repositories/{id}",

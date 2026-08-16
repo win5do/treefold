@@ -2,6 +2,7 @@ import { request } from "./client";
 import type {
   DeliveryPreflight,
   GitHistory,
+  GitDiffComparison,
   Session,
   Workspace,
   WorkspaceDetail,
@@ -58,4 +59,13 @@ export const workspacesApi = {
     request<GitHistory>(`/api/workspace-repositories/${id}/git-history`, {
       signal,
     }),
+  compareLocation: (
+    id: string,
+    input: { start_commit: string; end_commit: string; commit_count: number },
+    signal?: AbortSignal,
+  ) => request<GitDiffComparison>(`/api/workspace-repositories/${id}/compare`, {
+    method: "POST",
+    json: input,
+    signal,
+  }),
 };
