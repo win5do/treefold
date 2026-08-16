@@ -75,7 +75,7 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
-    async fn delete_worktree_cleans_up_a_stale_repository_registration() {
+    async fn delete_worktree_preserves_dirty_checkout_and_cleans_stale_registration() {
         let root = std::env::temp_dir().join(format!(
             "treefold-delete-stale-worktree-test-{}",
             uuid::Uuid::new_v4().simple()
@@ -121,6 +121,32 @@ mod current_workspace_tests {
             ],
         )
         .expect("create stale worktree");
+        std::fs::write(stale_worktree.join("uncommitted.txt"), "keep me\n")
+            .expect("create uncommitted worktree file");
+
+        let dirty_response = app(state.clone())
+            .oneshot(
+                Request::delete(format!(
+                    "/api/project-repositories/{repository_id}/worktrees"
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "path": stale_worktree_path }).to_string(),
+                ))
+                .expect("build dirty worktree request"),
+            )
+            .await
+            .expect("reject dirty worktree deletion");
+        assert_eq!(dirty_response.status(), StatusCode::BAD_REQUEST);
+        let dirty_body = axum::body::to_bytes(dirty_response.into_body(), usize::MAX)
+            .await
+            .expect("read dirty worktree response");
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&dirty_body).unwrap()["error"]["message"],
+            "worktree has uncommitted changes; commit, stash, or discard them before deleting it"
+        );
+        assert!(stale_worktree.join("uncommitted.txt").is_file());
+
         std::fs::remove_dir_all(&stale_worktree).expect("remove worktree outside Treefold");
 
         let response = app(state.clone())

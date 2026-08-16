@@ -406,7 +406,11 @@ fn finish_workspace_location_impl(
         let project_location = state
             .store
             .repository_as_directory(&location.project_location_id)?;
-        remove_worktree_if_present(&project_location.path, &source_path)?;
+        remove_worktree_if_present(
+            &project_location.path,
+            &source_path,
+            input.code_action == "discard",
+        )?;
         if input.delete_branch || input.code_action == "discard" {
             let target = location.base_branch.as_deref().unwrap_or("HEAD");
             delete_delivered_branch_if_present(
@@ -1513,8 +1517,11 @@ async fn finish_workspace_steps(
         if input.delete_worktree && source_is_managed {
             let repository = directory.path.clone();
             let checkout_path = workspace.checkout_path.clone();
-            blocking_git_operation(move || remove_worktree_if_present(&repository, &checkout_path))
-                .await?;
+            let discard_changes = input.code_action == "discard";
+            blocking_git_operation(move || {
+                remove_worktree_if_present(&repository, &checkout_path, discard_changes)
+            })
+            .await?;
         }
         if input.delete_branch && !workspace.branch.is_empty() {
             let merged_target = if input.code_action == "remote_merged" {
@@ -1670,16 +1677,25 @@ fn git_head(path: &str) -> Result<String> {
     command_output(Path::new(path), "git", &["rev-parse", "HEAD"]).map_err(AppError::BadRequest)
 }
 
-fn remove_worktree_if_present(repository: &str, checkout_path: &str) -> Result<()> {
+fn remove_worktree_if_present(
+    repository: &str,
+    checkout_path: &str,
+    discard_changes: bool,
+) -> Result<()> {
     let expected = normalized_path(checkout_path);
     let registered = git_worktrees(repository)?
         .iter()
         .any(|worktree| normalized_path(&worktree.path) == expected);
     if registered {
+        let mut args = vec!["worktree", "remove"];
+        if discard_changes {
+            args.push("--force");
+        }
+        args.push(checkout_path);
         command_output(
             Path::new(repository),
             "git",
-            &["worktree", "remove", "--force", checkout_path],
+            &args,
         )
         .map_err(|error| {
             AppError::BadRequest(format!(

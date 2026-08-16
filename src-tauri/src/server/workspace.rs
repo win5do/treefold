@@ -661,10 +661,25 @@ fn delete_worktree_impl(
         )));
     }
 
+    if Path::new(&input.path).exists() {
+        let status = command_output(
+            Path::new(&input.path),
+            "git",
+            &["status", "--porcelain"],
+        )
+        .map_err(AppError::BadRequest)?;
+        if !status.is_empty() {
+            return Err(AppError::BadRequest(
+                "worktree has uncommitted changes; commit, stash, or discard them before deleting it"
+                    .into(),
+            ));
+        }
+    }
+
     command_output(
         Path::new(&directory.path),
         "git",
-        &["worktree", "remove", "--force", &input.path],
+        &["worktree", "remove", &input.path],
     )
     .map_err(AppError::BadRequest)?;
 
