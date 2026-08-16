@@ -54,7 +54,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -2663,11 +2667,13 @@ function ProjectRepositoryTreeRow({
             aria-label={`Directories and worktrees for ${repository.name}`}
             className="border-t border-border/60 bg-muted/60 px-4 py-2"
           >
-            <div className="ml-5 border-l border-border">
-              <div
-                data-testid={`project-repository-directories-${repository.id}`}
-                role="group"
-                aria-label={`Directories for ${repository.name}`}
+            <div className="ml-5 divide-y divide-border border-l border-border">
+              <ProjectRepositoryChildGroup
+                id={`project-repository-directories-${repository.id}`}
+                label="Directories"
+                subject={repository.name}
+                count={directories.length}
+                icon={Folders}
               >
                 {directories.map((directory) => (
                   <ProjectDirectoryTreeRow
@@ -2679,12 +2685,13 @@ function ProjectRepositoryTreeRow({
                     onMakeDefault={() => onMakeDefault(directory)}
                   />
                 ))}
-              </div>
-              <div
-                data-testid={`project-repository-worktrees-${repository.id}`}
-                role="group"
-                aria-label={`Worktrees for ${repository.name}`}
-                className="divide-y divide-border border-t border-border"
+              </ProjectRepositoryChildGroup>
+              <ProjectRepositoryChildGroup
+                id={`project-repository-worktrees-${repository.id}`}
+                label="Worktrees"
+                subject={repository.name}
+                count={orderedWorktrees.length}
+                icon={GitBranch}
               >
                 {orderedWorktrees.map((item) => (
                   <div
@@ -2767,12 +2774,62 @@ function ProjectRepositoryTreeRow({
                     No worktrees found for this repository.
                   </div>
                 )}
-              </div>
+              </ProjectRepositoryChildGroup>
             </div>
           </CollapsibleContent>
         )}
       </Collapsible>
     </article>
+  );
+}
+
+function ProjectRepositoryChildGroup({
+  id,
+  label,
+  subject,
+  count,
+  icon: Icon,
+  children,
+}: {
+  id: string;
+  label: string;
+  subject: string;
+  count: number;
+  icon: React.ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(true);
+
+  return (
+    <Collapsible open={expanded} onOpenChange={setExpanded}>
+      <CollapsibleTrigger
+        data-testid={`${id}-toggle`}
+        className="flex w-full min-w-0 items-center gap-3 py-2 pl-5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`${expanded ? "Collapse" : "Expand"} ${label.toLowerCase()} for ${subject}`}
+      >
+        {expanded ? (
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        )}
+        <Icon className="size-4 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+          {label}
+        </span>
+        <Badge variant="secondary" className="mr-3">
+          {count}
+        </Badge>
+      </CollapsibleTrigger>
+      <CollapsibleContent
+        id={id}
+        data-testid={id}
+        role="group"
+        aria-label={`${label} for ${subject}`}
+        className="ml-8 divide-y divide-border border-l border-border"
+      >
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -2902,7 +2959,7 @@ function ProjectHome({
             <div>
               <h2 className="text-sm font-semibold">Repositories</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Each repository contains peer directory and worktree rows.
+                Each repository contains peer Directories and Worktrees groups.
               </p>
             </div>
             {project.status === "active" && (

@@ -1811,7 +1811,7 @@ try {
   await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
   await (await browser.$("h2=Repositories")).click();
   await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
-  const primaryDirectories = await primaryLocation.$(
+  let primaryDirectories = await primaryLocation.$(
     `[data-testid="project-repository-directories-${FIXTURE_IDS.primaryRepository}"]`,
   );
   assert.equal(
@@ -1852,6 +1852,46 @@ try {
     false,
     "worktree rows must not be attributed to a directory",
   );
+  const primaryDirectoriesToggle = await primaryLocation.$(
+    `[data-testid="project-repository-directories-${FIXTURE_IDS.primaryRepository}-toggle"]`,
+  );
+  const primaryWorktreesToggle = await primaryLocation.$(
+    `[data-testid="project-repository-worktrees-${FIXTURE_IDS.primaryRepository}-toggle"]`,
+  );
+  assert.equal(
+    await primaryDirectoriesToggle.getAttribute("aria-expanded"),
+    "true",
+    "Directories must be an expanded second-level group by default",
+  );
+  assert.equal(
+    await primaryWorktreesToggle.getAttribute("aria-expanded"),
+    "true",
+    "Worktrees must be an expanded second-level group by default",
+  );
+  await primaryDirectoriesToggle.click();
+  await primaryDirectories.waitForExist({ reverse: true, timeout: 3_000 });
+  assert.equal(
+    await primaryWorktrees.isDisplayed(),
+    true,
+    "Directories must collapse independently from its peer Worktrees group",
+  );
+  await primaryDirectoriesToggle.click();
+  primaryDirectories = await primaryLocation.$(
+    `[data-testid="project-repository-directories-${FIXTURE_IDS.primaryRepository}"]`,
+  );
+  await primaryDirectories.waitForDisplayed({ timeout: 3_000 });
+  await primaryWorktreesToggle.click();
+  await primaryWorktrees.waitForExist({ reverse: true, timeout: 3_000 });
+  assert.equal(
+    await primaryDirectories.isDisplayed(),
+    true,
+    "Worktrees must collapse independently from its peer Directories group",
+  );
+  await primaryWorktreesToggle.click();
+  primaryWorktrees = await primaryLocation.$(
+    `[data-testid="project-repository-worktrees-${FIXTURE_IDS.primaryRepository}"]`,
+  );
+  await primaryWorktrees.waitForDisplayed({ timeout: 3_000 });
   assert.match(
     await primaryWorktrees.getText(),
     /Main checkout[\s\S]*Workspace with an intentionally long name/,
