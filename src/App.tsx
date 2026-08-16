@@ -89,6 +89,7 @@ import type {
   LocationDraft,
   Project,
   ProjectDetail,
+  ProjectRepository,
   ProjectSummary,
   RenameTarget,
   Session,
@@ -243,6 +244,8 @@ function Workspace() {
   const [addDirectoryProject, setAddDirectoryProject] =
     useState<ProjectDetail | null>(null);
   const [editDirectory, setEditDirectory] = useState<Directory | null>(null);
+  const [editRepository, setEditRepository] =
+    useState<ProjectRepository | null>(null);
   const [createWorkspaceProject, setCreateWorkspaceProject] =
     useState<ProjectDetail | null>(null);
   const [createForkWorkspace, setCreateForkWorkspace] =
@@ -1297,6 +1300,7 @@ function Workspace() {
                   }
                   onAddDirectory={() => setAddDirectoryProject(selectedProject)}
                   onEditDirectory={setEditDirectory}
+                  onEditRepository={setEditRepository}
                   onRefreshLocation={(location) =>
                     void refreshLocation(location)
                   }
@@ -1415,12 +1419,30 @@ function Workspace() {
           const ok = await act(() =>
             projectsApi.updateLocation(editDirectory.id, {
               description: form.get("description"),
-              worktree_setup_command: form.get("worktree_setup_command"),
+            }),
+          );
+          if (ok) setEditDirectory(null);
+        }}
+      />
+      <EditRepositoryDialog
+        repository={editRepository}
+        busy={busy}
+        onOpenChange={(open) => {
+          if (!open) setEditRepository(null);
+        }}
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!editRepository) return;
+          const form = new FormData(event.currentTarget);
+          const ok = await act(() =>
+            projectsApi.updateRepository(editRepository.id, {
+              setup_command: form.get("setup_command"),
+              setup_workdir: form.get("setup_workdir"),
               base_branch: form.get("base_branch"),
               delivery_mode: form.get("delivery_mode"),
             }),
           );
-          if (ok) setEditDirectory(null);
+          if (ok) setEditRepository(null);
         }}
       />
       <CreateWorkspaceDialog
@@ -2475,6 +2497,384 @@ function ProjectLocationTreeRow({
   );
 }
 
+function ProjectRepositoryTreeRow({
+  repository,
+  directories,
+  worktrees,
+  busy,
+  readOnly,
+  onOpen,
+  onEditRepository,
+  onEditDirectory,
+  onRefresh,
+  onMakeDefault,
+  onReattach,
+  onDeleteWorktree,
+}: {
+  repository: ProjectRepository;
+  directories: Directory[];
+  worktrees: GitWorktree[];
+  busy: boolean;
+  readOnly: boolean;
+  onOpen: (id: string) => void;
+  onEditRepository: () => void;
+  onEditDirectory: (directory: Directory) => void;
+  onRefresh: () => void;
+  onMakeDefault: (directory: Directory) => void;
+  onReattach: () => void;
+  onDeleteWorktree: (worktree: GitWorktree) => void;
+}) {
+  const [expanded, setExpanded] = useState(
+    directories.some((directory) => directory.role === "primary") ||
+      repository.git_status !== "ready",
+  );
+  const orderedWorktrees = useMemo(
+    () =>
+      [...worktrees].sort(
+        (left, right) => Number(right.is_main) - Number(left.is_main),
+      ),
+    [worktrees],
+  );
+  const observedDirectory = directories[0];
+  const currentBranch =
+    observedDirectory?.branch ||
+    (observedDirectory?.head_commit
+      ? `detached @ ${observedDirectory.head_commit.slice(0, 7)}`
+      : "detached");
+
+  return (
+    <article data-testid={`project-location-${repository.id}`}>
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
+        <div className="flex items-start gap-3 p-4">
+          <button
+            type="button"
+            data-testid={`project-location-toggle-${repository.id}`}
+            className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            aria-expanded={expanded}
+            aria-controls={`project-repository-directories-${repository.id}`}
+            aria-label={`${expanded ? "Collapse" : "Expand"} repository ${repository.name}`}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground">
+              {expanded ? (
+                <ChevronDown className="size-4" />
+              ) : (
+                <ChevronRight className="size-4" />
+              )}
+            </span>
+            <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
+              <FolderGit2 className="size-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="truncate text-sm font-semibold">
+                  {repository.name}
+                </h3>
+                <Badge
+                  variant={
+                    repository.git_status === "ready"
+                      ? "success"
+                      : "destructive"
+                  }
+                >
+                  {repository.git_status}
+                </Badge>
+                {repository.setup_command && <Badge>Setup</Badge>}
+                <span className="text-[10px] text-muted-foreground">
+                  {directories.length} {directories.length === 1 ? "dir" : "dirs"}
+                </span>
+              </div>
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+                <span>
+                  current{" "}
+                  <strong className="font-medium text-foreground">
+                    {currentBranch}
+                  </strong>
+                </span>
+                <span>·</span>
+                <span>
+                  base{" "}
+                  <strong className="font-medium text-foreground">
+                    {repository.base_branch}
+                  </strong>
+                </span>
+                <span>·</span>
+                <span>{repositoryLabel(repository.repository_url)}</span>
+                <span>·</span>
+                <span>
+                  {repository.delivery_mode === "local_merge"
+                    ? "local merge"
+                    : "remote review"}
+                </span>
+              </div>
+              <code
+                className="mt-1 block min-w-0 truncate text-[10px] text-muted-foreground"
+                title={repository.source_root}
+              >
+                {repository.source_root}
+              </code>
+            </div>
+          </button>
+          {!readOnly && (
+            <div className="flex shrink-0 gap-1">
+              <Button
+                data-testid={`project-location-refresh-${repository.id}`}
+                size="icon"
+                variant="ghost"
+                disabled={busy}
+                aria-label={`Refresh ${repository.name}`}
+                title={`Refresh ${repository.name}`}
+                onClick={onRefresh}
+              >
+                <RefreshCw data-icon="inline-start" />
+              </Button>
+              <ActionMenu
+                label={`Actions for repository ${repository.name}`}
+                testId={`project-location-actions-${repository.id}`}
+                disabled={busy}
+              >
+                {["missing", "broken", "mismatch"].includes(
+                  repository.git_status,
+                ) && (
+                  <ActionMenuItem
+                    icon={<RefreshCw className="size-3.5" />}
+                    onClick={onReattach}
+                  >
+                    Reattach
+                  </ActionMenuItem>
+                )}
+                <ActionMenuItem
+                  icon={<Pencil className="size-3.5" />}
+                  testId={`project-repository-edit-${repository.id}`}
+                  onClick={onEditRepository}
+                >
+                  Edit repository
+                </ActionMenuItem>
+              </ActionMenu>
+            </div>
+          )}
+        </div>
+        {expanded && (
+          <CollapsibleContent
+            id={`project-repository-directories-${repository.id}`}
+            data-testid={`project-repository-directories-${repository.id}`}
+            role="group"
+            aria-label={`Directories for ${repository.name}`}
+            className="border-t border-border/60 bg-muted/60 px-4 py-2"
+          >
+            <div className="ml-5 border-l border-border">
+              {directories.map((directory) => (
+                <ProjectDirectoryTreeRow
+                  key={directory.id}
+                  directory={directory}
+                  repository={repository}
+                  worktrees={orderedWorktrees}
+                  busy={busy}
+                  readOnly={readOnly}
+                  onOpen={onOpen}
+                  onEdit={() => onEditDirectory(directory)}
+                  onMakeDefault={() => onMakeDefault(directory)}
+                  onDeleteWorktree={onDeleteWorktree}
+                />
+              ))}
+            </div>
+          </CollapsibleContent>
+        )}
+      </Collapsible>
+    </article>
+  );
+}
+
+function ProjectDirectoryTreeRow({
+  directory,
+  repository,
+  worktrees,
+  busy,
+  readOnly,
+  onOpen,
+  onEdit,
+  onMakeDefault,
+  onDeleteWorktree,
+}: {
+  directory: Directory;
+  repository: ProjectRepository;
+  worktrees: GitWorktree[];
+  busy: boolean;
+  readOnly: boolean;
+  onOpen: (id: string) => void;
+  onEdit: () => void;
+  onMakeDefault: () => void;
+  onDeleteWorktree: (worktree: GitWorktree) => void;
+}) {
+  const [expanded, setExpanded] = useState(directory.role === "primary");
+  const scopedPath = (root: string) =>
+    directory.relative_path && directory.relative_path !== "."
+      ? `${root}/${directory.relative_path}`
+      : root;
+
+  return (
+    <Collapsible open={expanded} onOpenChange={setExpanded}>
+      <div
+        data-testid={`project-directory-${directory.id}`}
+        className="flex min-w-0 items-center gap-3 py-2 pl-5"
+      >
+        <button
+          type="button"
+          data-testid={`project-directory-toggle-${directory.id}`}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-expanded={expanded}
+          aria-controls={`project-directory-worktrees-${directory.id}`}
+          aria-label={`${expanded ? "Collapse" : "Expand"} directory ${directory.name}`}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? (
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+          )}
+          <Folder className="size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-sm font-medium">
+                {directory.name}
+              </span>
+              {directory.role === "primary" && <Badge>Default</Badge>}
+            </div>
+            <code
+              className="mt-1 block truncate text-[10px] text-muted-foreground"
+              title={directory.path}
+            >
+              {directory.relative_path ?? "."}
+            </code>
+            {directory.description && (
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {directory.description}
+              </p>
+            )}
+          </div>
+        </button>
+        {!readOnly && (
+          <ActionMenu
+            label={`Actions for directory ${directory.name}`}
+            testId={`project-directory-actions-${directory.id}`}
+            disabled={busy}
+          >
+            {directory.role !== "primary" && (
+              <ActionMenuItem
+                icon={<Folder className="size-3.5" />}
+                testId={`project-directory-make-default-${directory.id}`}
+                onClick={onMakeDefault}
+              >
+                Make default
+              </ActionMenuItem>
+            )}
+            <ActionMenuItem
+              icon={<Pencil className="size-3.5" />}
+              testId={`project-directory-edit-${directory.id}`}
+              onClick={onEdit}
+            >
+              Edit directory
+            </ActionMenuItem>
+          </ActionMenu>
+        )}
+      </div>
+      {expanded && (
+        <CollapsibleContent
+          id={`project-directory-worktrees-${directory.id}`}
+          data-testid={`project-directory-worktrees-${directory.id}`}
+          role="group"
+          aria-label={`Worktrees for ${directory.name}`}
+          className="ml-8 divide-y divide-border border-l border-border"
+        >
+          {worktrees.map((item) => (
+            <div
+              key={`${directory.id}:${item.path}`}
+              data-testid="project-worktree-row"
+              data-project-location-id={repository.id}
+              data-project-directory-id={directory.id}
+              className="flex min-w-0 items-center gap-3 py-3 pl-5"
+            >
+              <GitBranch className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold">
+                    {item.branch || "detached"}
+                  </span>
+                  {item.is_main && <Badge>Main checkout</Badge>}
+                </div>
+                <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
+                  {item.head_commit && (
+                    <>
+                      <span className="font-mono">
+                        {item.head_commit.slice(0, 10)}
+                      </span>
+                      <span>·</span>
+                    </>
+                  )}
+                  <code
+                    className="min-w-0 truncate"
+                    title={scopedPath(item.path)}
+                  >
+                    {scopedPath(item.path)}
+                  </code>
+                </div>
+              </div>
+              {item.workspace_id && (
+                <Badge
+                  variant="outline"
+                  className="max-w-48"
+                  render={
+                    <button
+                      type="button"
+                      aria-label={`Open Workspace ${item.workspace_name || item.workspace_id}`}
+                      title={`Open Workspace “${item.workspace_name || item.workspace_id}”`}
+                      onClick={() => onOpen(item.workspace_id!)}
+                    />
+                  }
+                >
+                  <Workflow data-icon="inline-start" />
+                  <span className="truncate">
+                    {item.workspace_name || "Workspace"}
+                  </span>
+                </Badge>
+              )}
+              {!readOnly && !item.is_main && (
+                <Button
+                  size="icon"
+                  variant={item.workspace_id ? "muted" : "destructive-ghost"}
+                  disabled={busy}
+                  aria-disabled={Boolean(item.workspace_id)}
+                  data-worktree-delete-state={
+                    item.workspace_id ? "blocked" : "available"
+                  }
+                  aria-label={
+                    item.workspace_id
+                      ? `Cannot delete worktree ${item.path}: active Workspace ${item.workspace_name || item.workspace_id}`
+                      : `Delete worktree ${item.path}`
+                  }
+                  title={
+                    item.workspace_id
+                      ? `Finish Workspace “${item.workspace_name || item.workspace_id}” before deleting this worktree`
+                      : `Delete worktree ${item.path}`
+                  }
+                  onClick={() => onDeleteWorktree(item)}
+                >
+                  <Trash2 data-icon="inline-start" />
+                </Button>
+              )}
+            </div>
+          ))}
+          {worktrees.length === 0 && (
+            <div className="py-4 pl-5 text-xs text-muted-foreground">
+              No worktrees found for this directory.
+            </div>
+          )}
+        </CollapsibleContent>
+      )}
+    </Collapsible>
+  );
+}
+
 function ProjectHome({
   project,
   busy,
@@ -2484,6 +2884,7 @@ function ProjectHome({
   onOpenSession,
   onAddDirectory,
   onEditDirectory,
+  onEditRepository,
   onRefreshLocation,
   onMakeDefault,
   onReattach,
@@ -2497,6 +2898,7 @@ function ProjectHome({
   onOpenSession: (session: Session) => void;
   onAddDirectory: () => void;
   onEditDirectory: (directory: Directory) => void;
+  onEditRepository: (repository: ProjectRepository) => void;
   onRefreshLocation: (directory: Directory) => void;
   onMakeDefault: (directory: Directory) => void;
   onReattach: (directory: Directory) => void;
@@ -2535,8 +2937,8 @@ function ProjectHome({
             <div>
               <h2 className="text-sm font-semibold">Repositories</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Expand a repository to inspect its worktrees; non-Git locations
-                remain read-only context.
+                Repositories contain directories; each directory expands to
+                its corresponding worktrees.
               </p>
             </div>
             {project.status === "active" && (
@@ -2558,49 +2960,24 @@ function ProjectHome({
               const scopes = project.directories.filter(
                 (directory) => directory.repository_id === repository.id,
               );
-              const firstScope = scopes[0];
-              const directory: Directory = {
-                id: repository.id,
-                project_id: repository.project_id,
-                repository_id: repository.id,
-                repository_name: repository.name,
-                name: repository.name,
-                description: "",
-                worktree_setup_command: repository.setup_command,
-                path: repository.source_root,
-                repository_url: repository.repository_url,
-                preferred_remote_name: repository.preferred_remote_name,
-                base_branch: repository.base_branch,
-                delivery_mode: repository.delivery_mode,
-                git_common_dir: repository.git_common_dir,
-                git_status: repository.git_status,
-                last_checked_at: repository.last_checked_at,
-                role: scopes.some((scope) => scope.role === "primary")
-                  ? "primary"
-                  : "attached",
-                is_git: true,
-                remote_url: repository.repository_url,
-                branch: firstScope?.branch,
-                head_commit: firstScope?.head_commit,
-                head_summary: firstScope?.head_summary,
-                dirty: firstScope?.dirty ?? false,
-              };
               return (
-                <ProjectLocationTreeRow
+                <ProjectRepositoryTreeRow
                   key={repository.id}
-                  directory={directory}
-                  scopes={scopes}
+                  repository={repository}
+                  directories={scopes}
                   worktrees={project.worktrees.filter(
                     (item) => item.project_location_id === repository.id,
                   )}
                   busy={busy}
                   readOnly={project.status === "archived"}
                   onOpen={onOpen}
-                  onEdit={() => firstScope && onEditDirectory(firstScope)}
-                  onEditScope={onEditDirectory}
-                  onRefresh={() => onRefreshLocation(directory)}
-                  onMakeDefault={() => firstScope && onMakeDefault(firstScope)}
-                  onReattach={() => onReattach(directory)}
+                  onEditRepository={() => onEditRepository(repository)}
+                  onEditDirectory={onEditDirectory}
+                  onRefresh={() =>
+                    scopes[0] && onRefreshLocation(scopes[0])
+                  }
+                  onMakeDefault={onMakeDefault}
+                  onReattach={() => scopes[0] && onReattach(scopes[0])}
                   onDeleteWorktree={onDeleteWorktree}
                 />
               );
@@ -3298,7 +3675,13 @@ function DirectoryPathField({
   );
 }
 
-function WorktreeSetupField({ defaultValue }: { defaultValue?: string }) {
+function WorktreeSetupField({
+  defaultValue,
+  name = "worktree_setup_command",
+}: {
+  defaultValue?: string;
+  name?: string;
+}) {
   return (
     <Field>
       <FieldLabel htmlFor="worktree-setup-command">
@@ -3308,7 +3691,7 @@ function WorktreeSetupField({ defaultValue }: { defaultValue?: string }) {
       <Textarea
         id="worktree-setup-command"
         className="font-mono"
-        name="worktree_setup_command"
+        name={name}
         aria-label="Worktree setup command"
         defaultValue={defaultValue}
         placeholder="npm install"
@@ -3771,7 +4154,6 @@ function EditDirectoryDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
-  const isGit = directory?.git_common_dir != null;
   return (
     <Dialog open={Boolean(directory)} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -3786,50 +4168,118 @@ function EditDirectoryDialog({
             key={JSON.stringify([
               directory.id,
               directory.description,
-              directory.worktree_setup_command,
-              directory.base_branch,
-              directory.delivery_mode,
             ])}
             className="mt-6 flex flex-col gap-3"
             onSubmit={onSubmit}
           >
-            <Textarea
-              name="description"
-              defaultValue={directory.description}
-              placeholder="What is this location used for?"
-            />
-            {isGit && (
-              <WorktreeSetupField
-                defaultValue={directory.worktree_setup_command}
+            <Field>
+              <FieldLabel htmlFor="directory-description">Purpose</FieldLabel>
+              <Textarea
+                id="directory-description"
+                name="description"
+                defaultValue={directory.description}
+                placeholder="What is this directory used for?"
               />
-            )}
-            {isGit && (
-              <div className="grid grid-cols-2 gap-3 rounded-lg border border-border bg-muted/50 p-3">
-                <label className="text-[11px] text-muted-foreground">
-                  Base branch
+              <FieldDescription>
+                Default is managed from the directory row. Branch and delivery
+                settings belong to the repository.
+              </FieldDescription>
+            </Field>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={busy}>
+                Save
+              </Button>
+            </div>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditRepositoryDialog({
+  repository,
+  busy,
+  onOpenChange,
+  onSubmit,
+}: {
+  repository: ProjectRepository | null;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Dialog open={Boolean(repository)} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogTitle className="text-lg font-semibold">
+          {repository?.name}
+        </DialogTitle>
+        <DialogDescription className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+          Repository settings · {repository?.source_root}
+        </DialogDescription>
+        {repository && (
+          <form
+            key={JSON.stringify([
+              repository.id,
+              repository.setup_command,
+              repository.setup_workdir,
+              repository.base_branch,
+              repository.delivery_mode,
+            ])}
+            className="mt-6 flex flex-col gap-4"
+            onSubmit={onSubmit}
+          >
+            <FieldGroup>
+              <WorktreeSetupField
+                name="setup_command"
+                defaultValue={repository.setup_command}
+              />
+              <Field>
+                <FieldLabel htmlFor="repository-setup-workdir">
+                  Setup working directory
+                </FieldLabel>
+                <Input
+                  id="repository-setup-workdir"
+                  className="font-mono text-xs"
+                  name="setup_workdir"
+                  defaultValue={repository.setup_workdir || "."}
+                  required
+                />
+                <FieldDescription>
+                  Relative to the repository root.
+                </FieldDescription>
+              </Field>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="repository-base-branch">
+                    Base branch
+                  </FieldLabel>
                   <Input
-                    className="mt-1 font-mono text-xs"
+                    id="repository-base-branch"
+                    className="font-mono text-xs"
                     name="base_branch"
-                    defaultValue={directory.base_branch}
+                    defaultValue={repository.base_branch}
                     required
                   />
-                </label>
-                <label className="text-[11px] text-muted-foreground">
-                  Delivery mode
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="repository-delivery-mode">
+                    Delivery mode
+                  </FieldLabel>
                   <Select
-                    className="mt-1"
+                    id="repository-delivery-mode"
                     name="delivery_mode"
-                    defaultValue={directory.delivery_mode ?? "remote_review"}
+                    defaultValue={repository.delivery_mode}
                   >
                     <option value="remote_review">Remote review / CR-CI</option>
                     <option value="local_merge">Local merge</option>
                   </Select>
-                </label>
+                </Field>
               </div>
-            )}
+            </FieldGroup>
             <div className="flex justify-end">
               <Button type="submit" disabled={busy}>
-                Save
+                Save repository
               </Button>
             </div>
           </form>

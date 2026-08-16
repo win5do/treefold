@@ -34,6 +34,7 @@ async function startFixtureApi() {
   const syncRequests = [];
   const workspaceLocationUpdates = [];
   const locationRequests = [];
+  const repositoryUpdateRequests = [];
   const renameRequests = [];
   const sessionOrderRequests = [];
   const deleteRequests = [];
@@ -413,6 +414,29 @@ async function startFixtureApi() {
       );
       delete fixture.projectDetails[projectMatch[1]];
       sendJson(response, 204, null);
+      return;
+    }
+
+    const projectRepositoryMatch = pathname.match(
+      /^\/api\/project-repositories\/([^/]+)$/,
+    );
+    if (request.method === "PATCH" && projectRepositoryMatch) {
+      const input = await readJson(request);
+      const repository = Object.values(fixture.projectDetails)
+        .flatMap((detail) => detail.repositories)
+        .find((item) => item.id === projectRepositoryMatch[1]);
+      if (!repository) {
+        sendJson(response, 404, { error: "Repository not found" });
+        return;
+      }
+      Object.assign(repository, {
+        setup_command: input.setup_command ?? repository.setup_command,
+        setup_workdir: input.setup_workdir ?? repository.setup_workdir,
+        base_branch: input.base_branch ?? repository.base_branch,
+        delivery_mode: input.delivery_mode ?? repository.delivery_mode,
+      });
+      repositoryUpdateRequests.push({ id: repository.id, ...input });
+      sendJson(response, 200, repository);
       return;
     }
 
@@ -958,6 +982,7 @@ async function startFixtureApi() {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests,
     locationRequests,
+    repositoryUpdateRequests,
     workspaceLocationUpdates,
     renameRequests,
     sessionOrderRequests,
@@ -1028,6 +1053,7 @@ export async function startUiHarness() {
       baseUrl: process.env.TREEFOLD_UI_URL,
       syncRequests: [],
       locationRequests: [],
+      repositoryUpdateRequests: [],
       workspaceLocationUpdates: [],
       renameRequests: [],
       sessionOrderRequests: [],
@@ -1078,6 +1104,7 @@ export async function startUiHarness() {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests: fixtureApi.syncRequests,
     locationRequests: fixtureApi.locationRequests,
+    repositoryUpdateRequests: fixtureApi.repositoryUpdateRequests,
     workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,
     renameRequests: fixtureApi.renameRequests,
     sessionOrderRequests: fixtureApi.sessionOrderRequests,

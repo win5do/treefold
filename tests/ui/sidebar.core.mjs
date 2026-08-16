@@ -1796,8 +1796,8 @@ try {
   await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
   assert.equal(
     await primaryActionsMenu.getText(),
-    "Edit location",
-    "ready repository details must retain location configuration only",
+    "Edit repository",
+    "repository actions must edit repository-owned configuration",
   );
   assert.equal(
     (await primaryActionsMenu.getText()).includes("Make default"),
@@ -1813,13 +1813,30 @@ try {
   await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
   await (await browser.$("h2=Repositories")).click();
   await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  const primaryDirectories = await primaryLocation.$(
+    `[data-testid="project-repository-directories-${FIXTURE_IDS.primaryRepository}"]`,
+  );
+  assert.equal(
+    await primaryDirectories
+      .$(`[data-testid="project-directory-${FIXTURE_IDS.primaryDirectory}"]`)
+      .isExisting(),
+    true,
+    "repository rows must expose directory children before worktrees",
+  );
+  assert.equal(
+    await primaryDirectories
+      .$(`[data-testid="project-directory-${FIXTURE_IDS.monorepoDirectory}"]`)
+      .isExisting(),
+    true,
+    "multiple directories must remain grouped under their repository",
+  );
   let primaryWorktrees = await primaryLocation.$(
-    `[data-testid="project-location-worktrees-${FIXTURE_IDS.primaryRepository}"]`,
+    `[data-testid="project-directory-worktrees-${FIXTURE_IDS.primaryDirectory}"]`,
   );
   assert.equal(
     (await primaryWorktrees.$$('[data-testid="project-worktree-row"]')).length,
     4,
-    "primary worktrees must be grouped below their repository",
+    "primary worktrees must be grouped below the default directory",
   );
   assert.match(
     await primaryWorktrees.getText(),
@@ -1845,7 +1862,7 @@ try {
   assert.equal(
     await secondaryLocation
       .$(
-        `[data-testid="project-location-worktrees-${FIXTURE_IDS.secondaryRepository}"]`,
+        `[data-testid="project-repository-directories-${FIXTURE_IDS.secondaryRepository}"]`,
       )
       .isExisting(),
     false,
@@ -1862,8 +1879,13 @@ try {
   await secondaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
   assert.match(
     await secondaryActionsMenu.getText(),
-    /Make default[\s\S]*Edit location/,
-    "attached repository details must retain management actions",
+    /Edit repository/,
+    "repository actions must not contain directory ownership controls",
+  );
+  assert.equal(
+    (await secondaryActionsMenu.getText()).includes("Make default"),
+    false,
+    "Make default must not be exposed on a repository",
   );
   await assertOverlayVisibleAndTopmost(
     browser,
@@ -1884,16 +1906,8 @@ try {
     await browser.execute(() =>
       document.activeElement?.getAttribute("data-testid"),
     ),
-    `project-location-make-default-${FIXTURE_IDS.secondaryRepository}`,
-    "ArrowDown must open the repository menu and focus its first action",
-  );
-  await browser.keys(Key.ArrowDown);
-  assert.equal(
-    await browser.execute(() =>
-      document.activeElement?.getAttribute("data-testid"),
-    ),
-    `project-location-edit-${FIXTURE_IDS.secondaryRepository}`,
-    "ArrowDown must navigate between repository actions",
+    `project-repository-edit-${FIXTURE_IDS.secondaryRepository}`,
+    "ArrowDown must open the repository menu and focus its edit action",
   );
   await browser.keys(Key.Escape);
   await secondaryActionsMenu.waitForDisplayed({
@@ -1942,8 +1956,47 @@ try {
     "repository worktrees must collapse independently",
   );
   await secondaryRepositoryToggle.click();
+  const secondaryDirectory = await secondaryLocation.$(
+    `[data-testid="project-directory-${FIXTURE_IDS.secondaryDirectory}"]`,
+  );
+  const secondaryDirectoryActionsTrigger = await secondaryDirectory.$(
+    `[data-testid="project-directory-actions-${FIXTURE_IDS.secondaryDirectory}-trigger"]`,
+  );
+  await secondaryDirectoryActionsTrigger.click();
+  const secondaryDirectoryActions = await browser.$(
+    `[data-testid="project-directory-actions-${FIXTURE_IDS.secondaryDirectory}"]`,
+  );
+  await secondaryDirectoryActions.waitForDisplayed({ timeout: 3_000 });
+  assert.match(
+    await secondaryDirectoryActions.getText(),
+    /Make default[\s\S]*Edit directory/,
+    "default and directory editing must be owned by the directory row",
+  );
+  await (
+    await secondaryDirectoryActions.$(
+      `[data-testid="project-directory-edit-${FIXTURE_IDS.secondaryDirectory}"]`,
+    )
+  ).click();
+  const editDirectoryDialog = await browser.$('[role="dialog"]');
+  await editDirectoryDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(
+    await editDirectoryDialog.$('input[name="base_branch"]').isExisting(),
+    false,
+    "directory editing must not expose repository branch settings",
+  );
+  assert.equal(
+    await editDirectoryDialog.$('select[name="delivery_mode"]').isExisting(),
+    false,
+    "directory editing must not expose repository delivery settings",
+  );
+  await browser.keys(Key.Escape);
+  await editDirectoryDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  const secondaryDirectoryToggle = await secondaryDirectory.$(
+    `[data-testid="project-directory-toggle-${FIXTURE_IDS.secondaryDirectory}"]`,
+  );
+  await secondaryDirectoryToggle.click();
   const secondaryWorktrees = await secondaryLocation.$(
-    `[data-testid="project-location-worktrees-${FIXTURE_IDS.secondaryRepository}"]`,
+    `[data-testid="project-directory-worktrees-${FIXTURE_IDS.secondaryDirectory}"]`,
   );
   await secondaryWorktrees.waitForDisplayed({ timeout: 3_000 });
   assert.equal(
@@ -1961,9 +2014,11 @@ try {
     2,
     "worktree rows must retain their repository identity",
   );
+  await secondaryDirectoryToggle.click();
+  await secondaryWorktrees.waitForExist({ reverse: true, timeout: 3_000 });
   await primaryRepositoryToggle.click();
   primaryWorktrees = await primaryLocation.$(
-    `[data-testid="project-location-worktrees-${FIXTURE_IDS.primaryRepository}"]`,
+    `[data-testid="project-directory-worktrees-${FIXTURE_IDS.primaryDirectory}"]`,
   );
   await primaryWorktrees.waitForDisplayed({ timeout: 3_000 });
   const addLocationButton = await browser.$(
@@ -2049,8 +2104,8 @@ try {
   );
   assert.equal(
     blockedWorktreeDeletes.length,
-    3,
-    "active Workspace worktrees must expose blocked delete controls",
+    2,
+    "expanded active Workspace worktrees must expose blocked delete controls",
   );
   assert.equal(
     availableWorktreeDeletes.length,
@@ -2144,24 +2199,39 @@ try {
   await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
   await (
     await primaryActionsMenu.$(
-      `[data-testid="project-location-edit-${FIXTURE_IDS.primaryRepository}"]`,
+      `[data-testid="project-repository-edit-${FIXTURE_IDS.primaryRepository}"]`,
     )
   ).click();
   const setupCommand = await browser.$(
     'textarea[aria-label="Worktree setup command"]',
   );
   await setupCommand.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(
+    await (await browser.$('input[name="base_branch"]')).isDisplayed(),
+    true,
+    "base branch must be edited from repository settings",
+  );
+  assert.equal(
+    await (await browser.$('select[name="delivery_mode"]')).isDisplayed(),
+    true,
+    "delivery mode must be edited from repository settings",
+  );
   await setupCommand.setValue("npm install && npm run prepare");
-  await browser.$("button*=Save").click();
+  await browser.$("button=Save repository").click();
   await browser.waitUntil(async () => !(await setupCommand.isExisting()), {
     timeout: 3_000,
     timeoutMsg:
-      "Directory details did not close after saving the Worktree setup command",
+      "Repository details did not close after saving repository settings",
   });
+  assert.equal(
+    harness.repositoryUpdateRequests.at(-1).id,
+    FIXTURE_IDS.primaryRepository,
+    "repository settings must PATCH the repository resource",
+  );
   assert.match(
     await (await browser.$('[data-testid="page-content"]')).getText(),
     /Setup/,
-    "Directory must show when Worktree setup is configured",
+    "Repository must show when Worktree setup is configured",
   );
   const showRightSidebar = await browser.$(
     'button[aria-label="Show right sidebar"]',
