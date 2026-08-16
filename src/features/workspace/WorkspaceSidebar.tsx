@@ -142,31 +142,20 @@ export function WorkspaceSidebar({
   onSettings: () => void;
 }) {
   const { t } = useTranslation();
-  const [contextOwner, setContextOwner] = useState<{
-    project: ProjectDetail;
-    stream?: SidebarStream;
-    x: number;
-    y: number;
-  } | null>(null);
-  const openContextMenu = (
-    event: React.MouseEvent,
-    project: ProjectDetail,
-    stream?: SidebarStream,
-  ) => {
+  const openContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
     onSessionMenu(null);
-    const position =
-      event.type === "contextmenu"
-        ? { x: event.clientX, y: event.clientY }
-        : (() => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            return { x: rect.left, y: rect.bottom + 4 };
-          })();
-    setContextOwner((current) =>
-      current?.project.id === project.id && current.stream?.id === stream?.id
-        ? null
-        : { project, stream, ...position },
+    const rect = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: rect.left,
+        clientY: rect.bottom + 4,
+        view: window,
+        button: 2,
+      }),
     );
   };
   const renderOwnerContextMenu = (
@@ -217,9 +206,8 @@ export function WorkspaceSidebar({
     </SidebarOwnerContextMenu>
   );
   useEffect(() => {
-    if (!contextOwner && !sessionMenu) return;
+    if (!sessionMenu) return;
     const close = () => {
-      setContextOwner(null);
       onSessionMenu(null);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -233,7 +221,7 @@ export function WorkspaceSidebar({
       window.removeEventListener("blur", close);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [contextOwner, onSessionMenu, sessionMenu]);
+  }, [onSessionMenu, sessionMenu]);
   const projectsActive =
     !selectedProjectId && !selectedWorkspaceId && !selectedSessionId;
   return (
@@ -347,9 +335,8 @@ export function WorkspaceSidebar({
                         name: project.name,
                       })}
                       createTestId="sidebar-project-action"
-                      onMenu={(event) => openContextMenu(event, project)}
+                      onMenu={openContextMenu}
                       onCreate={(event) => {
-                        setContextOwner(null);
                         const id = `project:${project.id}`;
                         const rect =
                           event.currentTarget.getBoundingClientRect();
@@ -418,9 +405,7 @@ export function WorkspaceSidebar({
                         onCreateShell={onCreateShell}
                         onCreateCodex={onCreateCodex}
                         onCreateFork={onCreateFork}
-                        onOpenContext={(event, stream) =>
-                          openContextMenu(event, project, stream)
-                        }
+                        onOpenContext={openContextMenu}
                         renderOwnerContext={(stream, trigger) =>
                           renderOwnerContextMenu(project, stream, trigger)
                         }
@@ -440,156 +425,6 @@ export function WorkspaceSidebar({
             );
           })}
       </div>
-      {contextOwner && (
-        <SessionDirectoryMenu
-          testId="directory-session-context-menu"
-          directories={
-            contextOwner.stream?.directories ?? contextOwner.project.directories
-          }
-          position={contextOwner}
-          primaryAction={
-            !contextOwner.stream ? (
-              <SidebarMenuButton
-                testId="create-workspace-action"
-                icon={<Workflow />}
-                onClick={() => {
-                  const owner = contextOwner;
-                  setContextOwner(null);
-                  onCreateWorkspace(owner.project);
-                }}
-              >
-                {t("sidebar.newWorkspace")}
-              </SidebarMenuButton>
-            ) : contextOwner.stream.kind === "workspace" ? (
-              <SidebarMenuButton
-                testId="create-fork-action"
-                icon={<GitBranch />}
-                onClick={() => {
-                  const owner = contextOwner;
-                  setContextOwner(null);
-                  onCreateFork(owner.stream!);
-                }}
-              >
-                {t("sidebar.newFork")}
-              </SidebarMenuButton>
-            ) : undefined
-          }
-          syncTargets={
-            !contextOwner.stream
-              ? contextOwner.project.repositories
-                  .filter((repository) => repository.git_status === "ready")
-                  .map((repository) => ({
-                    id: repository.id,
-                    name: repository.name,
-                  }))
-              : contextOwner.stream.kind === "workspace"
-                ? (contextOwner.stream.locations ?? [])
-                    .filter(
-                      (location) =>
-                        location.access_mode === "read_write" &&
-                        location.git_status === "ready",
-                    )
-                    .map((location) => ({
-                      id: location.id,
-                      name: location.location_name,
-                    }))
-                : undefined
-          }
-          busy={busy}
-          footerRows={3}
-          onSync={(targetId, action) => {
-            const owner = contextOwner;
-            setContextOwner(null);
-            if (!owner.stream) {
-              const repository = owner.project.repositories.find(
-                (item) => item.id === targetId,
-              );
-              repository
-                ? onSyncProjectLocation(repository, action)
-                : onSyncProject(owner.project, action);
-              return;
-            }
-            const location = owner.stream.locations?.find(
-              (item) => item.id === targetId,
-            );
-            location
-              ? onSyncWorkspaceLocation(location, action)
-              : onSyncWorkspace(owner.stream, action);
-          }}
-          onShell={(directory) => {
-            const owner = contextOwner;
-            setContextOwner(null);
-            owner.stream
-              ? onCreateShell(owner.stream, directory)
-              : onCreateBaseShell(owner.project, directory);
-          }}
-          onCodex={(directory) => {
-            const owner = contextOwner;
-            setContextOwner(null);
-            owner.stream
-              ? onCreateCodex(owner.stream, directory)
-              : onCreateBaseCodex(owner.project, directory);
-          }}
-          footer={
-            <>
-              <SidebarMenuButton
-                icon={<FolderOpen />}
-                onClick={() => {
-                  const owner = contextOwner;
-                  setContextOwner(null);
-                  onOpenInFinder(owner.project, owner.stream);
-                }}
-              >
-                {t("sidebar.openInFinder")}
-              </SidebarMenuButton>
-              <SidebarMenuButton
-                testId="rename-node-action"
-                icon={<Pencil />}
-                onClick={() => {
-                  const owner = contextOwner;
-                  setContextOwner(null);
-                  owner.stream
-                    ? onRenameWorkspace(owner.stream)
-                    : onRenameProject(owner.project);
-                }}
-              >
-                {t("sidebar.rename")}
-              </SidebarMenuButton>
-              {contextOwner.stream ? (
-                <SidebarMenuButton
-                  testId="finish-workspace-action"
-                  destructive
-                  icon={<X />}
-                  onClick={() => {
-                    const owner = contextOwner;
-                    setContextOwner(null);
-                    onFinishWorkspace(owner.stream!);
-                  }}
-                >
-                  {t(
-                    contextOwner.stream.kind === "fork"
-                      ? "sidebar.finishFork"
-                      : "sidebar.finishWorkspace",
-                  )}
-                </SidebarMenuButton>
-              ) : (
-                <SidebarMenuButton
-                  testId="archive-project-action"
-                  destructive
-                  icon={<Archive />}
-                  onClick={() => {
-                    const owner = contextOwner;
-                    setContextOwner(null);
-                    onArchiveProject(owner.project);
-                  }}
-                >
-                  {t("sidebar.archiveProject")}
-                </SidebarMenuButton>
-              )}
-            </>
-          }
-        />
-      )}
       <div className="flex items-center gap-1 border-t border-border p-2">
         <Button
           data-testid="open-settings"
@@ -952,7 +787,7 @@ type SidebarNodeProps = {
   onCreateShell: (stream: Workspace, directory?: Directory) => void;
   onCreateCodex: (stream: Workspace, directory?: Directory) => void;
   onCreateFork: (stream: Workspace) => void;
-  onOpenContext: (event: React.MouseEvent, stream: SidebarStream) => void;
+  onOpenContext: (event: React.MouseEvent<HTMLButtonElement>) => void;
   renderOwnerContext: (
     stream: SidebarStream,
     trigger: React.ReactNode,
@@ -1677,7 +1512,7 @@ function SidebarForkNode(props: SidebarNodeProps) {
               menuLabel={t("sidebar.forkActions", { name: stream.name })}
               createLabel={t("sidebar.newInFork", { name: stream.name })}
               createTestId="sidebar-node-action"
-              onMenu={(event) => onOpenContext(event, stream)}
+              onMenu={onOpenContext}
               onCreate={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 onSessionMenu(
@@ -1818,7 +1653,7 @@ function SidebarWorkspaceNode(
               menuLabel={t("sidebar.workspaceActions", { name: stream.name })}
               createLabel={t("sidebar.newInWorkspace", { name: stream.name })}
               createTestId="sidebar-node-action"
-              onMenu={(event) => onOpenContext(event, stream)}
+              onMenu={onOpenContext}
               onCreate={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 onSessionMenu(
