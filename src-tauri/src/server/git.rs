@@ -34,6 +34,45 @@ async fn get_workspace_location_git_history(
     .await
 }
 
+const MAX_DIFF_PATCH_BYTES: usize = 8 * 1024 * 1024;
+
+async fn compare_project_location_commits(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitDiffComparisonInput>,
+) -> Result<Json<GitDiffComparison>> {
+    blocking_git_operation(move || {
+        let mut location = state.store.repository_as_directory(&id)?;
+        refresh_location_observation(&mut location)?;
+        ensure_location_ready(&location)?;
+        Ok(Json(compare_git_commits(
+            &location.path,
+            &location.name,
+            &input,
+            MAX_DIFF_PATCH_BYTES,
+        )?))
+    })
+    .await
+}
+
+async fn compare_workspace_location_commits(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitDiffComparisonInput>,
+) -> Result<Json<GitDiffComparison>> {
+    blocking_git_operation(move || {
+        let location = state.store.workspace_location(&id)?;
+        let path = workspace_location_git_path(&location)?;
+        Ok(Json(compare_git_commits(
+            path,
+            &location.location_name,
+            &input,
+            MAX_DIFF_PATCH_BYTES,
+        )?))
+    })
+    .await
+}
+
 async fn pull_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
@@ -670,7 +709,6 @@ fn git_operation_history(state: &AppState, id: &str) -> Result<Vec<GitOperationR
     records.sort_by(|left, right| right.started_at.cmp(&left.started_at));
     Ok(records)
 }
-
 fn id() -> String {
     Uuid::new_v4().simple().to_string()
 }
@@ -973,6 +1011,117 @@ fn git_history(repository: &str) -> Result<GitHistory> {
     })
 }
 
+fn compare_git_commits(
+    repository: &str,
+    repository_name: &str,
+    input: &GitDiffComparisonInput,
+    max_patch_bytes: usize,
+) -> Result<GitDiffComparison> {
+    if input.commit_count == 0 {
+        return Err(AppError::BadRequest(
+            "commit_count must be greater than zero".into(),
+        ));
+    }
+    let repository_path = Path::new(repository);
+    let start = resolve_full_commit(repository_path, &input.start_commit)?;
+    let head = resolve_full_commit(repository_path, &input.end_commit)?;
+    let parents = command_output(
+        repository_path,
+        "git",
+        &["rev-list", "--parents", "-n", "1", &start],
+    )
+    .map_err(AppError::BadRequest)?;
+    let base = parents
+        .split_whitespace()
+        .nth(1)
+        .map(str::to_owned)
+        .map(Ok)
+        .unwrap_or_else(|| empty_tree_hash(repository_path))?;
+    let output = Command::new("git")
+        .current_dir(repository_path)
+        .args([
+            "diff",
+            "--no-color",
+            "--find-renames",
+            "--unified=3",
+            &base,
+            &head,
+        ])
+        .output()
+        .map_err(|error| AppError::BadRequest(format!("git: {error}")))?;
+    if !output.status.success() {
+        return Err(AppError::BadRequest(
+            String::from_utf8_lossy(&output.stderr).trim().into(),
+        ));
+    }
+    if output.stdout.len() > max_patch_bytes {
+        return Err(AppError::api(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "DIFF_TOO_LARGE",
+            format!("Diff exceeds the {max_patch_bytes} byte response limit"),
+        ));
+    }
+    Ok(GitDiffComparison {
+        repository: repository_name.to_owned(),
+        resolved_base: base,
+        resolved_head: head,
+        commit_count: input.commit_count,
+        patch: String::from_utf8_lossy(&output.stdout).into_owned(),
+    })
+}
+
+fn resolve_full_commit(repository: &Path, value: &str) -> Result<String> {
+    let object_format = command_output(repository, "git", &["rev-parse", "--show-object-format"])
+        .map_err(AppError::BadRequest)?;
+    let expected_length = match object_format.as_str() {
+        "sha1" => 40,
+        "sha256" => 64,
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "unsupported Git object format: {object_format}"
+            )))
+        }
+    };
+    if value.len() != expected_length || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(AppError::BadRequest(
+            "start_commit and end_commit must be full commit hashes".into(),
+        ));
+    }
+    let resolved = command_output(
+        repository,
+        "git",
+        &["rev-parse", "--verify", &format!("{value}^{{commit}}")],
+    )
+    .map_err(|_| AppError::BadRequest("commit does not exist in this repository".into()))?;
+    if !resolved.eq_ignore_ascii_case(value) {
+        return Err(AppError::BadRequest(
+            "start_commit and end_commit must be full commit hashes".into(),
+        ));
+    }
+    Ok(resolved)
+}
+
+fn empty_tree_hash(repository: &Path) -> Result<String> {
+    let mut child = Command::new("git")
+        .current_dir(repository)
+        .args(["hash-object", "-t", "tree", "--stdin"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|error| AppError::BadRequest(format!("git: {error}")))?;
+    drop(child.stdin.take());
+    let output = child
+        .wait_with_output()
+        .map_err(|error| AppError::BadRequest(format!("git: {error}")))?;
+    if !output.status.success() {
+        return Err(AppError::BadRequest(
+            String::from_utf8_lossy(&output.stderr).trim().into(),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().into())
+}
+
 fn parse_git_history(output: &str) -> Vec<GitCommit> {
     output
         .split('\x1e')
@@ -1273,5 +1422,164 @@ fn git_workspace_location(
         closed_at: None,
         created_at: timestamp.into(),
         updated_at: timestamp.into(),
+    }
+}
+
+#[cfg(test)]
+mod git_diff_comparison_tests {
+    use std::{fs, path::Path, process::Command};
+
+    use tempfile::TempDir;
+
+    use super::{compare_git_commits, GitDiffComparisonInput};
+    use crate::error::AppError;
+
+    struct TestRepository {
+        directory: TempDir,
+    }
+
+    impl TestRepository {
+        fn new() -> Self {
+            let directory = tempfile::tempdir().expect("create temporary repository");
+            run(directory.path(), &["init", "-b", "main"]);
+            run(directory.path(), &["config", "user.name", "Treefold Test"]);
+            run(directory.path(), &["config", "user.email", "treefold@example.test"]);
+            Self { directory }
+        }
+
+        fn path(&self) -> &Path {
+            self.directory.path()
+        }
+
+        fn write(&self, path: &str, contents: &[u8]) {
+            let target = self.path().join(path);
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent).expect("create test file parent");
+            }
+            fs::write(target, contents).expect("write test file");
+        }
+
+        fn commit(&self, message: &str) -> String {
+            run(self.path(), &["add", "-A"]);
+            run(self.path(), &["commit", "--allow-empty", "-m", message]);
+            output(self.path(), &["rev-parse", "HEAD"])
+        }
+    }
+
+    fn run(path: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .current_dir(path)
+            .args(args)
+            .output()
+            .expect("run git command");
+        assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    fn output(path: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .current_dir(path)
+            .args(args)
+            .output()
+            .expect("run git command");
+        assert!(output.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&output.stderr));
+        String::from_utf8(output.stdout).expect("UTF-8 git output").trim().into()
+    }
+
+    fn compare(repository: &TestRepository, start: &str, end: &str, count: usize) -> super::GitDiffComparison {
+        compare_git_commits(
+            repository.path().to_str().expect("UTF-8 path"),
+            "test-repository",
+            &GitDiffComparisonInput {
+                start_commit: start.into(),
+                end_commit: end.into(),
+                commit_count: count,
+            },
+            8 * 1024 * 1024,
+        )
+        .expect("compare commits")
+    }
+
+    #[test]
+    fn compares_root_normal_range_rename_binary_and_empty_commits() {
+        let repository = TestRepository::new();
+        repository.write("README.md", b"one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\n");
+        let root = repository.commit("root");
+        let root_diff = compare(&repository, &root, &root, 1);
+        assert!(root_diff.patch.contains("new file mode"));
+        assert_ne!(root_diff.resolved_base, root);
+
+        repository.write("README.md", b"one\ntwo changed\nthree\nfour\nfive\nsix\nseven\neight\n");
+        let normal = repository.commit("normal");
+        let normal_diff = compare(&repository, &normal, &normal, 1);
+        assert!(normal_diff.patch.contains("two changed"));
+
+        run(repository.path(), &["mv", "README.md", "docs.md"]);
+        let renamed = repository.commit("rename");
+        let rename_diff = compare(&repository, &renamed, &renamed, 1);
+        assert!(rename_diff.patch.contains("rename from README.md"));
+        assert!(rename_diff.patch.contains("rename to docs.md"));
+
+        repository.write("asset.bin", &[0, 1, 2, 0, 255]);
+        let binary = repository.commit("binary");
+        let binary_diff = compare(&repository, &binary, &binary, 1);
+        assert!(binary_diff.patch.contains("Binary files"));
+
+        let range = compare(&repository, &normal, &binary, 3);
+        assert_eq!(range.commit_count, 3);
+        assert!(range.patch.contains("docs.md"));
+        assert!(range.patch.contains("asset.bin"));
+
+        let empty = repository.commit("empty");
+        assert!(compare(&repository, &empty, &empty, 1).patch.is_empty());
+    }
+
+    #[test]
+    fn merge_comparison_uses_the_first_parent() {
+        let repository = TestRepository::new();
+        repository.write("base.txt", b"base\n");
+        repository.commit("root");
+        run(repository.path(), &["checkout", "-b", "feature"]);
+        repository.write("feature.txt", b"feature\n");
+        repository.commit("feature");
+        run(repository.path(), &["checkout", "main"]);
+        repository.write("main.txt", b"main\n");
+        repository.commit("main");
+        run(repository.path(), &["merge", "--no-ff", "feature", "-m", "merge"]);
+        let merge = output(repository.path(), &["rev-parse", "HEAD"]);
+        let first_parent = output(repository.path(), &["rev-parse", "HEAD^1"]);
+        let result = compare(&repository, &merge, &merge, 1);
+        assert_eq!(result.resolved_base, first_parent);
+        assert!(result.patch.contains("feature.txt"));
+        assert!(!result.patch.contains("main.txt"));
+    }
+
+    #[test]
+    fn rejects_invalid_hashes_and_oversized_patches() {
+        let repository = TestRepository::new();
+        repository.write("large.txt", b"a large change\n");
+        let commit = repository.commit("root");
+        let invalid = compare_git_commits(
+            repository.path().to_str().expect("UTF-8 path"),
+            "test-repository",
+            &GitDiffComparisonInput {
+                start_commit: commit[..10].into(),
+                end_commit: commit.clone(),
+                commit_count: 1,
+            },
+            1024,
+        );
+        assert!(matches!(invalid, Err(AppError::BadRequest(_))));
+
+        let oversized = compare_git_commits(
+            repository.path().to_str().expect("UTF-8 path"),
+            "test-repository",
+            &GitDiffComparisonInput {
+                start_commit: commit.clone(),
+                end_commit: commit,
+                commit_count: 1,
+            },
+            1,
+        );
+        assert!(matches!(oversized, Err(AppError::Api { code: "DIFF_TOO_LARGE", .. })));
     }
 }

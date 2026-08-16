@@ -49,6 +49,13 @@ export const FIXTURE_COMMITS = Object.freeze([
     author: "win5do",
     authored_at: "2026-08-07T10:42:00+08:00",
   },
+  {
+    hash: "9a4beef1234567890abcdef1234567890abcdef1",
+    short_hash: "9a4beef",
+    subject: "Add the first workspace implementation",
+    author: "win5do",
+    authored_at: "2026-08-07T09:15:00+08:00",
+  },
 ]);
 
 const timestamp = "2026-08-10T08:00:00.000Z";
@@ -747,35 +754,6 @@ const deliveryPreflight = {
   created_at: timestamp,
 };
 
-const gitOperations = [
-  {
-    id: "reset-operation-ui-fixture",
-    kind: "reset",
-    action: "parent",
-    status: "restored",
-    before_head: "abcdef1234567890abcdef1234567890abcdef12",
-    target_head: "0123456789abcdef0123456789abcdef01234567",
-    result_head: "0123456789abcdef0123456789abcdef01234567",
-    recovery_ref: "refs/treefold/recovery/reset-ui-fixture",
-    error: "",
-    started_at: timestamp,
-    updated_at: timestamp,
-  },
-  {
-    id: "rebase-operation-ui-fixture",
-    kind: "rebase",
-    action: "onto_parent",
-    status: "completed",
-    before_head: "1111111111111111111111111111111111111111",
-    target_head: "2222222222222222222222222222222222222222",
-    result_head: "3333333333333333333333333333333333333333",
-    recovery_ref: "refs/treefold/recovery/rebase-ui-fixture",
-    error: "",
-    started_at: "2026-08-09T08:00:00.000Z",
-    updated_at: "2026-08-09T08:01:00.000Z",
-  },
-];
-
 export function createSidebarCoreFixture() {
   return structuredClone({
     settings: {
@@ -865,7 +843,6 @@ export function createSidebarCoreFixture() {
       [FIXTURE_IDS.fork]: forkDetail,
     },
     gitHistories: {
-      [FIXTURE_IDS.project]: { branch: "main", commits: FIXTURE_COMMITS },
       [FIXTURE_IDS.primaryRepository]: {
         branch: "main",
         commits: FIXTURE_COMMITS,
@@ -874,15 +851,41 @@ export function createSidebarCoreFixture() {
         branch: "develop",
         commits: FIXTURE_COMMITS,
       },
-      [FIXTURE_IDS.workspace]: {
-        branch: workspace.branch,
-        commits: FIXTURE_COMMITS,
-      },
       [FIXTURE_IDS.workspacePrimaryLocation]: {
         branch: workspace.branch,
         commits: FIXTURE_COMMITS,
       },
-      [FIXTURE_IDS.fork]: { branch: fork.branch, commits: FIXTURE_COMMITS },
+      [FIXTURE_IDS.forkPrimaryLocation]: {
+        branch: fork.branch,
+        commits: FIXTURE_COMMITS,
+      },
+      [FIXTURE_IDS.forkSecondaryLocation]: {
+        branch: fork.branch,
+        commits: FIXTURE_COMMITS,
+      },
+    },
+    gitComparisons: {
+      [FIXTURE_IDS.primaryRepository]: {
+        repository: "fixture-repository",
+        resolved_base: "1111111111111111111111111111111111111111",
+        patch: `diff --git a/src/alpha.ts b/src/alpha.ts
+index 1111111..2222222 100644
+--- a/src/alpha.ts
++++ b/src/alpha.ts
+@@ -1 +1 @@
+-const value = 1;
++const value = 2;
+diff --git a/assets/logo.png b/assets/logo.png
+new file mode 100644
+index 0000000..3333333
+Binary files /dev/null and b/assets/logo.png differ
+`,
+      },
+      [FIXTURE_IDS.secondaryRepository]: {
+        repository: "secondary-api-repository",
+        resolved_base: "2222222222222222222222222222222222222222",
+        patch: "",
+      },
     },
     deliveryPreflights: {
       [FIXTURE_IDS.workspacePrimaryLocation]: {
@@ -895,6 +898,5 @@ export function createSidebarCoreFixture() {
       },
       [FIXTURE_IDS.forkPrimaryLocation]: deliveryPreflight,
     },
-    gitOperations: { [FIXTURE_IDS.fork]: gitOperations },
   });
 }

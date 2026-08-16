@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "diff-viewer",
+  "description": "Allows the read-only Git Diff Viewer to receive comparison updates",
+  "windows": [
+    "diff-viewer"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

@@ -2,6 +2,7 @@ import { request } from "./client";
 import type {
   Directory,
   GitHistory,
+  GitDiffComparison,
   GitWorktree,
   Project,
   ProjectDetail,
@@ -89,4 +90,13 @@ export const projectsApi = {
     request<GitHistory>(`/api/project-repositories/${id}/git-history`, {
       signal,
     }),
+  compare: (
+    id: string,
+    input: { start_commit: string; end_commit: string; commit_count: number },
+    signal?: AbortSignal,
+  ) => request<GitDiffComparison>(`/api/project-repositories/${id}/compare`, {
+    method: "POST",
+    json: input,
+    signal,
+  }),
 };

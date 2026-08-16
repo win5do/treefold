@@ -3,6 +3,7 @@ import type {
   DeliveryPreflight,
   FinishProgress,
   GitHistory,
+  GitDiffComparison,
   GitOperationRecord,
   ParentOperation,
   ParentOperationDirection,
@@ -92,16 +93,17 @@ export const workspacesApi = {
       `/api/workspace-repositories/${id}/delivery-preflight`,
       { method: "POST", json: { code_action: codeAction }, signal },
     ),
-  history: (id: string, signal?: AbortSignal) =>
-    request<GitHistory>(`/api/workspace-repositories/${id}/git-history`, {
-      signal,
-    }),
   locationHistory: (id: string, signal?: AbortSignal) =>
     request<GitHistory>(`/api/workspace-repositories/${id}/git-history`, {
       signal,
     }),
-  operations: (id: string, signal?: AbortSignal) =>
-    request<GitOperationRecord[]>(`/api/workspaces/${id}/git-operations`, {
-      signal,
-    }),
+  compareLocation: (
+    id: string,
+    input: { start_commit: string; end_commit: string; commit_count: number },
+    signal?: AbortSignal,
+  ) => request<GitDiffComparison>(`/api/workspace-repositories/${id}/compare`, {
+    method: "POST",
+    json: input,
+    signal,
+  }),
 };

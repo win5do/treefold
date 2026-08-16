@@ -240,6 +240,23 @@ export type GitCommit = {
 
 export type GitHistory = { branch: string; commits: GitCommit[] };
 
+export type GitDiffComparison = {
+  repository: string;
+  resolved_base: string;
+  resolved_head: string;
+  commit_count: number;
+  patch: string;
+};
+
+export type GitDiffLaunchPayload = {
+  repositoryKind: "project" | "workspace";
+  repositoryId: string;
+  repositoryName: string;
+  startCommit: string;
+  endCommit: string;
+  commitCount: number;
+};
+
 export type DeliveryPreflight = {
   id: string;
   source_head: string;
@@ -331,7 +348,6 @@ export type FinishProgress = {
   location: WorkspaceLocation;
   operation?: ParentOperation;
 };
-
 export type ProjectLocationInspection = {
   path: string;
   name: string;

@@ -346,6 +346,22 @@ pub struct GitHistory {
     pub commits: Vec<GitCommit>,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct GitDiffComparisonInput {
+    pub start_commit: String,
+    pub end_commit: String,
+    pub commit_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct GitDiffComparison {
+    pub repository: String,
+    pub resolved_base: String,
+    pub resolved_head: String,
+    pub commit_count: usize,
+    pub patch: String,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct ReconciliationIssue {
     pub id: String,

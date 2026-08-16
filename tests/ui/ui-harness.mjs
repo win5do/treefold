@@ -43,6 +43,7 @@ async function startFixtureApi() {
   const parentOperations = new Map();
   const parentOperationTimestamp = "2026-08-10T08:00:00.000Z";
   const parentOperationTargetPath = "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture";
+  const compareRequests = [];
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -453,6 +454,25 @@ async function startFixtureApi() {
       fixture.gitHistories[projectHistoryMatch[1]]
     ) {
       sendJson(response, 200, fixture.gitHistories[projectHistoryMatch[1]]);
+      return;
+    }
+
+    const projectCompareMatch = pathname.match(
+      /^\/api\/project-repositories\/([^/]+)\/compare$/,
+    );
+    if (request.method === "POST" && projectCompareMatch) {
+      const input = await readJson(request);
+      const comparison = fixture.gitComparisons[projectCompareMatch[1]];
+      compareRequests.push({ repositoryId: projectCompareMatch[1], ...input });
+      if (!comparison) {
+        sendJson(response, 404, { error: { code: "NOT_FOUND", message: "Comparison fixture not found" } });
+        return;
+      }
+      sendJson(response, 200, {
+        ...comparison,
+        resolved_head: input.end_commit,
+        commit_count: input.commit_count,
+      });
       return;
     }
 
@@ -964,6 +984,25 @@ async function startFixtureApi() {
       return;
     }
 
+    const workspaceCompareMatch = pathname.match(
+      /^\/api\/workspace-repositories\/([^/]+)\/compare$/,
+    );
+    if (request.method === "POST" && workspaceCompareMatch) {
+      const input = await readJson(request);
+      const comparison = fixture.gitComparisons[workspaceCompareMatch[1]];
+      compareRequests.push({ repositoryId: workspaceCompareMatch[1], ...input });
+      if (!comparison) {
+        sendJson(response, 404, { error: { code: "NOT_FOUND", message: "Comparison fixture not found" } });
+        return;
+      }
+      sendJson(response, 200, {
+        ...comparison,
+        resolved_head: input.end_commit,
+        commit_count: input.commit_count,
+      });
+      return;
+    }
+
     const sessionActionMatch = pathname.match(
       /^\/api\/sessions\/([^/]+)\/(close|open|stop|restart)$/,
     );
@@ -1048,18 +1087,6 @@ async function startFixtureApi() {
       return;
     }
 
-    const operationsMatch = pathname.match(
-      /^\/api\/workspaces\/([^/]+)\/git-operations$/,
-    );
-    if (
-      request.method === "GET" &&
-      operationsMatch &&
-      fixture.gitOperations[operationsMatch[1]]
-    ) {
-      sendJson(response, 200, fixture.gitOperations[operationsMatch[1]]);
-      return;
-    }
-
     const preflightMatch = pathname.match(
       /^\/api\/workspace-repositories\/([^/]+)\/delivery-preflight$/,
     );
@@ -1112,6 +1139,7 @@ async function startFixtureApi() {
     deleteRequests,
     amuxStopRequests,
     parentOperationRequests,
+    compareRequests,
     archiveAllStreams() {
       for (const detail of Object.values(fixture.projectDetails))
         detail.workspaces.forEach((item) => {
@@ -1184,6 +1212,7 @@ export async function startUiHarness() {
       deleteRequests: [],
       amuxStopRequests: [],
       parentOperationRequests: [],
+      compareRequests: [],
       archiveAllStreams() {},
       restoreActiveStreams() {},
       setProjectStatus() {},
@@ -1236,6 +1265,7 @@ export async function startUiHarness() {
     deleteRequests: fixtureApi.deleteRequests,
     amuxStopRequests: fixtureApi.amuxStopRequests,
     parentOperationRequests: fixtureApi.parentOperationRequests,
+    compareRequests: fixtureApi.compareRequests,
     archiveAllStreams: fixtureApi.archiveAllStreams,
     restoreActiveStreams: fixtureApi.restoreActiveStreams,
     setProjectStatus: fixtureApi.setProjectStatus,

@@ -139,10 +139,12 @@ import {
   workspaceSessionsQuery,
 } from "@/features/workspace/queries";
 import { watchSystemTheme } from "@/lib/theme";
+import { DiffViewer } from "@/features/git-diff/DiffViewer";
 
 export default function App() {
   return (
     <Routes>
+      <Route path="/diff" element={<DiffViewer />} />
       <Route path="/" element={<Workspace />} />
       <Route path="/projects" element={<Workspace />} />
       <Route path="/projects/:projectId" element={<Workspace />} />
