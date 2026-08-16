@@ -1,5 +1,57 @@
 # Repository Instructions
 
+## Module boundaries
+
+Keep feature ownership explicit and prevent shared entry points from becoming
+cross-domain implementation files.
+
+### Frontend modules
+
+- `src/App.tsx` owns route composition, lazy-loading boundaries, and top-level
+  application assembly only. Put queries, mutations, dialogs, and page content
+  in their owning `src/features/*` or `src/app/*` module.
+- Co-locate feature-specific API adapters, state hooks, and view components.
+  Do not route unrelated feature state through `App.tsx` merely to share it.
+- Do not keep extending a component with a flat list of cross-domain callback
+  props. Group cohesive actions behind feature-owned hooks or action objects.
+- Treat Project, Workspace, Session, Git, and Settings as separate feature
+  boundaries even when one screen composes several of them.
+
+### UI-test modules
+
+- `tests/ui/ui-harness.mjs` is a compatibility entry point. Harness lifecycle,
+  fixture state, and feature route handlers belong in `tests/ui/harness/*`.
+- Keep fixture API handlers grouped by feature. A new API domain must not add a
+  new branch to one repository-wide request handler.
+- Prefer composable fixture builders and scenario overrides over adding every
+  state to `tests/ui/fixtures/sidebar-core.mjs`.
+- `npm run test:ui` must invoke the stable test runner. Adding a new test must
+  not require editing the package script.
+
+### Rust modules and models
+
+- Use Rust `mod` declarations and normal module files. Do not add `include!`
+  based server or model modules.
+- Each server feature owns its routes and handlers. Keep HTTP extraction and
+  response conversion in handlers, and put reusable behavior in explicit
+  service functions.
+- Dependencies between server features must be explicit through module paths or
+  deliberately scoped exports, not accidental access to one shared lexical
+  namespace.
+- Keep API DTOs, persistence records, and internal operation state distinct.
+  Add models to their owning domain module and re-export only intentional public
+  contracts from `model/mod.rs`.
+
+### Refactoring discipline
+
+- Module-only refactors must preserve HTTP contracts, database schemas, and
+  user-visible behavior.
+- Keep file moves, behavior changes, and broad formatting changes in separate
+  commits when practical.
+- Finish each refactoring stage with a buildable, tested main branch; do not
+  leave temporary duplicate implementations or compatibility shims without an
+  explicit follow-up in the same task.
+
 ## Configuration and persistence ownership
 
 Keep user-authored configuration and application-owned state separated by a

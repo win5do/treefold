@@ -1,8 +1,8 @@
 use std::{env, path::PathBuf, process::Command};
 
 use clap::{Args, Parser, Subcommand};
-use reqwest::{blocking::Client, Method, StatusCode};
-use serde_json::{json, Value};
+use reqwest::{Method, StatusCode, blocking::Client};
+use serde_json::{Value, json};
 
 const DEFAULT_API_URL: &str = "http://127.0.0.1:7331";
 

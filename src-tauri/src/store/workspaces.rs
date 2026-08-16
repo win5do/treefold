@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, named_params, params};
 
-use super::{now, Store};
+use super::{Store, now};
 use crate::{
     error::{AppError, Result},
     model::*,

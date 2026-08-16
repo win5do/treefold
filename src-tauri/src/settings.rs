@@ -4,10 +4,10 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use toml_edit::{value, Array, DocumentMut, Item, Table, Value};
+use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
 use uuid::Uuid;
 
 pub const SETTINGS_SCHEMA_VERSION: u32 = 1;
@@ -354,7 +354,7 @@ fn set_amux_settings(document: &mut DocumentMut, keep_running: bool) -> anyhow::
 mod tests {
     use super::{
         AgentsSettings, AgentsSettingsPatch, AmuxSettings, AmuxSettingsPatch, CodexAgentSettings,
-        CodexAgentSettingsPatch, SettingsPatch, SettingsStore, SETTINGS_SCHEMA_VERSION,
+        CodexAgentSettingsPatch, SETTINGS_SCHEMA_VERSION, SettingsPatch, SettingsStore,
     };
 
     fn fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -392,9 +392,11 @@ mod tests {
         );
         let settings_file = treefold_home.join("config/settings.toml");
         assert!(settings_file.is_file());
-        assert!(std::fs::read_to_string(settings_file)
-            .expect("read generated settings")
-            .contains("[agents.codex]\nextra_args = []"));
+        assert!(
+            std::fs::read_to_string(settings_file)
+                .expect("read generated settings")
+                .contains("[agents.codex]\nextra_args = []")
+        );
         assert!(
             std::fs::read_to_string(treefold_home.join("config/settings.toml"))
                 .expect("read generated settings")
@@ -470,9 +472,11 @@ mod tests {
         let error = SettingsStore::open(&treefold_home, &user_home)
             .err()
             .expect("reject unsupported schema");
-        assert!(error
-            .to_string()
-            .contains("unsupported settings schema_version 2"));
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported settings schema_version 2")
+        );
 
         std::fs::remove_dir_all(root).expect("remove settings fixture");
     }
@@ -541,9 +545,11 @@ mod tests {
                 ..SettingsPatch::default()
             })
             .expect_err("reject empty argument");
-        assert!(error
-            .to_string()
-            .contains("extra_args[0] must not be empty"));
+        assert!(
+            error
+                .to_string()
+                .contains("extra_args[0] must not be empty")
+        );
         assert_eq!(
             std::fs::read_to_string(path).expect("read settings after update"),
             before

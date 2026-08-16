@@ -9,9 +9,9 @@ mod terminal;
 use anyhow::Context;
 use sha2::{Digest, Sha256};
 use tauri::{
+    Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    Manager,
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";

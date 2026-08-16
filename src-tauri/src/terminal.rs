@@ -1,8 +1,8 @@
 use std::{
     collections::BTreeMap,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -17,7 +17,7 @@ use amux::{
     },
     protocol::Response,
 };
-use anyhow::{anyhow, bail, Context};
+use anyhow::{Context, anyhow, bail};
 use http::Method;
 use http_body_util::BodyExt;
 use serde::{Deserialize, Serialize};
@@ -690,7 +690,7 @@ mod tests {
     use amux::model::ProcessView;
     use serde_json::json;
 
-    use super::{codex_arguments, resolve_session, TerminalManager};
+    use super::{TerminalManager, codex_arguments, resolve_session};
     use crate::model::Session;
 
     fn session() -> Session {
@@ -759,16 +759,20 @@ mod tests {
         session.codex_session_id = Some("codex-session-1".into());
         let arguments = codex_arguments(&session, Some("current Treefold snapshot"), &[]);
 
-        assert!(arguments
-            .iter()
-            .any(|value| value == "developer_instructions=\"current Treefold snapshot\""));
+        assert!(
+            arguments
+                .iter()
+                .any(|value| value == "developer_instructions=\"current Treefold snapshot\"")
+        );
         assert_eq!(
             &arguments[arguments.len() - 2..],
             ["resume", "codex-session-1"]
         );
-        assert!(!arguments
-            .iter()
-            .any(|value| value == &session.initial_prompt));
+        assert!(
+            !arguments
+                .iter()
+                .any(|value| value == &session.initial_prompt)
+        );
     }
 
     #[test]

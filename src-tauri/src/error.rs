@@ -1,10 +1,10 @@
 use axum::{
-    extract::{rejection::JsonRejection, FromRequest, Request},
+    Json,
+    extract::{FromRequest, Request, rejection::JsonRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 #[derive(Debug, thiserror::Error)]
@@ -122,7 +122,7 @@ where
 #[cfg(test)]
 mod tests {
     use axum::{body::to_bytes, response::IntoResponse};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     use super::AppError;
 

@@ -403,7 +403,7 @@ fn table_has_column(connection: &Connection, table: &str, column: &str) -> Resul
 
 #[cfg(test)]
 mod workspace_schema_tests {
-    use super::{table_exists, table_has_column, Connection, Store};
+    use super::{Connection, Store, table_exists, table_has_column};
 
     fn temporary_database(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         let root =
@@ -430,12 +430,14 @@ mod workspace_schema_tests {
         }
         assert!(!table_exists(&connection, "project_locations").unwrap());
         assert!(!table_exists(&connection, "workspace_locations").unwrap());
-        assert!(table_has_column(
-            &connection,
-            "delivery_operations",
-            "workspace_repository_id"
-        )
-        .unwrap());
+        assert!(
+            table_has_column(
+                &connection,
+                "delivery_operations",
+                "workspace_repository_id"
+            )
+            .unwrap()
+        );
         assert!(table_has_column(&connection, "project_repositories", "setup_workdir").unwrap());
         drop(connection);
         drop(store);
@@ -573,7 +575,7 @@ mod workspace_schema_tests {
 mod tests {
     use rusqlite::Connection;
 
-    use super::{Store, SCHEMA};
+    use super::{SCHEMA, Store};
 
     #[test]
     fn initializes_a_fresh_database() {

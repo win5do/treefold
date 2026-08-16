@@ -8,19 +8,19 @@ use std::{
 };
 
 use axum::{
+    Json, Router,
     extract::{
-        ws::{Message, WebSocket, WebSocketUpgrade},
         Path as AxumPath, Query, State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, Method, StatusCode},
     response::IntoResponse,
     routing::{get, patch, post},
-    Json, Router,
 };
 use futures_util::{SinkExt, StreamExt};
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::OnceLock;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
@@ -30,7 +30,7 @@ use crate::{
     git,
     model::*,
     settings::{SettingsPatch, SettingsStore},
-    store::{now, Store},
+    store::{Store, now},
     terminal::TerminalManager,
 };
 

@@ -2,14 +2,14 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
+use rusqlite::{Connection, OptionalExtension, Row, named_params, params};
 
-use super::{now, Store};
+use super::{Store, now};
 use super::{
-    sessions::{session_row, SESSION_COLUMNS},
+    sessions::{SESSION_COLUMNS, session_row},
     workspaces::{
-        hydrate_workspace_compat, workspace_directory_row, workspace_location_row, workspace_row,
         WORKSPACE_COLUMNS, WORKSPACE_DIRECTORY_COLUMNS, WORKSPACE_LOCATION_COLUMNS,
+        hydrate_workspace_compat, workspace_directory_row, workspace_location_row, workspace_row,
     },
 };
 use crate::{

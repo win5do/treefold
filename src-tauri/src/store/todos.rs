@@ -1,8 +1,8 @@
 #![allow(dead_code)] // Delivery compatibility helpers remain covered by integration tests.
 
-use rusqlite::{named_params, params, Row};
+use rusqlite::{Row, named_params, params};
 
-use super::{now, Store};
+use super::{Store, now};
 use crate::{error::Result, model::*};
 
 impl Store {

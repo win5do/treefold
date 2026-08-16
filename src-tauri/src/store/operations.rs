@@ -1,9 +1,9 @@
 #![allow(dead_code)] // Compatibility operations support the tested delivery state machine.
 
-use rusqlite::{named_params, params, OptionalExtension, Row};
+use rusqlite::{OptionalExtension, Row, named_params, params};
 use serde::de::DeserializeOwned;
 
-use super::{now, Store};
+use super::{Store, now};
 use crate::{
     error::{AppError, Result},
     model::*,

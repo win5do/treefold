@@ -122,16 +122,20 @@ mod tests {
 
     #[test]
     fn captures_sync_git_output() {
-        assert!(super::output(Path::new("."), &["--version"])
-            .expect("read Git version")
-            .starts_with("git version"));
+        assert!(
+            super::output(Path::new("."), &["--version"])
+                .expect("read Git version")
+                .starts_with("git version")
+        );
     }
 
     #[tokio::test]
     async fn captures_async_git_output() {
-        assert!(super::output_async(Path::new("."), &["--version"])
-            .await
-            .expect("read Git version")
-            .starts_with("git version"));
+        assert!(
+            super::output_async(Path::new("."), &["--version"])
+                .await
+                .expect("read Git version")
+                .starts_with("git version")
+        );
     }
 }
