@@ -40,6 +40,11 @@ export const projectsApi = {
       method: "POST",
       json,
     }),
+  cloneRepository: (id: string, json: unknown) =>
+    request<Directory>(`/api/projects/${id}/repositories/clone`, {
+      method: "POST",
+      json,
+    }),
   inspectLocation: (path: string, projectId?: string, signal?: AbortSignal) =>
     request<ProjectLocationInspection>("/api/project-directories/inspect", {
       method: "POST",
@@ -64,6 +69,22 @@ export const projectsApi = {
   updateRepository: (id: string, json: unknown) =>
     request<ProjectRepository>(`/api/project-repositories/${id}`, {
       method: "PATCH",
+      json,
+    }),
+  setBaseBranch: (id: string, json: unknown) =>
+    request<ProjectRepository>(`/api/project-repositories/${id}/base-branch`, {
+      method: "POST",
+      json,
+    }),
+  repositoryBranches: (id: string, signal?: AbortSignal) =>
+    request<{
+      current: string;
+      local: string[];
+      remotes: { name: string; branches: string[] }[];
+    }>(`/api/project-repositories/${id}/branches`, { signal }),
+  checkoutRepository: (id: string, json: unknown) =>
+    request<Directory>(`/api/project-repositories/${id}/checkout`, {
+      method: "POST",
       json,
     }),
   deleteRepository: (id: string) =>

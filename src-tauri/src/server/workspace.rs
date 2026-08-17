@@ -884,6 +884,137 @@ pub(super) async fn list_project_repositories(
     Ok(Json(state.store.repositories(&project_id)?))
 }
 
+#[derive(Deserialize)]
+pub(super) struct CloneProjectRepository {
+    pub(super) url: String,
+    pub(super) name: Option<String>,
+    pub(super) preferred_remote_name: Option<String>,
+    pub(super) delivery_mode: Option<String>,
+    pub(super) setup_command: Option<String>,
+}
+
+pub(super) async fn clone_project_repository(
+    State(state): State<AppState>,
+    AxumPath(project_id): AxumPath<String>,
+    ApiJson(input): ApiJson<CloneProjectRepository>,
+) -> Result<(StatusCode, Json<Directory>)> {
+    let result =
+        blocking_git_operation(move || clone_project_repository_impl(state, project_id, input))
+            .await?;
+    project_worktrees_cache()
+        .invalidate(&result.1.project_id)
+        .await;
+    Ok(result)
+}
+
+pub(super) fn clone_project_repository_impl(
+    state: AppState,
+    project_id: String,
+    input: CloneProjectRepository,
+) -> Result<(StatusCode, Json<Directory>)> {
+    let project = state.store.project(&project_id)?;
+    ensure_active_project(&project)?;
+    let url = input.url.trim();
+    if url.is_empty() {
+        return Err(AppError::BadRequest("Git URL is required".into()));
+    }
+    let delivery_mode = input.delivery_mode.as_deref().unwrap_or("remote_review");
+    if !["remote_review", "local_merge"].contains(&delivery_mode) {
+        return Err(AppError::BadRequest(
+            "delivery_mode must be remote_review or local_merge".into(),
+        ));
+    }
+    let repository_id = id();
+    let source = managed_repository_source_path(&state.settings, &project_id, &repository_id);
+    if source.exists() {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "MANAGED_SOURCE_EXISTS",
+            "managed source path already exists",
+        ));
+    }
+    let parent = source
+        .parent()
+        .ok_or_else(|| AppError::Internal(anyhow::anyhow!("managed source has no parent")))?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| AppError::BadRequest(format!("create managed source: {error}")))?;
+    let clone_result = command_output(
+        parent,
+        "git",
+        &[
+            "clone",
+            "--origin",
+            "origin",
+            url,
+            source.to_string_lossy().as_ref(),
+        ],
+    );
+    if let Err(error) = clone_result {
+        let _ = std::fs::remove_dir_all(parent);
+        return Err(AppError::BadRequest(format!("clone repository: {error}")));
+    }
+    let source_string = source.to_string_lossy().into_owned();
+    let timestamp = now();
+    let mut directory = Directory {
+        id: id(),
+        project_id: project_id.clone(),
+        name: input
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| basename(&source_string)),
+        description: String::new(),
+        worktree_setup_command: input.setup_command.unwrap_or_default(),
+        path: source_string,
+        repository_url: Some(url.to_owned()),
+        preferred_remote_name: Some(
+            input
+                .preferred_remote_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("origin")
+                .to_owned(),
+        ),
+        base_branch: None,
+        delivery_mode: Some(delivery_mode.to_owned()),
+        git_common_dir: None,
+        git_status: "creating".into(),
+        last_checked_at: None,
+        updated_at: timestamp.clone(),
+        checkout_path: None,
+        role: "primary".into(),
+        is_git: true,
+        remote_url: None,
+        branch: None,
+        head_commit: None,
+        head_summary: None,
+        dirty: false,
+        created_at: timestamp,
+    };
+    refresh_location_observation(&mut directory)?;
+    if directory.git_status != "ready" || directory.git_common_dir.is_none() {
+        let _ = std::fs::remove_dir_all(parent);
+        return Err(AppError::BadRequest(
+            "cloned source is not a ready Git repository".into(),
+        ));
+    }
+    let directory_id = match state
+        .store
+        .create_directory_with_repository_id(&directory, Some(&repository_id))
+    {
+        Ok(id) => id,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(parent);
+            return Err(error);
+        }
+    };
+    let directory = state.store.directory(&directory_id)?;
+    Ok((StatusCode::CREATED, Json(directory)))
+}
+
 pub(super) async fn get_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
@@ -1406,6 +1537,90 @@ pub(super) async fn update_project_repository(
     Ok(Json(state.store.repository(&id)?))
 }
 
+#[derive(Deserialize)]
+pub(super) struct SetBaseBranch {
+    branch: String,
+    remote: Option<String>,
+}
+
+pub(super) async fn set_project_repository_base_branch(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<SetBaseBranch>,
+) -> Result<Json<ProjectRepository>> {
+    let repository = state.store.repository(&id)?;
+    blocking_git_operation_for(repository.git_common_dir.clone(), move || {
+        set_project_repository_base_branch_impl(state, id, input)
+    })
+    .await
+}
+
+pub(super) fn set_project_repository_base_branch_impl(
+    state: AppState,
+    id: String,
+    input: SetBaseBranch,
+) -> Result<Json<ProjectRepository>> {
+    let repository = state.store.repository(&id)?;
+    ensure_active_project(&state.store.project(&repository.project_id)?)?;
+    let branch = input.branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::BadRequest("base branch is required".into()));
+    }
+    let source = Path::new(&repository.source_root);
+    let local_ref = format!("refs/heads/{branch}");
+    if let Some(remote) = input
+        .remote
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        if !git_remote_names(&repository.source_root)?
+            .iter()
+            .any(|name| name == remote)
+        {
+            return Err(AppError::BadRequest("remote was not found".into()));
+        }
+        command_output(source, "git", &["fetch", remote])
+            .map_err(|error| AppError::BadRequest(format!("fetch remote: {error}")))?;
+        let remote_ref = format!("refs/remotes/{remote}/{branch}");
+        command_output(
+            source,
+            "git",
+            &["show-ref", "--verify", "--quiet", &remote_ref],
+        )
+        .map_err(|_| AppError::BadRequest("remote branch was not found".into()))?;
+        if command_output(
+            source,
+            "git",
+            &["show-ref", "--verify", "--quiet", &local_ref],
+        )
+        .is_err()
+        {
+            command_output(
+                source,
+                "git",
+                &["branch", branch, &format!("{remote}/{branch}")],
+            )
+            .map_err(|error| AppError::BadRequest(format!("create local base branch: {error}")))?;
+        }
+    } else {
+        command_output(
+            source,
+            "git",
+            &["show-ref", "--verify", "--quiet", &local_ref],
+        )
+        .map_err(|_| AppError::BadRequest("local branch was not found".into()))?;
+    }
+    state.store.update_repository(
+        &id,
+        &repository.setup_command,
+        &repository.setup_workdir,
+        branch,
+        &repository.delivery_mode,
+    )?;
+    Ok(Json(state.store.repository(&id)?))
+}
+
 pub(super) fn validate_setup_workdir(source_root: &str, value: &str) -> Result<String> {
     let relative = if value.trim().is_empty() {
         "."
@@ -1648,11 +1863,6 @@ pub(super) fn create_workspace_impl(
         .find(|location| location.id == default_repository_id)
         .and_then(|location| location.delivery_mode.clone())
         .unwrap_or_else(|| "remote_review".into());
-    let root = state
-        .settings
-        .worktree_root()?
-        .join(format!("{}-{}", slug(&project.name), &project.id[..8]))
-        .join(branch.replace('/', "-"));
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
@@ -1665,10 +1875,10 @@ pub(super) fn create_workspace_impl(
             .delivery_mode
             .clone()
             .unwrap_or_else(|| "remote_review".into());
-        let checkout_path = root
-            .join(format!("{}-{}", slug(&location.name), &location.id[..6]))
-            .to_string_lossy()
-            .into_owned();
+        let checkout_path =
+            managed_worktree_path(&state.settings, &project.id, &location.id, &workspace_id)
+                .to_string_lossy()
+                .into_owned();
         let remote_name = if location.id == default_repository_id {
             trimmed(input.remote_name.clone())
                 .filter(|v| !v.is_empty())
@@ -1755,6 +1965,36 @@ pub(super) fn create_workspace_impl(
         workspace: state.store.workspace(&workspace.id)?,
         setup_shells,
     })
+}
+
+pub(super) fn managed_repository_source_path(
+    settings: &SettingsStore,
+    project_id: &str,
+    repository_id: &str,
+) -> PathBuf {
+    settings
+        .treefold_home()
+        .join("projects")
+        .join(project_id)
+        .join("repos")
+        .join(repository_id)
+        .join("source")
+}
+
+pub(super) fn managed_worktree_path(
+    settings: &SettingsStore,
+    project_id: &str,
+    repository_id: &str,
+    workspace_id: &str,
+) -> PathBuf {
+    settings
+        .treefold_home()
+        .join("projects")
+        .join(project_id)
+        .join("repos")
+        .join(repository_id)
+        .join("worktrees")
+        .join(workspace_id)
 }
 
 pub(super) fn create_workspace_worktrees(

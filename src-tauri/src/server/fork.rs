@@ -181,11 +181,6 @@ pub(super) fn create_fork_impl(
         None,
         &format!("f-{}", input.name.trim()),
     )?;
-    let root = state
-        .settings
-        .worktree_root()?
-        .join(format!("{}-{}", slug(&project.name), &project.id[..8]))
-        .join(branch.replace('/', "-"));
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
@@ -193,14 +188,14 @@ pub(super) fn create_fork_impl(
         let project_location = state
             .store
             .repository_as_directory(&parent_location.project_location_id)?;
-        let checkout_path = root
-            .join(format!(
-                "{}-{}",
-                slug(&parent_location.location_name),
-                &parent_location.project_location_id[..6]
-            ))
-            .to_string_lossy()
-            .into_owned();
+        let checkout_path = managed_worktree_path(
+            &state.settings,
+            &project.id,
+            &parent_location.project_location_id,
+            &fork_id,
+        )
+        .to_string_lossy()
+        .into_owned();
         let base_branch = parent_location.branch.clone().unwrap_or_default();
         let mut snapshot = git_workspace_location(
             &fork_id,

@@ -166,10 +166,18 @@ fn app(state: AppState) -> Router {
             get(list_project_repositories),
         )
         .route(
+            "/api/projects/{id}/repositories/clone",
+            post(clone_project_repository),
+        )
+        .route(
             "/api/project-repositories/{id}",
             get(get_project_repository)
                 .patch(update_project_repository)
                 .delete(delete_project_repository),
+        )
+        .route(
+            "/api/project-repositories/{id}/base-branch",
+            post(set_project_repository_base_branch),
         )
         .route(
             "/api/project-repositories/{id}/refresh",

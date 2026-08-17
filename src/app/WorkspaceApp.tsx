@@ -1373,6 +1373,7 @@ function Workspace() {
             const orderedLocations = addDirectoryProject.default_location_id
               ? locations
               : [
+                  ...locations.filter((location) => location.source === "url"),
                   ...locations.filter(
                     (location) => location.inspection?.git_status === "ready",
                   ),
@@ -1381,19 +1382,27 @@ function Workspace() {
                   ),
                 ];
             for (const location of orderedLocations) {
-              await projectsApi.addLocation(addDirectoryProject.id, {
-                path: location.path,
-                description: location.description,
-                worktree_setup_command: location.worktree_setup_command,
-                base_branch:
-                  location.inspection?.git_status === "ready"
-                    ? location.base_branch
-                    : undefined,
-                delivery_mode:
-                  location.inspection?.git_status === "ready"
-                    ? location.delivery_mode
-                    : undefined,
-              });
+              if (location.source === "url") {
+                await projectsApi.cloneRepository(addDirectoryProject.id, {
+                  url: location.path,
+                  delivery_mode: location.delivery_mode,
+                  setup_command: location.worktree_setup_command,
+                });
+              } else {
+                await projectsApi.addLocation(addDirectoryProject.id, {
+                  path: location.path,
+                  description: location.description,
+                  worktree_setup_command: location.worktree_setup_command,
+                  base_branch:
+                    location.inspection?.git_status === "ready"
+                      ? location.base_branch
+                      : undefined,
+                  delivery_mode:
+                    location.inspection?.git_status === "ready"
+                      ? location.delivery_mode
+                      : undefined,
+                });
+              }
             }
           });
           if (ok) setAddDirectoryProject(null);
@@ -1428,15 +1437,27 @@ function Workspace() {
           event.preventDefault();
           if (!editRepository) return;
           const form = new FormData(event.currentTarget);
-          const ok = await act(() =>
-            projectsApi.updateRepository(editRepository.id, {
+          const ok = await act(async () => {
+            const baseBranch = String(form.get("base_branch") || "").trim();
+            const baseRemote = String(form.get("base_remote") || "").trim();
+            if (baseRemote) {
+              await projectsApi.setBaseBranch(editRepository.id, {
+                branch: baseBranch,
+                remote: baseRemote,
+              });
+            }
+            await projectsApi.updateRepository(editRepository.id, {
               setup_command: form.get("setup_command"),
               setup_workdir: form.get("setup_workdir"),
-              base_branch: form.get("base_branch"),
+              base_branch: baseBranch,
               delivery_mode: form.get("delivery_mode"),
-            }),
-          );
+            });
+          });
           if (ok) setEditRepository(null);
+        }}
+        onCheckout={async (payload) => {
+          if (!editRepository) return;
+          await act(() => projectsApi.checkoutRepository(editRepository.id, payload));
         }}
       />
       <CreateWorkspaceDialog

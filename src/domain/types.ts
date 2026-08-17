@@ -365,6 +365,7 @@ export type ProjectLocationInspection = {
 
 export type LocationDraft = {
   key: string;
+  source: "local" | "url";
   path: string;
   description: string;
   worktree_setup_command: string;

@@ -1655,6 +1655,16 @@ pub(super) fn fail_delivery_after(actual: Option<&str>, phase: &str) -> Result<(
 }
 
 pub(super) fn ensure_target_branch(path: &str, target_branch: &str) -> Result<()> {
+    let checked_out = command_output(Path::new(path), "git", &["branch", "--show-current"])
+        .map_err(AppError::BadRequest)?;
+    if checked_out == target_branch {
+        return Ok(());
+    }
+    command_output(Path::new(path), "git", &["switch", target_branch]).map_err(|error| {
+        AppError::BadRequest(format!(
+            "switch merge target from {checked_out} to {target_branch}: {error}"
+        ))
+    })?;
     ensure_checked_out_branch(path, target_branch, "merge target")
 }
 

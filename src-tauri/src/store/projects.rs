@@ -223,6 +223,14 @@ impl Store {
     }
 
     pub fn create_directory(&self, directory: &Directory) -> Result<String> {
+        self.create_directory_with_repository_id(directory, None)
+    }
+
+    pub fn create_directory_with_repository_id(
+        &self,
+        directory: &Directory,
+        forced_repository_id: Option<&str>,
+    ) -> Result<String> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         let repository_id = if let Some(git_common_dir) = directory.git_common_dir.as_deref() {
@@ -253,7 +261,9 @@ impl Store {
                 }
                 id
             } else {
-                let id = uuid::Uuid::new_v4().to_string();
+                let id = forced_repository_id
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                 tx.execute(
                     "INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at)
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

@@ -188,6 +188,7 @@ function newLocationDraft(): LocationDraft {
   locationDraftSequence += 1;
   return {
     key: `location-draft-${locationDraftSequence}`,
+    source: "local",
     path: "",
     description: "",
     worktree_setup_command: "",
@@ -254,18 +255,21 @@ export function AddDirectoryDialog({
   );
   const requiresPrimaryGit = !project?.default_location_id;
   const hasReadyGit = locations.some(
-    (location) => location.inspection?.git_status === "ready",
+    (location) =>
+      location.source === "url" || location.inspection?.git_status === "ready",
   );
   const canSubmit =
     locations.length > 0 &&
     (!requiresPrimaryGit || hasReadyGit) &&
     locations.every(
       (location) =>
-        location.inspection &&
+        (location.source === "url" || location.inspection) &&
+        location.path.trim() &&
         !location.inspectionError &&
-        !duplicatePath.has(location.path.trim()) &&
-        (location.inspection.git_status !== "ready" ||
-          location.base_branch.trim()),
+        (location.source === "url" ||
+          (!duplicatePath.has(location.path.trim()) &&
+            (location.inspection?.git_status !== "ready" ||
+              location.base_branch.trim()))),
     ) &&
     checkingKeys.size === 0;
   return (
@@ -299,6 +303,7 @@ export function AddDirectoryDialog({
             data-testid="location-draft-list"
           >
             {locations.map((location, index) => {
+              const isUrl = location.source === "url";
               const isGit = location.inspection?.git_status === "ready";
               const existingRepository = Boolean(
                 location.inspection?.repository_id,
@@ -344,19 +349,58 @@ export function AddDirectoryDialog({
                       <Trash2 data-icon="inline-start" />
                     </Button>
                   </div>
-                  <DirectoryPathField
-                    busy={busy || checking}
-                    path={location.path}
-                    label={`Location ${index + 1} path`}
-                    onPathChange={(path) =>
-                      update(location.key, {
-                        path,
-                        inspection: undefined,
-                        inspectionError: undefined,
-                      })
-                    }
-                    onInspect={(path) => inspect(location.key, path)}
-                  />
+                  <div className="mb-3 grid gap-2 sm:grid-cols-[9rem_1fr]">
+                    <Select
+                      aria-label={`Location ${index + 1} source`}
+                      value={location.source}
+                      onChange={(event) =>
+                        update(location.key, {
+                          source: event.target.value as LocationDraft["source"],
+                          path: "",
+                          inspection: undefined,
+                          inspectionError: undefined,
+                        })
+                      }
+                    >
+                      <option value="local">Local folder</option>
+                      <option value="url">Git URL</option>
+                    </Select>
+                    {isUrl ? (
+                      <Input
+                        className="min-w-0 font-mono text-xs"
+                        aria-label={`Location ${index + 1} Git URL`}
+                        value={location.path}
+                        onChange={(event) =>
+                          update(location.key, {
+                            path: event.target.value,
+                            inspection: undefined,
+                            inspectionError: undefined,
+                          })
+                        }
+                        placeholder="https://github.com/org/repository.git"
+                        required
+                      />
+                    ) : (
+                      <DirectoryPathField
+                        busy={busy || checking}
+                        path={location.path}
+                        label={`Location ${index + 1} path`}
+                        onPathChange={(path) =>
+                          update(location.key, {
+                            path,
+                            inspection: undefined,
+                            inspectionError: undefined,
+                          })
+                        }
+                        onInspect={(path) => inspect(location.key, path)}
+                      />
+                    )}
+                  </div>
+                  {isUrl && (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      Treefold clones the remote default branch into a managed source.
+                    </p>
+                  )}
                   {checking && (
                     <p className="mt-2 text-[11px] text-muted-foreground">
                       Checking repository…
@@ -556,12 +600,24 @@ export function EditRepositoryDialog({
   busy,
   onOpenChange,
   onSubmit,
+  onCheckout,
 }: {
   repository: ProjectRepository | null;
   busy: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onCheckout: (payload: { branch: string; kind: "local" | "remote"; remote?: string }) => Promise<void>;
 }) {
+  const [checkoutBranch, setCheckoutBranch] = useState("");
+  const [checkoutRemote, setCheckoutRemote] = useState("origin");
+  const [checkoutKind, setCheckoutKind] = useState<"local" | "remote">("local");
+  useEffect(() => {
+    if (repository) {
+      setCheckoutBranch("");
+      setCheckoutRemote(repository.preferred_remote_name || "origin");
+      setCheckoutKind("local");
+    }
+  }, [repository?.id]);
   return (
     <Dialog open={Boolean(repository)} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -617,6 +673,18 @@ export function EditRepositoryDialog({
                   />
                 </Field>
                 <Field>
+                  <FieldLabel htmlFor="repository-base-remote">
+                    Base remote <span className="text-muted-foreground">(optional)</span>
+                  </FieldLabel>
+                  <Input
+                    id="repository-base-remote"
+                    className="font-mono text-xs"
+                    name="base_remote"
+                    defaultValue={repository.preferred_remote_name || "origin"}
+                    placeholder="origin"
+                  />
+                </Field>
+                <Field>
                   <FieldLabel htmlFor="repository-delivery-mode">
                     Delivery mode
                   </FieldLabel>
@@ -631,6 +699,60 @@ export function EditRepositoryDialog({
                 </Field>
               </div>
             </FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="repository-checkout-branch">
+                Checkout source branch
+              </FieldLabel>
+              <div className="grid gap-2 sm:grid-cols-[7rem_1fr_6rem]">
+                <Select
+                  id="repository-checkout-kind"
+                  value={checkoutKind}
+                  onChange={(event) =>
+                    setCheckoutKind(event.target.value as "local" | "remote")
+                  }
+                >
+                  <option value="local">Local</option>
+                  <option value="remote">Remote</option>
+                </Select>
+                <Input
+                  id="repository-checkout-branch"
+                  className="font-mono text-xs"
+                  value={checkoutBranch}
+                  onChange={(event) => setCheckoutBranch(event.target.value)}
+                  placeholder="feature/name"
+                />
+                {checkoutKind === "remote" ? (
+                  <Input
+                    aria-label="Checkout remote"
+                    className="font-mono text-xs"
+                    value={checkoutRemote}
+                    onChange={(event) => setCheckoutRemote(event.target.value)}
+                    placeholder="origin"
+                  />
+                ) : (
+                  <span />
+                )}
+              </div>
+              <FieldDescription>
+                Switches only the source checkout. It does not change Base branch.
+              </FieldDescription>
+              <div className="mt-2 flex justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy || !checkoutBranch.trim()}
+                  onClick={() =>
+                    void onCheckout({
+                      branch: checkoutBranch.trim(),
+                      kind: checkoutKind,
+                      remote: checkoutKind === "remote" ? checkoutRemote.trim() : undefined,
+                    })
+                  }
+                >
+                  Checkout source
+                </Button>
+              </div>
+            </Field>
             <div className="flex justify-end">
               <Button type="submit" disabled={busy}>
                 Save repository

@@ -21,8 +21,12 @@ pub(super) fn create_workspace_location_preflight_impl(
         .map_err(AppError::BadRequest)?;
     let (target_path, target_branch) =
         workspace_location_delivery_target(&state, &workspace, &location)?;
-    let target_head = command_output(Path::new(&target_path), "git", &["rev-parse", "HEAD"])
-        .map_err(AppError::BadRequest)?;
+    let target_head = command_output(
+        Path::new(&target_path),
+        "git",
+        &["rev-parse", &target_branch],
+    )
+    .map_err(AppError::BadRequest)?;
     let target_status = command_output(Path::new(&target_path), "git", &["status", "--porcelain"])
         .map_err(AppError::BadRequest)?;
     let counts = command_output(
@@ -67,6 +71,7 @@ pub(super) fn create_workspace_location_preflight_impl(
         .unwrap_or_default(),
     );
     let mut blockers = Vec::new();
+    let mut warnings = Vec::new();
     if input.code_action == "local_merge" {
         if !target_status.is_empty() {
             blockers.push("merge target working tree is dirty".into());
@@ -79,11 +84,12 @@ pub(super) fn create_workspace_location_preflight_impl(
             )
             .unwrap_or_default();
             if current != target_branch {
-                blockers.push(format!("main directory must stay on configured base branch {target_branch}; Treefold will not switch it"));
+                warnings.push(format!(
+                    "merge target will switch from {current} to configured base branch {target_branch}"
+                ));
             }
         }
     }
-    let mut warnings = Vec::new();
     if !source_status.is_empty() {
         warnings.push(
             "source worktree has uncommitted changes; finishing requires a commit message".into(),
