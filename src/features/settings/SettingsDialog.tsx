@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, CircleCheck, Copy, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +32,7 @@ import type { LanguagePreference } from "@/i18n";
 import { toast } from "@/lib/toast";
 
 type SettingsSaveFeedback =
-  { kind: "idle" | "saving" | "success" } | { kind: "error"; message: string };
+  { kind: "idle" | "saving" };
 
 export function SettingsDialog({
   open,
@@ -83,14 +83,6 @@ export function SettingsDialog({
   useEffect(() => {
     if (open) setSaveFeedback({ kind: "idle" });
   }, [open]);
-  useEffect(() => {
-    if (saveFeedback.kind !== "success") return;
-    const timer = window.setTimeout(
-      () => setSaveFeedback({ kind: "idle" }),
-      2400,
-    );
-    return () => window.clearTimeout(timer);
-  }, [saveFeedback.kind]);
   const clearSaveFeedback = () => setSaveFeedback({ kind: "idle" });
   const updateArgument = (index: number, value: string) => {
     clearSaveFeedback();
@@ -126,11 +118,9 @@ export function SettingsDialog({
       extraArgs,
       keepDaemonRunningOnExit,
     });
-    setSaveFeedback(
-      result.ok
-        ? { kind: "success" }
-        : { kind: "error", message: result.error },
-    );
+    setSaveFeedback({ kind: "idle" });
+    if (result.ok) toast.success(t("settings.saved"));
+    else toast.error(t("settings.saveFailed", { message: result.error }));
   };
   const copyRuntimeValue = (label: string, value: string) => {
     void navigator.clipboard.writeText(value).then(() => {
@@ -363,27 +353,6 @@ export function SettingsDialog({
         </div>
         <Separator />
         <div className="flex min-h-16 shrink-0 items-center justify-end gap-3 px-6 py-3">
-          {saveFeedback.kind === "success" && (
-            <p
-              data-testid="settings-save-status"
-              role="status"
-              aria-live="polite"
-              className="flex items-center gap-1.5 text-xs text-primary"
-            >
-              <CircleCheck className="size-4" />
-              {t("settings.saved")}
-            </p>
-          )}
-          {saveFeedback.kind === "error" && (
-            <p
-              data-testid="settings-save-status"
-              role="alert"
-              className="max-w-sm truncate text-xs text-destructive"
-              title={saveFeedback.message}
-            >
-              {t("settings.saveFailed", { message: saveFeedback.message })}
-            </p>
-          )}
           <Button
             data-testid="settings-save"
             aria-busy={saving}

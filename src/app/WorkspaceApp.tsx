@@ -28,6 +28,7 @@ import { projectsApi } from "@/api/projects";
 import { sessionsApi } from "@/api/sessions";
 import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
+import { toast } from "@/lib/toast";
 import { applyLanguage, type LanguagePreference } from "@/i18n";
 import type {
   Directory,
@@ -171,7 +172,6 @@ function Workspace() {
     systemQueryResult.error ??
     settingsQueryResult.error;
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -222,7 +222,7 @@ function Workspace() {
   );
 
   useEffect(() => {
-    if (queryError instanceof Error) setError(queryError.message);
+    if (queryError instanceof Error) toast.error(queryError.message);
   }, [queryError]);
 
   const refresh = async () => {
@@ -343,10 +343,9 @@ function Workspace() {
             })
           : Promise.resolve(),
       ]);
-      setError("");
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "操作失败");
+      toast.error(cause instanceof Error ? cause.message : "操作失败");
       return false;
     } finally {
       setBusy(false);
@@ -368,14 +367,12 @@ function Workspace() {
         amux: { keep_daemon_running_on_exit: update.keepDaemonRunningOnExit },
       });
       queryClient.setQueryData(appKeys.settings, next);
-      setError("");
       return { ok: true as const };
     } catch (cause) {
       const message =
         cause instanceof Error
           ? cause.message
           : t("settings.saveFailedFallback");
-      setError(message);
       return { ok: false as const, error: message };
     } finally {
       setBusy(false);
@@ -425,9 +422,8 @@ function Workspace() {
       setFinishWorkspaceDialog(
         normalizeWorkspace(await workspacesApi.detail(stream.id)),
       );
-      setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Workspace 加载失败");
+      toast.error(cause instanceof Error ? cause.message : "Workspace 加载失败");
     } finally {
       setBusy(false);
     }
@@ -444,9 +440,8 @@ function Workspace() {
           ? workspace
           : normalizeWorkspace(await workspacesApi.detail(stream.id));
       setParentOperationDialog({ workspace: detail, direction });
-      setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Workspace failed to load");
+      toast.error(cause instanceof Error ? cause.message : "Workspace failed to load");
     } finally {
       setBusy(false);
     }
@@ -484,10 +479,9 @@ function Workspace() {
             ),
           ),
       );
-      setError("");
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Shell 创建失败");
+      toast.error(cause instanceof Error ? cause.message : "Shell 创建失败");
     } finally {
       setBusy(false);
     }
@@ -525,10 +519,9 @@ function Workspace() {
             ),
           ),
       );
-      setError("");
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Codex 创建失败");
+      toast.error(cause instanceof Error ? cause.message : "Codex 创建失败");
     } finally {
       setBusy(false);
     }
@@ -549,10 +542,9 @@ function Workspace() {
         projectKeys.sessions(project.id),
         (current = []) => upsertSession(current, created),
       );
-      setError("");
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Shell 创建失败");
+      toast.error(cause instanceof Error ? cause.message : "Shell 创建失败");
     } finally {
       setBusy(false);
     }
@@ -573,10 +565,9 @@ function Workspace() {
         projectKeys.sessions(project.id),
         (current = []) => upsertSession(current, created),
       );
-      setError("");
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Codex 创建失败");
+      toast.error(cause instanceof Error ? cause.message : "Codex 创建失败");
     } finally {
       setBusy(false);
     }
@@ -675,7 +666,6 @@ function Workspace() {
         stream.id,
         reordered.map((session) => session.id),
       );
-      setError("");
     } catch (cause) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
@@ -683,7 +673,7 @@ function Workspace() {
           queryKey: workspaceKeys.sessions(stream.id),
         }),
       ]);
-      setError(cause instanceof Error ? cause.message : "Session 排序失败");
+      toast.error(cause instanceof Error ? cause.message : "Session 排序失败");
     }
   }
 
@@ -744,7 +734,7 @@ function Workspace() {
 
   async function removeWorktree(worktree: GitWorktree) {
     if (worktree.workspace_id) {
-      setError(
+      toast.warning(
         `Worktree belongs to active Workspace “${worktree.workspace_name || worktree.workspace_id}”; use Finish Workspace.`,
       );
       return;
@@ -822,7 +812,7 @@ function Workspace() {
       await queryClient.invalidateQueries({
         queryKey: workspaceKeys.sessions(stream.id),
       });
-      setError(cause instanceof Error ? cause.message : "关闭 Session 失败");
+      toast.error(cause instanceof Error ? cause.message : "关闭 Session 失败");
     } finally {
       if (session.kind !== "codex") {
         queryClient.setQueryData<Session[]>(
@@ -853,7 +843,7 @@ function Workspace() {
       await queryClient.invalidateQueries({
         queryKey: projectKeys.sessions(project.id),
       });
-      setError(cause instanceof Error ? cause.message : "关闭 Session 失败");
+      toast.error(cause instanceof Error ? cause.message : "关闭 Session 失败");
     } finally {
       if (session.kind !== "codex") {
         queryClient.setQueryData<Session[]>(
@@ -1172,25 +1162,6 @@ function Workspace() {
             sidebarHidden ? "md:ml-12" : "md:ml-[var(--sidebar-width)]",
           )}
         >
-          {error && (
-            <Alert
-              variant="destructive"
-              className="shrink-0 rounded-none border-x-0 border-t-0 px-4 py-2"
-            >
-              <CircleAlert />
-              <AlertDescription>{error}</AlertDescription>
-              <AlertAction>
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="Dismiss error"
-                  onClick={() => setError("")}
-                >
-                  <X />
-                </Button>
-              </AlertAction>
-            </Alert>
-          )}
           {warning && (
             <Alert
               variant="warning"
@@ -1258,7 +1229,7 @@ function Workspace() {
                     setDeleteTarget({ kind: "fork", value: fork })
                   }
                   onDeleteForkBlocked={(fork) =>
-                    setError(
+                    toast.warning(
                       t("overview.deleteBlocked.fork", { name: fork.name }),
                     )
                   }
@@ -1277,7 +1248,7 @@ function Workspace() {
                     setDeleteTarget({ kind: "workspace", value: stream })
                   }
                   onDeleteWorkspaceBlocked={(stream) =>
-                    setError(
+                    toast.warning(
                       t("overview.deleteBlocked.workspace", {
                         name: stream.name,
                       }),
@@ -1315,7 +1286,7 @@ function Workspace() {
                   }
                   onDelete={(project) => void permanentlyDeleteProject(project)}
                   onDeleteBlocked={(project) =>
-                    setError(
+                    toast.warning(
                       t("overview.deleteBlocked.project", {
                         name: project.name,
                       }),

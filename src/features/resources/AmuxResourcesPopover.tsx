@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AmuxStatus } from "@/domain/types";
 import { amuxQuery, appKeys } from "@/features/app/queries";
+import { toast } from "@/lib/toast";
 
 function formatDaemonUptime(status: AmuxStatus | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
   if (!status?.running || !status.started_at) return "—";
@@ -35,21 +36,20 @@ export function AmuxResourcesPopover() {
   const [open, setOpen] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const [stopError, setStopError] = useState("");
   const statusQuery = useQuery({ ...amuxQuery(), enabled: open, refetchInterval: open ? 1_000 : false });
   const status = statusQuery.data;
   const running = status?.running ?? false;
 
   const stop = async () => {
     setStopping(true);
-    setStopError("");
     try {
       await appApi.stopAmux();
       setConfirmStop(false);
       setOpen(true);
       await queryClient.invalidateQueries({ queryKey: appKeys.amux });
+      toast.success("amux Daemon stopped");
     } catch (cause) {
-      setStopError(cause instanceof Error ? cause.message : t("resources.stopFailed"));
+      toast.error(cause instanceof Error ? cause.message : t("resources.stopFailed"));
     } finally {
       setStopping(false);
     }
@@ -58,7 +58,6 @@ export function AmuxResourcesPopover() {
   useEffect(() => {
     if (!open) {
       setConfirmStop(false);
-      setStopError("");
     }
   }, [open]);
 
@@ -99,7 +98,6 @@ export function AmuxResourcesPopover() {
           <AlertDialogTitle>{t("resources.stopTitle")}</AlertDialogTitle>
           <AlertDialogDescription>{t("resources.stopDescription", { groups: status?.active_groups ?? 0, processes: status?.active_processes ?? 0 })}</AlertDialogDescription>
         </AlertDialogHeader>
-        {stopError && <p role="alert" className="text-xs text-destructive">{stopError}</p>}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={stopping}>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction variant="destructive" disabled={stopping} onClick={() => void stop()}>{stopping ? t("resources.stopping") : t("resources.stop")}</AlertDialogAction>
