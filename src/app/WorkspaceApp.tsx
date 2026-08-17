@@ -1412,6 +1412,7 @@ function Workspace() {
           const form = new FormData(event.currentTarget);
           const ok = await act(() =>
             projectsApi.updateLocation(editDirectory.id, {
+              name: form.get("name"),
               description: form.get("description"),
             }),
           );

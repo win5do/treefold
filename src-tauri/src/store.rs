@@ -519,6 +519,10 @@ mod workspace_schema_tests {
             dirty: false,
         };
         store.create_directory(&directory("original")).unwrap();
+        store
+            .update_directory("original", "Renamed", "Purpose", "", None, None)
+            .unwrap();
+        assert_eq!(store.directory("original").unwrap().name, "Renamed");
         store.delete_project_location("original").unwrap();
         assert!(store.directory("original").is_err());
         store.create_directory(&directory("replacement")).unwrap();

@@ -936,7 +936,6 @@ pub(super) async fn refresh_project_location(
     let was_git = location.git_common_dir.is_some();
     refresh_location_observation(&mut location)?;
     if location.git_status == "ready" {
-        location.name = basename(&location.path);
         if location.delivery_mode.is_none() {
             location.delivery_mode = Some("remote_review".into());
         }
@@ -1261,6 +1260,7 @@ pub(super) async fn delete_project_location(
 
 #[derive(Deserialize)]
 pub(super) struct UpdateDirectory {
+    name: Option<String>,
     description: Option<String>,
     worktree_setup_command: Option<String>,
     base_branch: Option<String>,
@@ -1273,6 +1273,9 @@ pub(super) async fn update_directory(
 ) -> Result<Json<Directory>> {
     let current = state.store.directory(&id)?;
     ensure_active_project(&state.store.project(&current.project_id)?)?;
+    let name = trimmed(input.name)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| current.name.clone());
     let base_branch = trimmed(input.base_branch).filter(|value| !value.is_empty());
     let delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
     if current.git_common_dir.is_none() && (base_branch.is_some() || delivery_mode.is_some()) {
@@ -1290,6 +1293,7 @@ pub(super) async fn update_directory(
     }
     state.store.update_directory(
         &id,
+        &name,
         trimmed(input.description).unwrap_or_default().as_str(),
         trimmed(input.worktree_setup_command)
             .unwrap_or_default()

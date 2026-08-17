@@ -2058,8 +2058,19 @@ try {
     false,
     "directory editing must not expose repository delivery settings",
   );
-  await browser.keys(Key.Escape);
+  const directoryNameInput = await editDirectoryDialog.$('input[name="name"]');
+  assert.equal(
+    await directoryNameInput.isExisting(),
+    true,
+    "directory editing must expose its Treefold display name",
+  );
+  await directoryNameInput.setValue("renamed source scope");
+  await (await editDirectoryDialog.$('button=Save')).click();
   await editDirectoryDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await browser.waitUntil(
+    async () => (await secondaryDirectory.getText()).includes("renamed source scope"),
+    { timeout: 3_000, timeoutMsg: "renamed directory must refresh in its row" },
+  );
   const secondaryWorktrees = await secondaryLocation.$(
     `[data-testid="project-repository-worktrees-${FIXTURE_IDS.secondaryRepository}"]`,
   );

@@ -510,10 +510,22 @@ export function EditDirectoryDialog({
         </DialogDescription>
         {directory && (
           <form
-            key={JSON.stringify([directory.id, directory.description])}
+            key={JSON.stringify([directory.id, directory.name, directory.description])}
             className="mt-6 flex flex-col gap-3"
             onSubmit={onSubmit}
           >
+            <Field>
+              <FieldLabel htmlFor="directory-name">Name</FieldLabel>
+              <Input
+                id="directory-name"
+                name="name"
+                defaultValue={directory.name}
+                required
+              />
+              <FieldDescription>
+                Changes the name shown in Treefold. The local folder is not renamed.
+              </FieldDescription>
+            </Field>
             <Field>
               <FieldLabel htmlFor="directory-description">Purpose</FieldLabel>
               <Textarea

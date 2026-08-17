@@ -474,6 +474,27 @@ mod current_workspace_tests {
                 .default_location_id,
             Some(primary.id.clone())
         );
+        state
+            .store
+            .update_directory(
+                &primary.id,
+                "Backend source",
+                &primary.description,
+                &primary.worktree_setup_command,
+                primary.base_branch.as_deref(),
+                primary.delivery_mode.as_deref(),
+            )
+            .unwrap();
+        let Json(refreshed) = refresh_project_location(
+            State(state.clone()),
+            axum::extract::Path(primary.id.clone()),
+        )
+        .await
+        .expect("refresh renamed Directory");
+        assert_eq!(
+            refreshed.name, "Backend source",
+            "refresh must preserve a user-authored Directory name"
+        );
 
         let _ = create_directory(
             State(state.clone()),
@@ -1232,6 +1253,30 @@ mod current_workspace_tests {
                 .count(),
             1
         );
+        let project_directory = state.store.directory(&ids[2]).unwrap();
+        state
+            .store
+            .update_directory(
+                &project_directory.id,
+                "Renamed reference",
+                &project_directory.description,
+                &project_directory.worktree_setup_command,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            state
+                .store
+                .workspace_directories(&workspace.id)
+                .unwrap()
+                .into_iter()
+                .find(|item| item.project_directory_id == ids[2])
+                .unwrap()
+                .name,
+            "reference-third",
+            "existing Workspace Directory names remain immutable snapshots"
+        );
         let Json(project_detail) = get_project(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
@@ -1469,6 +1514,7 @@ mod current_workspace_tests {
             .store
             .update_directory(
                 &second_location.id,
+                &second_location.name,
                 "",
                 "",
                 Some("missing-base"),
@@ -3261,6 +3307,8 @@ mod tests {
                 &directory.name,
                 &directory.description,
                 "printf 'setup failed' >&2; exit 23",
+                None,
+                None,
             )
             .expect("configure failing Worktree setup command");
         let setup_error = create_workspace(

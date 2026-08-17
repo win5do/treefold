@@ -642,6 +642,7 @@ async function startFixtureApi() {
         sendJson(response, 404, { error: "Directory not found" });
         return;
       }
+      if (input.name) directory.name = input.name;
       directory.description = input.description ?? "";
       directory.worktree_setup_command = input.worktree_setup_command ?? "";
       if (input.base_branch) directory.base_branch = input.base_branch;

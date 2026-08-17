@@ -352,6 +352,7 @@ impl Store {
     pub fn update_directory(
         &self,
         id: &str,
+        name: &str,
         description: &str,
         setup_command: &str,
         base_branch: Option<&str>,
@@ -365,8 +366,8 @@ impl Store {
             |row| row.get(0),
         )?;
         tx.execute(
-            "UPDATE project_directories SET description=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
-            params![description, now(), id],
+            "UPDATE project_directories SET name=?,description=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
+            params![name, description, now(), id],
         )?;
         if let Some(repository_id) = repository_id {
             tx.execute(
