@@ -56,6 +56,9 @@ try {
     FIXTURE_COMMITS[0].hash,
     "Copy Commit must copy the right-clicked commit's full hash",
   );
+  const copyNotice = await browser.$('[role="status"]');
+  await copyNotice.waitForDisplayed({ timeout: 1_000 });
+  assert.equal(await copyNotice.getText(), "Commit copied", "Copy Commit must confirm success");
 
   await commits[2].click({ button: "right" });
   await (await browser.$('[data-testid="view-git-diff-action"]')).waitForDisplayed({ timeout: 3_000 });

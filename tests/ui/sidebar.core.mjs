@@ -2616,6 +2616,14 @@ try {
     "a mixed first batch must create its primary Git repository before context locations",
   );
   await browser.url(harness.baseUrl);
+  await browser.waitUntil(
+    async () =>
+      (await browser.$$('[data-testid="project-overview-row"]')).length === 2,
+    {
+      timeout: 3_000,
+      timeoutMsg: "Project summaries did not load after returning to the overview",
+    },
+  );
   let orderedOverviewRows = await browser.$$(
     '[data-testid="project-overview-row"]',
   );

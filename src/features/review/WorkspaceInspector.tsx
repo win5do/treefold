@@ -15,6 +15,7 @@ import { projectsApi } from "@/api/projects";
 import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
 import { openGitDiffViewer } from "@/features/git-diff/launch";
+import { notice } from "@/lib/notice";
 
 export function WorkspaceInspector({ open, project, workspace, session }: { open: boolean; project: ProjectDetail; workspace: WorkspaceDetail | null; session: Session | null }) {
   const [tab, setTab] = useState<"info" | "history">("info");
@@ -119,6 +120,14 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, onReposit
       commitCount: selection.last - selection.first + 1,
     }).catch((cause) => console.error("Could not open Git Diff Viewer", cause));
   };
+  const copyCommit = (hash: string) => {
+    void navigator.clipboard.writeText(hash).then(() => {
+      notice.success("Commit copied");
+    }).catch((cause) => {
+      console.error("Could not copy Git commit", cause);
+      notice.error("Could not copy commit");
+    });
+  };
   return <div>
     <div className="flex flex-col gap-2 border-b border-border/60 p-3">
       <NativeSelect aria-label="Git history repository" data-testid="git-history-repository" className="w-full" value={repositoryId} disabled={repositories.length <= 1} onChange={(event) => onRepositoryChange(event.target.value)}>
@@ -153,7 +162,7 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, onReposit
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuGroup>
-            <ContextMenuItem data-testid="copy-git-commit-action" onClick={() => void navigator.clipboard.writeText(commit.hash).catch((cause) => console.error("Could not copy Git commit", cause))}>
+            <ContextMenuItem data-testid="copy-git-commit-action" onClick={() => copyCommit(commit.hash)}>
               <Copy data-icon="inline-start" />
               Copy Commit
             </ContextMenuItem>

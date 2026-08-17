@@ -7,6 +7,7 @@ import App from "./App";
 import "./index.css";
 import "./i18n";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/toast";
 import { applyThemePreference } from "@/lib/theme";
 import { setApiBase } from "@/api/client";
 
@@ -36,6 +37,7 @@ createRoot(document.getElementById("root")!).render(
           <App />
         </HashRouter>
       </TooltipProvider>
+      <Toaster />
     </QueryClientProvider>
   </StrictMode>,
 );
