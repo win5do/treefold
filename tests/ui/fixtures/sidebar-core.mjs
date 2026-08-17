@@ -831,10 +831,9 @@ export function createSidebarCoreFixture() {
     ],
     system: {
       platform: "test",
+      treefold_home: "/tmp/treefold-ui-fixture",
       codex_available: true,
       codex_version: "codex-ui-fixture",
-      backend: "fixture",
-      terminal_runtime: "fixture",
     },
     projects: [project],
     projectDetails: { [FIXTURE_IDS.project]: projectDetail },

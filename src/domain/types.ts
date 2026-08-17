@@ -386,10 +386,9 @@ export type WorkspaceDetail = Workspace & {
 
 export type SystemStatus = {
   platform: string;
+  treefold_home: string;
   codex_available: boolean;
   codex_version?: string;
-  backend: string;
-  terminal_runtime: string;
 };
 
 export type ThemePreference = "system" | "light" | "dark";

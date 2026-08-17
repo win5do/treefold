@@ -209,6 +209,10 @@ impl SettingsStore {
         self.parse(&contents)
     }
 
+    pub fn treefold_home(&self) -> PathBuf {
+        fs::canonicalize(&self.treefold_home).unwrap_or_else(|_| self.treefold_home.clone())
+    }
+
     pub fn update(&self, patch: SettingsPatch) -> anyhow::Result<Settings> {
         patch.validate()?;
         let _guard = self.write_lock.lock();

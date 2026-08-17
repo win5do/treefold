@@ -251,6 +251,20 @@ try {
     "system",
     "Settings must reflect the persisted theme preference",
   );
+  assert.match(
+    await (
+      await settingsDialog.$('[data-testid="settings-runtime-treefold-home"]')
+    ).getText(),
+    /Treefold Home[\s\S]*\/tmp\/treefold-ui-fixture/,
+    "Runtime must expose the effective Treefold Home",
+  );
+  for (const label of ["Treefold Home", "Platform", "Codex"]) {
+    assert.equal(
+      await settingsDialog.$(`button[aria-label="Copy ${label}"]`).isExisting(),
+      true,
+      `Runtime ${label} must be copyable`,
+    );
+  }
   await (
     await settingsDialog.$('[data-testid="settings-theme"]')
   ).selectByAttribute("value", "dark");

@@ -116,10 +116,12 @@ export const zhCN = {
       light: "浅色",
       dark: "深色",
     },
-    backend: "后端",
     runtime: {
       title: "运行环境",
-      description: "Treefold 当前可用的版本信息与终端后端。",
+      description: "Treefold 当前使用的路径、平台与工具版本。",
+      copy: "复制 {{label}}",
+      copied: "已复制 {{label}}",
+      copyFailed: "无法复制 {{label}}",
     },
     codexArguments: {
       title: "Codex 额外参数",

@@ -114,10 +114,12 @@ export const enUS = {
       light: "Light",
       dark: "Dark",
     },
-    backend: "Backend",
     runtime: {
       title: "Runtime",
-      description: "Versions and terminal backend currently available to Treefold.",
+      description: "Current Treefold paths, platform, and tool versions.",
+      copy: "Copy {{label}}",
+      copied: "{{label}} copied",
+      copyFailed: "Could not copy {{label}}",
     },
     codexArguments: {
       title: "Additional Codex arguments",

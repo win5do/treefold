@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, CircleCheck, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, CircleCheck, Copy, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +29,7 @@ import type {
   ThemePreference,
 } from "@/domain/types";
 import type { LanguagePreference } from "@/i18n";
+import { toast } from "@/lib/toast";
 
 type SettingsSaveFeedback =
   { kind: "idle" | "saving" | "success" } | { kind: "error"; message: string };
@@ -131,6 +132,25 @@ export function SettingsDialog({
         : { kind: "error", message: result.error },
     );
   };
+  const copyRuntimeValue = (label: string, value: string) => {
+    void navigator.clipboard.writeText(value).then(() => {
+      toast.success(t("settings.runtime.copied", { label }));
+    }).catch((cause) => {
+      console.error(`Could not copy ${label}`, cause);
+      toast.error(t("settings.runtime.copyFailed", { label }));
+    });
+  };
+  const runtimeItems = [
+    { key: "treefold-home", label: "Treefold Home", value: system?.treefold_home ?? "—" },
+    { key: "platform", label: "Platform", value: system?.platform ?? "—" },
+    {
+      key: "codex",
+      label: "Codex",
+      value: system?.codex_available
+        ? system.codex_version ?? "Codex"
+        : t("common.unavailable"),
+    },
+  ];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[86vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
@@ -315,23 +335,28 @@ export function SettingsDialog({
                   {t("settings.runtime.description")}
                 </FieldDescription>
               </FieldContent>
-              <dl className="grid w-full gap-x-6 gap-y-2 @md/field-group:max-w-sm @md/field-group:grid-cols-2">
-                <div className="flex items-baseline justify-between gap-3 @md/field-group:flex-col @md/field-group:items-start @md/field-group:gap-0.5">
-                  <dt className="text-muted-foreground">Codex</dt>
-                  <dd className="truncate font-mono">
-                    {system?.codex_available
-                      ? system.codex_version
-                      : t("common.unavailable")}
-                  </dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-3 @md/field-group:flex-col @md/field-group:items-start @md/field-group:gap-0.5">
-                  <dt className="text-muted-foreground">
-                    {t("settings.backend")}
-                  </dt>
-                  <dd className="truncate font-mono">
-                    Rust / {system?.terminal_runtime || "portable-pty"}
-                  </dd>
-                </div>
+              <dl className="w-full divide-y overflow-hidden rounded-md border @md/field-group:max-w-sm">
+                {runtimeItems.map((item) => (
+                  <div
+                    key={item.key}
+                    data-testid={`settings-runtime-${item.key}`}
+                    className="grid min-h-10 grid-cols-[7rem_minmax(0,1fr)_2rem] items-center gap-2 px-3"
+                  >
+                    <dt className="text-sm text-muted-foreground">{item.label}</dt>
+                    <dd className="min-w-0 truncate font-mono text-xs" title={item.value}>
+                      {item.value}
+                    </dd>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={t("settings.runtime.copy", { label: item.label })}
+                      disabled={item.value === "—"}
+                      onClick={() => copyRuntimeValue(item.label, item.value)}
+                    >
+                      <Copy />
+                    </Button>
+                  </div>
+                ))}
               </dl>
             </Field>
           </FieldGroup>

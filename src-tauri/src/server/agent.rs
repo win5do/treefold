@@ -4,11 +4,12 @@ pub(super) async fn health() -> Json<Value> {
     Json(json!({"status":"ok","time":now()}))
 }
 
-pub(super) async fn system_status() -> Result<Json<Value>> {
+pub(super) async fn system_status(State(state): State<AppState>) -> Result<Json<Value>> {
     let codex = command_output(Path::new("."), "codex", &["--version"]).ok();
     Ok(Json(json!({
-        "platform":"darwin", "codex_available":codex.is_some(), "codex_version":codex,
-        "backend":"rust", "terminal_runtime":"portable-pty"
+        "platform":std::env::consts::OS,
+        "treefold_home":state.settings.treefold_home().to_string_lossy(),
+        "codex_available":codex.is_some(), "codex_version":codex
     })))
 }
 
