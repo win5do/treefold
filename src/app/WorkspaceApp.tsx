@@ -411,6 +411,10 @@ function Workspace() {
     );
   }
 
+  async function resyncWorkspace(workspace: Workspace) {
+    await act(() => workspacesApi.resync(workspace.id));
+  }
+
   async function openFinishWorkspace(stream: Workspace) {
     if (workspace?.id === stream.id) {
       setFinishWorkspaceDialog(workspace);
@@ -777,12 +781,24 @@ function Workspace() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: `Reattach ${location.name}`,
+      title: `Relink ${location.name}`,
     });
     if (typeof selected !== "string") return;
     if (!location.repository_id) return;
     const repositoryId = location.repository_id;
     await act(() => projectsApi.reattachLocation(repositoryId, selected));
+  }
+
+  async function removeProjectRepository(repository: ProjectRepository) {
+    if (!window.confirm(`Remove repository from this Project?\n\n${repository.name}\n\nLocal files and Git resources will not be deleted.`))
+      return;
+    await act(() => projectsApi.deleteRepository(repository.id));
+  }
+
+  async function removeProjectDirectory(directory: Directory) {
+    if (!window.confirm(`Remove directory from this Project?\n\n${directory.name}\n\nLocal files and Git resources will not be deleted.`))
+      return;
+    await act(() => projectsApi.deleteLocation(directory.id));
   }
 
   async function closeSidebarSession(stream: Workspace, session: Session) {
@@ -1250,6 +1266,7 @@ function Workspace() {
                   onClearUpstream={(location) =>
                     void clearWorkspaceLocationUpstream(location)
                   }
+                  onResync={() => void resyncWorkspace(workspace)}
                 />
               ) : selectedProject ? (
                 <ProjectHome
@@ -1279,6 +1296,12 @@ function Workspace() {
                     void makeDefaultLocation(selectedProject, location)
                   }
                   onReattach={(location) => void reattachLocation(location)}
+                  onDeleteRepository={(repository) =>
+                    void removeProjectRepository(repository)
+                  }
+                  onDeleteDirectory={(directory) =>
+                    void removeProjectDirectory(directory)
+                  }
                   onDeleteWorktree={(item) => void removeWorktree(item)}
                 />
               ) : (

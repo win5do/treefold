@@ -121,7 +121,7 @@ impl Store {
         let db = self.0.lock();
         let mut statement = db.prepare(
             "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at
-             FROM project_repositories WHERE project_id=? ORDER BY created_at,id",
+             FROM project_repositories WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at,id",
         )?;
         let values = statement
             .query_map([project_id], project_repository_row)?
@@ -132,7 +132,7 @@ impl Store {
     pub fn repository(&self, id: &str) -> Result<ProjectRepository> {
         let db = self.0.lock();
         Ok(db.query_row(
-            "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE id=?",
+            "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE id=? AND deleted_at IS NULL",
             [id],
             project_repository_row,
         )?)
@@ -172,7 +172,7 @@ impl Store {
         let mut statement = db.prepare(&format!(
             "SELECT {DIRECTORY_COLUMNS} FROM project_directories d
              LEFT JOIN project_repositories r ON r.id=d.repository_id
-             JOIN projects p ON p.id=d.project_id WHERE d.project_id=?
+             JOIN projects p ON p.id=d.project_id WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)
              ORDER BY d.id=p.default_directory_id DESC,d.created_at,d.rowid"
         ))?;
         let values = statement
@@ -186,7 +186,7 @@ impl Store {
         let mut statement = db.prepare(&format!(
             "SELECT {DIRECTORY_COLUMNS} FROM project_directories d
              LEFT JOIN project_repositories r ON r.id=d.repository_id
-             JOIN projects p ON p.id=d.project_id WHERE d.project_id=?
+             JOIN projects p ON p.id=d.project_id WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)
              ORDER BY d.id=p.default_directory_id DESC,r.created_at,d.created_at,d.id"
         ))?;
         let values = statement
@@ -198,7 +198,7 @@ impl Store {
     pub fn directory(&self, id: &str) -> Result<Directory> {
         let db = self.0.lock();
         Ok(db.query_row(
-            &format!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=?"),
+            &format!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)"),
             [id],
             directory_row,
         )?)
@@ -207,7 +207,7 @@ impl Store {
     pub fn directory_record(&self, id: &str) -> Result<ProjectDirectory> {
         let db = self.0.lock();
         Ok(db.query_row(
-            &format!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=?"),
+            &format!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)"),
             [id],
             project_directory_row,
         )?)
@@ -216,13 +216,13 @@ impl Store {
     pub fn directory_repository_id(&self, id: &str) -> Result<Option<String>> {
         let db = self.0.lock();
         Ok(db.query_row(
-            "SELECT repository_id FROM project_directories WHERE id=?",
+            "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
             [id],
             |row| row.get(0),
         )?)
     }
 
-    pub fn create_directory(&self, directory: &Directory) -> Result<()> {
+    pub fn create_directory(&self, directory: &Directory) -> Result<String> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         let repository_id = if let Some(git_common_dir) = directory.git_common_dir.as_deref() {
@@ -230,18 +230,26 @@ impl Store {
                 .checkout_path
                 .as_deref()
                 .unwrap_or(&directory.path);
-            let existing: Option<(String, String)> = tx
+            let existing: Option<(String, String, Option<String>)> = tx
                 .query_row(
-                    "SELECT id,source_root FROM project_repositories WHERE project_id=? AND git_common_dir=?",
+                    "SELECT id,source_root,deleted_at FROM project_repositories WHERE project_id=? AND git_common_dir=?",
                     params![directory.project_id, git_common_dir],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .optional()?;
-            if let Some((id, existing_root)) = existing {
-                if normalized_path(&existing_root) != normalized_path(source_root) {
+            if let Some((id, existing_root, deleted_at)) = existing {
+                if deleted_at.is_none()
+                    && normalized_path(&existing_root) != normalized_path(source_root)
+                {
                     return Err(AppError::BadRequest(format!(
                         "repository is already associated with source worktree {existing_root}; add scopes from that worktree"
                     )));
+                }
+                if deleted_at.is_some() {
+                    tx.execute(
+                        "UPDATE project_repositories SET name=?,source_root=?,repository_url=?,preferred_remote_name=?,git_status=?,last_checked_at=?,updated_at=?,deleted_at=NULL WHERE id=?",
+                        params![basename(source_root),source_root,directory.repository_url,directory.preferred_remote_name,directory.git_status,directory.last_checked_at,directory.updated_at,id],
+                    )?;
                 }
                 id
             } else {
@@ -283,6 +291,38 @@ impl Store {
                 &directory.path,
             )?)
         };
+        let existing_directory: Option<(String, Option<String>)> = if repository_id.is_empty() {
+            tx.query_row(
+                "SELECT id,deleted_at FROM project_directories WHERE project_id=? AND external_path=?",
+                params![directory.project_id, directory.path],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional()?
+        } else {
+            tx.query_row(
+                "SELECT id,deleted_at FROM project_directories WHERE repository_id=? AND relative_path=?",
+                params![repository_id, relative_path],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional()?
+        };
+        if let Some((existing_id, deleted_at)) = existing_directory {
+            if deleted_at.is_none() {
+                return Err(AppError::BadRequest(
+                    "directory is already part of this Project".into(),
+                ));
+            }
+            tx.execute(
+                "UPDATE project_directories SET name=?,description=?,status=?,updated_at=?,deleted_at=NULL WHERE id=?",
+                params![directory.name,directory.description,directory.git_status,directory.updated_at,existing_id],
+            )?;
+            if directory.git_common_dir.is_some() {
+                tx.execute(
+                    "UPDATE projects SET default_directory_id=COALESCE(default_directory_id,?),updated_at=? WHERE id=?",
+                    params![existing_id, now(), directory.project_id],
+                )?;
+            }
+            tx.commit()?;
+            return Ok(existing_id);
+        }
         tx.execute(
             "INSERT INTO project_directories(id,project_id,repository_id,name,description,relative_path,external_path,status,created_at,updated_at)
              VALUES(?,?,?,?,?,?,?,?,?,?)",
@@ -306,7 +346,7 @@ impl Store {
             )?;
         }
         tx.commit()?;
-        Ok(())
+        Ok(directory.id.clone())
     }
 
     pub fn update_directory(
@@ -320,12 +360,12 @@ impl Store {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         let repository_id: Option<String> = tx.query_row(
-            "SELECT repository_id FROM project_directories WHERE id=?",
+            "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
             [id],
             |row| row.get(0),
         )?;
         tx.execute(
-            "UPDATE project_directories SET description=?,updated_at=? WHERE id=?",
+            "UPDATE project_directories SET description=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
             params![description, now(), id],
         )?;
         if let Some(repository_id) = repository_id {
@@ -347,7 +387,7 @@ impl Store {
         delivery_mode: &str,
     ) -> Result<()> {
         let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET setup_command=?,setup_workdir=?,base_branch=?,delivery_mode=?,updated_at=? WHERE id=?",
+            "UPDATE project_repositories SET setup_command=?,setup_workdir=?,base_branch=?,delivery_mode=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
             params![setup_command,setup_workdir,base_branch,delivery_mode,now(),id],
         )?;
         if changed == 0 {
@@ -358,7 +398,7 @@ impl Store {
 
     pub fn refresh_repository(&self, repository: &ProjectRepository) -> Result<()> {
         let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET name=?,source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,setup_command=?,setup_workdir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=?",
+            "UPDATE project_repositories SET name=?,source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,setup_command=?,setup_workdir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
             params![repository.name,repository.source_root,repository.git_common_dir,repository.repository_url,repository.preferred_remote_name,repository.base_branch,repository.delivery_mode,repository.setup_command,repository.setup_workdir,repository.git_status,repository.last_checked_at,repository.updated_at,repository.id],
         )?;
         if changed == 0 {
@@ -376,7 +416,7 @@ impl Store {
         preferred_remote_name: Option<&str>,
     ) -> Result<()> {
         let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=?",
+            "UPDATE project_repositories SET source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
             params![source_root,git_common_dir,repository_url,preferred_remote_name,now(),now(),id],
         )?;
         if changed == 0 {
@@ -389,12 +429,12 @@ impl Store {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         let repository_id: Option<String> = tx.query_row(
-            "SELECT repository_id FROM project_directories WHERE id=?",
+            "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
             [&directory.id],
             |row| row.get(0),
         )?;
         tx.execute(
-            "UPDATE project_directories SET name=?,status=?,updated_at=? WHERE id=?",
+            "UPDATE project_directories SET name=?,status=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
             params![
                 directory.name,
                 directory.git_status,
@@ -404,7 +444,7 @@ impl Store {
         )?;
         if let Some(repository_id) = repository_id {
             tx.execute(
-                "UPDATE project_repositories SET source_root=COALESCE(?,source_root),repository_url=?,preferred_remote_name=?,base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),git_common_dir=COALESCE(?,git_common_dir),git_status=?,last_checked_at=?,updated_at=? WHERE id=?",
+                "UPDATE project_repositories SET source_root=COALESCE(?,source_root),repository_url=COALESCE(repository_url,?),preferred_remote_name=COALESCE(preferred_remote_name,?),base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),git_common_dir=COALESCE(?,git_common_dir),git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
                 params![directory.checkout_path,directory.repository_url,directory.preferred_remote_name,directory.base_branch,directory.delivery_mode,directory.git_common_dir,directory.git_status,directory.last_checked_at,directory.updated_at,repository_id],
             )?;
         }
@@ -434,7 +474,7 @@ impl Store {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         let (project_id, repository_id, is_default): (String, Option<String>, bool) = tx.query_row(
-            "SELECT d.project_id,d.repository_id,d.id=p.default_directory_id FROM project_directories d JOIN projects p ON p.id=d.project_id WHERE d.id=?",
+            "SELECT d.project_id,d.repository_id,COALESCE(d.id=p.default_directory_id,0) FROM project_directories d JOIN projects p ON p.id=d.project_id WHERE d.id=? AND d.deleted_at IS NULL",
             [id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )?;
@@ -444,37 +484,35 @@ impl Store {
             ));
         }
         let referenced: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM workspace_directories WHERE project_directory_id=?)",
+            "SELECT EXISTS(SELECT 1 FROM workspace_directories wd JOIN workspaces w ON w.id=wd.workspace_id WHERE wd.project_directory_id=? AND w.status='active')",
             [id],
             |row| row.get(0),
         )?;
         if referenced {
             return Err(AppError::BadRequest(
-                "directory is snapshotted by an existing Workspace or Fork".into(),
+                "directory is used by an active Workspace or Fork".into(),
             ));
         }
-        tx.execute("DELETE FROM project_directories WHERE id=?", [id])?;
+        let timestamp = now();
+        tx.execute("UPDATE project_directories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL", params![timestamp,timestamp,id])?;
         if let Some(repository_id) = repository_id {
             let has_scopes: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM project_directories WHERE repository_id=?)",
+                "SELECT EXISTS(SELECT 1 FROM project_directories WHERE repository_id=? AND deleted_at IS NULL)",
                 [&repository_id],
                 |row| row.get(0),
             )?;
             if !has_scopes {
                 let snapshotted: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM workspace_repositories WHERE project_repository_id=?)",
+                    "SELECT EXISTS(SELECT 1 FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id WHERE wr.project_repository_id=? AND w.status='active')",
                     [&repository_id],
                     |row| row.get(0),
                 )?;
                 if snapshotted {
                     return Err(AppError::BadRequest(
-                        "repository is snapshotted by an existing Workspace or Fork".into(),
+                        "repository is used by an active Workspace or Fork".into(),
                     ));
                 }
-                tx.execute(
-                    "DELETE FROM project_repositories WHERE id=?",
-                    [&repository_id],
-                )?;
+                tx.execute("UPDATE project_repositories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL", params![timestamp,timestamp,repository_id])?;
             }
         }
         tx.execute(
@@ -489,13 +527,13 @@ impl Store {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         let referenced: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM workspace_repositories WHERE project_repository_id=?)",
+            "SELECT EXISTS(SELECT 1 FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id WHERE wr.project_repository_id=? AND w.status='active')",
             [id],
             |row| row.get(0),
         )?;
         if referenced {
             return Err(AppError::BadRequest(
-                "repository is snapshotted by an existing Workspace or Fork".into(),
+                "repository is used by an active Workspace or Fork".into(),
             ));
         }
         let contains_default: bool = tx.query_row(
@@ -508,7 +546,9 @@ impl Store {
                 "choose a default Directory in another Repository first".into(),
             ));
         }
-        let changed = tx.execute("DELETE FROM project_repositories WHERE id=?", [id])?;
+        let timestamp = now();
+        tx.execute("UPDATE project_directories SET deleted_at=?,updated_at=? WHERE repository_id=? AND deleted_at IS NULL", params![timestamp,timestamp,id])?;
+        let changed = tx.execute("UPDATE project_repositories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL", params![timestamp,timestamp,id])?;
         if changed == 0 {
             return Err(AppError::NotFound);
         }
@@ -540,7 +580,7 @@ fn project_summaries_on(db: &Connection) -> Result<Vec<ProjectSummary>> {
                 COUNT(DISTINCT CASE WHEN d.status='missing' THEN d.id END),
                 COUNT(DISTINCT CASE WHEN d.status NOT IN ('ready','not_git','missing') THEN d.id END),
                 COUNT(DISTINCT CASE WHEN w.status='active' AND w.kind='workspace' THEN w.id END)
-         FROM projects p LEFT JOIN project_directories d ON d.project_id=p.id
+         FROM projects p LEFT JOIN project_directories d ON d.project_id=p.id AND d.deleted_at IS NULL
          LEFT JOIN workspaces w ON w.project_id=p.id GROUP BY p.id ORDER BY p.updated_at DESC",
     )?;
     let values = statement
@@ -635,7 +675,7 @@ fn query_project_repositories(
     project_id: &str,
 ) -> rusqlite::Result<Vec<ProjectRepository>> {
     let mut statement = db.prepare(
-        "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE project_id=? ORDER BY created_at,id",
+        "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at,id",
     )?;
     let values = statement
         .query_map([project_id], project_repository_row)?
@@ -648,7 +688,7 @@ fn query_project_directories(
     project_id: &str,
 ) -> rusqlite::Result<Vec<ProjectDirectory>> {
     let mut statement = db.prepare(&format!(
-        "SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.project_id=? ORDER BY d.created_at,d.id"
+        "SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL) ORDER BY d.created_at,d.id"
     ))?;
     let values = statement
         .query_map([project_id], project_directory_row)?

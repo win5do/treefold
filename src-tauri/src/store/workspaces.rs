@@ -211,7 +211,7 @@ impl Store {
         let db = self.0.lock();
         let repository_id: Option<String> = db
             .query_row(
-                "SELECT repository_id FROM project_directories WHERE id=?",
+                "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
                 [project_id],
                 |row| row.get(0),
             )
@@ -222,7 +222,7 @@ impl Store {
             return Ok(Vec::new());
         };
         let mut statement = db.prepare(&format!(
-            "SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories WHERE project_repository_id=? ORDER BY created_at"
+            "SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories WHERE project_repository_id=? AND workspace_id IN (SELECT id FROM workspaces WHERE status='active') ORDER BY created_at"
         ))?;
         let values = statement
             .query_map([repository_id], workspace_location_row)?
@@ -506,7 +506,7 @@ fn insert_workspace_repositories(
     for value in values {
         let project_repository_id: Option<String> = tx
             .query_row(
-                "SELECT repository_id FROM project_directories WHERE id=?",
+                "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
                 [&value.project_location_id],
                 |row| row.get(0),
             )
@@ -514,7 +514,7 @@ fn insert_workspace_repositories(
             .flatten()
             .or_else(|| {
                 tx.query_row(
-                    "SELECT id FROM project_repositories WHERE id=?",
+                    "SELECT id FROM project_repositories WHERE id=? AND deleted_at IS NULL",
                     [&value.project_location_id],
                     |row| row.get(0),
                 )
@@ -526,7 +526,7 @@ fn insert_workspace_repositories(
             continue;
         };
         let source: (String, String) = tx.query_row(
-            "SELECT name,source_root FROM project_repositories WHERE id=?",
+            "SELECT name,source_root FROM project_repositories WHERE id=? AND deleted_at IS NULL",
             [&project_repository_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
@@ -557,7 +557,9 @@ fn snapshot_workspace_directories(
          SELECT ? || '-' || d.id,?,d.id,wr.id,d.name,d.description,d.relative_path,d.external_path,
                 CASE WHEN d.repository_id IS NULL THEN 'read_only' ELSE 'read_write' END,d.status,?,?
          FROM project_directories d LEFT JOIN workspace_repositories wr
-           ON wr.workspace_id=? AND wr.project_repository_id=d.repository_id WHERE d.project_id=?",
+           ON wr.workspace_id=? AND wr.project_repository_id=d.repository_id
+         LEFT JOIN project_repositories r ON r.id=d.repository_id
+         WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)",
         params![workspace.id,workspace.id,workspace.created_at,workspace.updated_at,workspace.id,workspace.project_id],
     )?;
     Ok(())

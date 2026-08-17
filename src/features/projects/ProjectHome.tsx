@@ -35,6 +35,8 @@ export function ProjectHome({
   onRefreshLocation,
   onMakeDefault,
   onReattach,
+  onDeleteRepository,
+  onDeleteDirectory,
   onDeleteWorktree,
 }: {
   project: ProjectDetail;
@@ -49,6 +51,8 @@ export function ProjectHome({
   onRefreshLocation: (directory: Directory) => void;
   onMakeDefault: (directory: Directory) => void;
   onReattach: (directory: Directory) => void;
+  onDeleteRepository: (repository: ProjectRepository) => void;
+  onDeleteDirectory: (directory: Directory) => void;
   onDeleteWorktree: (worktree: GitWorktree) => void;
 }) {
   const rootWorkspaces = project.workspaces.filter(
@@ -122,6 +126,8 @@ export function ProjectHome({
                   onRefresh={() => scopes[0] && onRefreshLocation(scopes[0])}
                   onMakeDefault={onMakeDefault}
                   onReattach={() => scopes[0] && onReattach(scopes[0])}
+                  onDeleteRepository={() => onDeleteRepository(repository)}
+                  onDeleteDirectory={onDeleteDirectory}
                   onDeleteWorktree={onDeleteWorktree}
                 />
               );

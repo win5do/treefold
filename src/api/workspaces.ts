@@ -40,6 +40,8 @@ export const workspacesApi = {
     request(`/api/workspaces/${id}/reveal`, { method: "POST" }),
   archive: (id: string) =>
     request(`/api/workspaces/${id}/archive`, { method: "POST" }),
+  resync: (id: string) =>
+    request<WorkspaceDetail>(`/api/workspaces/${id}/resync`, { method: "POST" }),
   sync: (id: string, action: "pull" | "push") =>
     request(`/api/workspaces/${id}/git/${action}-all`, { method: "POST" }),
   updateLocation: (id: string, json: unknown) =>

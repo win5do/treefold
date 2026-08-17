@@ -216,7 +216,7 @@ export function ProjectLocationTreeRow({
                     disabled={busy}
                     onClick={onReattach}
                   >
-                    Reattach
+                    Relink
                   </ActionMenuItem>
                 )}
                 <ActionMenuItem
@@ -386,6 +386,8 @@ export function ProjectRepositoryTreeRow({
   onRefresh,
   onMakeDefault,
   onReattach,
+  onDeleteRepository,
+  onDeleteDirectory,
   onDeleteWorktree,
 }: {
   repository: ProjectRepository;
@@ -399,6 +401,8 @@ export function ProjectRepositoryTreeRow({
   onRefresh: () => void;
   onMakeDefault: (directory: Directory) => void;
   onReattach: () => void;
+  onDeleteRepository: () => void;
+  onDeleteDirectory: (directory: Directory) => void;
   onDeleteWorktree: (worktree: GitWorktree) => void;
 }) {
   const [expanded, setExpanded] = useState(
@@ -518,7 +522,7 @@ export function ProjectRepositoryTreeRow({
                     icon={<RefreshCw className="size-3.5" />}
                     onClick={onReattach}
                   >
-                    Reattach
+                    Relink
                   </ActionMenuItem>
                 )}
                 <ActionMenuItem
@@ -527,6 +531,12 @@ export function ProjectRepositoryTreeRow({
                   onClick={onEditRepository}
                 >
                   Edit repository
+                </ActionMenuItem>
+                <ActionMenuItem
+                  icon={<Trash2 className="size-3.5" />}
+                  onClick={onDeleteRepository}
+                >
+                  Remove from project
                 </ActionMenuItem>
               </ActionMenu>
             </div>
@@ -556,6 +566,7 @@ export function ProjectRepositoryTreeRow({
                     readOnly={readOnly}
                     onEdit={() => onEditDirectory(directory)}
                     onMakeDefault={() => onMakeDefault(directory)}
+                    onDelete={() => onDeleteDirectory(directory)}
                   />
                 ))}
               </ProjectRepositoryChildGroup>
@@ -712,12 +723,14 @@ function ProjectDirectoryTreeRow({
   readOnly,
   onEdit,
   onMakeDefault,
+  onDelete,
 }: {
   directory: Directory;
   busy: boolean;
   readOnly: boolean;
   onEdit: () => void;
   onMakeDefault: () => void;
+  onDelete: () => void;
 }) {
   return (
     <div
@@ -764,9 +777,14 @@ function ProjectDirectoryTreeRow({
           >
             Edit directory
           </ActionMenuItem>
+          <ActionMenuItem
+            icon={<Trash2 className="size-3.5" />}
+            onClick={onDelete}
+          >
+            Remove from project
+          </ActionMenuItem>
         </ActionMenu>
       )}
     </div>
   );
 }
-

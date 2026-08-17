@@ -32,14 +32,14 @@ CREATE TABLE IF NOT EXISTS project_repositories (
  base_branch TEXT NOT NULL DEFAULT 'main', delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
  setup_command TEXT NOT NULL DEFAULT '', setup_workdir TEXT NOT NULL DEFAULT '.',
  git_status TEXT NOT NULL DEFAULT 'ready', last_checked_at TEXT,
- created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT,
  UNIQUE(project_id,git_common_dir)
 );
 CREATE TABLE IF NOT EXISTS project_directories (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  repository_id TEXT REFERENCES project_repositories(id),
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', relative_path TEXT, external_path TEXT,
- status TEXT NOT NULL DEFAULT 'ready', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'ready', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT,
  CHECK((repository_id IS NOT NULL AND relative_path IS NOT NULL AND external_path IS NULL)
     OR (repository_id IS NULL AND relative_path IS NULL AND external_path IS NOT NULL)),
  UNIQUE(repository_id,relative_path), UNIQUE(project_id,external_path)
@@ -78,12 +78,12 @@ CREATE INDEX IF NOT EXISTS workspaces_project_status_kind_parent
 CREATE TRIGGER IF NOT EXISTS projects_default_directory_insert
 BEFORE INSERT ON projects WHEN NEW.default_directory_id IS NOT NULL
 BEGIN SELECT CASE WHEN NOT EXISTS(
- SELECT 1 FROM project_directories WHERE id=NEW.default_directory_id AND project_id=NEW.id AND repository_id IS NOT NULL AND status='ready'
+ SELECT 1 FROM project_directories WHERE id=NEW.default_directory_id AND project_id=NEW.id AND repository_id IS NOT NULL AND status='ready' AND deleted_at IS NULL
 ) THEN RAISE(ABORT,'default directory must belong to an available Repository in this Project') END; END;
 CREATE TRIGGER IF NOT EXISTS projects_default_directory_update
 BEFORE UPDATE OF default_directory_id ON projects WHEN NEW.default_directory_id IS NOT NULL
 BEGIN SELECT CASE WHEN NOT EXISTS(
- SELECT 1 FROM project_directories WHERE id=NEW.default_directory_id AND project_id=NEW.id AND repository_id IS NOT NULL AND status='ready'
+ SELECT 1 FROM project_directories WHERE id=NEW.default_directory_id AND project_id=NEW.id AND repository_id IS NOT NULL AND status='ready' AND deleted_at IS NULL
 ) THEN RAISE(ABORT,'default directory must belong to an available Repository in this Project') END; END;
 CREATE TABLE IF NOT EXISTS sessions (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -247,6 +247,7 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
         && table_exists(connection, "workspace_repositories")?
         && table_exists(connection, "workspace_directories")?;
     if current {
+        migrate_soft_delete_schema(connection)?;
         if table_exists(connection, "sessions")?
             && table_has_column(connection, "sessions", "yolo")?
         {
@@ -297,6 +298,27 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
          DROP TABLE IF EXISTS project_locations;
          DROP TABLE IF EXISTS projects;
          PRAGMA foreign_keys=ON;",
+    )?;
+    Ok(())
+}
+
+fn migrate_soft_delete_schema(connection: &Connection) -> Result<()> {
+    if !table_has_column(connection, "project_repositories", "deleted_at")? {
+        connection.execute(
+            "ALTER TABLE project_repositories ADD COLUMN deleted_at TEXT",
+            [],
+        )?;
+    }
+    if !table_has_column(connection, "project_directories", "deleted_at")? {
+        connection.execute(
+            "ALTER TABLE project_directories ADD COLUMN deleted_at TEXT",
+            [],
+        )?;
+    }
+    // CREATE TRIGGER IF NOT EXISTS cannot update an existing trigger definition.
+    connection.execute_batch(
+        "DROP TRIGGER IF EXISTS projects_default_directory_insert;
+         DROP TRIGGER IF EXISTS projects_default_directory_update;",
     )?;
     Ok(())
 }
@@ -405,7 +427,8 @@ fn table_has_column(connection: &Connection, table: &str, column: &str) -> Resul
 
 #[cfg(test)]
 mod workspace_schema_tests {
-    use super::{Connection, Store, table_exists, table_has_column};
+    use super::{Connection, Store, now, table_exists, table_has_column};
+    use crate::model::{Directory, Project};
 
     fn temporary_database(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         let root =
@@ -441,9 +464,68 @@ mod workspace_schema_tests {
             .unwrap()
         );
         assert!(table_has_column(&connection, "project_repositories", "setup_workdir").unwrap());
+        assert!(table_has_column(&connection, "project_repositories", "deleted_at").unwrap());
+        assert!(table_has_column(&connection, "project_directories", "deleted_at").unwrap());
         drop(connection);
         drop(store);
         std::fs::remove_dir_all(root).expect("remove temporary database root");
+    }
+
+    #[test]
+    fn removed_non_git_directory_is_hidden_and_restored_with_original_id() {
+        let (root, path) = temporary_database("soft-delete-directory");
+        let store = Store::open(&path).expect("open Store");
+        let timestamp = now();
+        store
+            .create_empty_project(&Project {
+                id: "project".into(),
+                name: "Project".into(),
+                description: String::new(),
+                status: "active".into(),
+                default_location_id: None,
+                default_base_branch: "main".into(),
+                default_delivery_mode: "remote_review".into(),
+                created_at: timestamp.clone(),
+                updated_at: timestamp.clone(),
+                primary_directory_id: String::new(),
+                git_common_dir: String::new(),
+                preferred_remote: None,
+                default_target_branch: "main".into(),
+            })
+            .unwrap();
+        let directory = |id: &str| Directory {
+            id: id.into(),
+            project_id: "project".into(),
+            name: "Context".into(),
+            description: String::new(),
+            worktree_setup_command: String::new(),
+            path: "/tmp/treefold-soft-delete-context".into(),
+            repository_url: None,
+            preferred_remote_name: None,
+            base_branch: None,
+            delivery_mode: None,
+            git_common_dir: None,
+            git_status: "not_git".into(),
+            last_checked_at: None,
+            created_at: timestamp.clone(),
+            updated_at: timestamp.clone(),
+            checkout_path: None,
+            role: "attached".into(),
+            is_git: false,
+            remote_url: None,
+            branch: None,
+            head_commit: None,
+            head_summary: None,
+            dirty: false,
+        };
+        store.create_directory(&directory("original")).unwrap();
+        store.delete_project_location("original").unwrap();
+        assert!(store.directory("original").is_err());
+        store.create_directory(&directory("replacement")).unwrap();
+        assert_eq!(store.directories("project").unwrap()[0].id, "original");
+        assert!(store.directory("replacement").is_err());
+        drop(store);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

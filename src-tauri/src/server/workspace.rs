@@ -915,8 +915,8 @@ pub(super) async fn create_directory(
     if directory.git_status == "ready" && directory.delivery_mode.is_none() {
         directory.delivery_mode = Some("remote_review".into());
     }
-    state.store.create_directory(&directory)?;
-    let directory = state.store.directory(&directory.id)?;
+    let directory_id = state.store.create_directory(&directory)?;
+    let directory = state.store.directory(&directory_id)?;
     location_observations_cache()
         .insert(directory.id.clone(), directory.clone())
         .await;
@@ -967,8 +967,8 @@ pub(super) async fn refresh_project_repository(
     let mut updated = repository;
     updated.name = basename(&updated.source_root);
     updated.git_status = observed.git_status;
-    updated.repository_url = observed.repository_url;
-    updated.preferred_remote_name = observed.preferred_remote_name;
+    // Refresh is observational: repository identity and the user's preferred
+    // remote stay stable until an explicit settings change or Relink.
     updated.last_checked_at = observed.last_checked_at;
     updated.updated_at = now();
     if let Some(root) = observed.checkout_path {
@@ -987,6 +987,9 @@ pub(super) async fn refresh_project_repository(
 #[derive(Deserialize)]
 pub(super) struct ReattachProjectLocation {
     path: String,
+    preferred_remote_name: Option<String>,
+    #[serde(default)]
+    confirm_unverified: bool,
 }
 
 pub(super) async fn reattach_project_location(
@@ -998,13 +1001,13 @@ pub(super) async fn reattach_project_location(
     ensure_active_project(&state.store.project(&current.project_id)?)?;
     if current.git_common_dir.is_none() {
         return Err(AppError::BadRequest(
-            "only a previously identified Git location can be reattached".into(),
+            "only a previously identified Git location can be relinked".into(),
         ));
     }
     let (candidate, is_git) = inspect_path(&input.path)?;
     if !is_git {
         return Err(AppError::BadRequest(
-            "reattach path is not a Git repository".into(),
+            "relink path is not a Git repository".into(),
         ));
     }
     let git_dir = command_output(
@@ -1021,7 +1024,7 @@ pub(super) async fn reattach_project_location(
     .map_err(AppError::BadRequest)?;
     if normalized_path(&git_dir) != normalized_path(&common_dir) {
         return Err(AppError::BadRequest(
-            "reattach path must be the repository main worktree".into(),
+            "relink path must be the repository main worktree".into(),
         ));
     }
     let mut observed = current.clone();
@@ -1035,48 +1038,199 @@ pub(super) async fn reattach_project_location(
             observed.git_status
         )));
     }
-    if let (Some(expected), Some(actual)) = (
-        current.repository_url.as_deref(),
-        observed.repository_url.as_deref(),
-    ) && !repository_identity_matches(expected, actual)
-    {
-        return Err(AppError::BadRequest(
-            "reattach repository identity does not match".into(),
-        ));
-    }
-    let known_paths = state
-        .store
-        .workspace_locations_for_project_location(&id)?
-        .into_iter()
-        .filter_map(|item| item.checkout_path)
-        .filter(|path| Path::new(path).exists())
-        .collect::<Vec<_>>();
-    if !known_paths.is_empty() {
-        let registered = git_worktrees(&candidate)?;
-        for known in &known_paths {
-            if !registered
-                .iter()
-                .any(|item| normalized_path(&item.path) == normalized_path(known))
-            {
-                return Err(AppError::BadRequest(
-                    "candidate repository does not retain Treefold worktree registrations".into(),
-                ));
+    let remote_names = git_remote_names(&candidate)?;
+    if let Some(expected) = current.repository_url.as_deref() {
+        let mut matched = false;
+        for remote in &remote_names {
+            for flag in ["--all", "--push"] {
+                if let Ok(urls) = command_output(
+                    Path::new(&candidate),
+                    "git",
+                    &["remote", "get-url", flag, remote],
+                ) {
+                    matched |= urls
+                        .lines()
+                        .any(|url| repository_identity_matches(expected, url));
+                }
             }
         }
-        let mut args = vec!["worktree", "repair"];
-        args.extend(known_paths.iter().map(String::as_str));
-        command_output(Path::new(&candidate), "git", &args)
-            .map_err(|error| AppError::BadRequest(format!("worktree repair failed: {error}")))?;
+        if !matched {
+            return Err(AppError::BadRequest(
+                "relink repository identity does not match any candidate remote".into(),
+            ));
+        }
+    }
+    let active_locations = state.store.workspace_locations_for_project_location(&id)?;
+    if !active_locations.is_empty() {
+        let registered = git_worktrees(&candidate)?;
+        for checkout in active_locations
+            .iter()
+            .filter_map(|item| item.checkout_path.as_deref())
+        {
+            if !registered
+                .iter()
+                .any(|item| normalized_path(&item.path) == normalized_path(checkout))
+            {
+                return Err(AppError::BadRequest(format!(
+                    "candidate repository is missing active worktree registration {checkout}"
+                )));
+            }
+        }
+    } else if current.repository_url.is_none() && !input.confirm_unverified {
+        return Err(AppError::BadRequest(
+            "local-only repository cannot be verified; confirm_unverified is required".into(),
+        ));
+    }
+    let preferred = input
+        .preferred_remote_name
+        .as_deref()
+        .or(current.preferred_remote_name.as_deref());
+    if let Some(preferred) = preferred
+        && !remote_names.iter().any(|name| name == preferred)
+    {
+        return Err(AppError::BadRequest(
+            "preferred remote is missing from candidate; choose a new preferred_remote_name".into(),
+        ));
     }
     state.store.reattach_repository(
         &id,
         &candidate,
         &common_dir,
-        observed.repository_url.as_deref(),
-        observed.preferred_remote_name.as_deref(),
+        current.repository_url.as_deref(),
+        preferred,
     )?;
     let repository = refresh_project_repository(State(state.clone()), AxumPath(id)).await?;
     Ok(Json(state.store.repository_as_directory(&repository.id)?))
+}
+
+pub(super) async fn resync_workspace(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<WorkspaceDetail>> {
+    let workspace = state.store.workspace(&id)?;
+    ensure_active_workspace(&workspace)?;
+
+    let mut succeeded = 0usize;
+    let mut failed = 0usize;
+    for location in state.store.workspace_repositories(&id)? {
+        let Some(checkout_path) = location.checkout_path.as_deref() else {
+            state
+                .store
+                .set_workspace_location_creation_error(&location.id, "checkout path is missing")?;
+            failed += 1;
+            continue;
+        };
+        if !Path::new(checkout_path).is_dir() {
+            state.store.set_workspace_location_creation_result(
+                &location.id,
+                "missing",
+                Some(checkout_path),
+                location.start_commit.as_deref(),
+                Some("checkout directory is missing"),
+            )?;
+            failed += 1;
+            continue;
+        }
+        let repository = match state.store.repository(&location.project_location_id) {
+            Ok(repository) => repository,
+            Err(_) => {
+                state.store.set_workspace_location_creation_result(
+                    &location.id,
+                    "broken",
+                    Some(checkout_path),
+                    location.start_commit.as_deref(),
+                    Some("Project repository is missing or removed"),
+                )?;
+                failed += 1;
+                continue;
+            }
+        };
+        if !Path::new(&repository.source_root).is_dir() {
+            state.store.set_workspace_location_creation_result(
+                &location.id,
+                "broken",
+                Some(checkout_path),
+                location.start_commit.as_deref(),
+                Some("Project repository source is missing"),
+            )?;
+            failed += 1;
+            continue;
+        }
+        let registered = match git_worktrees(&repository.source_root) {
+            Ok(registered) => registered,
+            Err(error) => {
+                state.store.set_workspace_location_creation_result(
+                    &location.id,
+                    "broken",
+                    Some(checkout_path),
+                    location.start_commit.as_deref(),
+                    Some(&format!("cannot list worktrees: {error}")),
+                )?;
+                failed += 1;
+                continue;
+            }
+        };
+        if !registered
+            .iter()
+            .any(|item| normalized_path(&item.path) == normalized_path(checkout_path))
+        {
+            state.store.set_workspace_location_creation_result(
+                &location.id,
+                "missing",
+                Some(checkout_path),
+                location.start_commit.as_deref(),
+                Some("checkout is not registered as a worktree"),
+            )?;
+            failed += 1;
+            continue;
+        }
+        if let Err(error) = command_output(
+            Path::new(&repository.source_root),
+            "git",
+            &["worktree", "repair", checkout_path],
+        ) {
+            state.store.set_workspace_location_creation_result(
+                &location.id,
+                "broken",
+                Some(checkout_path),
+                location.start_commit.as_deref(),
+                Some(&format!("worktree repair failed: {error}")),
+            )?;
+            failed += 1;
+            continue;
+        }
+        let probe = command_output(Path::new(checkout_path), "git", &["rev-parse", "--git-dir"]);
+        match probe {
+            Ok(_) => {
+                state.store.set_workspace_location_creation_result(
+                    &location.id,
+                    "ready",
+                    Some(checkout_path),
+                    location.start_commit.as_deref(),
+                    None,
+                )?;
+                succeeded += 1;
+            }
+            Err(error) => {
+                state.store.set_workspace_location_creation_result(
+                    &location.id,
+                    "broken",
+                    Some(checkout_path),
+                    location.start_commit.as_deref(),
+                    Some(&format!("worktree probe failed: {error}")),
+                )?;
+                failed += 1;
+            }
+        }
+    }
+
+    if succeeded == 0 && failed > 0 {
+        return Err(AppError::BadRequest(format!(
+            "workspace resync failed for all {failed} repositories"
+        )));
+    }
+
+    get_workspace(State(state), AxumPath(id)).await
 }
 
 pub(super) async fn delete_project_repository(
@@ -1714,6 +1868,9 @@ pub(super) async fn get_workspace(
 ) -> Result<Json<WorkspaceDetail>> {
     let mut detail = state.store.workspace_detail(&id)?;
     for location in &mut detail.repositories {
+        if detail.workspace.status != "active" {
+            continue;
+        }
         if location.access_mode == "read_only" {
             location.git_status = if Path::new(&location.source_path).is_dir() {
                 "not_git"

@@ -218,6 +218,7 @@ fn app(state: AppState) -> Router {
                 .patch(update_workspace)
                 .delete(delete_workspace),
         )
+        .route("/api/workspaces/{id}/resync", post(resync_workspace))
         .route(
             "/api/workspaces/{id}/git/pull-all",
             post(pull_all_workspace),

@@ -6,6 +6,7 @@ import {
   Folder,
   GitBranch,
   PanelsTopLeft,
+  RefreshCw,
   TerminalSquare,
   X,
 } from "lucide-react";
@@ -33,6 +34,7 @@ export function WorkspaceHome({
   onDeleteForkBlocked,
   onConfigureUpstream,
   onClearUpstream,
+  onResync,
 }: {
   detail: WorkspaceDetail;
   busy: boolean;
@@ -42,6 +44,7 @@ export function WorkspaceHome({
   onDeleteForkBlocked: (fork: Workspace) => void;
   onConfigureUpstream: (location: WorkspaceLocation) => void;
   onClearUpstream: (location: WorkspaceLocation) => void;
+  onResync: () => void;
 }) {
   const [filter, setFilter] = useState<"all" | "codex" | "shell" | "command">(
     "all",
@@ -98,12 +101,20 @@ export function WorkspaceHome({
           </div>
         </div>
         <section data-testid="workspace-locations-section" className="mt-8">
-          <div>
-            <h2 className="text-sm font-semibold">Workspace Repositories</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Git lifecycle and delivery run once per Repository; Sessions start
-              in a Directory scope.
-            </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold">Workspace Repositories</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Git lifecycle and delivery run once per Repository; Sessions start
+                in a Directory scope.
+              </p>
+            </div>
+            {detail.status === "active" && (
+              <Button size="sm" variant="secondary" disabled={busy} onClick={onResync}>
+                <RefreshCw data-icon="inline-start" />
+                Resync
+              </Button>
+            )}
           </div>
           <div className="mt-3 grid gap-3">
             {detail.locations.map((location) => (

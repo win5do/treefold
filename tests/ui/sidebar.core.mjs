@@ -1807,10 +1807,10 @@ try {
     `[data-testid="project-location-actions-${FIXTURE_IDS.primaryRepository}"]`,
   );
   await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.equal(
+  assert.match(
     await primaryActionsMenu.getText(),
-    "Edit repository",
-    "repository actions must edit repository-owned configuration",
+    /Edit repository[\s\S]*Remove from project/,
+    "repository actions must edit configuration and expose project removal",
   );
   assert.equal(
     (await primaryActionsMenu.getText()).includes("Make default"),

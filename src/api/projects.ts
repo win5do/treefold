@@ -51,6 +51,8 @@ export const projectsApi = {
       method: "PATCH",
       json,
     }),
+  deleteLocation: (id: string) =>
+    request(`/api/project-directories/${id}`, { method: "DELETE" }),
   refreshLocation: (id: string) =>
     request<Directory>(`/api/project-directories/${id}/refresh`, {
       method: "POST",
@@ -64,14 +66,16 @@ export const projectsApi = {
       method: "PATCH",
       json,
     }),
+  deleteRepository: (id: string) =>
+    request(`/api/project-repositories/${id}`, { method: "DELETE" }),
   refreshRepository: (id: string) =>
     request<ProjectRepository>(`/api/project-repositories/${id}/refresh`, {
       method: "POST",
     }),
-  reattachLocation: (id: string, path: string) =>
+  reattachLocation: (id: string, path: string, preferredRemoteName?: string) =>
     request<ProjectRepository>(`/api/project-repositories/${id}/reattach`, {
       method: "POST",
-      json: { path },
+      json: { path, preferred_remote_name: preferredRemoteName, confirm_unverified: true },
     }),
   removeWorktree: (repositoryId: string, worktree: GitWorktree) =>
     request(`/api/project-repositories/${repositoryId}/worktrees`, {
