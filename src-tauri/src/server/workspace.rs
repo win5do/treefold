@@ -611,19 +611,43 @@ pub(super) async fn delete_worktree(
     AxumPath(repository_id): AxumPath<String>,
     ApiJson(input): ApiJson<DeleteWorktree>,
 ) -> Result<StatusCode> {
-    let project_id = state.store.repository(&repository_id)?.project_id;
-    let status =
-        blocking_git_operation(move || delete_worktree_impl(state, repository_id, input)).await?;
-    project_worktrees_cache().invalidate(&project_id).await;
-    Ok(status)
+    let (project_id, repository_path, worktree_path) = blocking_git_operation(move || {
+        prepare_delete_worktree(&state, &repository_id, &input.path)
+    })
+    .await?;
+    let worktrees_cache = project_worktrees_cache();
+    if let Some(mut worktrees) = worktrees_cache.get(&project_id).await {
+        let target = normalized_path(&worktree_path);
+        worktrees.retain(|worktree| normalized_path(&worktree.path) != target);
+        worktrees_cache.insert(project_id.clone(), worktrees).await;
+    }
+
+    tokio::spawn(async move {
+        let removal_path = worktree_path.clone();
+        let result = blocking_git_operation(move || {
+            command_output(
+                Path::new(&repository_path),
+                "git",
+                &["worktree", "remove", &removal_path],
+            )
+            .map_err(AppError::BadRequest)
+        })
+        .await;
+        if let Err(error) = result {
+            eprintln!("delete worktree {worktree_path}: {error}");
+        }
+        project_worktrees_cache().invalidate(&project_id).await;
+    });
+
+    Ok(StatusCode::ACCEPTED)
 }
 
-pub(super) fn delete_worktree_impl(
-    state: AppState,
-    repository_id: String,
-    input: DeleteWorktree,
-) -> Result<StatusCode> {
-    let directory = state.store.repository_as_directory(&repository_id)?;
+fn prepare_delete_worktree(
+    state: &AppState,
+    repository_id: &str,
+    worktree_path: &str,
+) -> Result<(String, String, String)> {
+    let directory = state.store.repository_as_directory(repository_id)?;
     ensure_active_project(&state.store.project(&directory.project_id)?)?;
     if !directory.is_git {
         return Err(AppError::BadRequest(
@@ -631,7 +655,7 @@ pub(super) fn delete_worktree_impl(
         ));
     }
 
-    let target = normalized_path(&input.path);
+    let target = normalized_path(worktree_path);
     let project_directories = state.store.directories(&directory.project_id)?;
     if project_directories
         .iter()
@@ -668,25 +692,52 @@ pub(super) fn delete_worktree_impl(
         )));
     }
 
-    if Path::new(&input.path).exists() {
-        let status = command_output(Path::new(&input.path), "git", &["status", "--porcelain"])
-            .map_err(AppError::BadRequest)?;
-        if !status.is_empty() {
+    if Path::new(worktree_path).exists() {
+        let tracked_status = Command::new("git")
+            .current_dir(worktree_path)
+            .args(["diff-index", "--quiet", "HEAD", "--"])
+            .status()
+            .map_err(|error| AppError::BadRequest(format!("check worktree changes: {error}")))?;
+        match tracked_status.code() {
+            Some(0) => {}
+            Some(1) => {
+                return Err(AppError::BadRequest(
+                    "worktree has uncommitted tracked changes; commit or stash them before deleting it"
+                        .into(),
+                ));
+            }
+            _ => {
+                return Err(AppError::BadRequest(
+                    "failed to check worktree tracked changes".into(),
+                ));
+            }
+        }
+
+        let untracked = command_output(
+            Path::new(worktree_path),
+            "git",
+            &[
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "--directory",
+                "--no-empty-directory",
+            ],
+        )
+        .map_err(AppError::BadRequest)?;
+        if !untracked.is_empty() {
             return Err(AppError::BadRequest(
-                "worktree has uncommitted changes; commit, stash, or discard them before deleting it"
+                "worktree has untracked files; commit, stash, or remove them before deleting it"
                     .into(),
             ));
         }
     }
 
-    command_output(
-        Path::new(&directory.path),
-        "git",
-        &["worktree", "remove", &input.path],
-    )
-    .map_err(AppError::BadRequest)?;
-
-    Ok(StatusCode::NO_CONTENT)
+    Ok((
+        directory.project_id,
+        directory.path,
+        worktree_path.to_owned(),
+    ))
 }
 
 pub(super) async fn delete_project(
