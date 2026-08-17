@@ -44,6 +44,7 @@ pub struct TerminalManager {
     bridge_started: Arc<AtomicBool>,
     process_events: tokio::sync::broadcast::Sender<TreefoldProcessEvent>,
     process_state: ProcessStateMap,
+    api_url: Arc<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -108,7 +109,13 @@ impl TerminalManager {
             bridge_started: Arc::new(AtomicBool::new(false)),
             process_events,
             process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
+            api_url: Arc::new("http://127.0.0.1:7331".into()),
         }
+    }
+
+    pub fn with_api_url(mut self, api_url: String) -> Self {
+        self.api_url = Arc::new(api_url);
+        self
     }
 
     async fn ensure_runtime(&self) -> anyhow::Result<()> {
@@ -294,11 +301,7 @@ impl TerminalManager {
         let mut env = BTreeMap::from([
             ("TERM".into(), "xterm-256color".into()),
             ("COLORTERM".into(), "truecolor".into()),
-            (
-                "TREEFOLD_API_URL".into(),
-                std::env::var("TREEFOLD_API_URL")
-                    .unwrap_or_else(|_| "http://127.0.0.1:7331".into()),
-            ),
+            ("TREEFOLD_API_URL".into(), self.api_url.as_ref().clone()),
             ("TREEFOLD_WORKSPACE_ID".into(), session.workspace_id.clone()),
             ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
             ("AMUX_DAEMON".into(), self.daemon_name.as_ref().clone()),
@@ -535,6 +538,7 @@ impl Default for TerminalManager {
             bridge_started: Arc::new(AtomicBool::new(false)),
             process_events: tokio::sync::broadcast::channel(1024).0,
             process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
+            api_url: Arc::new("http://127.0.0.1:7331".into()),
         }
     }
 }

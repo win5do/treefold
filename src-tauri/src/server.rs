@@ -63,7 +63,12 @@ fn location_observations_cache() -> &'static Cache<String, ProjectLocation> {
     })
 }
 
-pub async fn serve(state: AppState) -> anyhow::Result<()> {
+pub async fn bind() -> anyhow::Result<tokio::net::TcpListener> {
+    let bind_addr = env::var("TREEFOLD_API_ADDR").unwrap_or_else(|_| "127.0.0.1:0".into());
+    Ok(tokio::net::TcpListener::bind(&bind_addr).await?)
+}
+
+pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> anyhow::Result<()> {
     let mut process_events = state.terminals.subscribe_process_events();
     state.terminals.connect_existing().await;
     reconcile_daemon_sessions(&state).await?;
@@ -84,8 +89,6 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
         }
     });
     let app = app(state);
-    let bind_addr = env::var("TREEFOLD_API_ADDR").unwrap_or_else(|_| "127.0.0.1:7331".into());
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     log::info!("Rust API listening on http://{}", listener.local_addr()?);
     axum::serve(listener, app).await?;
     Ok(())

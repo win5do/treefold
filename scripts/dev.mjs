@@ -18,24 +18,16 @@ function freePort() {
   });
 }
 
-const apiPort = await freePort();
-let devServerPort = await freePort();
-while (devServerPort === apiPort) devServerPort = await freePort();
+const devServerPort = await freePort();
 
-const apiAddr = `127.0.0.1:${apiPort}`;
-const apiUrl = `http://${apiAddr}`;
 const devUrl = `http://127.0.0.1:${devServerPort}`;
 const config = JSON.stringify({ build: { devUrl } });
 const env = {
   ...process.env,
-  TREEFOLD_API_ADDR: apiAddr,
-  TREEFOLD_API_URL: apiUrl,
   TREEFOLD_DEV_SERVER_PORT: String(devServerPort),
-  VITE_TREEFOLD_API_BASE: apiUrl,
 };
 
 console.log(`[treefold dev] UI:  ${devUrl}`);
-console.log(`[treefold dev] API: ${apiUrl}`);
 
 const child = spawn("npm", ["run", "tauri", "--", "dev", "--config", config, ...process.argv.slice(2)], {
   env,

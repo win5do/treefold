@@ -33,21 +33,20 @@ just dev
 
 The `just dev` and `just dev-no-watch` recipes keep development state in the
 repository-local `.treefold-dev/` directory, separate from the normal
-`~/.treefold` installation. Each launch also selects free loopback ports for
-the Vite dev server and the Rust API/WebSocket server, so multiple worktrees can
-run concurrently. The selected API URL is passed to the frontend and to
-Treefold-managed terminal sessions. Set `TREEFOLD_DEV_HOME` to use another
-development state directory:
+`~/.treefold` installation. Each launch also selects a free loopback port for
+the Vite dev server. In both development and packaged builds, the Rust backend
+asks the operating system for a free loopback port and injects the resulting
+API URL into the WebView and Treefold-managed terminal sessions. Set
+`TREEFOLD_DEV_HOME` to use another development state directory:
 
 ```bash
 TREEFOLD_DEV_HOME=/tmp/treefold-dev just dev
 ```
 
 `tauri dev` starts Vite with hot reload, compiles the Rust backend, and opens
-the native macOS window. In packaged builds, the internal API and terminal
-WebSocket default to `127.0.0.1:7331`; set `TREEFOLD_API_ADDR` and
-`TREEFOLD_API_URL` together to override that endpoint outside the development
-launcher.
+the native macOS window. The selected backend URL is published at
+`$TREEFOLD_HOME/runtime/api-url` for local CLI discovery. Set
+`TREEFOLD_API_ADDR` to request a specific loopback bind address instead.
 
 Useful checks:
 

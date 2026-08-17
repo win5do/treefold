@@ -6,6 +6,24 @@ use serde_json::{Value, json};
 
 const DEFAULT_API_URL: &str = "http://127.0.0.1:7331";
 
+fn api_url() -> String {
+    env::var("TREEFOLD_API_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            let home = env::var_os("TREEFOLD_HOME")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    env::var_os("HOME").map(|home| PathBuf::from(home).join(".treefold"))
+                })?;
+            std::fs::read_to_string(home.join("runtime/api-url"))
+                .ok()
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_else(|| DEFAULT_API_URL.into())
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "treefold",
@@ -233,7 +251,7 @@ fn todo_action(
 
 fn run_doctor(json_output: bool) -> Result<(), CliError> {
     let mut checks = Vec::new();
-    let api_url = env::var("TREEFOLD_API_URL").unwrap_or_else(|_| DEFAULT_API_URL.into());
+    let api_url = api_url();
     let api = Client::new()
         .get(format!("{}/api/health", api_url.trim_end_matches('/')))
         .send()
@@ -325,7 +343,7 @@ impl ApiClient {
             })?;
         Ok(Self {
             client: Client::new(),
-            base_url: env::var("TREEFOLD_API_URL").unwrap_or_else(|_| DEFAULT_API_URL.into()),
+            base_url: api_url(),
             token,
         })
     }

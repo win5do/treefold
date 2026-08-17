@@ -14,6 +14,43 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
+#[derive(Clone)]
+struct ApiEndpoint(String);
+
+#[tauri::command]
+fn treefold_api_url(endpoint: tauri::State<'_, ApiEndpoint>) -> String {
+    endpoint.0.clone()
+}
+
+fn publish_api_url(home: &std::path::Path, api_url: &str) -> anyhow::Result<std::path::PathBuf> {
+    use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let runtime = home.join("runtime");
+    std::fs::create_dir_all(&runtime)?;
+    let path = runtime.join("api-url");
+    let temporary = runtime.join(format!("api-url.tmp-{}", std::process::id()));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(&temporary)?;
+    writeln!(file, "{api_url}")?;
+    file.sync_all()?;
+    std::fs::rename(&temporary, &path)?;
+    Ok(path)
+}
+
+fn remove_api_url(path: &std::path::Path, api_url: &str) {
+    let owns_file = std::fs::read_to_string(path)
+        .map(|value| value.trim() == api_url)
+        .unwrap_or(false);
+    if owns_file {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_OPEN_ID: &str = "tray-open";
 const TRAY_QUIT_ID: &str = "tray-quit";
@@ -103,6 +140,7 @@ pub fn run() {
     let daemon_stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![treefold_api_url])
         .on_window_event(|window, event| {
             if window.label() != MAIN_WINDOW_LABEL {
                 return;
@@ -157,16 +195,26 @@ pub fn run() {
             let store = store::Store::open(&home.join("data/treefold.db"))
                 .map_err(|error| anyhow::anyhow!(error.to_string()))?;
             let (daemon_name, daemon_config) = amux_identity(&home)?;
-            let terminals = terminal::TerminalManager::new_named(daemon_config, daemon_name);
-            *shutdown_state.lock().expect("lock shutdown state") =
-                Some((settings.clone(), terminals.clone(), store.clone()));
+            let listener = tauri::async_runtime::block_on(server::bind())?;
+            let api_url = format!("http://{}", listener.local_addr()?);
+            let api_url_file = publish_api_url(&home, &api_url)?;
+            app.manage(ApiEndpoint(api_url.clone()));
+            let terminals = terminal::TerminalManager::new_named(daemon_config, daemon_name)
+                .with_api_url(api_url.clone());
+            *shutdown_state.lock().expect("lock shutdown state") = Some((
+                settings.clone(),
+                terminals.clone(),
+                store.clone(),
+                api_url_file,
+                api_url.clone(),
+            ));
             let state = server::AppState {
                 store,
                 settings,
                 terminals,
             };
             tauri::async_runtime::spawn(async move {
-                if let Err(error) = server::serve(state).await {
+                if let Err(error) = server::serve(listener, state).await {
                     log::error!("Rust API stopped: {error:#}");
                 }
             });
@@ -183,11 +231,12 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {}
                 _ => return,
             }
-            let Some((settings, terminals, store)) =
+            let Some((settings, terminals, store, api_url_file, api_url)) =
                 shutdown.lock().expect("lock shutdown state").clone()
             else {
                 return;
             };
+            remove_api_url(&api_url_file, &api_url);
             let keep_running = settings
                 .load()
                 .map(|value| value.amux.keep_daemon_running_on_exit)
