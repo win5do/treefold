@@ -1,5 +1,6 @@
 default: check
 
+default-home := env("HOME") + "/.treefold"
 dev-home := env("TREEFOLD_DEV_HOME", justfile_directory() + "/.treefold-dev")
 
 install:
@@ -10,6 +11,9 @@ dev:
 
 dev-no-watch:
     TREEFOLD_HOME="{{ dev-home }}" npm run dev:desktop -- --no-watch
+
+default-no-watch:
+    TREEFOLD_HOME="{{ default-home }}" npm run dev:desktop -- --no-watch
 
 check:
     npm run typecheck
