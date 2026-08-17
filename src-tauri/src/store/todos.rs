@@ -19,15 +19,14 @@ impl Store {
 
     pub fn create_todo(&self, t: &Todo) -> Result<()> {
         self.0.lock().execute(
-            "INSERT INTO todos(id,workspace_id,title,description,status,session_id,blocked_reason,created_at,updated_at)
-             VALUES(:id,:workspace_id,:title,:description,:status,:session_id,:blocked_reason,:created_at,:updated_at)",
+            "INSERT INTO todos(id,workspace_id,content,status,fork_id,blocked_reason,created_at,updated_at)
+             VALUES(:id,:workspace_id,:content,:status,:fork_id,:blocked_reason,:created_at,:updated_at)",
             named_params! {
                 ":id": t.id,
                 ":workspace_id": t.workspace_id,
-                ":title": t.title,
-                ":description": t.description,
+                ":content": t.content,
                 ":status": t.status,
-                ":session_id": t.session_id,
+                ":fork_id": t.fork_id,
                 ":blocked_reason": t.blocked_reason,
                 ":created_at": t.created_at,
                 ":updated_at": t.updated_at,
@@ -44,40 +43,64 @@ impl Store {
         )?)
     }
 
-    pub fn update_todo(&self, id: &str, status: &str, session_id: Option<&str>) -> Result<()> {
+    pub fn update_todo(&self, id: &str, status: &str) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE todos SET status=?,session_id=?,blocked_reason=NULL,updated_at=? WHERE id=?",
-            params![status, session_id, now(), id],
+            "UPDATE todos SET status=?,blocked_reason=CASE WHEN ?='blocked' THEN blocked_reason ELSE NULL END,updated_at=? WHERE id=?",
+            params![status, status, now(), id],
         )?;
         Ok(())
     }
 
-    pub fn edit_todo(
-        &self,
-        id: &str,
-        title: Option<&str>,
-        description: Option<&str>,
-    ) -> Result<()> {
+    pub fn edit_todo(&self, id: &str, content: Option<&str>) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE todos SET title=COALESCE(?,title),description=COALESCE(?,description),updated_at=? WHERE id=?",
-            params![title, description, now(), id],
+            "UPDATE todos SET content=COALESCE(?,content),updated_at=? WHERE id=?",
+            params![content, now(), id],
         )?;
         Ok(())
     }
 
-    pub fn claim_todo(&self, id: &str, session_id: &str) -> Result<bool> {
+    pub fn reserve_todo_for_fork(&self, id: &str) -> Result<bool> {
         let changed = self.0.lock().execute(
-            "UPDATE todos SET status='assigned',session_id=?,blocked_reason=NULL,updated_at=?
-             WHERE id=? AND (status='pending' OR (status='assigned' AND session_id=?))",
-            params![session_id, now(), id, session_id],
+            "UPDATE todos SET status='in_progress',updated_at=?
+             WHERE id=? AND status IN ('pending','blocked')",
+            params![now(), id],
         )?;
         Ok(changed == 1)
     }
 
-    pub fn block_todo(&self, id: &str, session_id: &str, reason: &str) -> Result<()> {
+    pub fn attach_todo_fork(
+        &self,
+        id: &str,
+        previous_fork_id: Option<&str>,
+        fork_id: &str,
+    ) -> Result<bool> {
+        let changed = self.0.lock().execute(
+            "UPDATE todos SET status='in_progress',fork_id=?,blocked_reason=NULL,updated_at=?
+             WHERE id=? AND fork_id IS ?",
+            params![fork_id, now(), id, previous_fork_id],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub fn restore_todo_after_fork_failure(
+        &self,
+        id: &str,
+        previous_fork_id: Option<&str>,
+        status: &str,
+        blocked_reason: Option<&str>,
+    ) -> Result<()> {
         self.0.lock().execute(
-            "UPDATE todos SET status='blocked',session_id=?,blocked_reason=?,updated_at=? WHERE id=?",
-            params![session_id, reason, now(), id],
+            "UPDATE todos SET status=?,blocked_reason=?,updated_at=?
+             WHERE id=? AND status='in_progress' AND fork_id IS ?",
+            params![status, blocked_reason, now(), id, previous_fork_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn block_todo(&self, id: &str, reason: &str) -> Result<()> {
+        self.0.lock().execute(
+            "UPDATE todos SET status='blocked',blocked_reason=?,updated_at=? WHERE id=?",
+            params![reason, now(), id],
         )?;
         Ok(())
     }
@@ -89,23 +112,11 @@ impl Store {
         Ok(())
     }
 
-    pub fn delete_todos(&self, workspace_id: &str) -> Result<()> {
-        self.0
-            .lock()
-            .execute("DELETE FROM todos WHERE workspace_id=?", [workspace_id])?;
-        Ok(())
-    }
-
-    pub fn carry_todos(&self, from_workspace_id: &str, to_workspace_id: &str) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE todos
-             SET workspace_id=?,session_id=NULL,blocked_reason=NULL,
-                 status=CASE WHEN status IN ('assigned','in_progress','blocked') THEN 'pending' ELSE status END,
-                 updated_at=?
-             WHERE workspace_id=?",
-            params![to_workspace_id, now(), from_workspace_id],
-        )?;
-        Ok(())
+    pub fn todo_for_fork(&self, fork_id: &str) -> Result<Option<Todo>> {
+        let db = self.0.lock();
+        let mut stmt = db.prepare(&format!("SELECT {TODO_COLUMNS} FROM todos WHERE fork_id=?"))?;
+        let mut rows = stmt.query([fork_id])?;
+        Ok(rows.next()?.map(todo_row).transpose()?)
     }
 }
 
@@ -113,10 +124,9 @@ fn todo_row(r: &Row<'_>) -> rusqlite::Result<Todo> {
     Ok(Todo {
         id: r.get("id")?,
         workspace_id: r.get("workspace_id")?,
-        title: r.get("title")?,
-        description: r.get("description")?,
+        content: r.get("content")?,
         status: r.get("status")?,
-        session_id: r.get("session_id")?,
+        fork_id: r.get("fork_id")?,
         blocked_reason: r.get("blocked_reason")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
@@ -124,4 +134,4 @@ fn todo_row(r: &Row<'_>) -> rusqlite::Result<Todo> {
 }
 
 const TODO_COLUMNS: &str =
-    "id,workspace_id,title,description,status,session_id,blocked_reason,created_at,updated_at";
+    "id,workspace_id,content,status,fork_id,blocked_reason,created_at,updated_at";

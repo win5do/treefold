@@ -385,15 +385,13 @@ const workspaceTodos = [
   {
     id: "todo-pending-ui-fixture",
     workspace_id: FIXTURE_IDS.workspace,
-    title: "Pending deterministic Todo",
-    description: "Remains pending for UI coverage.",
+    content: "Pending deterministic Todo\n\nRemains pending for UI coverage.",
     status: "pending",
   },
   {
     id: "todo-done-ui-fixture",
     workspace_id: FIXTURE_IDS.workspace,
-    title: "Completed deterministic Todo",
-    description: "Remains in history for UI coverage.",
+    content: "Completed deterministic Todo\n\nRemains in history for UI coverage.",
     status: "done",
   },
 ];

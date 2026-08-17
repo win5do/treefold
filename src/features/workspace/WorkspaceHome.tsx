@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bot,
   ChevronRight,
@@ -9,13 +9,28 @@ import {
   RefreshCw,
   TerminalSquare,
   X,
+  Check,
+  GitFork,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
+import { todosApi } from "@/api/todos";
 import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
 import { StatusDot } from "@/components/app/StatusDot";
 import { RecordActionMenu } from "@/features/app/RecordActions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import type {
   Session,
   Workspace,
@@ -36,6 +51,8 @@ export function WorkspaceHome({
   onConfigureUpstream,
   onClearUpstream,
   onResync,
+  onTodosChanged,
+  onTodoForkCreated,
 }: {
   detail: WorkspaceDetail;
   busy: boolean;
@@ -46,6 +63,8 @@ export function WorkspaceHome({
   onConfigureUpstream: (location: WorkspaceLocation) => void;
   onClearUpstream: (location: WorkspaceLocation) => void;
   onResync: () => void;
+  onTodosChanged: () => void;
+  onTodoForkCreated: (fork: Workspace, session?: Session) => void;
 }) {
   const [filter, setFilter] = useState<"all" | "codex" | "shell" | "command">(
     "all",
@@ -53,6 +72,27 @@ export function WorkspaceHome({
   const sessions = detail.sessions.filter(
     (session) => filter === "all" || session.kind === filter,
   );
+  const [todoDialog, setTodoDialog] = useState<{
+    id?: string;
+    content: string;
+  } | null>(null);
+  const [todoBusy, setTodoBusy] = useState(false);
+  const [todoError, setTodoError] = useState("");
+  useEffect(() => setTodoDialog(null), [detail.id]);
+  const runTodo = async (action: () => Promise<unknown>) => {
+    setTodoBusy(true);
+    setTodoError("");
+    try {
+      await action();
+      onTodosChanged();
+      return true;
+    } catch (cause) {
+      setTodoError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    } finally {
+      setTodoBusy(false);
+    }
+  };
   const actionLabel = (session: Session) => {
     if (session.visibility !== "visible" && session.kind === "codex")
       return session.status === "running" ? "Show in sidebar" : "Open";
@@ -233,23 +273,125 @@ export function WorkspaceHome({
         <section data-testid="workspace-todos-section" className="mt-8">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold">Todos</h2>
-            <span className="text-[11px] text-muted-foreground">
-              {detail.todos.length}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">
+                {detail.todos.length}
+              </span>
+              {detail.status === "active" && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setTodoDialog({ content: "" })}
+                >
+                  <Plus data-icon="inline-start" />
+                  Add Todo
+                </Button>
+              )}
+            </div>
           </div>
           <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
             {detail.todos.map((todo) => (
-              <div key={todo.id} className="flex items-center gap-3 px-4 py-3">
+              <div key={todo.id} className="flex gap-3 px-4 py-3">
                 <span
                   className={cn(
-                    "size-2 rounded-full",
+                    "mt-2 size-2 shrink-0 rounded-full",
                     todo.status === "done" ? "bg-success" : "bg-warning",
                   )}
                 />
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {todo.title}
-                </span>
-                <Badge>{todo.status}</Badge>
+                <div className="min-w-0 flex-1">
+                  <div className="whitespace-pre-wrap text-sm leading-6">
+                    {todo.content}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1">
+                    <Badge>{todo.status}</Badge>
+                    {todo.fork_id && (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Open execution Fork"
+                        onClick={() =>
+                          onOpenFork(
+                            detail.forks.find(
+                              (fork) => fork.id === todo.fork_id,
+                            ) ?? ({ id: todo.fork_id } as Workspace),
+                          )
+                        }
+                      >
+                        <GitFork />
+                      </Button>
+                    )}
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Edit Todo"
+                      disabled={todoBusy}
+                      onClick={() =>
+                        setTodoDialog({ id: todo.id, content: todo.content })
+                      }
+                    >
+                      <Pencil />
+                    </Button>
+                    {todo.status === "done" ? (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Reopen Todo"
+                        disabled={todoBusy}
+                        onClick={() =>
+                          void runTodo(() =>
+                            todosApi.update(todo.id, { status: "pending" }),
+                          )
+                        }
+                      >
+                        <RotateCcw />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Complete Todo"
+                        disabled={todoBusy}
+                        onClick={() =>
+                          void runTodo(() =>
+                            todosApi.update(todo.id, { status: "done" }),
+                          )
+                        }
+                      >
+                        <Check />
+                      </Button>
+                    )}
+                    {(["pending", "blocked"] as const).includes(
+                      todo.status as "pending" | "blocked",
+                    ) && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={todoBusy}
+                        onClick={() =>
+                          void runTodo(async () => {
+                            const result = await todosApi.createFork(todo.id);
+                            onTodoForkCreated(result.fork, result.session);
+                          })
+                        }
+                      >
+                        <GitFork data-icon="inline-start" />
+                        Create Fork
+                      </Button>
+                    )}
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Permanently delete Todo"
+                      disabled={todoBusy}
+                      onClick={() => {
+                        if (window.confirm("Permanently delete this Todo?"))
+                          void runTodo(() => todosApi.delete(todo.id));
+                      }}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                </div>
               </div>
             ))}
             {detail.todos.length === 0 && (
@@ -258,7 +400,59 @@ export function WorkspaceHome({
               </p>
             )}
           </div>
+          {todoError && (
+            <p className="mt-2 text-xs text-destructive">{todoError}</p>
+          )}
         </section>
+        <Dialog
+          open={Boolean(todoDialog)}
+          onOpenChange={(open) => !open && setTodoDialog(null)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {todoDialog?.id ? "Edit Todo" : "Create Todo"}
+              </DialogTitle>
+              <DialogDescription>
+                Markdown is supported. Todo content may span multiple lines.
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea
+              rows={8}
+              value={todoDialog?.content ?? ""}
+              onChange={(event) =>
+                setTodoDialog(
+                  (current) =>
+                    current && { ...current, content: event.target.value },
+                )
+              }
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setTodoDialog(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={todoBusy || !todoDialog?.content.trim()}
+                onClick={() => {
+                  if (!todoDialog) return;
+                  const current = todoDialog;
+                  void runTodo(() =>
+                    current.id
+                      ? todosApi.update(current.id, {
+                          content: current.content,
+                        })
+                      : todosApi.create(detail.id, current.content),
+                  ).then((saved) => saved && setTodoDialog(null));
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
         <div className="mt-8 flex items-center justify-between border-b border-border">
           <div className="flex gap-5">
             {(

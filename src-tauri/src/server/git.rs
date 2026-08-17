@@ -391,7 +391,14 @@ pub(super) async fn archive_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Workspace>> {
+    let workspace = state.store.workspace(&id)?;
     state.store.archive_workspace(&id)?;
+    if workspace.kind == "fork"
+        && let Some(todo) = state.store.todo_for_fork(&id)?
+        && matches!(todo.status.as_str(), "in_progress" | "blocked")
+    {
+        state.store.update_todo(&todo.id, "pending")?;
+    }
     for mut session in state.store.sessions(&id)? {
         capture_codex_session_id(&state.store, &mut session)?;
         let _ = state

@@ -8,6 +8,7 @@ import {
 } from "../fixtures/sidebar-core.mjs";
 import { createGitDiffRoutes } from "./routes/git-diff.mjs";
 import { createParentOperationRoutes } from "./routes/parent-operations.mjs";
+import { createTodoRoutes } from "./routes/todos.mjs";
 
 const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -47,6 +48,7 @@ async function startFixtureApi() {
     readJson,
     sendJson,
   });
+  const todoRoutes = createTodoRoutes({ fixture, readJson, sendJson });
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -58,6 +60,7 @@ async function startFixtureApi() {
       .pathname;
     if (await gitDiffRoutes.handle(request, response, pathname)) return;
     if (await parentOperationRoutes.handle(request, response, pathname)) return;
+    if (await todoRoutes.handle(request, response, pathname)) return;
     if (request.method === "GET" && pathname === "/api/system") {
       sendJson(response, 200, fixture.system);
       return;
@@ -996,6 +999,7 @@ async function startFixtureApi() {
     deleteRequests,
     amuxStopRequests,
     parentOperationRequests: parentOperationRoutes.requests,
+    todoRequests: todoRoutes.requests,
     compareRequests: gitDiffRoutes.requests,
     archiveAllStreams() {
       for (const detail of Object.values(fixture.projectDetails))
@@ -1069,6 +1073,7 @@ export async function startUiHarness() {
       deleteRequests: [],
       amuxStopRequests: [],
       parentOperationRequests: [],
+      todoRequests: [],
       compareRequests: [],
       archiveAllStreams() {},
       restoreActiveStreams() {},
@@ -1122,6 +1127,7 @@ export async function startUiHarness() {
     deleteRequests: fixtureApi.deleteRequests,
     amuxStopRequests: fixtureApi.amuxStopRequests,
     parentOperationRequests: fixtureApi.parentOperationRequests,
+    todoRequests: fixtureApi.todoRequests,
     compareRequests: fixtureApi.compareRequests,
     archiveAllStreams: fixtureApi.archiveAllStreams,
     restoreActiveStreams: fixtureApi.restoreActiveStreams,

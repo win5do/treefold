@@ -110,10 +110,11 @@ CREATE TABLE IF NOT EXISTS session_additional_directories (
 );
 CREATE TABLE IF NOT EXISTS todos (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
- title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
- session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL, blocked_reason TEXT,
+ content TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','in_progress','blocked','done')),
+ fork_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL, blocked_reason TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS todos_fork ON todos(fork_id) WHERE fork_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS delivery_operations (
  workspace_repository_id TEXT PRIMARY KEY REFERENCES workspace_repositories(id) ON DELETE CASCADE,
  phase TEXT NOT NULL, code_action TEXT NOT NULL, todo_action TEXT NOT NULL DEFAULT 'keep',
@@ -262,6 +263,7 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
             )?;
         }
         migrate_session_lifecycle_schema(connection)?;
+        migrate_todo_v4_schema(connection, path)?;
         return Ok(());
     }
 
@@ -299,6 +301,19 @@ fn migrate_development_schema(connection: &Connection, path: &Path) -> Result<()
          DROP TABLE IF EXISTS projects;
          PRAGMA foreign_keys=ON;",
     )?;
+    Ok(())
+}
+
+fn migrate_todo_v4_schema(connection: &Connection, path: &Path) -> Result<()> {
+    if !table_exists(connection, "todos")? || table_has_column(connection, "todos", "content")? {
+        return Ok(());
+    }
+    let backup = path.with_extension("pre-workspace-todos-v4.db");
+    if !backup.exists() {
+        let quoted = backup.to_string_lossy().replace('\'', "''");
+        connection.execute_batch(&format!("VACUUM INTO '{quoted}';"))?;
+    }
+    connection.execute_batch("DROP TABLE todos;")?;
     Ok(())
 }
 

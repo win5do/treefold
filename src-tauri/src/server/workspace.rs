@@ -622,24 +622,18 @@ pub(super) async fn delete_worktree(
         worktrees_cache.insert(project_id.clone(), worktrees).await;
     }
 
-    tokio::spawn(async move {
-        let removal_path = worktree_path.clone();
-        let result = blocking_git_operation(move || {
-            command_output(
-                Path::new(&repository_path),
-                "git",
-                &["worktree", "remove", &removal_path],
-            )
-            .map_err(AppError::BadRequest)
-        })
-        .await;
-        if let Err(error) = result {
-            eprintln!("delete worktree {worktree_path}: {error}");
-        }
-        project_worktrees_cache().invalidate(&project_id).await;
-    });
-
-    Ok(StatusCode::ACCEPTED)
+    let removal_path = worktree_path.clone();
+    blocking_git_operation(move || {
+        command_output(
+            Path::new(&repository_path),
+            "git",
+            &["worktree", "remove", &removal_path],
+        )
+        .map_err(AppError::BadRequest)
+    })
+    .await?;
+    project_worktrees_cache().invalidate(&project_id).await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn prepare_delete_worktree(
@@ -727,7 +721,7 @@ fn prepare_delete_worktree(
         .map_err(AppError::BadRequest)?;
         if !untracked.is_empty() {
             return Err(AppError::BadRequest(
-                "worktree has untracked files; commit, stash, or remove them before deleting it"
+                "worktree has uncommitted changes; commit, stash, or discard them before deleting it"
                     .into(),
             ));
         }

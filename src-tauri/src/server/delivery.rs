@@ -256,6 +256,7 @@ pub(super) fn finish_workspace_location_impl(
 ) -> Result<Json<FinishProgress>> {
     validate_delivery_input(&input)?;
     let location = state.store.workspace_location(&id)?;
+    let workspace = state.store.workspace(&location.workspace_id)?;
     if location.access_mode != "read_write" {
         return Err(AppError::BadRequest(
             "read-only locations do not require Finish".into(),
@@ -391,6 +392,17 @@ pub(super) fn finish_workspace_location_impl(
         integrated.as_deref(),
         &timestamp,
     )?;
+    if workspace.kind == "fork" && matches!(outcome, "local_merge" | "remote_merged") {
+        let all_delivered = state
+            .store
+            .workspace_locations(&workspace.id)?
+            .iter()
+            .filter(|item| item.access_mode == "read_write")
+            .all(|item| matches!(item.delivery_status.as_str(), "delivered" | "remote_merged"));
+        if all_delivered && let Some(todo) = state.store.todo_for_fork(&workspace.id)? {
+            state.store.update_todo(&todo.id, "done")?;
+        }
+    }
     Ok(Json(FinishProgress {
         status: "finished".into(),
         location: state.store.workspace_location(&location.id)?,
@@ -1188,6 +1200,7 @@ pub(super) fn workspace_delivery_target(
 
 pub(super) struct FinishWorkspace {
     pub(super) code_action: String,
+    #[serde(default)]
     pub(super) todo_action: String,
     #[serde(default)]
     pub(super) push_after_merge: bool,
@@ -1459,14 +1472,6 @@ pub(super) async fn finish_workspace_steps(
     fail_delivery_after(fail_after_phase, "target_pushed")?;
 
     if !delivery_phase_at_least(&operation.phase, "records_carried")? {
-        if input.todo_action == "carry" {
-            let parent_id = workspace.parent_workspace_id.as_deref().ok_or_else(|| {
-                AppError::BadRequest("only a Fork can carry Todos into a parent Workspace".into())
-            })?;
-            state.store.carry_todos(id, parent_id)?;
-        } else if input.todo_action == "discard" {
-            state.store.delete_todos(id)?;
-        }
         state
             .store
             .advance_delivery(id, "records_carried", None, None, None)?;
@@ -1562,6 +1567,12 @@ pub(super) async fn finish_workspace_steps(
         operation.integrated_commit.as_deref(),
         &timestamp,
     )?;
+    if workspace.kind == "fork"
+        && matches!(input.code_action.as_str(), "local_merge" | "remote_merged")
+        && let Some(todo) = state.store.todo_for_fork(id)?
+    {
+        state.store.update_todo(&todo.id, "done")?;
+    }
     state
         .store
         .advance_delivery(id, "archived", None, None, None)?;
@@ -1571,14 +1582,6 @@ pub(super) async fn finish_workspace_steps(
 pub(super) fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
     if !["local_merge", "remote_merged", "keep", "discard"].contains(&input.code_action.as_str()) {
         return Err(AppError::BadRequest("invalid code action".into()));
-    }
-    if !["carry", "keep", "discard"].contains(&input.todo_action.as_str()) {
-        return Err(AppError::BadRequest("invalid Todo action".into()));
-    }
-    if input.todo_action == "carry" && input.code_action != "local_merge" {
-        return Err(AppError::BadRequest(
-            "Todos can be carried only when a Fork is merged into its parent Workspace".into(),
-        ));
     }
     if input.code_action == "keep" && input.delete_branch {
         return Err(AppError::BadRequest(

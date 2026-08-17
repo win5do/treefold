@@ -66,16 +66,10 @@ enum TodoCommand {
     Show { id: String },
     /// Create a Todo.
     Add(TodoAddArgs),
-    /// Edit a Todo title or description.
+    /// Edit Todo Markdown content.
     Edit(TodoEditArgs),
     /// Permanently remove a Todo.
     Remove { id: String },
-    /// Atomically assign a pending Todo to this Session.
-    Claim { id: String },
-    /// Release a Todo assigned to this Session.
-    Release { id: String },
-    /// Mark a Todo done.
-    Done { id: String },
     /// Mark a Todo blocked with a concise reason.
     Block {
         id: String,
@@ -86,18 +80,14 @@ enum TodoCommand {
 
 #[derive(Debug, Args)]
 struct TodoAddArgs {
-    title: String,
-    #[arg(short, long, default_value = "")]
-    description: String,
+    content: String,
 }
 
 #[derive(Debug, Args)]
 struct TodoEditArgs {
     id: String,
     #[arg(long)]
-    title: Option<String>,
-    #[arg(long)]
-    description: Option<String>,
+    content: String,
 }
 
 pub enum Outcome {
@@ -199,31 +189,21 @@ fn run_todo(command: TodoCommand, json_output: bool) -> Result<(), CliError> {
         TodoCommand::Add(args) => (
             Method::POST,
             "/api/v1/agent/todos".into(),
-            Some(json!({"title": args.title, "description": args.description})),
+            Some(json!({"content": args.content})),
             HumanOutput::Todo,
         ),
-        TodoCommand::Edit(args) => {
-            if args.title.is_none() && args.description.is_none() {
-                return Err(CliError::invalid(
-                    "todo edit requires --title or --description",
-                ));
-            }
-            (
-                Method::PATCH,
-                format!("/api/v1/agent/todos/{}", args.id),
-                Some(json!({"title": args.title, "description": args.description})),
-                HumanOutput::Todo,
-            )
-        }
+        TodoCommand::Edit(args) => (
+            Method::PATCH,
+            format!("/api/v1/agent/todos/{}", args.id),
+            Some(json!({"content": args.content})),
+            HumanOutput::Todo,
+        ),
         TodoCommand::Remove { id } => (
             Method::DELETE,
             format!("/api/v1/agent/todos/{id}"),
             None,
             HumanOutput::Removed,
         ),
-        TodoCommand::Claim { id } => todo_action(id, "claim", None),
-        TodoCommand::Release { id } => todo_action(id, "release", None),
-        TodoCommand::Done { id } => todo_action(id, "done", None),
         TodoCommand::Block { id, reason } => {
             if reason.trim().is_empty() {
                 return Err(CliError::invalid("--reason must not be empty"));
@@ -418,13 +398,13 @@ fn print_value(value: &Value, json_output: bool, output: HumanOutput) {
             );
         }
         HumanOutput::TodoList => {
-            println!("STATUS\tID\tTITLE");
+            println!("STATUS\tID\tCONTENT");
             for todo in value.as_array().into_iter().flatten() {
                 println!(
                     "{}\t{}\t{}",
                     todo["status"].as_str().unwrap_or("unknown"),
                     todo["id"].as_str().unwrap_or("unknown"),
-                    todo["title"].as_str().unwrap_or("")
+                    todo["content"].as_str().unwrap_or("").replace('\n', " ")
                 );
             }
         }
@@ -433,7 +413,7 @@ fn print_value(value: &Value, json_output: bool, output: HumanOutput) {
                 "{}\t{}\t{}",
                 value["status"].as_str().unwrap_or("unknown"),
                 value["id"].as_str().unwrap_or("unknown"),
-                value["title"].as_str().unwrap_or("")
+                value["content"].as_str().unwrap_or("")
             );
         }
         HumanOutput::Removed => println!("removed"),
@@ -452,13 +432,15 @@ mod tests {
     use super::{Cli, CliCommand, Parser, TodoCommand};
 
     #[test]
-    fn parses_todo_claim() {
-        let cli = Cli::try_parse_from(["treefold", "todo", "claim", "todo-1"]).unwrap();
+    fn parses_todo_block() {
+        let cli =
+            Cli::try_parse_from(["treefold", "todo", "block", "todo-1", "--reason", "waiting"])
+                .unwrap();
         assert!(matches!(
             cli.command,
             Some(CliCommand::Todo {
-                command: TodoCommand::Claim { id }
-            }) if id == "todo-1"
+                command: TodoCommand::Block { id, reason }
+            }) if id == "todo-1" && reason == "waiting"
         ));
     }
 

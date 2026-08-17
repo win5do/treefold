@@ -169,11 +169,10 @@ pub struct Session {
 pub struct Todo {
     pub id: String,
     pub workspace_id: String,
-    pub title: String,
-    pub description: String,
+    pub content: String,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+    pub fork_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blocked_reason: Option<String>,
     pub created_at: String,

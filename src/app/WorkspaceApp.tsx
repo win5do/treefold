@@ -1258,6 +1258,14 @@ function Workspace() {
                     void clearWorkspaceLocationUpstream(location)
                   }
                   onResync={() => void resyncWorkspace(workspace)}
+                  onTodosChanged={() => void refresh()}
+                  onTodoForkCreated={(fork, session) =>
+                    navigate(
+                      session
+                        ? `/workspaces/${fork.id}/sessions/${session.id}`
+                        : `/workspaces/${fork.id}`,
+                    )
+                  }
                 />
               ) : selectedProject ? (
                 <ProjectHome

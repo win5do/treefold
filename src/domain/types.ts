@@ -214,9 +214,10 @@ export type SidebarData = { projects: SidebarProject[] };
 export type Todo = {
   id: string;
   workspace_id: string;
-  title: string;
-  description: string;
-  status: string;
+  content: string;
+  status: "pending" | "in_progress" | "blocked" | "done";
+  fork_id?: string;
+  blocked_reason?: string;
 };
 
 export type GitWorktree = {

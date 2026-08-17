@@ -11,13 +11,12 @@ import { workspacesApi } from "@/api/workspaces";
 import { sessionsApi } from "@/api/sessions";
 import { ParentOperationPanel } from "@/features/workspace/ParentOperationDialog";
 
-export type FinishPayload = { code_action: string; todo_action: string; push_after_merge: boolean; keep_session_history: boolean; delete_worktree: boolean; delete_branch: boolean; commit_message?: string; preflight_id?: string; resume_finish?: boolean };
+export type FinishPayload = { code_action: string; push_after_merge: boolean; keep_session_history: boolean; delete_worktree: boolean; delete_branch: boolean; commit_message?: string; preflight_id?: string; resume_finish?: boolean };
 export function FinishWorkspaceDialog({ workspace, busy, operation: operationProp, onOperationChange, onOpenChange, onSubmit, onOpenSession }: { workspace: WorkspaceDetail | null; busy: boolean; operation: ParentOperation | null; onOperationChange: (operation: ParentOperation | null) => void; onOpenChange: (open: boolean) => void; onSubmit: (locationId: string, payload: FinishPayload) => void; onOpenSession: (operation: ParentOperation, session: Session) => void }) {
   const finishable = workspace?.locations.filter((location) => location.access_mode === "read_write" && ["active", "failed", "conflicted"].includes(location.delivery_status)) ?? [];
   const [locationId, setLocationId] = useState("");
   const location = finishable.find((item) => item.id === locationId) ?? finishable[0];
   const [codeAction, setCodeAction] = useState("remote_merged");
-  const [todoAction, setTodoAction] = useState("keep");
   const [keepSessions, setKeepSessions] = useState(true);
   const [deleteWorktree, setDeleteWorktree] = useState(true);
   const [deleteBranch, setDeleteBranch] = useState(true);
@@ -30,7 +29,7 @@ export function FinishWorkspaceDialog({ workspace, busy, operation: operationPro
   const [resolverSession, setResolverSession] = useState<Session | null>(null);
   const isFork = workspace?.kind === "fork";
   useEffect(() => { if (!workspace) return; const first = workspace.locations.find((item) => item.access_mode === "read_write" && ["active", "failed", "conflicted"].includes(item.delivery_status)); setLocationId(first?.id ?? ""); }, [workspace?.id]);
-  useEffect(() => { if (!workspace || !location) return; setCodeAction(isFork || location.delivery_mode === "local_merge" ? "local_merge" : "remote_merged"); setTodoAction(isFork ? "carry" : "keep"); setKeepSessions(true); setDeleteWorktree(true); setDeleteBranch(true); setCommitMessage(""); }, [workspace?.id, location?.id, isFork]);
+  useEffect(() => { if (!workspace || !location) return; setCodeAction(isFork || location.delivery_mode === "local_merge" ? "local_merge" : "remote_merged"); setKeepSessions(true); setDeleteWorktree(true); setDeleteBranch(true); setCommitMessage(""); }, [workspace?.id, location?.id, isFork]);
   useEffect(() => { if (!location) return; const controller = new AbortController(); setChecking(true); setPreflight(null); setPreflightError(""); void workspacesApi.preflight(location.id, codeAction, controller.signal).then(setPreflight).catch((cause) => { if (!controller.signal.aborted) setPreflightError(cause instanceof Error ? cause.message : "Preflight failed"); }).finally(() => { if (!controller.signal.aborted) setChecking(false); }); return () => controller.abort(); }, [location?.id, codeAction]);
   useEffect(() => { if (codeAction === "keep") { setDeleteWorktree(false); setDeleteBranch(false); } else if (codeAction === "discard") { setDeleteWorktree(true); setDeleteBranch(true); } }, [codeAction]);
   useEffect(() => {
@@ -41,7 +40,7 @@ export function FinishWorkspaceDialog({ workspace, busy, operation: operationPro
     return () => window.clearInterval(timer);
   }, [operationProp?.id, operationProp?.status, onOperationChange]);
   const blocked = !preflight || preflight.blockers.length > 0;
-  const payload = (resumeFinish = false): FinishPayload => ({ code_action: codeAction, todo_action: todoAction, push_after_merge: false, keep_session_history: keepSessions, delete_worktree: codeAction === "discard" || deleteWorktree, delete_branch: codeAction === "discard" || deleteBranch, commit_message: commitMessage || undefined, preflight_id: preflight?.id, resume_finish: resumeFinish });
+  const payload = (resumeFinish = false): FinishPayload => ({ code_action: codeAction, push_after_merge: false, keep_session_history: keepSessions, delete_worktree: codeAction === "discard" || deleteWorktree, delete_branch: codeAction === "discard" || deleteBranch, commit_message: commitMessage || undefined, preflight_id: preflight?.id, resume_finish: resumeFinish });
   const operationAction = async (action: () => Promise<ParentOperation>) => {
     setOperationBusy(true);
     setOperationError("");

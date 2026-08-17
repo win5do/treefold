@@ -766,11 +766,10 @@ mod current_workspace_tests {
             .store
             .create_todo(&Todo {
                 id: "fork-todo".into(),
-                workspace_id: fork.id.clone(),
-                title: "Finish parallel work".into(),
-                description: String::new(),
+                workspace_id: workspace.id.clone(),
+                content: "Finish parallel work".into(),
                 status: "blocked".into(),
-                session_id: None,
+                fork_id: Some(fork.id.clone()),
                 blocked_reason: Some("waiting".into()),
                 created_at: timestamp.clone(),
                 updated_at: timestamp,
@@ -816,11 +815,10 @@ mod current_workspace_tests {
                 .exists()
         );
         assert!(!Path::new(&fork.checkout_path).exists());
-        assert!(state.store.todos(&fork.id).expect("Fork Todos").is_empty());
         let carried = state.store.todos(&workspace.id).expect("parent Todos");
         assert_eq!(carried.len(), 1);
-        assert_eq!(carried[0].status, "pending");
-        assert!(carried[0].session_id.is_none());
+        assert_eq!(carried[0].status, "done");
+        assert_eq!(carried[0].fork_id.as_deref(), Some(fork.id.as_str()));
         assert!(carried[0].blocked_reason.is_none());
         assert!(
             command_output(&repository, "git", &["branch", "--list", &fork.branch])
@@ -1835,7 +1833,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn agent_todo_api_supports_crud_and_atomic_claims() {
+    async fn agent_todo_api_supports_markdown_crud_and_blocking() {
         let (root, state, first, second) = agent_api_fixture().await;
         let router = app(state.clone());
         let created = router
@@ -1844,7 +1842,7 @@ mod tests {
                 "POST",
                 "/api/v1/agent/todos",
                 Some(&first),
-                Some(serde_json::json!({"title":"Implement CLI","description":"MVP"})),
+                Some(serde_json::json!({"content":"Implement CLI\n\nMVP"})),
             ))
             .await
             .expect("create Todo");
@@ -1881,59 +1879,11 @@ mod tests {
                 "PATCH",
                 &format!("/api/v1/agent/todos/{todo_id}"),
                 Some(&first),
-                Some(serde_json::json!({"title":"Implement Treefold CLI"})),
+                Some(serde_json::json!({"content":"Implement Treefold CLI"})),
             ))
             .await
             .expect("edit Todo");
         assert_eq!(edited.status(), StatusCode::OK);
-
-        let claimed = router
-            .clone()
-            .oneshot(agent_request(
-                "POST",
-                &format!("/api/v1/agent/todos/{todo_id}/claim"),
-                Some(&first),
-                None,
-            ))
-            .await
-            .expect("claim Todo");
-        assert_eq!(claimed.status(), StatusCode::OK);
-
-        let conflict = router
-            .clone()
-            .oneshot(agent_request(
-                "POST",
-                &format!("/api/v1/agent/todos/{todo_id}/claim"),
-                Some(&second),
-                None,
-            ))
-            .await
-            .expect("conflicting Todo claim");
-        assert_eq!(conflict.status(), StatusCode::CONFLICT);
-
-        let released = router
-            .clone()
-            .oneshot(agent_request(
-                "POST",
-                &format!("/api/v1/agent/todos/{todo_id}/release"),
-                Some(&first),
-                None,
-            ))
-            .await
-            .expect("release Todo");
-        assert_eq!(released.status(), StatusCode::OK);
-
-        let claimed_by_second = router
-            .clone()
-            .oneshot(agent_request(
-                "POST",
-                &format!("/api/v1/agent/todos/{todo_id}/claim"),
-                Some(&second),
-                None,
-            ))
-            .await
-            .expect("claim released Todo");
-        assert_eq!(claimed_by_second.status(), StatusCode::OK);
 
         let blocked = router
             .clone()
@@ -1954,17 +1904,6 @@ mod tests {
         .expect("decode blocked Todo");
         assert_eq!(blocked["blocked_reason"], "missing fixture");
 
-        let done = router
-            .clone()
-            .oneshot(agent_request(
-                "POST",
-                &format!("/api/v1/agent/todos/{todo_id}/done"),
-                Some(&second),
-                None,
-            ))
-            .await
-            .expect("complete Todo");
-        assert_eq!(done.status(), StatusCode::OK);
         let shown = router
             .clone()
             .oneshot(agent_request(
@@ -1981,9 +1920,9 @@ mod tests {
                 .expect("read completed Todo"),
         )
         .expect("decode completed Todo");
-        assert_eq!(shown["title"], "Implement Treefold CLI");
-        assert_eq!(shown["status"], "done");
-        assert!(shown.get("blocked_reason").is_none());
+        assert_eq!(shown["content"], "Implement Treefold CLI");
+        assert_eq!(shown["status"], "blocked");
+        assert_eq!(shown["blocked_reason"], "missing fixture");
 
         let removed = router
             .oneshot(agent_request(

@@ -118,9 +118,6 @@ fn app(state: AppState) -> Router {
                 .patch(agent_edit_todo)
                 .delete(agent_delete_todo),
         )
-        .route("/api/v1/agent/todos/{id}/claim", post(agent_claim_todo))
-        .route("/api/v1/agent/todos/{id}/release", post(agent_release_todo))
-        .route("/api/v1/agent/todos/{id}/done", post(agent_done_todo))
         .route("/api/v1/agent/todos/{id}/block", post(agent_block_todo))
         .route("/api/system", get(system_status))
         .route("/api/amux", get(amux_status))
@@ -295,7 +292,8 @@ fn app(state: AppState) -> Router {
             patch(reorder_sessions),
         )
         .route("/api/workspaces/{id}/todos", post(create_todo))
-        .route("/api/todos/{id}", patch(update_todo))
+        .route("/api/todos/{id}", patch(update_todo).delete(delete_todo))
+        .route("/api/todos/{id}/fork", post(create_todo_fork))
         .route(
             "/api/sessions/{id}",
             get(get_session)

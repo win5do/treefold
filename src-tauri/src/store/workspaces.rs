@@ -334,12 +334,17 @@ impl Store {
 
     pub fn workspace_detail(&self, id: &str) -> Result<WorkspaceDetail> {
         let workspace = self.workspace(id)?;
+        let todos = if workspace.kind == "fork" {
+            self.todo_for_fork(id)?.into_iter().collect()
+        } else {
+            self.todos(id)?
+        };
         Ok(WorkspaceDetail {
             project: self.project(&workspace.project_id)?,
             repositories: self.workspace_repositories(id)?,
             directories: self.workspace_directories(id)?,
             sessions: self.sessions(id)?,
-            todos: self.todos(id)?,
+            todos,
             forks: self.forks(id)?,
             workspace,
         })

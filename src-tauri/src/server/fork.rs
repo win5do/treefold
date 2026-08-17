@@ -6,6 +6,119 @@ pub(super) struct CreateFork {
     pub(super) description: Option<String>,
 }
 
+#[derive(Serialize)]
+pub(super) struct TodoForkResult {
+    fork: Workspace,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session: Option<Session>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_error: Option<String>,
+}
+
+pub(super) async fn create_todo_fork(
+    State(state): State<AppState>,
+    AxumPath(todo_id): AxumPath<String>,
+) -> Result<(StatusCode, Json<TodoForkResult>)> {
+    let todo = state.store.todo(&todo_id)?;
+    let owner = state.store.workspace(&todo.workspace_id)?;
+    ensure_active_workspace(&owner)?;
+    if !["pending", "blocked"].contains(&todo.status.as_str()) {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_NOT_EXECUTABLE",
+            "Todo must be pending or blocked",
+        ));
+    }
+    if todo.fork_id.as_deref().is_some_and(|fork_id| {
+        state
+            .store
+            .workspace(fork_id)
+            .is_ok_and(|fork| fork.status == "active")
+    }) {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_FORK_ACTIVE",
+            "Todo already has an active execution Fork",
+        ));
+    }
+    if !state.store.reserve_todo_for_fork(&todo.id)? {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_NOT_EXECUTABLE",
+            "Todo is no longer pending or blocked",
+        ));
+    }
+    let name = todo
+        .content
+        .lines()
+        .next()
+        .unwrap_or("Todo")
+        .chars()
+        .take(48)
+        .collect::<String>();
+    let operation_state = state.clone();
+    let parent_id = owner.id.clone();
+    let created = blocking_git_operation(move || {
+        create_fork_impl(
+            operation_state,
+            parent_id,
+            CreateFork {
+                name,
+                description: Some("Created from Workspace Todo".into()),
+            },
+        )
+    })
+    .await;
+    let created = match created {
+        Ok(created) => created,
+        Err(error) => {
+            state.store.restore_todo_after_fork_failure(
+                &todo.id,
+                todo.fork_id.as_deref(),
+                &todo.status,
+                todo.blocked_reason.as_deref(),
+            )?;
+            return Err(error);
+        }
+    };
+    let fork = state.store.workspace(&created.workspace.id)?;
+    if !state
+        .store
+        .attach_todo_fork(&todo.id, todo.fork_id.as_deref(), &fork.id)?
+    {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_FORK_ACTIVE",
+            "Todo was started concurrently",
+        ));
+    }
+    project_worktrees_cache().invalidate(&fork.project_id).await;
+    spawn_workspace_setup_shells(state.clone(), fork.clone(), created.setup_shells);
+    let session_result = create_session_for_workspace(
+        &state,
+        fork.clone(),
+        CreateSession {
+            name: Some("Todo Agent".into()),
+            kind: Some("codex".into()),
+            project_directory_id: None,
+            initial_prompt: Some(todo.content),
+        },
+    )
+    .await;
+    let (session, session_error) = match session_result {
+        Ok((_, Json(session))) => (Some(session), None),
+        Err(error) => (None, Some(error.to_string())),
+    };
+    Ok((
+        StatusCode::CREATED,
+        Json(TodoForkResult {
+            fork,
+            session,
+            session_error,
+        }),
+    ))
+}
+
 pub(super) async fn create_fork(
     State(state): State<AppState>,
     AxumPath(parent_id): AxumPath<String>,

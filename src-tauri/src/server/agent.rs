@@ -69,6 +69,13 @@ pub(super) fn agent_owned_todos(state: &AppState, workspace_id: &str) -> Result<
     if workspace.kind == "base" {
         return Ok(Vec::new());
     }
+    if workspace.kind == "fork" {
+        return Ok(state
+            .store
+            .todo_for_fork(workspace_id)?
+            .into_iter()
+            .collect());
+    }
     state.store.todos(workspace_id)
 }
 
@@ -81,7 +88,12 @@ pub(super) fn agent_todo(state: &AppState, context: &AgentContext, id: &str) -> 
         ));
     }
     let todo = state.store.todo(id)?;
-    if todo.workspace_id != context.workspace.id {
+    let visible = if context.workspace.kind == "fork" {
+        todo.fork_id.as_deref() == Some(context.workspace.id.as_str())
+    } else {
+        todo.workspace_id == context.workspace.id
+    };
+    if !visible {
         return Err(AppError::api(
             StatusCode::NOT_FOUND,
             "TODO_NOT_FOUND",
@@ -89,24 +101,6 @@ pub(super) fn agent_todo(state: &AppState, context: &AgentContext, id: &str) -> 
         ));
     }
     Ok(todo)
-}
-
-pub(super) fn ensure_todo_not_owned_by_another_session(
-    context: &AgentContext,
-    todo: &Todo,
-) -> Result<()> {
-    if todo
-        .session_id
-        .as_deref()
-        .is_some_and(|session_id| session_id != context.session.id)
-    {
-        return Err(AppError::api(
-            StatusCode::CONFLICT,
-            "TODO_ASSIGNED_TO_ANOTHER_SESSION",
-            "Todo is assigned to another Session",
-        ));
-    }
-    Ok(())
 }
 
 pub(super) async fn agent_current(
@@ -140,8 +134,7 @@ pub(super) async fn agent_get_todo(
 
 #[derive(Deserialize)]
 pub(super) struct AgentCreateTodo {
-    title: String,
-    description: Option<String>,
+    content: String,
 }
 
 pub(super) async fn agent_create_todo(
@@ -157,17 +150,21 @@ pub(super) async fn agent_create_todo(
             "Project Sessions do not own development Todos",
         ));
     }
-    if input.title.trim().is_empty() {
-        return Err(AppError::BadRequest("title is required".into()));
+    if input.content.trim().is_empty() {
+        return Err(AppError::BadRequest("content is required".into()));
     }
+    let owner_id = context
+        .workspace
+        .parent_workspace_id
+        .clone()
+        .unwrap_or(context.workspace.id);
     let timestamp = now();
     let todo = Todo {
         id: id(),
-        workspace_id: context.workspace.id,
-        title: input.title.trim().into(),
-        description: trimmed(input.description).unwrap_or_default(),
+        workspace_id: owner_id,
+        content: input.content.trim().into(),
         status: "pending".into(),
-        session_id: None,
+        fork_id: None,
         blocked_reason: None,
         created_at: timestamp.clone(),
         updated_at: timestamp,
@@ -178,8 +175,7 @@ pub(super) async fn agent_create_todo(
 
 #[derive(Deserialize)]
 pub(super) struct AgentEditTodo {
-    title: Option<String>,
-    description: Option<String>,
+    content: Option<String>,
 }
 
 pub(super) async fn agent_edit_todo(
@@ -190,19 +186,14 @@ pub(super) async fn agent_edit_todo(
 ) -> Result<Json<Todo>> {
     let context = agent_context(&state, &headers)?;
     agent_todo(&state, &context, &id)?;
-    let title = trimmed(input.title);
-    let description = trimmed(input.description);
-    if title.as_deref().is_some_and(str::is_empty) {
-        return Err(AppError::BadRequest("title must not be empty".into()));
+    let content = trimmed(input.content);
+    if content.as_deref().is_some_and(str::is_empty) {
+        return Err(AppError::BadRequest("content must not be empty".into()));
     }
-    if title.is_none() && description.is_none() {
-        return Err(AppError::BadRequest(
-            "title or description is required".into(),
-        ));
+    if content.is_none() {
+        return Err(AppError::BadRequest("content is required".into()));
     }
-    state
-        .store
-        .edit_todo(&id, title.as_deref(), description.as_deref())?;
+    state.store.edit_todo(&id, content.as_deref())?;
     Ok(Json(state.store.todo(&id)?))
 }
 
@@ -212,59 +203,23 @@ pub(super) async fn agent_delete_todo(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Value>> {
     let context = agent_context(&state, &headers)?;
-    agent_todo(&state, &context, &id)?;
+    let todo = agent_todo(&state, &context, &id)?;
+    if todo.status == "in_progress"
+        || todo.fork_id.as_deref().is_some_and(|fork_id| {
+            state
+                .store
+                .workspace(fork_id)
+                .is_ok_and(|fork| fork.status == "active")
+        })
+    {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_FORK_ACTIVE",
+            "archive or finish the active Fork before deleting this Todo",
+        ));
+    }
     state.store.delete_todo(&id)?;
     Ok(Json(json!({"removed":true, "id":id})))
-}
-
-pub(super) async fn agent_claim_todo(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    AxumPath(id): AxumPath<String>,
-) -> Result<Json<Todo>> {
-    let context = agent_context(&state, &headers)?;
-    let todo = agent_todo(&state, &context, &id)?;
-    ensure_todo_not_owned_by_another_session(&context, &todo)?;
-    if !state.store.claim_todo(&id, &context.session.id)? {
-        return Err(AppError::api(
-            StatusCode::CONFLICT,
-            "TODO_ALREADY_CLAIMED",
-            "Todo is not pending or is assigned to another Session",
-        ));
-    }
-    Ok(Json(state.store.todo(&id)?))
-}
-
-pub(super) async fn agent_release_todo(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    AxumPath(id): AxumPath<String>,
-) -> Result<Json<Todo>> {
-    let context = agent_context(&state, &headers)?;
-    let todo = agent_todo(&state, &context, &id)?;
-    if todo.session_id.as_deref() != Some(context.session.id.as_str()) {
-        return Err(AppError::api(
-            StatusCode::CONFLICT,
-            "TODO_NOT_ASSIGNED_TO_SESSION",
-            "Todo is not assigned to the current Session",
-        ));
-    }
-    state.store.update_todo(&id, "pending", None)?;
-    Ok(Json(state.store.todo(&id)?))
-}
-
-pub(super) async fn agent_done_todo(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    AxumPath(id): AxumPath<String>,
-) -> Result<Json<Todo>> {
-    let context = agent_context(&state, &headers)?;
-    let todo = agent_todo(&state, &context, &id)?;
-    ensure_todo_not_owned_by_another_session(&context, &todo)?;
-    state
-        .store
-        .update_todo(&id, "done", Some(&context.session.id))?;
-    Ok(Json(state.store.todo(&id)?))
 }
 
 #[derive(Deserialize)]
@@ -279,13 +234,10 @@ pub(super) async fn agent_block_todo(
     ApiJson(input): ApiJson<AgentBlockTodo>,
 ) -> Result<Json<Todo>> {
     let context = agent_context(&state, &headers)?;
-    let todo = agent_todo(&state, &context, &id)?;
-    ensure_todo_not_owned_by_another_session(&context, &todo)?;
+    agent_todo(&state, &context, &id)?;
     if input.reason.trim().is_empty() {
         return Err(AppError::BadRequest("reason is required".into()));
     }
-    state
-        .store
-        .block_todo(&id, &context.session.id, input.reason.trim())?;
+    state.store.block_todo(&id, input.reason.trim())?;
     Ok(Json(state.store.todo(&id)?))
 }

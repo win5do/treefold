@@ -509,31 +509,34 @@ pub(super) async fn delete_session(
 
 #[derive(Deserialize)]
 pub(super) struct CreateTodo {
-    title: String,
-    description: Option<String>,
-    session_id: Option<String>,
+    content: String,
 }
 pub(super) async fn create_todo(
     State(state): State<AppState>,
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateTodo>,
 ) -> Result<(StatusCode, Json<Todo>)> {
-    ensure_active_workspace(&state.store.workspace(&workspace_id)?)?;
-    if input.title.trim().is_empty() {
-        return Err(AppError::BadRequest("title is required".into()));
+    let requested = state.store.workspace(&workspace_id)?;
+    ensure_active_workspace(&requested)?;
+    if requested.kind == "base" {
+        return Err(AppError::BadRequest(
+            "Project Sessions do not own Todos".into(),
+        ));
     }
+    if input.content.trim().is_empty() {
+        return Err(AppError::BadRequest("content is required".into()));
+    }
+    let owner_id = requested
+        .parent_workspace_id
+        .clone()
+        .unwrap_or(workspace_id);
     let timestamp = now();
     let todo = Todo {
         id: id(),
-        workspace_id,
-        title: input.title.trim().into(),
-        description: trimmed(input.description).unwrap_or_default(),
-        status: if input.session_id.is_some() {
-            "assigned".into()
-        } else {
-            "pending".into()
-        },
-        session_id: input.session_id,
+        workspace_id: owner_id,
+        content: input.content.trim().into(),
+        status: "pending".into(),
+        fork_id: None,
         blocked_reason: None,
         created_at: timestamp.clone(),
         updated_at: timestamp,
@@ -543,22 +546,67 @@ pub(super) async fn create_todo(
 }
 #[derive(Deserialize)]
 pub(super) struct UpdateTodo {
-    status: String,
-    session_id: Option<String>,
+    content: Option<String>,
+    status: Option<String>,
 }
 pub(super) async fn update_todo(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateTodo>,
-) -> Result<StatusCode> {
-    if !["pending", "assigned", "done"].contains(&input.status.as_str()) {
-        return Err(AppError::BadRequest("invalid todo status".into()));
+) -> Result<Json<Todo>> {
+    if input.content.is_none() && input.status.is_none() {
+        return Err(AppError::BadRequest("content or status is required".into()));
     }
     let todo = state.store.todo(&id)?;
     ensure_active_workspace(&state.store.workspace(&todo.workspace_id)?)?;
-    state
-        .store
-        .update_todo(&id, &input.status, input.session_id.as_deref())?;
+    if let Some(content) = input.content.as_deref() {
+        if content.trim().is_empty() {
+            return Err(AppError::BadRequest("content must not be empty".into()));
+        }
+        state.store.edit_todo(&id, Some(content.trim()))?;
+    }
+    if let Some(status) = input.status.as_deref() {
+        if !["pending", "done"].contains(&status) {
+            return Err(AppError::BadRequest(
+                "status must be pending or done".into(),
+            ));
+        }
+        let effective = if status == "pending"
+            && todo.fork_id.as_deref().is_some_and(|fork_id| {
+                state
+                    .store
+                    .workspace(fork_id)
+                    .is_ok_and(|fork| fork.status == "active")
+            }) {
+            "in_progress"
+        } else {
+            status
+        };
+        state.store.update_todo(&id, effective)?;
+    }
+    Ok(Json(state.store.todo(&id)?))
+}
+
+pub(super) async fn delete_todo(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<StatusCode> {
+    let todo = state.store.todo(&id)?;
+    if todo.status == "in_progress"
+        || todo.fork_id.as_deref().is_some_and(|fork_id| {
+            state
+                .store
+                .workspace(fork_id)
+                .is_ok_and(|fork| fork.status == "active")
+        })
+    {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "TODO_FORK_ACTIVE",
+            "archive or finish the active Fork before deleting this Todo",
+        ));
+    }
+    state.store.delete_todo(&id)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
