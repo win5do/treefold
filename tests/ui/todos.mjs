@@ -20,7 +20,37 @@ try {
   await browser
     .$('[data-testid="workspace-todos-section"]')
     .waitForDisplayed({ timeout: 10_000 });
-  assert.match(await browser.$('[data-testid="workspace-todos-section"]').getText(), /Pending deterministic Todo/);
+  const section = await browser.$('[data-testid="workspace-todos-section"]');
+  assert.match(await section.getText(), /Pending deterministic Todo/);
+
+  const activeTodo = await section.$('[data-todo-id="todo-active-ui-fixture"]');
+  assert.equal(
+    await activeTodo.$('[role="checkbox"]').getAttribute("aria-disabled"),
+    "true",
+    "an active execution Fork must lock manual status changes",
+  );
+  assert.equal(
+    await activeTodo
+      .$('button[aria-label="Permanently delete Todo"]')
+      .isEnabled(),
+    false,
+    "an active execution Fork must lock deletion",
+  );
+  assert.equal(
+    await activeTodo
+      .$('button[aria-label="Open execution Fork"]')
+      .isDisplayed(),
+    true,
+  );
+
+  await section
+    .$('[data-todo-id="todo-pending-ui-fixture"]')
+    .$("button=Pending deterministic Todo")
+    .click();
+  const editDialog = await browser.$('[role="dialog"]');
+  assert.match(await editDialog.$("textarea").getValue(), /Remains pending/);
+  await editDialog.$("button=Cancel").click();
+  await editDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
   await browser.$("button=Add Todo").click();
   const dialog = await browser.$('[role="dialog"]');
@@ -29,20 +59,24 @@ try {
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   assert.deepEqual(harness.todoRequests.at(-1), {
     action: "create",
-    id: "todo-created-2",
+    id: "todo-created-3",
     content: "Created through the Todo dialog",
   });
 
-  const section = await browser.$('[data-testid="workspace-todos-section"]');
-  await section.$('button[aria-label="Complete Todo"]').click();
+  const createdTodo = await section.$('[data-todo-id="todo-created-3"]');
+  await createdTodo.$('[role="checkbox"]').click();
   await browser.waitUntil(
     () => harness.todoRequests.some((request) => request.action === "update"),
     { timeout: 3_000 },
   );
 
-  await section.$("button=Create Fork").click();
+  const pendingTodo = await section.$(
+    '[data-todo-id="todo-pending-ui-fixture"]',
+  );
+  await pendingTodo.$('button[aria-label="Delegate Todo to Fork"]').click();
   await browser.waitUntil(
-    async () => (await browser.getUrl()).includes(`/workspaces/${FIXTURE_IDS.fork}`),
+    async () =>
+      (await browser.getUrl()).includes(`/workspaces/${FIXTURE_IDS.fork}`),
     { timeout: 3_000 },
   );
   assert.equal(harness.todoRequests.at(-1).action, "fork");

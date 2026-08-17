@@ -383,6 +383,14 @@ const forkSessions = [
 
 const workspaceTodos = [
   {
+    id: "todo-active-ui-fixture",
+    workspace_id: FIXTURE_IDS.workspace,
+    content:
+      "Delegated deterministic Todo\n\nStatus is managed by its active Fork.",
+    status: "in_progress",
+    fork_id: FIXTURE_IDS.fork,
+  },
+  {
     id: "todo-pending-ui-fixture",
     workspace_id: FIXTURE_IDS.workspace,
     content: "Pending deterministic Todo\n\nRemains pending for UI coverage.",
@@ -391,7 +399,8 @@ const workspaceTodos = [
   {
     id: "todo-done-ui-fixture",
     workspace_id: FIXTURE_IDS.workspace,
-    content: "Completed deterministic Todo\n\nRemains in history for UI coverage.",
+    content:
+      "Completed deterministic Todo\n\nRemains in history for UI coverage.",
     status: "done",
   },
 ];

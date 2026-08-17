@@ -9,11 +9,9 @@ import {
   RefreshCw,
   TerminalSquare,
   X,
-  Check,
   GitFork,
   Pencil,
   Plus,
-  RotateCcw,
   Trash2,
 } from "lucide-react";
 import { todosApi } from "@/api/todos";
@@ -23,6 +21,7 @@ import { RecordActionMenu } from "@/features/app/RecordActions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +30,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type {
   Session,
   Workspace,
@@ -146,12 +150,17 @@ export function WorkspaceHome({
             <div>
               <h2 className="text-sm font-semibold">Workspace Repositories</h2>
               <p className="mt-1 text-xs text-muted-foreground">
-                Git lifecycle and delivery run once per Repository; Sessions start
-                in a Directory scope.
+                Git lifecycle and delivery run once per Repository; Sessions
+                start in a Directory scope.
               </p>
             </div>
             {detail.status === "active" && (
-              <Button size="sm" variant="secondary" disabled={busy} onClick={onResync}>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={onResync}
+              >
                 <RefreshCw data-icon="inline-start" />
                 Resync
               </Button>
@@ -290,110 +299,186 @@ export function WorkspaceHome({
             </div>
           </div>
           <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
-            {detail.todos.map((todo) => (
-              <div key={todo.id} className="flex gap-3 px-4 py-3">
-                <span
-                  className={cn(
-                    "mt-2 size-2 shrink-0 rounded-full",
-                    todo.status === "done" ? "bg-success" : "bg-warning",
-                  )}
+            {detail.todos.map((todo) => {
+              const title = todo.content.split(/\r?\n/, 1)[0];
+              const executionFork = todo.fork_id
+                ? detail.forks.find((fork) => fork.id === todo.fork_id)
+                : undefined;
+              const hasActiveFork = executionFork?.status === "active";
+              const canDelegate = ["pending", "blocked"].includes(todo.status);
+              const statusLabel = hasActiveFork
+                ? todo.status === "blocked"
+                  ? `Execution blocked${todo.blocked_reason ? `: ${todo.blocked_reason}` : ""}`
+                  : "Execution Fork is active. Finish or archive it before changing status."
+                : undefined;
+              const checkbox = (
+                <Checkbox
+                  aria-label={
+                    todo.status === "done" ? "Reopen Todo" : "Complete Todo"
+                  }
+                  checked={todo.status === "done"}
+                  disabled={todoBusy || hasActiveFork}
+                  onCheckedChange={(checked) =>
+                    void runTodo(() =>
+                      todosApi.update(todo.id, {
+                        status: checked ? "done" : "pending",
+                      }),
+                    )
+                  }
                 />
-                <div className="min-w-0 flex-1">
-                  <div className="whitespace-pre-wrap text-sm leading-6">
-                    {todo.content}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-1">
-                    <Badge>{todo.status}</Badge>
-                    {todo.fork_id && (
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Open execution Fork"
-                        onClick={() =>
-                          onOpenFork(
-                            detail.forks.find(
-                              (fork) => fork.id === todo.fork_id,
-                            ) ?? ({ id: todo.fork_id } as Workspace),
-                          )
+              );
+
+              return (
+                <div
+                  key={todo.id}
+                  data-todo-id={todo.id}
+                  className="flex min-w-0 items-center gap-3 px-4 py-2.5"
+                >
+                  {statusLabel ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <span
+                            className="flex shrink-0 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            tabIndex={0}
+                          />
                         }
                       >
-                        <GitFork />
-                      </Button>
+                        {checkbox}
+                      </TooltipTrigger>
+                      <TooltipContent>{statusLabel}</TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    checkbox
+                  )}
+                  <button
+                    type="button"
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-left text-sm leading-6 outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring",
+                      todo.status === "done" &&
+                        "text-muted-foreground line-through",
                     )}
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="Edit Todo"
-                      disabled={todoBusy}
-                      onClick={() =>
-                        setTodoDialog({ id: todo.id, content: todo.content })
-                      }
-                    >
-                      <Pencil />
-                    </Button>
-                    {todo.status === "done" ? (
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Reopen Todo"
-                        disabled={todoBusy}
-                        onClick={() =>
-                          void runTodo(() =>
-                            todosApi.update(todo.id, { status: "pending" }),
-                          )
+                    title={todo.content}
+                    disabled={todoBusy}
+                    onClick={() =>
+                      setTodoDialog({ id: todo.id, content: todo.content })
+                    }
+                  >
+                    {title}
+                  </button>
+                  {todo.status === "blocked" && (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <span
+                            className="flex shrink-0 text-destructive outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                            tabIndex={0}
+                          />
                         }
                       >
-                        <RotateCcw />
-                      </Button>
+                        <CircleAlert className="size-4" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {todo.blocked_reason || "Execution blocked"}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Edit Todo"
+                            disabled={todoBusy}
+                            onClick={() =>
+                              setTodoDialog({
+                                id: todo.id,
+                                content: todo.content,
+                              })
+                            }
+                          />
+                        }
+                      >
+                        <Pencil />
+                      </TooltipTrigger>
+                      <TooltipContent>Edit Todo</TooltipContent>
+                    </Tooltip>
+                    {hasActiveFork && executionFork ? (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label="Open execution Fork"
+                              onClick={() => onOpenFork(executionFork)}
+                            />
+                          }
+                        >
+                          <GitFork />
+                        </TooltipTrigger>
+                        <TooltipContent>Open execution Fork</TooltipContent>
+                      </Tooltip>
                     ) : (
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Complete Todo"
-                        disabled={todoBusy}
-                        onClick={() =>
-                          void runTodo(() =>
-                            todosApi.update(todo.id, { status: "done" }),
-                          )
-                        }
-                      >
-                        <Check />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={<span className="inline-flex" />}
+                        >
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Delegate Todo to Fork"
+                            disabled={todoBusy || !canDelegate}
+                            onClick={() =>
+                              void runTodo(async () => {
+                                const result = await todosApi.createFork(
+                                  todo.id,
+                                );
+                                onTodoForkCreated(result.fork, result.session);
+                              })
+                            }
+                          >
+                            <GitFork />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {canDelegate
+                            ? "Delegate Todo to Fork"
+                            : "Reopen Todo before delegating"}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
-                    {(["pending", "blocked"] as const).includes(
-                      todo.status as "pending" | "blocked",
-                    ) && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={todoBusy}
-                        onClick={() =>
-                          void runTodo(async () => {
-                            const result = await todosApi.createFork(todo.id);
-                            onTodoForkCreated(result.fork, result.session);
-                          })
-                        }
-                      >
-                        <GitFork data-icon="inline-start" />
-                        Create Fork
-                      </Button>
-                    )}
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="Permanently delete Todo"
-                      disabled={todoBusy}
-                      onClick={() => {
-                        if (window.confirm("Permanently delete this Todo?"))
-                          void runTodo(() => todosApi.delete(todo.id));
-                      }}
-                    >
-                      <Trash2 />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger render={<span className="inline-flex" />}>
+                        <Button
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label="Permanently delete Todo"
+                          disabled={
+                            todoBusy ||
+                            hasActiveFork ||
+                            todo.status === "in_progress"
+                          }
+                          onClick={() => {
+                            if (window.confirm("Permanently delete this Todo?"))
+                              void runTodo(() => todosApi.delete(todo.id));
+                          }}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {hasActiveFork
+                          ? "Finish or archive the execution Fork before deleting"
+                          : "Permanently delete Todo"}
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {detail.todos.length === 0 && (
               <p className="px-4 py-8 text-center text-xs text-muted-foreground">
                 No Todos
@@ -418,7 +503,9 @@ export function WorkspaceHome({
               </DialogDescription>
             </DialogHeader>
             <Textarea
-              rows={8}
+              rows={10}
+              className="min-h-48 resize-y"
+              aria-label="Todo content"
               value={todoDialog?.content ?? ""}
               onChange={(event) =>
                 setTodoDialog(
@@ -428,10 +515,7 @@ export function WorkspaceHome({
               }
             />
             <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => setTodoDialog(null)}
-              >
+              <Button variant="secondary" onClick={() => setTodoDialog(null)}>
                 Cancel
               </Button>
               <Button

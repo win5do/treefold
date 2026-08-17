@@ -775,6 +775,39 @@ mod current_workspace_tests {
                 updated_at: timestamp,
             })
             .expect("create Fork Todo");
+        let locked_status = app(state.clone())
+            .oneshot(
+                Request::patch("/api/todos/fork-todo")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"content":"Must not be partially saved","status":"done"}"#,
+                    ))
+                    .expect("build Todo status request"),
+            )
+            .await
+            .expect("update Todo with active Fork");
+        assert_eq!(locked_status.status(), StatusCode::CONFLICT);
+        let locked_status_body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(locked_status.into_body(), usize::MAX)
+                .await
+                .expect("read locked Todo response"),
+        )
+        .expect("decode locked Todo response");
+        assert_eq!(locked_status_body["error"]["code"], "TODO_FORK_ACTIVE");
+        let unchanged = state.store.todo("fork-todo").unwrap();
+        assert_eq!(unchanged.status, "blocked");
+        assert_eq!(unchanged.content, "Finish parallel work");
+
+        let edited_content = app(state.clone())
+            .oneshot(
+                Request::patch("/api/todos/fork-todo")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"content":"Finish parallel work safely"}"#))
+                    .expect("build Todo content request"),
+            )
+            .await
+            .expect("edit Todo content with active Fork");
+        assert_eq!(edited_content.status(), StatusCode::OK);
         std::fs::write(
             Path::new(&fork.checkout_path).join("fork.txt"),
             "fork work\n",

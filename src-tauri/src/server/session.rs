@@ -563,7 +563,6 @@ pub(super) async fn update_todo(
         if content.trim().is_empty() {
             return Err(AppError::BadRequest("content must not be empty".into()));
         }
-        state.store.edit_todo(&id, Some(content.trim()))?;
     }
     if let Some(status) = input.status.as_deref() {
         if !["pending", "done"].contains(&status) {
@@ -571,18 +570,24 @@ pub(super) async fn update_todo(
                 "status must be pending or done".into(),
             ));
         }
-        let effective = if status == "pending"
-            && todo.fork_id.as_deref().is_some_and(|fork_id| {
-                state
-                    .store
-                    .workspace(fork_id)
-                    .is_ok_and(|fork| fork.status == "active")
-            }) {
-            "in_progress"
-        } else {
-            status
-        };
-        state.store.update_todo(&id, effective)?;
+        if todo.fork_id.as_deref().is_some_and(|fork_id| {
+            state
+                .store
+                .workspace(fork_id)
+                .is_ok_and(|fork| fork.status == "active")
+        }) {
+            return Err(AppError::api(
+                StatusCode::CONFLICT,
+                "TODO_FORK_ACTIVE",
+                "archive or finish the active Fork before changing this Todo's status",
+            ));
+        }
+    }
+    if let Some(content) = input.content.as_deref() {
+        state.store.edit_todo(&id, Some(content.trim()))?;
+    }
+    if let Some(status) = input.status.as_deref() {
+        state.store.update_todo(&id, status)?;
     }
     Ok(Json(state.store.todo(&id)?))
 }
