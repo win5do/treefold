@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type * as React from "react";
-import { Bot, GitBranch, GitCompare, Info, PanelsTopLeft, TerminalSquare } from "lucide-react";
+import { Bot, Copy, GitBranch, GitCompare, Info, PanelsTopLeft, TerminalSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import {
@@ -71,7 +71,7 @@ export function WorkspaceInspector({ open, project, workspace, session }: { open
     <div className="flex h-11 shrink-0 items-stretch border-b border-border">
       <div className="flex min-w-0 flex-1" role="tablist" aria-label="Sidebar sections">
         <button role="tab" aria-selected={tab === "info"} className={cn("relative flex flex-1 items-center justify-center gap-1.5 px-3 text-xs font-medium", tab === "info" ? "text-foreground" : "text-muted-foreground hover:text-foreground")} onClick={() => setTab("info")}><Info className="size-3.5" />Info{tab === "info" && <span className="absolute inset-x-3 bottom-0 h-0.5 bg-foreground" />}</button>
-        <button role="tab" aria-selected={tab === "history"} className={cn("relative flex flex-1 items-center justify-center gap-1.5 px-2 text-xs font-medium", tab === "history" ? "text-foreground" : "text-muted-foreground hover:text-foreground")} onClick={() => setTab("history")}><GitBranch className="size-3.5" />History{tab === "history" && <span className="absolute inset-x-3 bottom-0 h-0.5 bg-foreground" />}</button>
+        <button role="tab" aria-selected={tab === "history"} className={cn("relative flex flex-1 items-center justify-center gap-1.5 px-2 text-xs font-medium", tab === "history" ? "text-foreground" : "text-muted-foreground hover:text-foreground")} onClick={() => setTab("history")}><GitBranch className="size-3.5" />Git History{tab === "history" && <span className="absolute inset-x-3 bottom-0 h-0.5 bg-foreground" />}</button>
       </div>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -153,6 +153,10 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, onReposit
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuGroup>
+            <ContextMenuItem data-testid="copy-git-commit-action" onClick={() => void navigator.clipboard.writeText(commit.hash).catch((cause) => console.error("Could not copy Git commit", cause))}>
+              <Copy data-icon="inline-start" />
+              Copy Commit
+            </ContextMenuItem>
             <ContextMenuItem data-testid="view-git-diff-action" onClick={viewDiff}>
               <GitCompare data-icon="inline-start" />
               View Diff

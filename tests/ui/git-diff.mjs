@@ -41,10 +41,21 @@ try {
   commits = await browser.$$('[data-testid="git-history-commit"]');
   assert.deepEqual(await selectionStates(commits), ["true", "true", "false"], "Shift click must select a contiguous range");
 
+  await browser.execute(() => {
+    window.__treefoldCopiedCommit = "";
+    navigator.clipboard.writeText = async (value) => {
+      window.__treefoldCopiedCommit = value;
+    };
+  });
   await commits[0].click({ button: "right" });
   await (await browser.$('[data-testid="view-git-diff-action"]')).waitForDisplayed({ timeout: 3_000 });
   assert.deepEqual(await selectionStates(commits), ["true", "true", "false"], "right click inside the range must preserve it");
-  await browser.keys("Escape");
+  await browser.$('[data-testid="copy-git-commit-action"]').click();
+  assert.equal(
+    await browser.execute(() => window.__treefoldCopiedCommit),
+    FIXTURE_COMMITS[0].hash,
+    "Copy Commit must copy the right-clicked commit's full hash",
+  );
 
   await commits[2].click({ button: "right" });
   await (await browser.$('[data-testid="view-git-diff-action"]')).waitForDisplayed({ timeout: 3_000 });
