@@ -185,6 +185,7 @@ After WebdriverIO passes, use browser control as an information-rich diagnostic 
 
 Then launch or connect to a Treefold desktop App built from the current working revision and inspect the change as a user would. Use an isolated `TREEFOLD_HOME` whenever the acceptance flow could mutate persistent application data. Avoid validating against a stale packaged App or an unrelated already-running dev process. In the App:
 
+- If a Treefold dev App already opened by the user blocks the acceptance run (for example, by holding an application or server port), the agent may identify and terminate that specific dev App and its owned child processes before launching the current revision. Resolve exact process IDs first and do not terminate unrelated applications or development servers.
 - exercise each changed state, including applicable expanded, collapsed, empty, long-label, and contextual states;
 - inspect App screenshots when spacing, clipping, overlap, hierarchy, typography, color, or alignment matters;
 - perform the real pointer, keyboard, focus, scrolling, menu, and window interactions affected by the change;
