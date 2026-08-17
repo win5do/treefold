@@ -37,7 +37,7 @@ export function Overview({
       data-testid="page-scroll"
       className="h-full overflow-y-auto p-5 [scrollbar-gutter:stable] sm:p-8 lg:p-12"
     >
-      <div data-testid="page-content" className="mx-auto max-w-6xl">
+      <div data-testid="page-content" className="mx-auto max-w-[96rem]">
         <div className="flex items-end justify-between">
           <div>
             <p className="text-xs text-muted-foreground">

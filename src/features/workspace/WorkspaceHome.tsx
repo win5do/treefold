@@ -77,7 +77,7 @@ export function WorkspaceHome({
       data-testid="page-scroll"
       className="h-full overflow-y-auto p-5 [scrollbar-gutter:stable] sm:p-8 lg:p-12"
     >
-      <div data-testid="page-content" className="mx-auto max-w-6xl">
+      <div data-testid="page-content" className="mx-auto max-w-[96rem]">
         <div>
           <div>
             <div className="mb-3 flex items-center gap-2">
@@ -516,4 +516,3 @@ function WorkspaceLocationRow({
     </article>
   );
 }
-

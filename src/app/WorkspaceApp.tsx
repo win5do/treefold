@@ -944,7 +944,7 @@ function Workspace() {
           <nav
             data-testid="header-breadcrumb"
             aria-label={t("workspace.breadcrumb")}
-            className="mx-auto flex max-w-6xl min-w-0 items-center gap-0.5 overflow-hidden pr-16"
+            className="mx-auto flex max-w-[96rem] min-w-0 items-center gap-0.5 overflow-hidden pr-16"
           >
             <Button
               data-testid="breadcrumb-projects"
