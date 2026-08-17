@@ -9,8 +9,8 @@
   },
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 1420",
-    "dev:desktop": "tauri dev",
+    "dev": "vite --host 127.0.0.1",
+    "dev:desktop": "node scripts/dev.mjs",
     "build": "vite build",
     "test:ui": "node tests/ui/run.mjs",
     "typecheck": "tsc --noEmit",

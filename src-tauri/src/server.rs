@@ -2,6 +2,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    env,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::Command,
@@ -83,8 +84,9 @@ pub async fn serve(state: AppState) -> anyhow::Result<()> {
         }
     });
     let app = app(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:7331").await?;
-    log::info!("Rust API listening on http://127.0.0.1:7331");
+    let bind_addr = env::var("TREEFOLD_API_ADDR").unwrap_or_else(|_| "127.0.0.1:7331".into());
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    log::info!("Rust API listening on http://{}", listener.local_addr()?);
     axum::serve(listener, app).await?;
     Ok(())
 }

@@ -294,7 +294,11 @@ impl TerminalManager {
         let mut env = BTreeMap::from([
             ("TERM".into(), "xterm-256color".into()),
             ("COLORTERM".into(), "truecolor".into()),
-            ("TREEFOLD_API_URL".into(), "http://127.0.0.1:7331".into()),
+            (
+                "TREEFOLD_API_URL".into(),
+                std::env::var("TREEFOLD_API_URL")
+                    .unwrap_or_else(|_| "http://127.0.0.1:7331".into()),
+            ),
             ("TREEFOLD_WORKSPACE_ID".into(), session.workspace_id.clone()),
             ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
             ("AMUX_DAEMON".into(), self.daemon_name.as_ref().clone()),
