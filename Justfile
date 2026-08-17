@@ -6,13 +6,16 @@ dev-home := env("TREEFOLD_DEV_HOME", justfile_directory() + "/.treefold-dev")
 install:
     npm install
 
-dev:
+app-dev:
     TREEFOLD_HOME="{{ dev-home }}" npm run dev:desktop
 
-dev-no-watch:
+app-default:
+    TREEFOLD_HOME="{{ default-home }}" npm run dev:desktop
+
+app-dev-no-watch:
     TREEFOLD_HOME="{{ dev-home }}" npm run dev:desktop -- --no-watch
 
-default-no-watch:
+app-default-no-watch:
     TREEFOLD_HOME="{{ default-home }}" npm run dev:desktop -- --no-watch
 
 check:
