@@ -4,7 +4,7 @@ import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { noticeManager } from "@/lib/notice"
+import { toastManager } from "@/lib/toast"
 
 function ToastProvider(props: ToastPrimitive.Provider.Props) {
   return <ToastPrimitive.Provider {...props} />
@@ -69,8 +69,8 @@ function ToastList() {
   </Toast>)
 }
 
-function Toaster({ children, toastManager = noticeManager, ...props }: ToastPrimitive.Provider.Props) {
-  return <ToastProvider toastManager={toastManager} {...props}>
+function Toaster({ children, toastManager: manager = toastManager, ...props }: ToastPrimitive.Provider.Props) {
+  return <ToastProvider toastManager={manager} {...props}>
     {children}
     <ToastPortal><ToastViewport><ToastList /></ToastViewport></ToastPortal>
   </ToastProvider>

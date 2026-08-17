@@ -15,7 +15,7 @@ import { projectsApi } from "@/api/projects";
 import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
 import { openGitDiffViewer } from "@/features/git-diff/launch";
-import { notice } from "@/lib/notice";
+import { toast } from "@/lib/toast";
 
 export function WorkspaceInspector({ open, project, workspace, session }: { open: boolean; project: ProjectDetail; workspace: WorkspaceDetail | null; session: Session | null }) {
   const [tab, setTab] = useState<"info" | "history">("info");
@@ -122,10 +122,10 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, onReposit
   };
   const copyCommit = (hash: string) => {
     void navigator.clipboard.writeText(hash).then(() => {
-      notice.success("Commit copied");
+      toast.success("Commit copied");
     }).catch((cause) => {
       console.error("Could not copy Git commit", cause);
-      notice.error("Could not copy commit");
+      toast.error("Could not copy commit");
     });
   };
   return <div>
