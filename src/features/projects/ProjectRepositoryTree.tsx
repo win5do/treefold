@@ -25,6 +25,7 @@ import type {
   GitWorktree,
   ProjectRepository,
 } from "@/domain/types";
+import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 
 function repositoryLabel(remote?: string) {
   if (!remote) return "Local Git repository";
@@ -262,7 +263,7 @@ export function ProjectLocationTreeRow({
                         className="mt-1 block truncate text-[10px] text-muted-foreground"
                         title={scope.path}
                       >
-                        {scope.relative_path ?? "."}
+                        {formatRepositoryRelativePath(scope.relative_path)}
                       </code>
                       {scope.description && (
                         <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -747,7 +748,7 @@ function ProjectDirectoryTreeRow({
           className="mt-1 block truncate text-[10px] text-muted-foreground"
           title={directory.path}
         >
-          {directory.relative_path ?? "."}
+          {formatRepositoryRelativePath(directory.relative_path)}
         </code>
         {directory.description && (
           <p className="mt-1 truncate text-xs text-muted-foreground">

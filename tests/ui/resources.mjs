@@ -32,7 +32,11 @@ try {
   assert.equal(await keepAmux.getAttribute("aria-checked"), "false", "Daemon retention must default to off");
   await keepAmux.click();
   await (await dialog.$('[data-testid="settings-save"]')).click();
-  await (await dialog.$('[data-testid="settings-save-status"]')).waitForDisplayed({ timeout: 3_000 });
+  const settingsSaveToast = await browser.$(
+    '[data-slot="toast"][role="status"]',
+  );
+  await settingsSaveToast.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await settingsSaveToast.getText(), /Settings saved/);
   await browser.keys(Key.Escape);
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await settingsButton.click();

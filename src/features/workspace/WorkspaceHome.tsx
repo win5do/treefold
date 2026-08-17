@@ -23,6 +23,7 @@ import type {
   WorkspaceDirectory,
   WorkspaceLocation,
 } from "@/domain/types";
+import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 import { cn } from "@/lib/utils";
 
 export function WorkspaceHome({
@@ -488,7 +489,7 @@ function WorkspaceLocationRow({
                     className="ml-auto max-w-1/2 truncate text-[10px] text-muted-foreground"
                     title={scope.path}
                   >
-                    {scope.relative_path ?? "."}
+                    {formatRepositoryRelativePath(scope.relative_path)}
                   </code>
                 </div>
               ))}

@@ -106,7 +106,13 @@ try {
   assert.equal(await next.isEnabled(), true, "Next file must be enabled before the last file");
   await next.click();
   await (await browser.$('[title="src/alpha.ts"]')).waitForDisplayed({ timeout: 8_000 });
-  assert.equal(await next.isEnabled(), false, "Next file must be disabled at the last file");
+  assert.ok((await browser.$('[data-testid="git-diff-content"]')).isDisplayed(), "text diff must be displayed");
+  const selectedTreeText = await browser.execute(() => {
+    const tree = document.querySelector('[aria-label="Changed files"]');
+    return tree?.shadowRoot?.querySelector('[data-item-path="src/alpha.ts"]')?.textContent ?? "";
+  });
+  assert.match(selectedTreeText, /\+1\s+−1/, "tree statistics must exclude context lines");
+  assert.equal(await next.isEnabled(), true, "root files must follow directory leaves");
   assert.equal(await previous.isEnabled(), true, "Previous file must be enabled after moving forward");
 
   const selectedTreePath = await browser.execute(() => {
@@ -114,16 +120,15 @@ try {
     return tree?.shadowRoot?.querySelector('[data-item-selected]')?.getAttribute("data-item-path") ?? null;
   });
   assert.equal(selectedTreePath, "src/alpha.ts", "file navigation must synchronize the Changes Tree selection");
+  await next.click();
+  await (await browser.$('[title="README.md"]')).waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await next.isEnabled(), false, "Next file must be disabled at the last tree leaf");
   await browser.execute(() => {
     const tree = document.querySelector('[aria-label="Changed files"]');
     const binary = tree?.shadowRoot?.querySelector('[data-item-path="assets/logo.png"]');
     if (binary instanceof HTMLElement) binary.click();
   });
   await (await browser.$("h2=Binary file changed")).waitForDisplayed({ timeout: 3_000 });
-
-  const collapseTree = await browser.$('button[aria-label="Collapse changes tree"]');
-  await collapseTree.click();
-  await (await browser.$('button[aria-label="Expand changes tree"]')).waitForDisplayed({ timeout: 3_000 });
 
   const emptyRoute = new URL(`${harness.baseUrl}/#/diff`);
   emptyRoute.hash = `#/diff?repositoryKind=project&repositoryId=${FIXTURE_IDS.secondaryRepository}&repositoryName=secondary-api-repository&startCommit=${FIXTURE_COMMITS[0].hash}&endCommit=${FIXTURE_COMMITS[0].hash}&commitCount=1`;

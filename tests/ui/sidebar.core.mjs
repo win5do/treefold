@@ -65,6 +65,27 @@ async function assertOverlayVisibleAndTopmost(browser, selector, label) {
   );
 }
 
+async function waitForToast(browser, role, text) {
+  let matchedToast;
+  await browser.waitUntil(
+    async () => {
+      const toasts = await browser.$$(`[data-slot="toast"][role="${role}"]`);
+      for (const toast of toasts) {
+        if (text.test(await toast.getText())) {
+          matchedToast = toast;
+          return true;
+        }
+      }
+      return false;
+    },
+    {
+      timeout: 3_000,
+      timeoutMsg: `toast did not appear: ${text}`,
+    },
+  );
+  return matchedToast;
+}
+
 async function createSessionFromSidebar(
   browser,
   ownerSelector,
@@ -285,10 +306,7 @@ try {
     await settingsDialog.$('button[aria-label="Move Codex argument 4 up"]')
   ).click();
   await (await settingsDialog.$("button=Save")).click();
-  const settingsSaveStatus = await settingsDialog.$(
-    '[data-testid="settings-save-status"]',
-  );
-  await settingsSaveStatus.waitForDisplayed({ timeout: 3_000 });
+  await waitForToast(browser, "status", /Settings saved/);
   await browser.keys(Key.Escape);
   await settingsDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await (await browser.$('[data-testid="open-settings"]')).click();
@@ -702,7 +720,7 @@ try {
   );
   assert.match(
     await baseSection.getText(),
-    /fixture-repository[\s\S]*\.[\s\S]*fixture-repository[\s\S]*apps\/web/,
+    /fixture-repository[\s\S]*Root[\s\S]*fixture-repository[\s\S]*apps\/web/,
     "a monorepo must show both Directory scopes under one Repository",
   );
   const workspaceContextDirectories = await browser.$(
@@ -1253,15 +1271,9 @@ try {
     "active Fork deletion must appear unavailable",
   );
   await blockedForkDelete.click();
-  let deleteBlockedAlert = await browser.$('[role="alert"]');
-  await deleteBlockedAlert.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await deleteBlockedAlert.getText(),
-    /Finish Fork/i,
-    "active Fork deletion must explain how to make deletion available",
-  );
+  let deleteBlockedAlert = await waitForToast(browser, "status", /Finish Fork/i);
   await (
-    await deleteBlockedAlert.$('button[aria-label="Dismiss error"]')
+    await deleteBlockedAlert.$('button[aria-label="Close toast"]')
   ).click();
 
   const archivedForkRow = await browser.$(
@@ -1433,16 +1445,14 @@ try {
     "Archive Project must remain reachable without an open directory submenu",
   );
   await archiveProject.click();
-  const archiveBlockedAlert = await browser.$('[role="alert"]');
-  await archiveBlockedAlert.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await archiveBlockedAlert.getText(),
+  const archiveBlockedAlert = await waitForToast(
+    browser,
+    "alert",
     /Finish active Workspaces and Forks/i,
-    "Project archive must be blocked while child work remains active",
   );
   harness.archiveAllStreams();
   await (
-    await archiveBlockedAlert.$('button[aria-label="Dismiss error"]')
+    await archiveBlockedAlert.$('button[aria-label="Close toast"]')
   ).click();
   await renamedBackProjectLink.click({ button: "right" });
   const archiveReadyMenu = await browser.$(
@@ -1586,15 +1596,9 @@ try {
     "active Project deletion must appear unavailable",
   );
   await blockedProjectDelete.click();
-  deleteBlockedAlert = await browser.$('[role="alert"]');
-  await deleteBlockedAlert.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await deleteBlockedAlert.getText(),
-    /Archive Project/i,
-    "active Project deletion must explain how to make deletion available",
-  );
+  deleteBlockedAlert = await waitForToast(browser, "status", /Archive Project/i);
   await (
-    await deleteBlockedAlert.$('button[aria-label="Dismiss error"]')
+    await deleteBlockedAlert.$('button[aria-label="Close toast"]')
   ).click();
   await restoredProjectLink.click();
   await browser.waitUntil(
@@ -1636,15 +1640,9 @@ try {
     "active Workspace deletion must appear unavailable",
   );
   await blockedWorkspaceDelete.click();
-  deleteBlockedAlert = await browser.$('[role="alert"]');
-  await deleteBlockedAlert.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await deleteBlockedAlert.getText(),
-    /Finish Workspace/i,
-    "active Workspace deletion must explain how to make deletion available",
-  );
+  deleteBlockedAlert = await waitForToast(browser, "status", /Finish Workspace/i);
   await (
-    await deleteBlockedAlert.$('button[aria-label="Dismiss error"]')
+    await deleteBlockedAlert.$('button[aria-label="Close toast"]')
   ).click();
 
   const archivedWorkspaceRow = await browser.$(
@@ -1849,6 +1847,13 @@ try {
       .isExisting(),
     true,
     "repository rows must expose directory children",
+  );
+  assert.match(
+    await primaryDirectories
+      .$(`[data-testid="project-directory-${FIXTURE_IDS.primaryDirectory}"]`)
+      .getText(),
+    /Root/,
+    "repository-root directories must use a user-facing Root label",
   );
   assert.equal(
     await primaryDirectories
@@ -2222,15 +2227,13 @@ try {
     "available worktree delete controls must use destructive styling",
   );
   await blockedWorktreeDeletes[0].click();
-  const blockedWorktreeAlert = await browser.$('[role="alert"]');
-  await blockedWorktreeAlert.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await blockedWorktreeAlert.getText(),
+  const blockedWorktreeAlert = await waitForToast(
+    browser,
+    "status",
     /belongs to active Workspace/,
-    "blocked worktree deletion must explain the active Workspace association",
   );
   await (
-    await blockedWorktreeAlert.$('button[aria-label="Dismiss error"]')
+    await blockedWorktreeAlert.$('button[aria-label="Close toast"]')
   ).click();
   const projectNode = await browser.$('[data-testid="sidebar-project-node"]');
   await projectNode.moveTo();
@@ -2418,6 +2421,25 @@ try {
     "page",
     "Fork must be the current breadcrumb",
   );
+  const breadcrumbTypography = await browser.execute(() =>
+    ["breadcrumb-project", "breadcrumb-workspace", "breadcrumb-fork"].map(
+      (testId) => {
+        const style = getComputedStyle(
+          document.querySelector(`[data-testid="${testId}"] > span`),
+        );
+        return {
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          lineHeight: style.lineHeight,
+        };
+      },
+    ),
+  );
+  assert.deepEqual(
+    breadcrumbTypography,
+    Array.from({ length: 3 }, () => breadcrumbTypography[0]),
+    "Project, Workspace, and Fork breadcrumbs must share typography",
+  );
   assert.equal(
     await (await browser.$('[data-testid="new-fork-action"]')).isExisting(),
     false,
@@ -2439,6 +2461,15 @@ try {
     await (await browser.$("button=New Codex")).isExisting(),
     false,
     "Fork details must rely on the sidebar plus menu for Codex creation",
+  );
+  assert.match(
+    await (
+      await browser.$(
+        `[data-testid="workspace-directory-${FIXTURE_IDS.primaryDirectory}"]`,
+      )
+    ).getText(),
+    /Root/,
+    "Fork repository-root directories must use the shared Root label",
   );
   assert.equal(
     await (

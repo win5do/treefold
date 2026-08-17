@@ -871,13 +871,22 @@ export function createSidebarCoreFixture() {
 index 1111111..2222222 100644
 --- a/src/alpha.ts
 +++ b/src/alpha.ts
-@@ -1 +1 @@
+@@ -1,3 +1,3 @@
+ export const before = true;
 -const value = 1;
 +const value = 2;
+ export const after = true;
 diff --git a/assets/logo.png b/assets/logo.png
 new file mode 100644
 index 0000000..3333333
 Binary files /dev/null and b/assets/logo.png differ
+diff --git a/README.md b/README.md
+index 4444444..5555555 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1 @@
+-Fixture
++Updated fixture
 `,
       },
       [FIXTURE_IDS.secondaryRepository]: {

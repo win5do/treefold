@@ -3,7 +3,7 @@ import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import type { GitStatusEntry } from "@pierre/trees";
-import { ChevronLeft, ChevronRight, GitCompare, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ChevronDown, ChevronUp, GitCompare } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -35,7 +35,6 @@ export function DiffViewer() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedPath, setSelectedPath] = useState("");
-  const [treeOpen, setTreeOpen] = useState(true);
   const [treeWidth, setTreeWidth] = useState(260);
   const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -131,16 +130,13 @@ export function DiffViewer() {
           {payload.startCommit.slice(0, 10)} → {payload.endCommit.slice(0, 10)} · Compared with first parent
         </p>
       </div>
-      <Button variant="ghost" size="icon-sm" aria-label={treeOpen ? "Collapse changes tree" : "Expand changes tree"} onClick={() => setTreeOpen((value) => !value)}>
-        {treeOpen ? <PanelLeftClose /> : <PanelLeftOpen />}
-      </Button>
     </header>
     {loading ? <ViewerState title="Loading comparison" detail="Reading the selected commits and preparing the patch." loading />
       : error ? <ViewerState title="Could not load diff" detail={error} error />
       : parsed.error ? <ViewerState title="Unsupported patch" detail={parsed.error} error />
       : comparison && parsed.files.length === 0 ? <ViewerState title="No changes" detail="The selected commit range has no net file changes." />
       : comparison ? <div className="flex min-h-0 flex-1">
-        {treeOpen && <>
+        <>
           <aside className="min-h-0 shrink-0 overflow-hidden border-r border-border bg-muted/20" style={{ width: treeWidth }}>
             <ChangesTree key={`${comparison.resolved_base}:${comparison.resolved_head}`} files={parsed.files} selectedPath={selectedPath} onSelect={setSelectedPath} />
           </aside>
@@ -156,15 +152,14 @@ export function DiffViewer() {
               event.currentTarget.releasePointerCapture(event.pointerId);
             }}
           />
-        </>}
+        </>
         <section className="flex min-w-0 flex-1 flex-col">
           {current && <>
             <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
               <p className="min-w-0 flex-1 truncate font-mono text-xs" title={current.path}>{current.path}</p>
-              <span className="text-xs text-muted-foreground"><span className="text-foreground">+{current.additions}</span> / -{current.deletions}</span>
               <Separator orientation="vertical" className="h-5" />
-              <Button variant="outline" size="icon-sm" aria-label="Previous file" disabled={currentIndex <= 0} onClick={() => setSelectedPath(parsed.files[currentIndex - 1]?.path ?? selectedPath)}><ChevronLeft /></Button>
-              <Button variant="outline" size="icon-sm" aria-label="Next file" disabled={currentIndex < 0 || currentIndex >= parsed.files.length - 1} onClick={() => setSelectedPath(parsed.files[currentIndex + 1]?.path ?? selectedPath)}><ChevronRight /></Button>
+              <Button variant="outline" size="icon-sm" aria-label="Previous file" disabled={currentIndex <= 0} onClick={() => setSelectedPath(parsed.files[currentIndex - 1]?.path ?? selectedPath)}><ChevronUp /></Button>
+              <Button variant="outline" size="icon-sm" aria-label="Next file" disabled={currentIndex < 0 || currentIndex >= parsed.files.length - 1} onClick={() => setSelectedPath(parsed.files[currentIndex + 1]?.path ?? selectedPath)}><ChevronDown /></Button>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden bg-background" data-testid="git-diff-content">
               {current.binary ? <ViewerState title="Binary file changed" detail="A line-by-line preview is not available for this file." />
@@ -196,6 +191,7 @@ export function DiffViewer() {
 
 function ChangesTree({ files, selectedPath, onSelect }: { files: ParsedDiffFile[]; selectedPath: string; onSelect: (path: string) => void }) {
   const paths = useMemo(() => files.map((file) => file.path), [files]);
+  const stats = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
   const gitStatus = useMemo<GitStatusEntry[]>(() => files.map((file) => ({ path: file.path, status: file.diff.type === "new" ? "added" : file.diff.type === "deleted" ? "deleted" : file.diff.type.startsWith("rename") ? "renamed" : "modified" })), [files]);
   const { model } = useFileTree({
     paths,
@@ -205,6 +201,19 @@ function ChangesTree({ files, selectedPath, onSelect }: { files: ParsedDiffFile[
     onSelectionChange: (selected) => {
       const filePath = [...selected].reverse().find((path) => paths.includes(path));
       if (filePath) onSelect(filePath);
+    },
+    renderRowDecoration: ({ item }) => {
+      if (item.kind !== "file") return null;
+      const file = stats.get(item.path);
+      if (!file) return null;
+      return {
+        text: `+${file.additions} −${file.deletions}`,
+        title: `${file.additions} additions, ${file.deletions} deletions`,
+        parts: [
+          { text: `+${file.additions}`, color: "var(--trees-status-added)" },
+          { text: `\u00a0−${file.deletions}`, color: "var(--trees-status-deleted)" },
+        ],
+      };
     },
   });
   useEffect(() => {
@@ -232,19 +241,50 @@ function parseComparison(comparison: GitDiffComparison | null): { files: ParsedD
     const binaryPaths = binaryFilePaths(comparison.patch);
     const files = parsePatchFiles(comparison.patch, `${comparison.resolved_base}:${comparison.resolved_head}`, true)
       .flatMap((patch) => patch.files)
-      .map((diff) => ({
-        diff,
-        path: diff.name,
-        additions: diff.hunks.reduce((sum, hunk) => sum + hunk.additionCount, 0),
-        deletions: diff.hunks.reduce((sum, hunk) => sum + hunk.deletionCount, 0),
-        binary: binaryPaths.has(diff.name),
-      }))
-      .sort((left, right) => left.path.localeCompare(right.path));
+      .map((diff) => {
+        const changes = diff.hunks.flatMap((hunk) => hunk.hunkContent).filter((content) => content.type !== "context");
+        return {
+          diff,
+          path: diff.name,
+          additions: changes.reduce((sum, content) => sum + content.additions, 0),
+          deletions: changes.reduce((sum, content) => sum + content.deletions, 0),
+          binary: binaryPaths.has(diff.name),
+        };
+      });
+    files.sort(treeLeafPathComparator(files.map((file) => file.path)));
     if (files.length === 0) return { files: [], error: "The patch contains data that this viewer cannot parse." };
     return { files, error: "" };
   } catch (cause) {
     return { files: [], error: cause instanceof Error ? cause.message : "The patch could not be parsed." };
   }
+}
+
+function treeLeafPathComparator(paths: string[]) {
+  const directories = new Set<string>();
+  for (const path of paths) {
+    const parts = path.split("/");
+    for (let index = 1; index < parts.length; index += 1) directories.add(parts.slice(0, index).join("/"));
+  }
+  return (left: ParsedDiffFile, right: ParsedDiffFile) => {
+    const leftParts = left.path.split("/");
+    const rightParts = right.path.split("/");
+    const length = Math.max(leftParts.length, rightParts.length);
+    for (let index = 0; index < length; index += 1) {
+      const leftPart = leftParts[index];
+      const rightPart = rightParts[index];
+      if (leftPart === rightPart) continue;
+      if (leftPart == null) return 1;
+      if (rightPart == null) return -1;
+      const parent = leftParts.slice(0, index).join("/");
+      const leftPath = parent ? `${parent}/${leftPart}` : leftPart;
+      const rightPath = parent ? `${parent}/${rightPart}` : rightPart;
+      const leftDirectory = directories.has(leftPath);
+      const rightDirectory = directories.has(rightPath);
+      if (leftDirectory !== rightDirectory) return leftDirectory ? -1 : 1;
+      return leftPart.localeCompare(rightPart);
+    }
+    return 0;
+  };
 }
 
 function binaryFilePaths(patch: string) {

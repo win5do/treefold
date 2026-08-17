@@ -93,6 +93,47 @@ import {
   workspaceSessionsQuery,
 } from "@/features/workspace/queries";
 import { watchSystemTheme } from "@/lib/theme";
+
+function HeaderBreadcrumbItem({
+  label,
+  testId,
+  onClick,
+}: {
+  label: string;
+  testId: string;
+  onClick?: () => void;
+}) {
+  const containerClassName =
+    "h-6 min-w-0 max-w-48 shrink overflow-hidden px-1.5";
+  const labelClassName = "truncate text-xs leading-none font-medium";
+
+  if (onClick) {
+    return (
+      <Button
+        data-testid={testId}
+        size="sm"
+        variant="ghost"
+        className={cn(containerClassName, "text-muted-foreground")}
+        title={label}
+        onClick={onClick}
+      >
+        <span className={labelClassName}>{label}</span>
+      </Button>
+    );
+  }
+
+  return (
+    <span
+      data-testid={testId}
+      aria-current="page"
+      className={cn(containerClassName, "inline-flex items-center")}
+      title={label}
+    >
+      <span className={labelClassName}>{label}</span>
+    </span>
+  );
+}
+
 export default function WorkspaceApp() {
   return <Workspace />;
 }
@@ -969,27 +1010,15 @@ function Workspace() {
                   className="size-3 shrink-0 text-muted-foreground/50"
                   aria-hidden="true"
                 />
-                {workspace ? (
-                  <Button
-                    data-testid="breadcrumb-project"
-                    size="sm"
-                    variant="ghost"
-                    className="min-w-0 max-w-48 shrink overflow-hidden px-1.5 text-muted-foreground"
-                    title={selectedProject.name}
-                    onClick={() => navigate(`/projects/${selectedProject.id}`)}
-                  >
-                    <span className="truncate">{selectedProject.name}</span>
-                  </Button>
-                ) : (
-                  <span
-                    data-testid="breadcrumb-project"
-                    aria-current="page"
-                    className="min-w-0 max-w-48 shrink truncate px-1.5 text-xs font-medium"
-                    title={selectedProject.name}
-                  >
-                    {selectedProject.name}
-                  </span>
-                )}
+                <HeaderBreadcrumbItem
+                  label={selectedProject.name}
+                  testId="breadcrumb-project"
+                  onClick={
+                    workspace
+                      ? () => navigate(`/projects/${selectedProject.id}`)
+                      : undefined
+                  }
+                />
               </>
             )}
             {parentWorkspace && (
@@ -998,16 +1027,11 @@ function Workspace() {
                   className="size-3 shrink-0 text-muted-foreground/50"
                   aria-hidden="true"
                 />
-                <Button
-                  data-testid="breadcrumb-workspace"
-                  size="sm"
-                  variant="ghost"
-                  className="min-w-0 max-w-48 shrink overflow-hidden px-1.5 text-muted-foreground"
-                  title={parentWorkspace.name}
+                <HeaderBreadcrumbItem
+                  label={parentWorkspace.name}
+                  testId="breadcrumb-workspace"
                   onClick={() => navigate(`/workspaces/${parentWorkspace.id}`)}
-                >
-                  <span className="truncate">{parentWorkspace.name}</span>
-                </Button>
+                />
               </>
             )}
             {workspace && (
@@ -1016,16 +1040,12 @@ function Workspace() {
                   className="size-3 shrink-0 text-muted-foreground/50"
                   aria-hidden="true"
                 />
-                <span
-                  data-testid={
+                <HeaderBreadcrumbItem
+                  label={workspace.name}
+                  testId={
                     parentWorkspace ? "breadcrumb-fork" : "breadcrumb-workspace"
                   }
-                  aria-current="page"
-                  className="min-w-0 max-w-48 shrink truncate px-1.5 text-xs font-medium"
-                  title={workspace.name}
-                >
-                  {workspace.name}
-                </span>
+                />
               </>
             )}
           </nav>
