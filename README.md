@@ -31,6 +31,15 @@ just install
 just dev
 ```
 
+The `just dev` and `just dev-no-watch` recipes keep development state in the
+repository-local `.treefold-dev/` directory, separate from the normal
+`~/.treefold` installation. Set `TREEFOLD_DEV_HOME` to use another development
+state directory:
+
+```bash
+TREEFOLD_DEV_HOME=/tmp/treefold-dev just dev
+```
+
 `tauri dev` starts Vite with hot reload, compiles the Rust backend, and opens
 the native macOS window. The internal API and terminal WebSocket listen only
 on `127.0.0.1:7331`.

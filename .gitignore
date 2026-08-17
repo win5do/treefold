@@ -4,6 +4,7 @@ node_modules/
 .next/
 out/
 dist/
+.treefold-dev/
 tsconfig.tsbuildinfo
 *.db
 *.db-shm
