@@ -6,6 +6,7 @@
     "diff-viewer"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-set-position"
   ]
 }

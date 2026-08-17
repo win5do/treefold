@@ -5,6 +5,7 @@ import { FileTree, useFileTree } from "@pierre/trees/react";
 import type { GitStatusEntry } from "@pierre/trees";
 import { ChevronLeft, ChevronRight, GitCompare, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
+import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useLocation } from "react-router-dom";
 import { projectsApi } from "@/api/projects";
@@ -17,7 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import type { GitDiffComparison, GitDiffLaunchPayload } from "@/domain/types";
 import { cn } from "@/lib/utils";
-import { GIT_DIFF_EVENT, parseDiffLaunchParams } from "./launch";
+import { GIT_DIFF_EVENT, GIT_DIFF_POSITION_EVENT, parseDiffLaunchParams, type DiffWindowPosition } from "./launch";
 
 type ParsedDiffFile = {
   diff: FileDiffMetadata;
@@ -45,16 +46,28 @@ export function DiffViewer() {
   useEffect(() => {
     if (!isTauri()) return;
     let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void getCurrentWebviewWindow().listen<GitDiffLaunchPayload>(GIT_DIFF_EVENT, (event) => {
-      if (!disposed) setPayload(event.payload);
-    }).then((value) => {
-      if (disposed) value();
-      else unlisten = value;
+    const unlisteners: Array<() => void> = [];
+    const window = getCurrentWebviewWindow();
+    void Promise.all([
+      window.listen<GitDiffLaunchPayload>(GIT_DIFF_EVENT, (event) => {
+        if (!disposed) setPayload(event.payload);
+      }),
+      window.listen<DiffWindowPosition>(GIT_DIFF_POSITION_EVENT, (event) => {
+        if (!disposed) {
+          void window.setPosition(new LogicalPosition(event.payload.x, event.payload.y)).catch((cause) => {
+            console.warn("Could not move the Git Diff window", cause);
+          });
+        }
+      }),
+    ]).then((values) => {
+      if (disposed) values.forEach((unlisten) => unlisten());
+      else unlisteners.push(...values);
+    }).catch((cause) => {
+      console.warn("Could not register Git Diff window listeners", cause);
     });
     return () => {
       disposed = true;
-      unlisten?.();
+      unlisteners.forEach((unlisten) => unlisten());
     };
   }, []);
 
