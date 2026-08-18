@@ -75,17 +75,17 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
 
   return <aside data-testid="right-sidebar" aria-hidden={!open} inert={!open} className={cn("absolute inset-y-0 right-0 z-20 flex w-[min(88vw,340px)] shrink-0 flex-col border-l border-border bg-background shadow-2xl transition-transform duration-200 ease-out lg:shadow-none", open ? "translate-x-0" : "translate-x-full pointer-events-none")}>
     <div className="shrink-0 border-b border-border p-2">
-      <NativeSelect aria-label="Git repository" data-testid="git-repository" value={activeHistoryRepositoryId} disabled={historyRepositories.length <= 1} onChange={(event) => { setHistoryRepositoryId(event.target.value); const repository = historyRepositories.find((item) => item.id === event.target.value); if (repository && tab === "changes") onOpenChanges(repository); }}>
+      <NativeSelect aria-label="Git repository" data-testid="git-repository" value={activeHistoryRepositoryId} disabled={historyRepositories.length <= 1} onChange={(event) => setHistoryRepositoryId(event.target.value)}>
         {historyRepositories.length === 0 ? <NativeSelectOption value="">No Git repositories</NativeSelectOption> : historyRepositories.map((repository) => <NativeSelectOption key={repository.id} value={repository.id}>{repository.name}</NativeSelectOption>)}
       </NativeSelect>
     </div>
     <div className="flex h-11 shrink-0 items-stretch border-b border-border">
       <div className="flex min-w-0 flex-1" role="tablist" aria-label="Sidebar sections">
-        {([ ["changes", GitCommitHorizontal, "Changes"], ["history", History, "Git History"], ["info", Info, "Repository Info"] ] as const).map(([value, Icon, label]) => <Tooltip key={value}><TooltipTrigger render={<button role="tab" aria-label={label} aria-selected={tab === value} className={cn("relative flex flex-1 items-center justify-center text-muted-foreground hover:text-foreground", tab === value && "text-foreground")} onClick={() => { setTab(value); if (value === "changes") { const repository = historyRepositories.find((item) => item.id === activeHistoryRepositoryId); if (repository) onOpenChanges(repository); } }} />}><Icon />{tab === value && <span className="absolute inset-x-4 bottom-0 h-0.5 bg-foreground" />}</TooltipTrigger><TooltipContent side="bottom">{label}</TooltipContent></Tooltip>)}
+        {([ ["changes", GitCommitHorizontal, "Changes"], ["history", History, "Git History"], ["info", Info, "Repository Info"] ] as const).map(([value, Icon, label]) => <Tooltip key={value}><TooltipTrigger render={<button role="tab" aria-label={label} aria-selected={tab === value} className={cn("relative flex flex-1 items-center justify-center text-muted-foreground hover:text-foreground", tab === value && "text-foreground")} onClick={() => setTab(value)} />}><Icon />{tab === value && <span className="absolute inset-x-4 bottom-0 h-0.5 bg-foreground" />}</TooltipTrigger><TooltipContent side="bottom">{label}</TooltipContent></Tooltip>)}
       </div>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
-    {tab === "changes" ? <GitCommitPanel repositoryKind={workspace ? "workspace" : "project"} repositoryId={activeHistoryRepositoryId} /> : tab === "history" ? <GitHistoryPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} history={history} error={historyError} onOpenDiff={onOpenDiff} /> : session ? <div className="flex flex-col gap-6 p-4">
+    {tab === "changes" ? <GitCommitPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} onOpenChanges={onOpenChanges} /> : tab === "history" ? <GitHistoryPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} history={history} error={historyError} onOpenDiff={onOpenDiff} /> : session ? <div className="flex flex-col gap-6 p-4">
       <div><div className="flex items-center gap-2"><div className="grid size-9 place-items-center rounded-lg bg-muted">{session.kind === "codex" ? <Bot className="size-4" /> : session.kind === "command" ? <PanelsTopLeft className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{session.name}</p><div className="mt-1 flex items-center gap-2"><Badge>{session.kind}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "destructive" : "secondary"}>{session.status}</Badge></div></div></div></div>
       <InspectorGroup title="Process"><InspectorRow label="Workspace" value={session.amux_workspace_name} mono /><InspectorRow label="Name" value={session.amux_process_name} mono /><InspectorRow label="I/O" value={session.io_mode} /><InspectorRow label="Exit" value={session.exit_code === undefined ? "—" : `${session.exit_code}${session.exit_signal ? ` · ${session.exit_signal}` : ""}`} /></InspectorGroup>
       <InspectorGroup title={workspace ? "Workspace" : "Project Session"}>{workspace && <><InspectorRow label="Workspace" value={workspace.name} /><InspectorRow label="Runtime" value={workspace.runtime_name} /><InspectorRow label="Workspace ID" value={workspace.runtime_id} mono /></>}<InspectorRow label="Workdir" value={session.cwd} mono />{session.original_cwd !== session.cwd && <InspectorRow label="Original" value={session.original_cwd} mono />}</InspectorGroup>
@@ -104,7 +104,7 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
   </aside>;
 }
 
-function GitCommitPanel({ repositoryKind, repositoryId }: { repositoryKind: "project" | "workspace"; repositoryId: string }) {
+function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChanges }: { repositoryKind: "project" | "workspace"; repositories: InspectorRepository[]; repositoryId: string; onOpenChanges: (repository: InspectorRepository) => void }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -138,10 +138,12 @@ function GitCommitPanel({ repositoryKind, repositoryId }: { repositoryKind: "pro
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Commit failed"); }
     finally { setLoading(false); }
   };
+  const repository = repositories.find((item) => item.id === repositoryId);
   return <div className="flex min-h-full flex-col gap-3 p-3">
     {error && <p className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
     {!status ? <p className="py-8 text-center text-xs text-muted-foreground">Loading changes...</p> : status.files.length === 0 ? <p className="py-8 text-center text-xs text-muted-foreground">No changes</p> : <>
       <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><GitBranch className="size-3.5" /><span className="min-w-0 flex-1 truncate font-mono">{status.branch}</span><span>{status.staged_count} staged</span></div>
+      {repository && <Button className="w-full" size="sm" variant="outline" onClick={() => onOpenChanges(repository)}><GitCompare data-icon="inline-start" />Review Changes</Button>}
       <Textarea aria-label="Commit message" placeholder="Commit message" value={message} disabled={loading} onChange={(event) => setMessage(event.target.value)} />
       <Button className="w-full" disabled={loading || !message.trim() || !status.staged_count} onClick={() => void commit()}><Check data-icon="inline-start" />Commit {status.staged_count || ""}</Button>
     </>}

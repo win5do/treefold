@@ -11,10 +11,12 @@ try {
   await (await browser.$('[data-testid="workspace-sidebar"]')).waitForDisplayed({ timeout: 10_000 });
   await browser.$('button[aria-label="Show right sidebar"]').click();
   await browser.$('button[role="tab"][aria-label="Changes"]').click();
+  assert.equal((await browser.$$('h1=Git Changes')).length, 0, "Opening Changes must not open the diff view automatically");
+  await (await browser.$('button=Review Changes')).waitForDisplayed({ timeout: 5_000 });
+  await browser.$('button=Review Changes').click();
   await (await browser.$('h1=Git Changes')).waitForDisplayed({ timeout: 5_000 });
   assert.equal((await browser.getWindowHandles()).length, 1, "Changes must stay in the current window");
   assert.equal((await browser.$$('button=Open Shell')).length, 0, "Changes must not expose an unrelated shell action");
-  assert.equal((await browser.$$('button=Review Changes')).length, 0, "The active Changes view must not expose a duplicate review action");
   assert.equal((await browser.$$('[data-testid^="git-change-checkbox-"]')).length, 2, "Changes tree must expose each changed file");
   const stageAll = await browser.$('[aria-label="Stage all changes"]');
   await stageAll.click();
