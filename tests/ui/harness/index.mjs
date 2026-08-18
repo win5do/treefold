@@ -38,6 +38,7 @@ async function startFixtureApi() {
   const workspaceLocationUpdates = [];
   const locationRequests = [];
   const repositoryUpdateRequests = [];
+  const repositoryBaseRequests = [];
   const renameRequests = [];
   const sessionOrderRequests = [];
   const deleteRequests = [];
@@ -466,6 +467,7 @@ async function startFixtureApi() {
         return sendJson(response, 404, { error: "Repository not found" });
       repository.base_branch = input.branch;
       repository.preferred_remote_name = input.remote;
+      repositoryBaseRequests.push({ id: repository.id, ...input });
       sendJson(response, 200, repository);
       return;
     }
@@ -1047,6 +1049,7 @@ async function startFixtureApi() {
     syncRequests,
     locationRequests,
     repositoryUpdateRequests,
+    repositoryBaseRequests,
     workspaceLocationUpdates,
     renameRequests,
     sessionOrderRequests,
@@ -1121,6 +1124,7 @@ export async function startUiHarness() {
       syncRequests: [],
       locationRequests: [],
       repositoryUpdateRequests: [],
+      repositoryBaseRequests: [],
       workspaceLocationUpdates: [],
       renameRequests: [],
       sessionOrderRequests: [],
@@ -1175,6 +1179,7 @@ export async function startUiHarness() {
     syncRequests: fixtureApi.syncRequests,
     locationRequests: fixtureApi.locationRequests,
     repositoryUpdateRequests: fixtureApi.repositoryUpdateRequests,
+    repositoryBaseRequests: fixtureApi.repositoryBaseRequests,
     workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,
     renameRequests: fixtureApi.renameRequests,
     sessionOrderRequests: fixtureApi.sessionOrderRequests,

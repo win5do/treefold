@@ -407,6 +407,22 @@ impl Store {
         Ok(())
     }
 
+    pub fn update_repository_base(
+        &self,
+        id: &str,
+        base_branch: &str,
+        preferred_remote_name: Option<&str>,
+    ) -> Result<()> {
+        let changed = self.0.lock().execute(
+            "UPDATE project_repositories SET base_branch=?,preferred_remote_name=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
+            params![base_branch,preferred_remote_name,now(),id],
+        )?;
+        if changed == 0 {
+            return Err(AppError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn refresh_repository(&self, repository: &ProjectRepository) -> Result<()> {
         let changed = self.0.lock().execute(
             "UPDATE project_repositories SET name=?,source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,setup_command=?,setup_workdir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",

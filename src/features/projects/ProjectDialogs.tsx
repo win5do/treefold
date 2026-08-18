@@ -615,6 +615,36 @@ export function EditRepositoryDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const [branches, setBranches] = useState<RepositoryBranches | null>(null);
+  const [branchesError, setBranchesError] = useState("");
+  const [baseBranch, setBaseBranch] = useState("");
+  const [baseRemote, setBaseRemote] = useState("");
+
+  useEffect(() => {
+    if (!repository) {
+      setBranches(null);
+      setBranchesError("");
+      setBaseBranch("");
+      setBaseRemote("");
+      return;
+    }
+    const controller = new AbortController();
+    setBranches(null);
+    setBranchesError("");
+    setBaseBranch(repository.base_branch);
+    setBaseRemote(repository.preferred_remote_name || "");
+    projectsApi
+      .repositoryBranches(repository.id, controller.signal)
+      .then(setBranches)
+      .catch((cause) => {
+        if (controller.signal.aborted) return;
+        setBranchesError(
+          cause instanceof Error ? cause.message : "Could not load branches",
+        );
+      });
+    return () => controller.abort();
+  }, [repository?.id]);
+
   return (
     <Dialog open={Boolean(repository)} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -631,6 +661,7 @@ export function EditRepositoryDialog({
               repository.setup_command,
               repository.setup_workdir,
               repository.base_branch,
+              repository.preferred_remote_name,
               repository.delivery_mode,
             ])}
             className="mt-6 flex flex-col gap-4"
@@ -661,25 +692,70 @@ export function EditRepositoryDialog({
                   <FieldLabel htmlFor="repository-base-branch">
                     Base branch
                   </FieldLabel>
-                  <Input
+                  <Select
                     id="repository-base-branch"
-                    className="font-mono text-xs"
+                    className="w-full font-mono"
                     name="base_branch"
-                    defaultValue={repository.base_branch}
+                    value={baseBranch}
+                    onChange={(event) => setBaseBranch(event.target.value)}
+                    disabled={busy || !branches}
                     required
-                  />
+                  >
+                    {!branches ? (
+                      <option value={repository.base_branch}>Loading…</option>
+                    ) : (
+                      <>
+                        {!branches.local.includes(repository.base_branch) && (
+                          <option value={repository.base_branch} disabled>
+                            {repository.base_branch} (not found)
+                          </option>
+                        )}
+                        {branches.local.map((branch) => (
+                          <option key={branch} value={branch}>
+                            {branch}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </Select>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="repository-base-remote">
-                    Base remote <span className="text-muted-foreground">(optional)</span>
+                    Remote <span className="text-muted-foreground">(optional)</span>
                   </FieldLabel>
-                  <Input
+                  <Select
                     id="repository-base-remote"
-                    className="font-mono text-xs"
+                    className="w-full font-mono"
                     name="base_remote"
-                    defaultValue={repository.preferred_remote_name || "origin"}
-                    placeholder="origin"
-                  />
+                    value={baseRemote}
+                    onChange={(event) => setBaseRemote(event.target.value)}
+                    disabled={busy || !branches}
+                  >
+                    <option value="">None</option>
+                    {!branches && repository.preferred_remote_name && (
+                      <option value={repository.preferred_remote_name}>
+                        Loading…
+                      </option>
+                    )}
+                    {branches &&
+                      repository.preferred_remote_name &&
+                      !branches.remotes.some(
+                        (remote) =>
+                          remote.name === repository.preferred_remote_name,
+                      ) && (
+                        <option
+                          value={repository.preferred_remote_name}
+                          disabled
+                        >
+                          {repository.preferred_remote_name} (not found)
+                        </option>
+                      )}
+                    {branches?.remotes.map((remote) => (
+                      <option key={remote.name} value={remote.name}>
+                        {remote.name}
+                      </option>
+                    ))}
+                  </Select>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="repository-delivery-mode">
@@ -695,9 +771,14 @@ export function EditRepositoryDialog({
                   </Select>
                 </Field>
               </div>
+              {branchesError && (
+                <FieldDescription className="text-destructive">
+                  {branchesError}
+                </FieldDescription>
+              )}
             </FieldGroup>
             <div className="flex justify-end">
-              <Button type="submit" disabled={busy}>
+              <Button type="submit" disabled={busy || !branches}>
                 Save repository
               </Button>
             </div>

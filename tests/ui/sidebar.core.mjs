@@ -2328,10 +2328,28 @@ try {
     'textarea[aria-label="Worktree setup command"]',
   );
   await setupCommand.waitForDisplayed({ timeout: 3_000 });
+  const baseBranchSelect = await browser.$('select[name="base_branch"]');
+  await baseBranchSelect.waitForEnabled({ timeout: 3_000 });
   assert.equal(
-    await (await browser.$('input[name="base_branch"]')).isDisplayed(),
+    await baseBranchSelect.isDisplayed(),
     true,
-    "base branch must be edited from repository settings",
+    "base branch must be selected from repository settings",
+  );
+  assert.match(
+    await baseBranchSelect.getText(),
+    /main[\s\S]*release\/ui-fixture/,
+    "base branch options must come from local branches",
+  );
+  const baseRemoteSelect = await browser.$('select[name="base_remote"]');
+  assert.equal(
+    await baseRemoteSelect.isDisplayed(),
+    true,
+    "Pull and Push remote must be selected from repository settings",
+  );
+  assert.match(
+    await baseRemoteSelect.getText(),
+    /None[\s\S]*origin/,
+    "remote options must list configured Git remotes",
   );
   assert.equal(
     await (await browser.$('select[name="delivery_mode"]')).isDisplayed(),
@@ -2349,6 +2367,15 @@ try {
     harness.repositoryUpdateRequests.at(-1).id,
     FIXTURE_IDS.primaryRepository,
     "repository settings must PATCH the repository resource",
+  );
+  assert.deepEqual(
+    harness.repositoryBaseRequests.at(-1),
+    {
+      id: FIXTURE_IDS.primaryRepository,
+      branch: "main",
+      remote: "origin",
+    },
+    "repository settings must persist the local base branch and sync remote",
   );
   assert.match(
     await (await browser.$('[data-testid="page-content"]')).getText(),

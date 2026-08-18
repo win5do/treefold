@@ -1568,56 +1568,26 @@ pub(super) fn set_project_repository_base_branch_impl(
     }
     let source = Path::new(&repository.source_root);
     let local_ref = format!("refs/heads/{branch}");
-    if let Some(remote) = input
+    command_output(
+        source,
+        "git",
+        &["show-ref", "--verify", "--quiet", &local_ref],
+    )
+    .map_err(|_| AppError::BadRequest("local branch was not found".into()))?;
+    let remote = input
         .remote
         .as_deref()
         .map(str::trim)
-        .filter(|v| !v.is_empty())
-    {
+        .filter(|value| !value.is_empty());
+    if let Some(remote) = remote {
         if !git_remote_names(&repository.source_root)?
             .iter()
             .any(|name| name == remote)
         {
             return Err(AppError::BadRequest("remote was not found".into()));
         }
-        command_output(source, "git", &["fetch", remote])
-            .map_err(|error| AppError::BadRequest(format!("fetch remote: {error}")))?;
-        let remote_ref = format!("refs/remotes/{remote}/{branch}");
-        command_output(
-            source,
-            "git",
-            &["show-ref", "--verify", "--quiet", &remote_ref],
-        )
-        .map_err(|_| AppError::BadRequest("remote branch was not found".into()))?;
-        if command_output(
-            source,
-            "git",
-            &["show-ref", "--verify", "--quiet", &local_ref],
-        )
-        .is_err()
-        {
-            command_output(
-                source,
-                "git",
-                &["branch", branch, &format!("{remote}/{branch}")],
-            )
-            .map_err(|error| AppError::BadRequest(format!("create local base branch: {error}")))?;
-        }
-    } else {
-        command_output(
-            source,
-            "git",
-            &["show-ref", "--verify", "--quiet", &local_ref],
-        )
-        .map_err(|_| AppError::BadRequest("local branch was not found".into()))?;
     }
-    state.store.update_repository(
-        &id,
-        &repository.setup_command,
-        &repository.setup_workdir,
-        branch,
-        &repository.delivery_mode,
-    )?;
+    state.store.update_repository_base(&id, branch, remote)?;
     Ok(Json(state.store.repository(&id)?))
 }
 

@@ -1444,12 +1444,10 @@ function Workspace() {
           const ok = await act(async () => {
             const baseBranch = String(form.get("base_branch") || "").trim();
             const baseRemote = String(form.get("base_remote") || "").trim();
-            if (baseRemote) {
-              await projectsApi.setBaseBranch(editRepository.id, {
-                branch: baseBranch,
-                remote: baseRemote,
-              });
-            }
+            await projectsApi.setBaseBranch(editRepository.id, {
+              branch: baseBranch,
+              remote: baseRemote || null,
+            });
             await projectsApi.updateRepository(editRepository.id, {
               setup_command: form.get("setup_command"),
               setup_workdir: form.get("setup_workdir"),
