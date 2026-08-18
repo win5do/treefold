@@ -250,6 +250,14 @@ export type GitCommit = {
 
 export type GitHistory = { branch: string; commits: GitCommit[] };
 
+export type GitSyncItemResult = {
+  project_location_id: string;
+  workspace_location_id?: string;
+  location_name: string;
+  status: "success" | "failed" | "skipped";
+  error?: string;
+};
+
 export type GitDiffComparison = {
   repository: string;
   resolved_base: string;

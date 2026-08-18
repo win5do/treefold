@@ -169,6 +169,28 @@ pub(super) async fn sync_all_project_locations(
     let mut results = Vec::new();
     for repository in state.store.repositories(project_id)? {
         let location = state.store.repository_as_directory(&repository.id)?;
+        if location.git_status == "not_git" {
+            results.push(GitSyncItemResult {
+                project_location_id: location.id,
+                workspace_location_id: None,
+                location_name: location.name,
+                status: "skipped".into(),
+                result: None,
+                error: None,
+            });
+            continue;
+        }
+        if location.preferred_remote_name.is_none() {
+            results.push(GitSyncItemResult {
+                project_location_id: location.id,
+                workspace_location_id: None,
+                location_name: location.name,
+                status: "skipped".into(),
+                result: None,
+                error: Some("remote is not configured".into()),
+            });
+            continue;
+        }
         match sync_project_location(&location, &project, action).await {
             Ok(result) => results.push(GitSyncItemResult {
                 project_location_id: location.id,

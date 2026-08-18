@@ -2,6 +2,7 @@ import { request } from "./client";
 import type {
   Directory,
   GitHistory,
+  GitSyncItemResult,
   GitDiffComparison,
   GitWorktree,
   WorktreeDeletePrecheck,
@@ -129,7 +130,9 @@ export const projectsApi = {
   reveal: (id: string) =>
     request(`/api/projects/${id}/reveal`, { method: "POST" }),
   sync: (id: string, action: "pull" | "push") =>
-    request(`/api/projects/${id}/git/${action}-all`, { method: "POST" }),
+    request<GitSyncItemResult[]>(`/api/projects/${id}/git/${action}-all`, {
+      method: "POST",
+    }),
   syncLocation: (id: string, action: "pull" | "push") =>
     request(`/api/project-repositories/${id}/git/${action}`, {
       method: "POST",

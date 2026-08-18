@@ -46,6 +46,7 @@ import type {
   WorkspaceDetail,
   WorkspaceLocation,
   GitWorktree,
+  GitSyncItemResult,
 } from "@/domain/types";
 import {
   normalizeProject,
@@ -362,7 +363,10 @@ function Workspace() {
       ) ?? null)
     : null;
 
-  async function act(action: () => Promise<unknown>) {
+  async function act(
+    action: () => Promise<unknown>,
+    feedback?: { success?: string; error?: string },
+  ) {
     setBusy(true);
     try {
       await action();
@@ -390,9 +394,13 @@ function Workspace() {
             })
           : Promise.resolve(),
       ]);
+      if (feedback?.success) toast.success(feedback.success);
       return true;
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "操作失败");
+      const message = cause instanceof Error ? cause.message : "操作失败";
+      if (feedback?.error)
+        toast.error(feedback.error, { description: message });
+      else toast.error(message);
       return false;
     } finally {
       setBusy(false);
@@ -431,19 +439,63 @@ function Workspace() {
     id: string,
     action: "pull" | "push",
   ) {
-    await act(() =>
-      scope === "projects"
-        ? projectsApi.sync(id, action)
-        : workspacesApi.sync(id, action),
+    let results: GitSyncItemResult[] = [];
+    const feedback = gitSyncFeedback(action);
+    const ok = await act(
+      async () => {
+        results =
+          scope === "projects"
+            ? await projectsApi.sync(id, action)
+            : await workspacesApi.sync(id, action);
+        const failures = results.filter((item) => item.status === "failed");
+        if (failures.length > 0) {
+          throw new Error(
+            failures
+              .map(
+                (item) =>
+                  `${item.location_name}: ${item.error ?? t("common.unavailable")}`,
+              )
+              .join("\n"),
+          );
+        }
+      },
+      { error: feedback.error },
     );
+    if (!ok) return;
+
+    const successCount = results.filter(
+      (item) => item.status === "success",
+    ).length;
+    const skippedCount = results.filter(
+      (item) => item.status === "skipped",
+    ).length;
+    const options = skippedCount
+      ? { description: t("sidebar.syncSkippedCount", { count: skippedCount }) }
+      : undefined;
+    if (successCount > 0) toast.success(feedback.success, options);
+    else toast.info(feedback.skipped, options);
   }
 
   async function gitSyncProjectLocation(id: string, action: "pull" | "push") {
-    await act(() => projectsApi.syncLocation(id, action));
+    await act(
+      () => projectsApi.syncLocation(id, action),
+      gitSyncFeedback(action),
+    );
   }
 
   async function gitSyncWorkspaceLocation(id: string, action: "pull" | "push") {
-    await act(() => workspacesApi.syncLocation(id, action));
+    await act(
+      () => workspacesApi.syncLocation(id, action),
+      gitSyncFeedback(action),
+    );
+  }
+
+  function gitSyncFeedback(action: "pull" | "push") {
+    return {
+      success: t(`sidebar.${action}Succeeded`),
+      error: t(`sidebar.${action}Failed`),
+      skipped: t(`sidebar.${action}Skipped`),
+    };
   }
 
   async function clearWorkspaceLocationUpstream(location: WorkspaceLocation) {

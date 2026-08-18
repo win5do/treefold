@@ -858,6 +858,12 @@ try {
     `/api/workspace-repositories/${FIXTURE_IDS.workspacePrimaryLocation}/git/pull`,
     "Workspace repository Pull must target only its Repository",
   );
+  const pullSucceededToast = await waitForToast(
+    browser,
+    "status",
+    /Pull succeeded/,
+  );
+  await (await pullSucceededToast.$('button[aria-label="Close toast"]')).click();
   await workspaceNode.moveTo();
   await workspaceNodeMenuTrigger.click();
   workspaceNodeMenu = await browser.$(
@@ -2280,12 +2286,26 @@ try {
     /Pull All[\s\S]*fixture-repository[\s\S]*fixture-api-repository/,
     "Project Pull submenu must offer all and individual repositories",
   );
+  harness.setNextBulkSyncResults([
+    {
+      project_location_id: FIXTURE_IDS.primaryRepository,
+      location_name: "fixture-repository",
+      status: "failed",
+      error: "remote rejected the update",
+    },
+  ]);
   await (await projectGitSubmenu.$('[data-testid="sidebar-pull-all"]')).click();
   assert.equal(
     harness.syncRequests.at(-1),
     `/api/projects/${FIXTURE_IDS.project}/git/pull-all`,
     "bulk Pull must target every Project repository",
   );
+  const pullFailedToast = await waitForToast(
+    browser,
+    "alert",
+    /Pull failed[\s\S]*fixture-repository: remote rejected the update/,
+  );
+  await (await pullFailedToast.$('button[aria-label="Close toast"]')).click();
   await projectNode.moveTo();
   await projectNodeMenuTrigger.click();
   projectNodeMenu = await browser.$(

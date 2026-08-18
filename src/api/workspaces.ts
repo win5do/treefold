@@ -5,6 +5,7 @@ import type {
   GitHistory,
   GitDiffComparison,
   GitOperationRecord,
+  GitSyncItemResult,
   ParentOperation,
   ParentOperationDirection,
   ParentOperationPreview,
@@ -43,7 +44,9 @@ export const workspacesApi = {
   resync: (id: string) =>
     request<WorkspaceDetail>(`/api/workspaces/${id}/resync`, { method: "POST" }),
   sync: (id: string, action: "pull" | "push") =>
-    request(`/api/workspaces/${id}/git/${action}-all`, { method: "POST" }),
+    request<GitSyncItemResult[]>(`/api/workspaces/${id}/git/${action}-all`, {
+      method: "POST",
+    }),
   updateLocation: (id: string, json: unknown) =>
     request<WorkspaceLocation>(`/api/workspace-repositories/${id}`, {
       method: "PATCH",

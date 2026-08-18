@@ -35,6 +35,7 @@ async function startFixtureApi() {
   const fixture = createSidebarCoreFixture();
   const unexpectedRequests = [];
   const syncRequests = [];
+  let nextBulkSyncResults = null;
   const workspaceLocationUpdates = [];
   const locationRequests = [];
   const repositoryUpdateRequests = [];
@@ -640,6 +641,12 @@ async function startFixtureApi() {
     );
     if (request.method === "POST" && syncMatch) {
       syncRequests.push(pathname);
+      if (nextBulkSyncResults) {
+        const results = nextBulkSyncResults;
+        nextBulkSyncResults = null;
+        sendJson(response, 200, results);
+        return;
+      }
       sendJson(response, 200, [
         {
           project_location_id:
@@ -1079,6 +1086,9 @@ async function startFixtureApi() {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests,
+    setNextBulkSyncResults(results) {
+      nextBulkSyncResults = results;
+    },
     locationRequests,
     repositoryUpdateRequests,
     repositoryBaseRequests,
@@ -1157,6 +1167,7 @@ export async function startUiHarness() {
     return {
       baseUrl: process.env.TREEFOLD_UI_URL,
       syncRequests: [],
+      setNextBulkSyncResults() {},
       locationRequests: [],
       repositoryUpdateRequests: [],
       repositoryBaseRequests: [],
@@ -1213,6 +1224,7 @@ export async function startUiHarness() {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests: fixtureApi.syncRequests,
+    setNextBulkSyncResults: fixtureApi.setNextBulkSyncResults,
     locationRequests: fixtureApi.locationRequests,
     repositoryUpdateRequests: fixtureApi.repositoryUpdateRequests,
     repositoryBaseRequests: fixtureApi.repositoryBaseRequests,
