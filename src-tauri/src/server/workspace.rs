@@ -1673,6 +1673,72 @@ pub(super) async fn list_directory_branches(
 }
 
 #[derive(Deserialize)]
+pub(super) struct DeleteDirectoryBranch {
+    kind: String,
+    branch: String,
+    remote: Option<String>,
+}
+
+pub(super) async fn delete_directory_branch(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<DeleteDirectoryBranch>,
+) -> Result<Json<GitBranches>> {
+    let repository = state.store.repository(&id)?;
+    blocking_git_operation_for(repository.git_common_dir.clone(), move || {
+        delete_directory_branch_impl(state, id, input)
+    })
+    .await
+}
+
+pub(super) fn delete_directory_branch_impl(
+    state: AppState,
+    id: String,
+    input: DeleteDirectoryBranch,
+) -> Result<Json<GitBranches>> {
+    let repository = state.store.repository(&id)?;
+    ensure_active_project(&state.store.project(&repository.project_id)?)?;
+    let branch = input.branch.trim();
+    if branch.is_empty() {
+        return Err(AppError::BadRequest("branch is required".into()));
+    }
+    let source = Path::new(&repository.source_root);
+    match input.kind.as_str() {
+        "local" => {
+            let current = command_output(source, "git", &["branch", "--show-current"])
+                .map_err(AppError::BadRequest)?;
+            if current == branch {
+                return Err(AppError::BadRequest(
+                    "the current source branch cannot be deleted".into(),
+                ));
+            }
+            command_output(source, "git", &["branch", "-d", branch])
+                .map_err(AppError::BadRequest)?;
+        }
+        "remote" => {
+            let remote = input
+                .remote
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| AppError::BadRequest("remote is required".into()))?;
+            if !git_remote_names(&repository.source_root)?
+                .iter()
+                .any(|candidate| candidate == remote)
+            {
+                return Err(AppError::BadRequest("remote was not found".into()));
+            }
+            command_output(source, "git", &["push", remote, "--delete", branch])
+                .map_err(AppError::BadRequest)?;
+        }
+        _ => {
+            return Err(AppError::BadRequest("kind must be local or remote".into()));
+        }
+    }
+    Ok(Json(directory_branches(&repository.source_root)?))
+}
+
+#[derive(Deserialize)]
 pub(super) struct CheckoutDirectoryBranch {
     kind: String,
     branch: String,

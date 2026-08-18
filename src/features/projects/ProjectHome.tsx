@@ -32,6 +32,7 @@ export function ProjectHome({
   onAddDirectory,
   onEditDirectory,
   onEditRepository,
+  onOpenBranches,
   onRefreshLocation,
   onMakeDefault,
   onReattach,
@@ -48,6 +49,7 @@ export function ProjectHome({
   onAddDirectory: () => void;
   onEditDirectory: (directory: Directory) => void;
   onEditRepository: (repository: ProjectRepository) => void;
+  onOpenBranches: (repository: ProjectRepository) => void;
   onRefreshLocation: (directory: Directory) => void;
   onMakeDefault: (directory: Directory) => void;
   onReattach: (directory: Directory) => void;
@@ -121,6 +123,7 @@ export function ProjectHome({
                   busy={busy}
                   readOnly={project.status === "archived"}
                   onOpen={onOpen}
+                  onOpenBranches={() => onOpenBranches(repository)}
                   onEditRepository={() => onEditRepository(repository)}
                   onEditDirectory={onEditDirectory}
                   onRefresh={() => scopes[0] && onRefreshLocation(scopes[0])}

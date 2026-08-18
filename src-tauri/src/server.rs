@@ -205,7 +205,7 @@ fn app(state: AppState) -> Router {
         )
         .route(
             "/api/project-repositories/{id}/branches",
-            get(list_directory_branches),
+            get(list_directory_branches).delete(delete_directory_branch),
         )
         .route(
             "/api/project-repositories/{id}/checkout",

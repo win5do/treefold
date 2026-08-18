@@ -42,6 +42,7 @@ async function startFixtureApi() {
   const sessionOrderRequests = [];
   const deleteRequests = [];
   const amuxStopRequests = [];
+  const repositoryBranches = new Map();
   const gitDiffRoutes = createGitDiffRoutes({ fixture, readJson, sendJson });
   const parentOperationRoutes = createParentOperationRoutes({
     fixture,
@@ -453,6 +454,22 @@ async function startFixtureApi() {
       return;
     }
 
+    const repositoryBaseBranchMatch = pathname.match(
+      /^\/api\/project-repositories\/([^/]+)\/base-branch$/,
+    );
+    if (request.method === "POST" && repositoryBaseBranchMatch) {
+      const input = await readJson(request);
+      const repository = Object.values(fixture.projectDetails)
+        .flatMap((detail) => detail.repositories)
+        .find((item) => item.id === repositoryBaseBranchMatch[1]);
+      if (!repository)
+        return sendJson(response, 404, { error: "Repository not found" });
+      repository.base_branch = input.branch;
+      repository.preferred_remote_name = input.remote;
+      sendJson(response, 200, repository);
+      return;
+    }
+
     const projectHistoryMatch = pathname.match(
       /^\/api\/project-repositories\/([^/]+)\/git-history$/,
     );
@@ -677,29 +694,66 @@ async function startFixtureApi() {
     }
 
     const branchesMatch = pathname.match(
-      /^\/api\/project-directories\/([^/]+)\/branches$/,
+      /^\/api\/project-repositories\/([^/]+)\/branches$/,
     );
     if (request.method === "GET" && branchesMatch) {
-      sendJson(response, 200, {
+      const repository = Object.values(fixture.projectDetails)
+        .flatMap((detail) => detail.repositories ?? [])
+        .find((item) => item.id === branchesMatch[1]);
+      if (!repository)
+        return sendJson(response, 404, { error: "Repository not found" });
+      const state = repositoryBranches.get(repository.id) ?? {
         current: "main",
         local: ["main", "release/ui-fixture"],
         remotes: [{ name: "origin", branches: ["main", "feature/ui-fixture"] }],
-      });
+      };
+      repositoryBranches.set(repository.id, state);
+      sendJson(response, 200, state);
       return;
     }
 
     const checkoutMatch = pathname.match(
-      /^\/api\/project-directories\/([^/]+)\/checkout$/,
+      /^\/api\/project-repositories\/([^/]+)\/checkout$/,
     );
     if (request.method === "POST" && checkoutMatch) {
       const input = await readJson(request);
-      const directory = Object.values(fixture.projectDetails)
-        .flatMap((detail) => detail.directories)
-        .find((item) => item.id === checkoutMatch[1]);
-      if (!directory)
-        return sendJson(response, 404, { error: "Directory not found" });
-      directory.branch = input.branch;
-      sendJson(response, 200, directory);
+      const detail = Object.values(fixture.projectDetails).find((candidate) =>
+        (candidate.repositories ?? []).some(
+          (repository) => repository.id === checkoutMatch[1],
+        ),
+      );
+      if (!detail)
+        return sendJson(response, 404, { error: "Repository not found" });
+      const directories = detail.directories.filter(
+        (directory) => directory.repository_id === checkoutMatch[1],
+      );
+      directories.forEach((directory) => {
+        directory.branch = input.branch;
+      });
+      const state = repositoryBranches.get(checkoutMatch[1]);
+      if (state) {
+        state.current = input.branch;
+        if (!state.local.includes(input.branch)) state.local.push(input.branch);
+      }
+      sendJson(response, 200, directories[0]);
+      return;
+    }
+
+    if (request.method === "DELETE" && branchesMatch) {
+      const input = await readJson(request);
+      const state = repositoryBranches.get(branchesMatch[1]);
+      if (!state)
+        return sendJson(response, 404, { error: "Repository not found" });
+      if (input.kind === "local") {
+        state.local = state.local.filter((branch) => branch !== input.branch);
+      } else {
+        const remote = state.remotes.find((item) => item.name === input.remote);
+        if (remote)
+          remote.branches = remote.branches.filter(
+            (branch) => branch !== input.branch,
+          );
+      }
+      sendJson(response, 200, state);
       return;
     }
 

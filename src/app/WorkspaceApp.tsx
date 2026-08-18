@@ -70,6 +70,7 @@ import {
   CreateProjectDialog,
   EditDirectoryDialog,
   EditRepositoryDialog,
+  RepositoryBranchesDialog,
 } from "@/features/projects/ProjectDialogs";
 import { ProjectHome } from "@/features/projects/ProjectHome";
 import { Overview } from "@/features/projects/Overview";
@@ -229,6 +230,8 @@ function Workspace() {
     useState<ProjectDetail | null>(null);
   const [editDirectory, setEditDirectory] = useState<Directory | null>(null);
   const [editRepository, setEditRepository] =
+    useState<ProjectRepository | null>(null);
+  const [branchRepository, setBranchRepository] =
     useState<ProjectRepository | null>(null);
   const [createWorkspaceProject, setCreateWorkspaceProject] =
     useState<ProjectDetail | null>(null);
@@ -1288,6 +1291,7 @@ function Workspace() {
                   onAddDirectory={() => setAddDirectoryProject(selectedProject)}
                   onEditDirectory={setEditDirectory}
                   onEditRepository={setEditRepository}
+                  onOpenBranches={setBranchRepository}
                   onRefreshLocation={(location) =>
                     void refreshLocation(location)
                   }
@@ -1455,9 +1459,24 @@ function Workspace() {
           });
           if (ok) setEditRepository(null);
         }}
-        onCheckout={async (payload) => {
-          if (!editRepository) return;
-          await act(() => projectsApi.checkoutRepository(editRepository.id, payload));
+      />
+      <RepositoryBranchesDialog
+        repository={branchRepository}
+        busy={busy}
+        onOpenChange={(open) => {
+          if (!open) setBranchRepository(null);
+        }}
+        onSwitch={async (payload) => {
+          if (!branchRepository) return;
+          await act(() =>
+            projectsApi.checkoutRepository(branchRepository.id, payload),
+          );
+        }}
+        onDelete={async (payload) => {
+          if (!branchRepository) return;
+          await act(() =>
+            projectsApi.deleteRepositoryBranch(branchRepository.id, payload),
+          );
         }}
       />
       <CreateWorkspaceDialog

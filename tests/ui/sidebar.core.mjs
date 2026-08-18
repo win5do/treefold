@@ -1797,13 +1797,6 @@ try {
     /current\s+main[\s\S]*base\s+main/,
     "repository rows must show read-only current and base branches",
   );
-  assert.equal(
-    await primaryLocation
-      .$(`[data-testid="branch-selector-${FIXTURE_IDS.primaryRepository}"]`)
-      .isExisting(),
-    false,
-    "Project repositories must not expose branch switching",
-  );
   const primaryRefresh = await primaryLocation.$(
     `[data-testid="project-location-refresh-${FIXTURE_IDS.primaryRepository}"]`,
   );
@@ -1821,14 +1814,41 @@ try {
   await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
   assert.match(
     await primaryActionsMenu.getText(),
-    /Edit repository[\s\S]*Remove from project/,
-    "repository actions must edit configuration and expose project removal",
+    /Branch[\s\S]*Edit repository[\s\S]*Remove from project/,
+    "repository actions must expose branches, configuration, and removal",
   );
   assert.equal(
     (await primaryActionsMenu.getText()).includes("Make default"),
     false,
     "primary repository menu must not expose Make default",
   );
+  await primaryActionsMenu
+    .$(`[data-testid="project-repository-branches-${FIXTURE_IDS.primaryRepository}"]`)
+    .click();
+  const branchesDialog = await browser.$('[data-testid="repository-branches"]');
+  await branchesDialog.waitForDisplayed({ timeout: 3_000 });
+  assert.match(
+    await branchesDialog.getText(),
+    /Local[\s\S]*main[\s\S]*release\/ui-fixture[\s\S]*Remote[\s\S]*origin/,
+    "Branch must show local branches and remotes as a hierarchy",
+  );
+  await branchesDialog.$('button=origin').click();
+  const remoteBranch = await branchesDialog.$(
+    '[data-testid="branch-remote-origin/feature/ui-fixture"]',
+  );
+  await remoteBranch.click();
+  const branchActions = await browser.$(
+    '[data-testid="branch-actions-remote-origin/feature/ui-fixture"]',
+  );
+  await branchActions.waitForDisplayed({ timeout: 3_000 });
+  assert.equal(
+    (await branchActions.getText()).trim(),
+    "Switch\nDelete",
+    "a branch child menu must contain only Switch and Delete",
+  );
+  await browser.keys(Key.Escape);
+  await browser.keys(Key.Escape);
+  await branchesDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await browser.keys(Key.Escape);
   await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await primaryActionsTrigger.click();
@@ -1994,8 +2014,8 @@ try {
     await browser.execute(() =>
       document.activeElement?.getAttribute("data-testid"),
     ),
-    `project-repository-edit-${FIXTURE_IDS.secondaryRepository}`,
-    "ArrowDown must open the repository menu and focus its edit action",
+    `project-repository-branches-${FIXTURE_IDS.secondaryRepository}`,
+    "ArrowDown must open the repository menu and focus its Branch action",
   );
   await browser.keys(Key.Escape);
   await secondaryActionsMenu.waitForDisplayed({

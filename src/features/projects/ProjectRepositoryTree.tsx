@@ -382,6 +382,7 @@ export function ProjectRepositoryTreeRow({
   busy,
   readOnly,
   onOpen,
+  onOpenBranches,
   onEditRepository,
   onEditDirectory,
   onRefresh,
@@ -397,6 +398,7 @@ export function ProjectRepositoryTreeRow({
   busy: boolean;
   readOnly: boolean;
   onOpen: (id: string) => void;
+  onOpenBranches: () => void;
   onEditRepository: () => void;
   onEditDirectory: (directory: Directory) => void;
   onRefresh: () => void;
@@ -526,6 +528,13 @@ export function ProjectRepositoryTreeRow({
                     Relink
                   </ActionMenuItem>
                 )}
+                <ActionMenuItem
+                  icon={<GitBranch className="size-3.5" />}
+                  testId={`project-repository-branches-${repository.id}`}
+                  onClick={onOpenBranches}
+                >
+                  Branch
+                </ActionMenuItem>
                 <ActionMenuItem
                   icon={<Pencil className="size-3.5" />}
                   testId={`project-repository-edit-${repository.id}`}

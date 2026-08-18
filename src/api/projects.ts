@@ -82,6 +82,15 @@ export const projectsApi = {
       local: string[];
       remotes: { name: string; branches: string[] }[];
     }>(`/api/project-repositories/${id}/branches`, { signal }),
+  deleteRepositoryBranch: (id: string, json: unknown) =>
+    request<{
+      current: string;
+      local: string[];
+      remotes: { name: string; branches: string[] }[];
+    }>(`/api/project-repositories/${id}/branches`, {
+      method: "DELETE",
+      json,
+    }),
   checkoutRepository: (id: string, json: unknown) =>
     request<Directory>(`/api/project-repositories/${id}/checkout`, {
       method: "POST",

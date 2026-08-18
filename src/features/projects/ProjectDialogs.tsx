@@ -1,5 +1,13 @@
 import { type FormEvent, useEffect, useState } from "react";
-import { FolderOpen, Plus, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderGit2,
+  FolderOpen,
+  GitBranch,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { projectsApi } from "@/api/projects";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +27,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect as Select } from "@/components/ui/native-select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   Directory,
@@ -600,24 +609,12 @@ export function EditRepositoryDialog({
   busy,
   onOpenChange,
   onSubmit,
-  onCheckout,
 }: {
   repository: ProjectRepository | null;
   busy: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onCheckout: (payload: { branch: string; kind: "local" | "remote"; remote?: string }) => Promise<void>;
 }) {
-  const [checkoutBranch, setCheckoutBranch] = useState("");
-  const [checkoutRemote, setCheckoutRemote] = useState("origin");
-  const [checkoutKind, setCheckoutKind] = useState<"local" | "remote">("local");
-  useEffect(() => {
-    if (repository) {
-      setCheckoutBranch("");
-      setCheckoutRemote(repository.preferred_remote_name || "origin");
-      setCheckoutKind("local");
-    }
-  }, [repository?.id]);
   return (
     <Dialog open={Boolean(repository)} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -699,60 +696,6 @@ export function EditRepositoryDialog({
                 </Field>
               </div>
             </FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="repository-checkout-branch">
-                Checkout source branch
-              </FieldLabel>
-              <div className="grid gap-2 sm:grid-cols-[7rem_1fr_6rem]">
-                <Select
-                  id="repository-checkout-kind"
-                  value={checkoutKind}
-                  onChange={(event) =>
-                    setCheckoutKind(event.target.value as "local" | "remote")
-                  }
-                >
-                  <option value="local">Local</option>
-                  <option value="remote">Remote</option>
-                </Select>
-                <Input
-                  id="repository-checkout-branch"
-                  className="font-mono text-xs"
-                  value={checkoutBranch}
-                  onChange={(event) => setCheckoutBranch(event.target.value)}
-                  placeholder="feature/name"
-                />
-                {checkoutKind === "remote" ? (
-                  <Input
-                    aria-label="Checkout remote"
-                    className="font-mono text-xs"
-                    value={checkoutRemote}
-                    onChange={(event) => setCheckoutRemote(event.target.value)}
-                    placeholder="origin"
-                  />
-                ) : (
-                  <span />
-                )}
-              </div>
-              <FieldDescription>
-                Switches only the source checkout. It does not change Base branch.
-              </FieldDescription>
-              <div className="mt-2 flex justify-end">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={busy || !checkoutBranch.trim()}
-                  onClick={() =>
-                    void onCheckout({
-                      branch: checkoutBranch.trim(),
-                      kind: checkoutKind,
-                      remote: checkoutKind === "remote" ? checkoutRemote.trim() : undefined,
-                    })
-                  }
-                >
-                  Checkout source
-                </Button>
-              </div>
-            </Field>
             <div className="flex justify-end">
               <Button type="submit" disabled={busy}>
                 Save repository
@@ -760,6 +703,257 @@ export function EditRepositoryDialog({
             </div>
           </form>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type RepositoryBranches = Awaited<
+  ReturnType<typeof projectsApi.repositoryBranches>
+>;
+
+type RepositoryBranchTarget = {
+  branch: string;
+  kind: "local" | "remote";
+  remote?: string;
+};
+
+function BranchActionRow({
+  branch,
+  current,
+  busy,
+  target,
+  onSwitch,
+  onDelete,
+}: {
+  branch: string;
+  current: boolean;
+  busy: boolean;
+  target: RepositoryBranchTarget;
+  onSwitch: (target: RepositoryBranchTarget) => Promise<void>;
+  onDelete: (target: RepositoryBranchTarget) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const label = target.remote ? `${target.remote}/${branch}` : branch;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            data-testid={`branch-${target.kind}-${label}`}
+            className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            disabled={busy}
+          />
+        }
+      >
+        <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate font-mono" title={label}>
+          {branch}
+        </span>
+        {current && <Badge variant="secondary">current</Badge>}
+        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverContent
+        data-testid={`branch-actions-${target.kind}-${label}`}
+        side="right"
+        align="start"
+        sideOffset={4}
+        className="w-36 gap-0 p-1"
+      >
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={busy || current}
+          onClick={async () => {
+            await onSwitch(target);
+            setOpen(false);
+          }}
+        >
+          <GitBranch className="size-3.5" />
+          Switch
+        </button>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40"
+          disabled={busy || current}
+          onClick={async () => {
+            const location = target.remote ? ` on ${target.remote}` : "";
+            if (!window.confirm(`Delete branch ${branch}${location}?`)) return;
+            await onDelete(target);
+            setOpen(false);
+          }}
+        >
+          <Trash2 className="size-3.5" />
+          Delete
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function BranchGroup({
+  label,
+  open,
+  onOpenChange,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  onOpenChange: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={open}
+        onClick={onOpenChange}
+      >
+        {open ? (
+          <ChevronDown className="size-3.5" />
+        ) : (
+          <ChevronRight className="size-3.5" />
+        )}
+        <FolderGit2 className="size-3.5 text-muted-foreground" />
+        {label}
+      </button>
+      {open && <div className="ml-4 border-l border-border pl-2">{children}</div>}
+    </div>
+  );
+}
+
+export function RepositoryBranchesDialog({
+  repository,
+  busy,
+  onOpenChange,
+  onSwitch,
+  onDelete,
+}: {
+  repository: ProjectRepository | null;
+  busy: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSwitch: (target: RepositoryBranchTarget) => Promise<void>;
+  onDelete: (target: RepositoryBranchTarget) => Promise<void>;
+}) {
+  const [branches, setBranches] = useState<RepositoryBranches | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [localOpen, setLocalOpen] = useState(true);
+  const [remoteOpen, setRemoteOpen] = useState(true);
+  const [openRemotes, setOpenRemotes] = useState<Record<string, boolean>>({});
+
+  const loadBranches = async (repositoryId: string, signal?: AbortSignal) => {
+    setLoading(true);
+    setError("");
+    try {
+      setBranches(await projectsApi.repositoryBranches(repositoryId, signal));
+    } catch (cause) {
+      if (signal?.aborted) return;
+      setError(cause instanceof Error ? cause.message : "Could not load branches");
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!repository) {
+      setBranches(null);
+      return;
+    }
+    const controller = new AbortController();
+    setLocalOpen(true);
+    setRemoteOpen(true);
+    setOpenRemotes({});
+    void loadBranches(repository.id, controller.signal);
+    return () => controller.abort();
+  }, [repository?.id]);
+
+  const runAndReload = async (
+    action: (target: RepositoryBranchTarget) => Promise<void>,
+    target: RepositoryBranchTarget,
+  ) => {
+    if (!repository) return;
+    await action(target);
+    await loadBranches(repository.id);
+  };
+
+  return (
+    <Dialog open={Boolean(repository)} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Branch</DialogTitle>
+          <DialogDescription className="truncate">
+            {repository?.name}
+          </DialogDescription>
+        </DialogHeader>
+        <div
+          data-testid="repository-branches"
+          className="max-h-[24rem] min-h-28 overflow-y-auto rounded-lg border border-border p-1"
+        >
+          {loading && !branches ? (
+            <div className="grid min-h-24 place-items-center text-xs text-muted-foreground">
+              Loading branches…
+            </div>
+          ) : error ? (
+            <div className="grid min-h-24 place-items-center px-4 text-center text-xs text-destructive">
+              {error}
+            </div>
+          ) : branches ? (
+            <>
+              <BranchGroup
+                label="Local"
+                open={localOpen}
+                onOpenChange={() => setLocalOpen((value) => !value)}
+              >
+                {branches.local.map((branch) => (
+                  <BranchActionRow
+                    key={branch}
+                    branch={branch}
+                    current={branch === branches.current}
+                    busy={busy || loading}
+                    target={{ kind: "local", branch }}
+                    onSwitch={(target) => runAndReload(onSwitch, target)}
+                    onDelete={(target) => runAndReload(onDelete, target)}
+                  />
+                ))}
+              </BranchGroup>
+              <BranchGroup
+                label="Remote"
+                open={remoteOpen}
+                onOpenChange={() => setRemoteOpen((value) => !value)}
+              >
+                {branches.remotes.map((remote) => (
+                  <BranchGroup
+                    key={remote.name}
+                    label={remote.name}
+                    open={Boolean(openRemotes[remote.name])}
+                    onOpenChange={() =>
+                      setOpenRemotes((current) => ({
+                        ...current,
+                        [remote.name]: !current[remote.name],
+                      }))
+                    }
+                  >
+                    {remote.branches.map((branch) => (
+                      <BranchActionRow
+                        key={branch}
+                        branch={branch}
+                        current={false}
+                        busy={busy || loading}
+                        target={{ kind: "remote", remote: remote.name, branch }}
+                        onSwitch={(target) => runAndReload(onSwitch, target)}
+                        onDelete={(target) => runAndReload(onDelete, target)}
+                      />
+                    ))}
+                  </BranchGroup>
+                ))}
+              </BranchGroup>
+            </>
+          ) : null}
+        </div>
       </DialogContent>
     </Dialog>
   );
