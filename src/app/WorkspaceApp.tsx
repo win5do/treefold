@@ -1505,16 +1505,6 @@ function Workspace() {
                   next.set("commitCount", String(payload.commitCount));
                   navigate(`${location.pathname}?${next.toString()}`);
                 }}
-                onOpenGitShell={(repositoryId) => {
-                  if (workspace) {
-                    const location = workspace.repositories.find((item) => item.id === repositoryId);
-                    const directory = workspace.directories.find((item) => item.repository_id === location?.project_location_id);
-                    void createShell(workspace, directory);
-                  } else if (selectedProject) {
-                    const directory = selectedProject.directories.find((item) => item.repository_id === repositoryId);
-                    void createProjectShell(selectedProject, directory);
-                  }
-                }}
               />
             )}
           </div>

@@ -101,6 +101,25 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
     finally { setMutatingPath(""); }
   };
 
+  const stageableFiles = status?.files.filter((file) => file.status !== "conflicted") ?? [];
+  const allStaged = stageableFiles.length > 0 && stageableFiles.every((file) => !file.has_unstaged_changes);
+  const someStaged = stageableFiles.some((file) => file.has_staged_changes);
+  const toggleAllStages = async () => {
+    if (scope !== "working-tree" || mutatingPath || stageableFiles.length === 0) return;
+    const stage = !allStaged;
+    const paths = stageableFiles
+      .filter((file) => stage ? file.has_unstaged_changes : file.has_staged_changes)
+      .map((file) => file.path);
+    if (paths.length === 0) return;
+    setMutatingPath("*");
+    try {
+      const next = stage ? await api.stage(repositoryId, paths) : await api.unstage(repositoryId, paths);
+      setStatus(next); onStatusChange?.(next);
+      window.dispatchEvent(new CustomEvent("treefold:git-status-changed", { detail: { repositoryId, status: next } }));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Git stage operation failed"); }
+    finally { setMutatingPath(""); }
+  };
+
   const parsedFiles = scope === "commit" ? parsed : comparison ? parseComparison(comparison).files : [];
   const current = parsedFiles.find((file) => file.path === selectedPath);
   return <main className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
@@ -111,9 +130,13 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
       {status && <Badge variant="outline">{status.files.length} files</Badge>}
       {onClose && <Button size="icon-sm" variant="ghost" aria-label="Close Git Changes" onClick={onClose}><X /></Button>}
     </header>
-    {loading ? <State title="Loading Git changes" /> : error && !current ? <State title="Could not load Git changes" detail={error} /> : files.length === 0 ? <State title="No changes" detail="The repository has no files in this view." /> : <div className="flex min-h-0 flex-1">
+    {loading ? <State title="Loading Git changes" /> : error && !current ? <State title="Could not load Git changes" detail={error} /> : files.length === 0 ? <State title="No changes" /> : <div className="flex min-h-0 flex-1">
       <aside className="flex w-[min(34%,360px)] min-w-[220px] shrink-0 flex-col border-r border-border bg-muted/20">
-        <div className="flex h-10 shrink-0 items-center gap-2 px-3 text-xs font-semibold"><span>Changed files</span>{status && <span className="ml-auto text-[10px] text-muted-foreground">{status.staged_count} staged</span>}</div>
+        <div className="flex h-10 shrink-0 items-center gap-2 px-3 text-xs font-semibold">
+          <span>Changed files</span>
+          {status && <span className="ml-auto text-[10px] text-muted-foreground">{status.staged_count} staged</span>}
+          {scope === "working-tree" && <Checkbox aria-label={allStaged ? "Unstage all changes" : "Stage all changes"} checked={allStaged} indeterminate={!allStaged && someStaged} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} onCheckedChange={() => void toggleAllStages()} />}
+        </div>
         <ChangesTree files={files} selectedPath={selectedPath} onSelect={setSelectedPath} onToggle={scope === "commit" ? undefined : toggleStage} mutatingPath={mutatingPath} />
       </aside>
       <section className="flex min-w-0 flex-1 flex-col">
@@ -172,10 +195,10 @@ function buildWorkingTree(files: GitChangeFile[]) {
 
 function renderWorkingTree(nodes: WorkingTreeNode[], depth: number, checked: boolean, selectedPath: string, mutatingPath: string, onSelect: (path: string) => void, onToggle: (file: GitChangeFile, stage: boolean) => void): React.ReactNode {
   return nodes.map((node) => node.file ? <div key={node.path} role="treeitem" aria-selected={selectedPath === node.path} className={cn("flex min-w-0 items-center gap-2 py-1.5 pr-3 text-xs", selectedPath === node.path && "bg-accent text-accent-foreground")} style={{ paddingLeft: 12 + depth * 14 }}>
-    <Checkbox data-testid={`git-change-checkbox-${checked ? "staged" : "unstaged"}-${node.path}`} aria-label={`${checked ? "Unstage" : "Stage"} ${node.path}`} checked={checked} disabled={node.file.status === "conflicted" || mutatingPath === node.path} onCheckedChange={() => onToggle(node.file!, !checked)} onClick={(event) => event.stopPropagation()} />
     <File className="size-3.5 shrink-0 text-muted-foreground" />
     <button type="button" className="min-w-0 flex-1 truncate text-left font-mono outline-none" title={node.path} onClick={() => onSelect(node.path)}>{node.name}</button>
-    <span className="shrink-0 text-[10px] text-muted-foreground">+{node.file.additions} −{node.file.deletions}</span>
+    <span className="flex shrink-0 items-center gap-1 text-[10px]"><span className="text-success">+{node.file.additions}</span><span className="text-destructive">−{node.file.deletions}</span></span>
+    <Checkbox data-testid={`git-change-checkbox-${checked ? "staged" : "unstaged"}-${node.path}`} aria-label={`${checked ? "Unstage" : "Stage"} ${node.path}`} checked={checked} disabled={node.file.status === "conflicted" || Boolean(mutatingPath)} onCheckedChange={() => onToggle(node.file!, !checked)} onClick={(event) => event.stopPropagation()} />
   </div> : <div key={node.path} role="treeitem" aria-expanded="true">
     <div className="flex min-w-0 items-center gap-2 py-1.5 pr-3 text-xs text-muted-foreground" style={{ paddingLeft: 12 + depth * 14 }}><FolderOpen className="size-3.5 shrink-0" /><span className="truncate font-mono">{node.name}</span></div>
     <div role="group">{renderWorkingTree(node.children, depth + 1, checked, selectedPath, mutatingPath, onSelect, onToggle)}</div>
