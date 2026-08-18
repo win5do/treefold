@@ -2024,6 +2024,18 @@ pub(super) fn managed_repository_source_path(
         .join("source")
 }
 
+/// Resolve the Repository root for a Project Directory scope.
+pub(super) fn repository_root_for_directory(
+    state: &AppState,
+    directory_id: &str,
+) -> Result<String> {
+    let repository_id = state
+        .store
+        .directory_repository_id(directory_id)?
+        .ok_or_else(|| AppError::BadRequest("directory is not attached to a Repository".into()))?;
+    Ok(state.store.repository(&repository_id)?.source_root)
+}
+
 pub(super) fn managed_worktree_path(
     settings: &SettingsStore,
     project_id: &str,

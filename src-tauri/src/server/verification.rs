@@ -167,7 +167,7 @@ pub(super) fn create_delivery_preflight_impl(
             "delivery preflight is available only for an active managed Workspace".into(),
         ));
     }
-    let directory = state.store.directory(&workspace.project_directory_id)?;
+    let repository_root = repository_root_for_directory(state, &workspace.project_directory_id)?;
     let project = state.store.project(&workspace.project_id)?;
     let (target_path, target_branch) = workspace_delivery_target(state, &workspace)?;
 
@@ -184,9 +184,9 @@ pub(super) fn create_delivery_preflight_impl(
             let remote = project.preferred_remote.as_deref().ok_or_else(|| {
                 AppError::BadRequest("Project has no preferred remote target".into())
             })?;
-            fetch_remote_branch(&directory.path, remote, &target_branch)?;
+            fetch_remote_branch(&repository_root, remote, &target_branch)?;
             let head = command_output(
-                Path::new(&directory.path),
+                Path::new(&repository_root),
                 "git",
                 &["rev-parse", "FETCH_HEAD"],
             )
@@ -201,7 +201,7 @@ pub(super) fn create_delivery_preflight_impl(
         }
         _ => {
             let head = command_output(
-                Path::new(&directory.path),
+                Path::new(&repository_root),
                 "git",
                 &["rev-parse", &target_branch],
             )
@@ -394,16 +394,16 @@ pub(super) async fn validate_preflight_snapshot(
         )));
     }
     let source_head = git_head(&workspace.checkout_path)?;
-    let directory = state.store.directory(&workspace.project_directory_id)?;
     let project = state.store.project(&workspace.project_id)?;
+    let repository_root = repository_root_for_directory(state, &workspace.project_directory_id)?;
     let target_head = match input.code_action.as_str() {
         "remote_merged" => {
             let remote = project.preferred_remote.as_deref().ok_or_else(|| {
                 AppError::BadRequest("Project has no preferred remote target".into())
             })?;
-            fetch_remote_branch_async(&directory.path, remote, target_branch).await?;
+            fetch_remote_branch_async(&repository_root, remote, target_branch).await?;
             command_output(
-                Path::new(&directory.path),
+                Path::new(&repository_root),
                 "git",
                 &["rev-parse", "FETCH_HEAD"],
             )
@@ -411,7 +411,7 @@ pub(super) async fn validate_preflight_snapshot(
         }
         "local_merge" => git_head(target_path)?,
         _ => command_output(
-            Path::new(&directory.path),
+            Path::new(&repository_root),
             "git",
             &["rev-parse", target_branch],
         )

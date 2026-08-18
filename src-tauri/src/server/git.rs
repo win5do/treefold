@@ -417,9 +417,10 @@ pub(super) async fn pull_project(
     let project = state.store.project(&id)?;
     let directory = state.store.directory(&project.primary_directory_id)?;
     ensure_git_directory(&directory)?;
-    ensure_clean_workspace(&directory.path, "Project source checkout")?;
+    let repository_root = repository_root_for_directory(&state, &project.primary_directory_id)?;
+    ensure_clean_workspace(&repository_root, "Project source checkout")?;
     ensure_checked_out_branch(
-        &directory.path,
+        &repository_root,
         &project.default_target_branch,
         "Project source checkout",
     )?;
@@ -427,10 +428,10 @@ pub(super) async fn pull_project(
         .preferred_remote
         .ok_or_else(|| AppError::BadRequest("Project has no preferred remote".into()))?;
     let remote_branch = project.default_target_branch.clone();
-    let before_head = git_head(&directory.path)?;
-    fetch_remote_branch_async(&directory.path, &remote, &remote_branch).await?;
+    let before_head = git_head(&repository_root)?;
+    fetch_remote_branch_async(&repository_root, &remote, &remote_branch).await?;
     git::output_async(
-        Path::new(&directory.path),
+        Path::new(&repository_root),
         &["merge", "--ff-only", "FETCH_HEAD"],
     )
     .await
@@ -439,7 +440,7 @@ pub(super) async fn pull_project(
             "Project target cannot fast-forward from {remote}/{remote_branch}: {error}"
         ))
     })?;
-    let after_head = git_head(&directory.path)?;
+    let after_head = git_head(&repository_root)?;
     Ok(Json(sync_result(
         "project",
         "pull",
@@ -458,18 +459,19 @@ pub(super) async fn push_project(
     let project = state.store.project(&id)?;
     let directory = state.store.directory(&project.primary_directory_id)?;
     ensure_git_directory(&directory)?;
+    let repository_root = repository_root_for_directory(&state, &project.primary_directory_id)?;
     let remote = project
         .preferred_remote
         .ok_or_else(|| AppError::BadRequest("Project has no preferred remote".into()))?;
     let remote_branch = project.default_target_branch.clone();
     let before_head = command_output(
-        Path::new(&directory.path),
+        Path::new(&repository_root),
         "git",
         &["rev-parse", &project.default_target_branch],
     )
     .map_err(AppError::BadRequest)?;
     let refspec = format!("{}:{remote_branch}", project.default_target_branch);
-    git::output_async(Path::new(&directory.path), &["push", &remote, &refspec])
+    git::output_async(Path::new(&repository_root), &["push", &remote, &refspec])
         .await
         .map_err(AppError::BadRequest)?;
     Ok(Json(sync_result(

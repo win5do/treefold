@@ -497,7 +497,7 @@ pub(super) fn start_rebase(state: &AppState, id: &str) -> Result<RebaseOperation
     ensure_checked_out_branch(&workspace.checkout_path, &workspace.branch, "Workspace")?;
     let before_head = git_head(&workspace.checkout_path)?;
     let target_head = command_output(
-        Path::new(&directory.path),
+        Path::new(&workspace.checkout_path),
         "git",
         &["rev-parse", "--verify", &workspace.target_branch],
     )
@@ -505,7 +505,7 @@ pub(super) fn start_rebase(state: &AppState, id: &str) -> Result<RebaseOperation
     let operation_id = id_for_operation();
     let recovery_ref = format!("refs/treefold/recovery/rebase-{operation_id}");
     command_output(
-        Path::new(&directory.path),
+        Path::new(&workspace.checkout_path),
         "git",
         &["update-ref", &recovery_ref, &before_head],
     )
@@ -528,7 +528,7 @@ pub(super) fn start_rebase(state: &AppState, id: &str) -> Result<RebaseOperation
         completed_at: None,
     };
     if let Err(error) = state.store.create_rebase_operation(&operation) {
-        let _ = delete_recovery_ref(&directory.path, &operation.recovery_ref);
+        let _ = delete_recovery_ref(&workspace.checkout_path, &operation.recovery_ref);
         return Err(error);
     }
     execute_rebase(
@@ -586,7 +586,7 @@ pub(super) fn abort_rebase(state: &AppState, id: &str) -> Result<RebaseOperation
     if rebase_operation_is_final(&operation) {
         return Ok(operation);
     }
-    let (workspace, directory) = rebase_context(state, id)?;
+    let (workspace, _directory) = rebase_context(state, id)?;
     if rebase_in_progress(&workspace.checkout_path)? {
         git_rebase_output(Path::new(&workspace.checkout_path), &["--abort"]).map_err(|error| {
             let _ = state.store.update_rebase_operation(
@@ -613,7 +613,7 @@ pub(super) fn abort_rebase(state: &AppState, id: &str) -> Result<RebaseOperation
             operation.before_head
         )));
     }
-    delete_recovery_ref(&directory.path, &operation.recovery_ref)?;
+    delete_recovery_ref(&workspace.checkout_path, &operation.recovery_ref)?;
     state
         .store
         .update_rebase_operation(&operation.id, "aborted", "aborted", None, "", true)?;
@@ -662,7 +662,7 @@ pub(super) fn rebase_status_impl(state: &AppState, id: &str) -> Result<Option<Re
     }
     if current_head == operation.before_head {
         if operation.status == "conflicted" || operation.phase == "conflicted" {
-            delete_recovery_ref(&directory.path, &operation.recovery_ref)?;
+            delete_recovery_ref(&workspace.checkout_path, &operation.recovery_ref)?;
             state.store.update_rebase_operation(
                 &operation.id,
                 "aborted",
@@ -731,7 +731,7 @@ pub(super) fn execute_rebase(
 pub(super) fn finalize_rebase(
     state: &AppState,
     workspace: &Workspace,
-    directory: &Directory,
+    _directory: &Directory,
     operation: &RebaseOperation,
 ) -> Result<RebaseOperation> {
     let rebased_head = git_head(&workspace.checkout_path)?;
@@ -751,7 +751,7 @@ pub(super) fn finalize_rebase(
         )?;
         return Err(AppError::BadRequest(error.into()));
     }
-    delete_recovery_ref(&directory.path, &operation.recovery_ref)?;
+    delete_recovery_ref(&workspace.checkout_path, &operation.recovery_ref)?;
     state.store.update_rebase_operation(
         &operation.id,
         "completed",
@@ -935,7 +935,7 @@ pub(super) fn start_reset(
             "reset mode must be creation, target, or commit".into(),
         ));
     }
-    let (workspace, directory) = reset_context(state, id)?;
+    let (workspace, _directory) = reset_context(state, id)?;
     let _ = reset_status_impl(state, id)?;
     ensure_no_git_operation_in_progress(state, id, "reset")?;
     ensure_clean_workspace(&workspace.checkout_path, "reset workspace")?;
@@ -957,12 +957,12 @@ pub(super) fn start_reset(
             .to_owned(),
         _ => unreachable!(),
     };
-    let target_head = resolve_commit(&directory.path, &revision)?;
+    let target_head = resolve_commit(&workspace.checkout_path, &revision)?;
     let before_head = git_head(&workspace.checkout_path)?;
     let operation_id = id_for_operation();
     let recovery_ref = format!("refs/treefold/recovery/reset-{operation_id}");
     command_output(
-        Path::new(&directory.path),
+        Path::new(&workspace.checkout_path),
         "git",
         &["update-ref", &recovery_ref, &before_head],
     )
@@ -984,7 +984,7 @@ pub(super) fn start_reset(
         completed_at: None,
     };
     if let Err(error) = state.store.create_reset_operation(&operation) {
-        let _ = delete_recovery_ref(&directory.path, &operation.recovery_ref);
+        let _ = delete_recovery_ref(&workspace.checkout_path, &operation.recovery_ref);
         return Err(error);
     }
     if let Err(error) = command_output(
@@ -1028,7 +1028,7 @@ pub(super) fn restore_reset(
             "reset restore requires explicit confirmation".into(),
         ));
     }
-    let (workspace, directory) = reset_context(state, id)?;
+    let (workspace, _directory) = reset_context(state, id)?;
     let operation = state.store.reset_operation(&input.operation_id)?;
     if operation.workspace_location_id != state.store.default_workspace_location(id)?.id {
         return Err(AppError::BadRequest(
@@ -1060,7 +1060,7 @@ pub(super) fn restore_reset(
         state
             .store
             .update_reset_operation(&operation.id, "restored", None, "", true)?;
-        delete_recovery_ref(&directory.path, &operation.recovery_ref)?;
+        delete_recovery_ref(&workspace.checkout_path, &operation.recovery_ref)?;
         return state.store.reset_operation(&operation.id);
     }
     let expected_current = operation.result_head.as_deref() == Some(current_head.as_str())
@@ -1085,7 +1085,7 @@ pub(super) fn restore_reset(
     state
         .store
         .update_reset_operation(&operation.id, "restored", None, "", true)?;
-    delete_recovery_ref(&directory.path, &operation.recovery_ref)?;
+    delete_recovery_ref(&workspace.checkout_path, &operation.recovery_ref)?;
     state.store.reset_operation(&operation.id)
 }
 
@@ -1192,8 +1192,8 @@ pub(super) fn workspace_delivery_target(
         }
         return Ok((parent.checkout_path, parent.branch));
     }
-    let directory = state.store.directory(&workspace.project_directory_id)?;
-    Ok((directory.path, workspace.target_branch.clone()))
+    let repository_root = repository_root_for_directory(state, &workspace.project_directory_id)?;
+    Ok((repository_root, workspace.target_branch.clone()))
 }
 
 #[derive(Clone, Deserialize)]
@@ -1310,7 +1310,7 @@ pub(super) async fn finish_workspace_steps(
         ));
     }
     let project = state.store.project(&workspace.project_id)?;
-    let directory = state.store.directory(&workspace.project_directory_id)?;
+    let repository_root = repository_root_for_directory(state, &workspace.project_directory_id)?;
     let (target_path, target_branch) = workspace_delivery_target(state, &workspace)?;
 
     let source_is_managed = true;
@@ -1340,9 +1340,9 @@ pub(super) async fn finish_workspace_steps(
                 let remote = project.preferred_remote.as_deref().ok_or_else(|| {
                     AppError::BadRequest("Project has no preferred remote target".into())
                 })?;
-                fetch_remote_branch_async(&directory.path, remote, &target_branch).await?;
+                fetch_remote_branch_async(&repository_root, remote, &target_branch).await?;
                 command_output(
-                    Path::new(&directory.path),
+                    Path::new(&repository_root),
                     "git",
                     &["rev-parse", "FETCH_HEAD"],
                 )
@@ -1511,7 +1511,7 @@ pub(super) async fn finish_workspace_steps(
 
     if !delivery_phase_at_least(&operation.phase, "resources_cleaned")? {
         if input.delete_worktree && source_is_managed {
-            let repository = directory.path.clone();
+            let repository = repository_root.clone();
             let checkout_path = workspace.checkout_path.clone();
             let discard_changes = input.code_action == "discard";
             blocking_git_operation(move || {
@@ -1524,12 +1524,12 @@ pub(super) async fn finish_workspace_steps(
                 let remote = project.preferred_remote.as_deref().ok_or_else(|| {
                     AppError::BadRequest("Project has no preferred remote target".into())
                 })?;
-                fetch_remote_branch_async(&directory.path, remote, &target_branch).await?;
+                fetch_remote_branch_async(&repository_root, remote, &target_branch).await?;
                 "FETCH_HEAD"
             } else {
                 target_branch.as_str()
             };
-            let repository = directory.path.clone();
+            let repository = repository_root.clone();
             let branch = workspace.branch.clone();
             let merged_target = merged_target.to_owned();
             let source_head = operation.source_head.clone();
