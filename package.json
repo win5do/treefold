@@ -22,7 +22,7 @@
     "@pierre/diffs": "^1.3.1",
     "@pierre/theme": "^1.1.0",
     "@pierre/theming": "^1.0.1",
-    "@win5do/pierre-trees": "file:../pierre/.treefold-pack/win5do-pierre-trees-1.0.0-beta.treeblod.1787069860.tgz",
+    "@win5do/pierre-trees": "file:../pierre/.treefold-pack/win5do-pierre-trees-1.0.0-beta.treefold.20260819003032.tgz",
     "@tanstack/react-query": "^5.101.4",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
