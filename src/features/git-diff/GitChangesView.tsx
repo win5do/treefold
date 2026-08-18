@@ -197,7 +197,7 @@ function renderWorkingTree(nodes: WorkingTreeNode[], depth: number, checked: boo
   return nodes.map((node) => node.file ? <div key={node.path} role="treeitem" aria-selected={selectedPath === node.path} className={cn("flex min-w-0 items-center gap-2 py-1.5 pr-3 text-xs", selectedPath === node.path && "bg-accent text-accent-foreground")} style={{ paddingLeft: 12 + depth * 14 }}>
     <File className="size-3.5 shrink-0 text-muted-foreground" />
     <button type="button" className="min-w-0 flex-1 truncate text-left font-mono outline-none" title={node.path} onClick={() => onSelect(node.path)}>{node.name}</button>
-    <span className="flex shrink-0 items-center gap-1 text-[10px]"><span className="text-success">+{node.file.additions}</span><span className="text-destructive">−{node.file.deletions}</span></span>
+    <span className="flex shrink-0 items-center gap-1 font-mono text-[10px] leading-none tabular-nums"><span className="text-success">+{node.file.additions}</span><span className="text-destructive">−{node.file.deletions}</span></span>
     <Checkbox data-testid={`git-change-checkbox-${checked ? "staged" : "unstaged"}-${node.path}`} aria-label={`${checked ? "Unstage" : "Stage"} ${node.path}`} checked={checked} disabled={node.file.status === "conflicted" || Boolean(mutatingPath)} onCheckedChange={() => onToggle(node.file!, !checked)} onClick={(event) => event.stopPropagation()} />
   </div> : <div key={node.path} role="treeitem" aria-expanded="true">
     <div className="flex min-w-0 items-center gap-2 py-1.5 pr-3 text-xs text-muted-foreground" style={{ paddingLeft: 12 + depth * 14 }}><FolderOpen className="size-3.5 shrink-0" /><span className="truncate font-mono">{node.name}</span></div>
