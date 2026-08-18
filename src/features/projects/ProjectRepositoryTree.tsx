@@ -420,11 +420,14 @@ export function ProjectRepositoryTreeRow({
     [worktrees],
   );
   const observedDirectory = directories[0];
+  const mainWorktree = worktrees.find((item) => item.is_main);
   const currentBranch =
-    observedDirectory?.branch ||
-    (observedDirectory?.head_commit
-      ? `detached @ ${observedDirectory.head_commit.slice(0, 7)}`
-      : "detached");
+    mainWorktree?.branch && mainWorktree.branch !== "detached HEAD"
+      ? mainWorktree.branch
+      : observedDirectory?.branch ||
+        (mainWorktree?.head_commit
+          ? `detached @ ${mainWorktree.head_commit.slice(0, 7)}`
+          : "detached");
 
   return (
     <article data-testid={`project-location-${repository.id}`}>
@@ -471,16 +474,16 @@ export function ProjectRepositoryTreeRow({
               </div>
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
                 <span>
-                  current{" "}
+                  base{" "}
                   <strong className="font-medium text-foreground">
-                    {currentBranch}
+                    {repository.base_branch}
                   </strong>
                 </span>
                 <span>·</span>
                 <span>
-                  base{" "}
+                  current{" "}
                   <strong className="font-medium text-foreground">
-                    {repository.base_branch}
+                    {currentBranch}
                   </strong>
                 </span>
                 <span>·</span>

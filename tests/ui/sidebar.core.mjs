@@ -1794,8 +1794,8 @@ try {
   );
   assert.match(
     await primaryLocation.getText(),
-    /current\s+main[\s\S]*base\s+main/,
-    "repository rows must show read-only current and base branches",
+    /base\s+main[\s\S]*current\s+main/,
+    "repository rows must show the base branch before the current branch",
   );
   const primaryRefresh = await primaryLocation.$(
     `[data-testid="project-location-refresh-${FIXTURE_IDS.primaryRepository}"]`,
@@ -1964,7 +1964,7 @@ try {
   );
   assert.match(
     await secondaryLocation.getText(),
-    /current\s+release\/api-fixture[\s\S]*base\s+develop/,
+    /base\s+develop[\s\S]*current\s+release\/api-fixture/,
     "each repository must show its own branch metadata",
   );
   assert.equal(

@@ -1720,7 +1720,14 @@ pub(super) async fn checkout_directory_branch(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CheckoutDirectoryBranch>,
 ) -> Result<Json<Directory>> {
-    blocking_git_operation(move || checkout_directory_branch_impl(state, id, input)).await
+    let repository = state.store.repository(&id)?;
+    let project_id = repository.project_id.clone();
+    let result = blocking_git_operation_for(repository.git_common_dir, move || {
+        checkout_directory_branch_impl(state, id, input)
+    })
+    .await?;
+    project_worktrees_cache().invalidate(&project_id).await;
+    Ok(result)
 }
 
 pub(super) fn checkout_directory_branch_impl(
