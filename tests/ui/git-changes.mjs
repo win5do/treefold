@@ -20,6 +20,7 @@ try {
   await browser.$('button=Review Changes').click();
   await (await browser.$('h1=Git Changes')).waitForDisplayed({ timeout: 5_000 });
   assert.equal((await browser.getWindowHandles()).length, 1, "Changes must stay in the current window");
+  await (await browser.$('[data-testid="git-changes-refresh"]')).click();
   assert.equal((await browser.$$('button=Open Shell')).length, 0, "Changes must not expose an unrelated shell action");
   assert.equal((await browser.$$('[data-testid^="git-change-checkbox-"]')).length, 2, "Changes tree must expose each changed file");
   const stageAll = await browser.$('[aria-label="Stage all changes"]');

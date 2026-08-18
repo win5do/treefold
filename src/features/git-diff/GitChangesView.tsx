@@ -3,7 +3,7 @@ import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import type { GitStatusEntry } from "@pierre/trees";
-import { ChevronDown, ChevronUp, File, FolderOpen, GitCompare, X } from "lucide-react";
+import { ChevronDown, ChevronUp, File, FolderOpen, GitCompare, RefreshCw, X } from "lucide-react";
 import { projectsApi } from "@/api/projects";
 import { workspacesApi } from "@/api/workspaces";
 import { ApiError } from "@/api/client";
@@ -36,6 +36,8 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [mutatingPath, setMutatingPath] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [diffRevision, setDiffRevision] = useState(0);
   const api = repositoryKind === "project" ? projectsApi : workspacesApi;
   const files = useMemo(() => scope === "commit" ? parseComparison(comparison).files : (status?.files ?? []).filter((file) => scope === "staged" ? file.has_staged_changes : true), [comparison, scope, status]);
   const parsed = useMemo(() => scope === "commit" ? parseComparison(comparison).files : parseComparison(comparison).files, [comparison, scope]);
@@ -88,7 +90,19 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
       if (!controller.signal.aborted) setError(cause instanceof ApiError && cause.code === "DIFF_TOO_LARGE" ? "Diff is too large to display safely." : cause instanceof Error ? cause.message : "Diff could not be loaded");
     });
     return () => controller.abort();
-  }, [repositoryId, selected?.path, scope, startCommit, endCommit, commitCount]);
+  }, [repositoryId, selected?.path, scope, startCommit, endCommit, commitCount, diffRevision]);
+
+  const refreshChanges = async () => {
+    if (scope === "commit" || loading || refreshing || mutatingPath) return;
+    setRefreshing(true); setError("");
+    try {
+      const next = await api.gitStatus(repositoryId);
+      setStatus(next); onStatusChange?.(next);
+      window.dispatchEvent(new CustomEvent("treefold:git-status-changed", { detail: { repositoryId, status: next } }));
+      setDiffRevision((current) => current + 1);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Git status could not be refreshed"); }
+    finally { setRefreshing(false); }
+  };
 
   const toggleStage = async (file: GitChangeFile, stage: boolean) => {
     if (scope === "commit" || mutatingPath) return;
@@ -128,6 +142,7 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
       <h1 className="truncate text-sm font-semibold">{scope === "commit" ? "Commit Diff" : "Git Changes"}</h1>
       <Badge variant="secondary" className="ml-auto">{repositoryName}</Badge>
       {status && <Badge variant="outline">{status.files.length} files</Badge>}
+      {scope !== "commit" && <Button size="icon-sm" variant="ghost" data-testid="git-changes-refresh" aria-label="Refresh Git changes" title="Refresh Git changes" disabled={loading || refreshing || Boolean(mutatingPath)} onClick={() => void refreshChanges()}><RefreshCw className={cn(refreshing && "animate-spin")} /></Button>}
       {onClose && <Button size="icon-sm" variant="ghost" aria-label="Close Git Changes" onClick={onClose}><X /></Button>}
     </header>
     {loading ? <State title="Loading Git changes" /> : error && !current ? <State title="Could not load Git changes" detail={error} /> : files.length === 0 ? <State title="No changes" /> : <div className="flex min-h-0 flex-1">
