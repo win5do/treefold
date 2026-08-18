@@ -8,12 +8,6 @@
   "permissions": [
     "core:default",
     "dialog:default",
-    "core:webview:allow-create-webview-window",
-    "core:webview:allow-get-all-webviews",
-    "core:window:allow-current-monitor",
-    "core:window:allow-outer-position",
-    "core:window:allow-is-minimized",
-    "core:window:allow-set-position",
     "core:window:allow-unminimize",
     "core:window:allow-show",
     "core:window:allow-set-focus"

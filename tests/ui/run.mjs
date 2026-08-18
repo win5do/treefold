@@ -8,6 +8,7 @@ const excludedFiles = new Set(["run.mjs", "ui-harness.mjs"]);
 const preferredOrder = [
   "sidebar.core.mjs",
   "git-diff.mjs",
+  "git-changes.mjs",
   "parent-operations.mjs",
   "resources.mjs",
   "dev-processes.mjs",

@@ -3,12 +3,6 @@ import { Route, Routes } from "react-router-dom";
 import { Spinner } from "@/components/ui/spinner";
 
 const WorkspaceApp = lazy(() => import("@/app/WorkspaceApp"));
-const DiffViewer = lazy(() =>
-  import("@/features/git-diff/DiffViewer").then((module) => ({
-    default: module.DiffViewer,
-  })),
-);
-
 function LoadingRoute() {
   return (
     <main className="flex min-h-screen items-center justify-center" aria-busy="true">
@@ -21,7 +15,6 @@ export default function App() {
   return (
     <Suspense fallback={<LoadingRoute />}>
       <Routes>
-        <Route path="/diff" element={<DiffViewer />} />
         <Route path="/" element={<WorkspaceApp />} />
         <Route path="/projects" element={<WorkspaceApp />} />
         <Route path="/projects/:projectId" element={<WorkspaceApp />} />

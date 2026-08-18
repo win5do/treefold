@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SquareTerminal } from "lucide-react";
+import { GitCompare, SquareTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -46,6 +46,7 @@ export function FinishWorkspaceDialog({
   onSubmit,
   onOpenSession,
   onOpenShell,
+  onReviewChanges,
 }: {
   workspace: WorkspaceDetail | null;
   busy: boolean;
@@ -55,6 +56,7 @@ export function FinishWorkspaceDialog({
   onSubmit: (locationId: string, payload: FinishPayload) => void;
   onOpenSession: (operation: ParentOperation, session: Session) => void;
   onOpenShell: (locationId: string) => void;
+  onReviewChanges: (locationId: string) => void;
 }) {
   const finishable = workspace?.locations.filter(
     (location) =>
@@ -230,15 +232,10 @@ export function FinishWorkspaceDialog({
               </p>
             ))}
             {preflight?.source_dirty && location && (
-              <Button
-                className="mt-3"
-                size="sm"
-                variant="secondary"
-                onClick={() => onOpenShell(location.id)}
-              >
-                <SquareTerminal data-icon="inline-start" />
-                Open Shell
-              </Button>
+              <div className="mt-3 flex gap-2">
+                <Button size="sm" variant="secondary" onClick={() => onReviewChanges(location.id)}><GitCompare data-icon="inline-start" />Review Changes</Button>
+                <Button size="sm" variant="outline" onClick={() => onOpenShell(location.id)}><SquareTerminal data-icon="inline-start" />Open Shell</Button>
+              </div>
             )}
             {preflightError && (
               <p className="mt-2 text-xs text-destructive">{preflightError}</p>

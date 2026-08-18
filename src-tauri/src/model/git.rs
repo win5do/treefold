@@ -44,6 +44,65 @@ pub struct GitDiffComparison {
     pub patch: String,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct GitChangeFile {
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_path: Option<String>,
+    pub status: String,
+    pub staged: bool,
+    pub has_staged_changes: bool,
+    pub has_unstaged_changes: bool,
+    pub additions: usize,
+    pub deletions: usize,
+    pub binary: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct GitStatus {
+    pub branch: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head: Option<String>,
+    pub files: Vec<GitChangeFile>,
+    pub staged_count: usize,
+    pub unstaged_count: usize,
+    pub snapshot: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct GitPathsInput {
+    pub paths: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct GitCommitInput {
+    pub message: String,
+    pub expected_snapshot: String,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct GitCommitResult {
+    pub hash: String,
+    pub status: GitStatus,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(tag = "scope", rename_all = "kebab-case")]
+pub enum GitDiffRequest {
+    Staged {
+        path: Option<String>,
+    },
+    Unstaged {
+        path: Option<String>,
+    },
+    Commit {
+        start_commit: String,
+        end_commit: String,
+        commit_count: usize,
+        path: Option<String>,
+    },
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GitSyncResult {
     pub scope: String,

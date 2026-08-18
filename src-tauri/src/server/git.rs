@@ -77,6 +77,474 @@ pub(super) async fn compare_workspace_location_commits(
     .await
 }
 
+pub(super) async fn get_project_location_git_status(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<GitStatus>> {
+    blocking_git_operation(move || {
+        let mut location = state.store.repository_as_directory(&id)?;
+        refresh_location_observation(&mut location)?;
+        ensure_location_ready(&location)?;
+        Ok(Json(git_status(&location.path)?))
+    })
+    .await
+}
+
+pub(super) async fn get_workspace_location_git_status(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<GitStatus>> {
+    blocking_git_operation(move || {
+        let location = state.store.workspace_location(&id)?;
+        Ok(Json(git_status(workspace_location_git_path(&location)?)?))
+    })
+    .await
+}
+
+pub(super) async fn project_location_git_diff(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitDiffRequest>,
+) -> Result<Json<GitDiffComparison>> {
+    blocking_git_operation(move || {
+        let mut location = state.store.repository_as_directory(&id)?;
+        refresh_location_observation(&mut location)?;
+        ensure_location_ready(&location)?;
+        Ok(Json(git_diff(&location.path, &location.name, &input)?))
+    })
+    .await
+}
+
+pub(super) async fn workspace_location_git_diff(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitDiffRequest>,
+) -> Result<Json<GitDiffComparison>> {
+    blocking_git_operation(move || {
+        let location = state.store.workspace_location(&id)?;
+        let path = workspace_location_git_path(&location)?;
+        Ok(Json(git_diff(path, &location.location_name, &input)?))
+    })
+    .await
+}
+
+pub(super) async fn project_location_stage(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitPathsInput>,
+) -> Result<Json<GitStatus>> {
+    mutate_project_paths(state, id, input, true).await
+}
+
+pub(super) async fn project_location_unstage(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitPathsInput>,
+) -> Result<Json<GitStatus>> {
+    mutate_project_paths(state, id, input, false).await
+}
+
+pub(super) async fn workspace_location_stage(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitPathsInput>,
+) -> Result<Json<GitStatus>> {
+    mutate_workspace_paths(state, id, input, true).await
+}
+
+pub(super) async fn workspace_location_unstage(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitPathsInput>,
+) -> Result<Json<GitStatus>> {
+    mutate_workspace_paths(state, id, input, false).await
+}
+
+pub(super) async fn project_location_commit(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitCommitInput>,
+) -> Result<Json<GitCommitResult>> {
+    let mut location = state.store.repository_as_directory(&id)?;
+    refresh_location_observation(&mut location)?;
+    ensure_location_ready(&location)?;
+    let path = location.path.clone();
+    let common = location
+        .git_common_dir
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    blocking_git_operation_for(common, move || commit_repository(&path, input)).await
+}
+
+pub(super) async fn workspace_location_commit(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitCommitInput>,
+) -> Result<Json<GitCommitResult>> {
+    let location = state.store.workspace_location(&id)?;
+    let path = workspace_location_git_path(&location)?.to_owned();
+    let common = state
+        .store
+        .repository(&location.project_location_id)?
+        .git_common_dir;
+    blocking_git_operation_for(common, move || commit_repository(&path, input)).await
+}
+
+async fn mutate_project_paths(
+    state: AppState,
+    id: String,
+    input: GitPathsInput,
+    stage: bool,
+) -> Result<Json<GitStatus>> {
+    let mut location = state.store.repository_as_directory(&id)?;
+    refresh_location_observation(&mut location)?;
+    ensure_location_ready(&location)?;
+    let path = location.path.clone();
+    let common = location
+        .git_common_dir
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    blocking_git_operation_for(common, move || {
+        mutate_paths(&path, &input.paths, stage)?;
+        Ok(Json(git_status(&path)?))
+    })
+    .await
+}
+
+async fn mutate_workspace_paths(
+    state: AppState,
+    id: String,
+    input: GitPathsInput,
+    stage: bool,
+) -> Result<Json<GitStatus>> {
+    let location = state.store.workspace_location(&id)?;
+    let path = workspace_location_git_path(&location)?.to_owned();
+    let common = state
+        .store
+        .repository(&location.project_location_id)?
+        .git_common_dir;
+    blocking_git_operation_for(common, move || {
+        mutate_paths(&path, &input.paths, stage)?;
+        Ok(Json(git_status(&path)?))
+    })
+    .await
+}
+
+fn mutate_paths(repository: &str, paths: &[String], stage: bool) -> Result<()> {
+    if paths.is_empty() {
+        return Err(AppError::BadRequest("paths must not be empty".into()));
+    }
+    let has_head = command_output(
+        Path::new(repository),
+        "git",
+        &["rev-parse", "--verify", "HEAD"],
+    )
+    .is_ok();
+    let mut args = if stage {
+        vec!["add", "--"]
+    } else if has_head {
+        vec!["restore", "--staged", "--"]
+    } else {
+        vec!["rm", "--cached", "--ignore-unmatch", "--"]
+    };
+    args.extend(paths.iter().map(String::as_str));
+    command_output(Path::new(repository), "git", &args).map_err(AppError::BadRequest)?;
+    Ok(())
+}
+
+fn git_status(repository: &str) -> Result<GitStatus> {
+    let path = Path::new(repository);
+    let branch =
+        command_output(path, "git", &["branch", "--show-current"]).map_err(AppError::BadRequest)?;
+    let head = command_output(path, "git", &["rev-parse", "HEAD"]).ok();
+    let status_output = Command::new("git")
+        .current_dir(path)
+        .args(["status", "--porcelain=v1", "-z"])
+        .output()
+        .map_err(|error| AppError::BadRequest(format!("git: {error}")))?;
+    if !status_output.status.success() {
+        return Err(AppError::BadRequest(
+            String::from_utf8_lossy(&status_output.stderr).trim().into(),
+        ));
+    }
+    let output = String::from_utf8_lossy(&status_output.stdout).into_owned();
+    let mut files = Vec::new();
+    let mut records = output.split('\0').filter(|record| !record.is_empty());
+    while let Some(record) = records.next() {
+        let mut chars = record.chars();
+        let index = chars.next().unwrap_or(' ');
+        let worktree = chars.next().unwrap_or(' ');
+        let path = record.get(3..).unwrap_or("").to_owned();
+        let old_path = if index == 'R' || index == 'C' || worktree == 'R' || worktree == 'C' {
+            records.next().map(str::to_owned)
+        } else {
+            None
+        };
+        let has_staged_changes = index != ' ' && index != '?';
+        let has_unstaged_changes = worktree != ' ' || index == '?';
+        let status = if index == '?' || worktree == '?' {
+            "untracked"
+        } else if index == 'U' || worktree == 'U' {
+            "conflicted"
+        } else if old_path.is_some() || index == 'R' || worktree == 'R' {
+            "renamed"
+        } else if index == 'A' || worktree == 'A' {
+            "added"
+        } else if index == 'D' || worktree == 'D' {
+            "deleted"
+        } else {
+            "modified"
+        };
+        let (additions, deletions, binary) = change_stats(
+            Path::new(repository),
+            &path,
+            has_staged_changes,
+            has_unstaged_changes,
+            status == "untracked",
+        );
+        files.push(GitChangeFile {
+            path,
+            old_path,
+            status: status.into(),
+            staged: has_staged_changes,
+            has_staged_changes,
+            has_unstaged_changes,
+            additions,
+            deletions,
+            binary,
+        });
+    }
+    let staged_count = files.iter().filter(|file| file.has_staged_changes).count();
+    let unstaged_count = files
+        .iter()
+        .filter(|file| file.has_unstaged_changes)
+        .count();
+    let snapshot = format!("{}|{output}", head.as_deref().unwrap_or(""));
+    Ok(GitStatus {
+        branch: if branch.is_empty() {
+            "Detached HEAD".into()
+        } else {
+            branch
+        },
+        head,
+        files,
+        staged_count,
+        unstaged_count,
+        snapshot,
+    })
+}
+
+fn commit_repository(repository: &str, input: GitCommitInput) -> Result<Json<GitCommitResult>> {
+    let current = git_status(repository)?;
+    if input.message.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            "Commit message must not be empty".into(),
+        ));
+    }
+    if current.snapshot != input.expected_snapshot {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "GIT_STATE_STALE",
+            "Git state changed; refresh Changes before committing",
+        ));
+    }
+    if current.staged_count == 0 {
+        return Err(AppError::BadRequest("No staged changes to commit".into()));
+    }
+    command_output(
+        Path::new(repository),
+        "git",
+        &["commit", "-m", input.message.trim()],
+    )
+    .map_err(|error| AppError::BadRequest(error))?;
+    let hash = command_output(Path::new(repository), "git", &["rev-parse", "HEAD"])
+        .map_err(AppError::BadRequest)?;
+    Ok(Json(GitCommitResult {
+        hash,
+        status: git_status(repository)?,
+    }))
+}
+
+fn git_diff(repository: &str, name: &str, input: &GitDiffRequest) -> Result<GitDiffComparison> {
+    let path = Path::new(repository);
+    if let GitDiffRequest::Unstaged { path: Some(file) } = input
+        && command_output(path, "git", &["ls-files", "--error-unmatch", "--", file]).is_err()
+    {
+        let output = Command::new("git")
+            .current_dir(path)
+            .args([
+                "diff",
+                "--no-color",
+                "--no-index",
+                "--unified=3",
+                "--",
+                "/dev/null",
+                file,
+            ])
+            .output()
+            .map_err(|error| AppError::BadRequest(format!("git: {error}")))?;
+        if !output.status.success() && output.status.code() != Some(1) {
+            return Err(AppError::BadRequest(
+                String::from_utf8_lossy(&output.stderr).trim().into(),
+            ));
+        }
+        let patch = String::from_utf8_lossy(&output.stdout).into_owned();
+        if patch.len() > MAX_DIFF_PATCH_BYTES {
+            return Err(AppError::api(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "DIFF_TOO_LARGE",
+                "Diff exceeds the response limit",
+            ));
+        }
+        return Ok(GitDiffComparison {
+            repository: name.into(),
+            resolved_base: "INDEX".into(),
+            resolved_head: "WORKTREE".into(),
+            commit_count: 1,
+            patch,
+        });
+    }
+    let (args, base, head, commit_count) = match input {
+        GitDiffRequest::Staged { .. } => (
+            vec![
+                "diff",
+                "--no-color",
+                "--find-renames",
+                "--unified=3",
+                "--cached",
+            ],
+            "HEAD".into(),
+            "INDEX".into(),
+            1,
+        ),
+        GitDiffRequest::Unstaged { .. } => (
+            vec!["diff", "--no-color", "--find-renames", "--unified=3"],
+            "INDEX".into(),
+            "WORKTREE".into(),
+            1,
+        ),
+        GitDiffRequest::Commit {
+            start_commit,
+            end_commit,
+            commit_count,
+            path: file,
+        } => {
+            let mut comparison = compare_git_commits(
+                repository,
+                name,
+                &GitDiffComparisonInput {
+                    start_commit: start_commit.clone(),
+                    end_commit: end_commit.clone(),
+                    commit_count: *commit_count,
+                },
+                MAX_DIFF_PATCH_BYTES,
+            )?;
+            if let Some(file) = file {
+                comparison.patch = command_output(
+                    path,
+                    "git",
+                    &[
+                        "diff",
+                        "--no-color",
+                        "--find-renames",
+                        "--unified=3",
+                        &comparison.resolved_base,
+                        &comparison.resolved_head,
+                        "--",
+                        file,
+                    ],
+                )
+                .map_err(AppError::BadRequest)?;
+            }
+            return Ok(comparison);
+        }
+    };
+    let mut args = args;
+    if let Some(file) = match input {
+        GitDiffRequest::Staged { path } | GitDiffRequest::Unstaged { path } => path,
+        _ => &None,
+    } {
+        args.push("--");
+        args.push(file.as_str());
+    }
+    let patch = command_output(path, "git", &args).map_err(|error| {
+        if error.contains("diff exceeds") {
+            AppError::api(StatusCode::PAYLOAD_TOO_LARGE, "DIFF_TOO_LARGE", error)
+        } else {
+            AppError::BadRequest(error)
+        }
+    })?;
+    if patch.len() > MAX_DIFF_PATCH_BYTES {
+        return Err(AppError::api(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "DIFF_TOO_LARGE",
+            "Diff exceeds the response limit",
+        ));
+    }
+    Ok(GitDiffComparison {
+        repository: name.into(),
+        resolved_base: base,
+        resolved_head: head,
+        commit_count,
+        patch,
+    })
+}
+
+fn change_stats(
+    repository: &Path,
+    file: &str,
+    staged: bool,
+    unstaged: bool,
+    untracked: bool,
+) -> (usize, usize, bool) {
+    if untracked {
+        return std::fs::read(repository.join(file))
+            .map(|bytes| {
+                let binary = bytes.contains(&0);
+                (
+                    if binary {
+                        0
+                    } else {
+                        bytes.split(|byte| *byte == b'\n').count().saturating_sub(1)
+                    },
+                    0,
+                    binary,
+                )
+            })
+            .unwrap_or((0, 0, false));
+    }
+    let mut additions = 0;
+    let mut deletions = 0;
+    let mut binary = false;
+    for cached in [staged, false]
+        .into_iter()
+        .filter(|cached| *cached || unstaged)
+    {
+        let mut args = vec!["diff", "--numstat"];
+        if cached {
+            args.push("--cached");
+        }
+        args.extend(["--", file]);
+        if let Ok(output) = command_output(repository, "git", &args) {
+            for line in output.lines() {
+                let mut fields = line.split('\t');
+                match (fields.next(), fields.next()) {
+                    (Some("-"), Some("-")) => binary = true,
+                    (Some(added), Some(deleted)) => {
+                        additions += added.parse::<usize>().unwrap_or(0);
+                        deletions += deleted.parse::<usize>().unwrap_or(0);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if !cached {
+            break;
+        }
+    }
+    (additions, deletions, binary)
+}
+
 pub(super) async fn pull_project_location(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
@@ -1504,7 +1972,10 @@ mod git_diff_comparison_tests {
 
     use tempfile::TempDir;
 
-    use super::{GitDiffComparisonInput, compare_git_commits};
+    use super::{
+        GitCommitInput, GitDiffComparisonInput, commit_repository, compare_git_commits, git_status,
+        mutate_paths,
+    };
     use crate::error::AppError;
 
     struct TestRepository {
@@ -1688,5 +2159,46 @@ mod git_diff_comparison_tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn reads_status_stages_selected_paths_and_rejects_stale_commit() {
+        let repository = TestRepository::new();
+        repository.write("tracked.txt", b"one\n");
+        repository.commit("root");
+        repository.write("tracked.txt", b"two\n");
+        repository.write("new.txt", b"new\n");
+        let path = repository.path().to_str().expect("UTF-8 path");
+        let status = git_status(path).expect("read status");
+        assert_eq!(status.files.len(), 2);
+        assert_eq!(status.unstaged_count, 2);
+        mutate_paths(path, &["tracked.txt".into()], true).expect("stage tracked file");
+        let staged = git_status(path).expect("read staged status");
+        assert_eq!(staged.staged_count, 1);
+        assert_eq!(staged.unstaged_count, 1);
+        let stale = commit_repository(
+            path,
+            GitCommitInput {
+                message: "commit".into(),
+                expected_snapshot: "wrong".into(),
+            },
+        );
+        assert!(matches!(
+            stale,
+            Err(AppError::Api {
+                code: "GIT_STATE_STALE",
+                ..
+            })
+        ));
+        let result = commit_repository(
+            path,
+            GitCommitInput {
+                message: "commit".into(),
+                expected_snapshot: staged.snapshot,
+            },
+        )
+        .expect("commit staged file");
+        assert_eq!(result.0.status.staged_count, 0);
+        assert_eq!(result.0.hash.len(), 40);
     }
 }

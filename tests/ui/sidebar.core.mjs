@@ -1140,9 +1140,9 @@ try {
       timeoutMsg: "Codex Session inspector did not open",
     },
   );
-  await codexInspector.$('button[role="tab"]*=History').click();
+  await codexInspector.$('button[role="tab"][aria-label="Git History"]').click();
   const singleRepositoryHistorySelect = await codexInspector.$(
-    '[data-testid="git-history-repository"]',
+    '[data-testid="git-repository"]',
   );
   await singleRepositoryHistorySelect.waitForDisplayed({ timeout: 3_000 });
   assert.equal(
@@ -2437,9 +2437,9 @@ try {
     true,
     "toolbar must remain visible with the right sidebar open",
   );
-  await browser.$('button[role="tab"]*=History').click();
+  await browser.$('button[role="tab"][aria-label="Git History"]').click();
   const historyRepository = await browser.$(
-    '[data-testid="git-history-repository"]',
+    '[data-testid="git-repository"]',
   );
   await historyRepository.waitForDisplayed({ timeout: 3_000 });
   assert.equal(

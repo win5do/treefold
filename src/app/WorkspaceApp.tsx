@@ -17,7 +17,7 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -83,6 +83,7 @@ import {
   CreateWorkspaceDialog,
 } from "@/features/workspace/WorkspaceDialogs";
 import { WorkspaceHome } from "@/features/workspace/WorkspaceHome";
+import { GitChangesView } from "@/features/git-diff/GitChangesView";
 import { appKeys, settingsQuery, systemQuery } from "@/features/app/queries";
 import {
   projectDetailQuery,
@@ -150,6 +151,8 @@ function Workspace() {
     sessionId?: string;
   }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const sidebar = useQuery(sidebarQuery());
   const summaries = useQuery({
@@ -416,6 +419,10 @@ function Workspace() {
       (session) => session.id === params.sessionId,
     ) ??
     null;
+  const gitView = searchParams.get("view") === "git-changes";
+  const gitRepositoryId = searchParams.get("repositoryId") ?? "";
+  const gitRepositoryName = searchParams.get("repositoryName") ?? "Repository";
+  const gitScope = (searchParams.get("scope") as "working-tree" | "staged" | "commit" | null) ?? "working-tree";
   const parentWorkspace = workspace?.parent_workspace_id
     ? (selectedProject?.workspaces.find(
         (item) => item.id === workspace.parent_workspace_id,
@@ -1347,6 +1354,17 @@ function Workspace() {
             >
               {loading ? (
                 <CenteredMessage>{t("workspace.loading")}</CenteredMessage>
+              ) : gitView && gitRepositoryId ? (
+                <GitChangesView
+                  repositoryKind={workspace ? "workspace" : "project"}
+                  repositoryId={gitRepositoryId}
+                  repositoryName={gitRepositoryName}
+                  scope={gitScope}
+                  startCommit={searchParams.get("startCommit") ?? undefined}
+                  endCommit={searchParams.get("endCommit") ?? undefined}
+                  commitCount={Number(searchParams.get("commitCount") ?? "1")}
+                  onClose={() => navigate(location.pathname)}
+                />
               ) : selectedSession ? (
                 <SessionWorkspace
                   session={selectedSession}
@@ -1466,6 +1484,37 @@ function Workspace() {
                 project={selectedProject}
                 workspace={workspace}
                 session={selectedSession}
+                gitChangesActive={gitView}
+                onOpenChanges={(repository) => {
+                  setInspectorOpen(true);
+                  const next = new URLSearchParams(searchParams);
+                  next.set("view", "git-changes");
+                  next.set("repositoryId", repository.id);
+                  next.set("repositoryName", repository.name);
+                  next.set("scope", "working-tree");
+                  navigate(`${location.pathname}?${next.toString()}`);
+                }}
+                onOpenDiff={(payload) => {
+                  const next = new URLSearchParams(searchParams);
+                  next.set("view", "git-changes");
+                  next.set("repositoryId", payload.repositoryId);
+                  next.set("repositoryName", payload.repositoryName);
+                  next.set("scope", "commit");
+                  next.set("startCommit", payload.startCommit);
+                  next.set("endCommit", payload.endCommit);
+                  next.set("commitCount", String(payload.commitCount));
+                  navigate(`${location.pathname}?${next.toString()}`);
+                }}
+                onOpenGitShell={(repositoryId) => {
+                  if (workspace) {
+                    const location = workspace.repositories.find((item) => item.id === repositoryId);
+                    const directory = workspace.directories.find((item) => item.repository_id === location?.project_location_id);
+                    void createShell(workspace, directory);
+                  } else if (selectedProject) {
+                    const directory = selectedProject.directories.find((item) => item.repository_id === repositoryId);
+                    void createProjectShell(selectedProject, directory);
+                  }
+                }}
               />
             )}
           </div>
@@ -1749,6 +1798,21 @@ function Workspace() {
           setFinishWorkspaceDialog(null);
           setFinishParentOperation(null);
           void createShell(owner, directory);
+        }}
+        onReviewChanges={(locationId) => {
+          if (!finishWorkspaceDialog) return;
+          const owner = finishWorkspaceDialog;
+          const repository = owner.repositories.find((item) => item.id === locationId);
+          if (!repository) return;
+          setFinishWorkspaceDialog(null);
+          setFinishParentOperation(null);
+          setInspectorOpen(true);
+          const next = new URLSearchParams();
+          next.set("view", "git-changes");
+          next.set("repositoryId", repository.id);
+          next.set("repositoryName", repository.location_name);
+          next.set("scope", "working-tree");
+          navigate(`/workspaces/${owner.id}?${next.toString()}`);
         }}
       />
       <ParentOperationDialog

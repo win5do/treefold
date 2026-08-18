@@ -274,6 +274,33 @@ export type GitDiffComparison = {
   patch: string;
 };
 
+export type GitChangeFile = {
+  path: string;
+  old_path?: string;
+  status: "added" | "modified" | "deleted" | "renamed" | "untracked" | "conflicted";
+  staged: boolean;
+  has_staged_changes: boolean;
+  has_unstaged_changes: boolean;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+};
+
+export type GitStatus = {
+  branch: string;
+  head?: string;
+  files: GitChangeFile[];
+  staged_count: number;
+  unstaged_count: number;
+  snapshot: string;
+};
+
+export type GitDiffRequest =
+  | { scope: "staged" | "unstaged"; path?: string }
+  | { scope: "commit"; start_commit: string; end_commit: string; commit_count: number; path?: string };
+
+export type GitCommitResult = { hash: string; status: GitStatus };
+
 export type GitDiffLaunchPayload = {
   repositoryKind: "project" | "workspace";
   repositoryId: string;

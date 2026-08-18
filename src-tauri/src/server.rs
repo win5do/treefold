@@ -196,6 +196,26 @@ fn app(state: AppState) -> Router {
             post(compare_project_location_commits),
         )
         .route(
+            "/api/project-repositories/{id}/git-status",
+            get(get_project_location_git_status),
+        )
+        .route(
+            "/api/project-repositories/{id}/git-diff",
+            post(project_location_git_diff),
+        )
+        .route(
+            "/api/project-repositories/{id}/git/stage",
+            post(project_location_stage),
+        )
+        .route(
+            "/api/project-repositories/{id}/git/unstage",
+            post(project_location_unstage),
+        )
+        .route(
+            "/api/project-repositories/{id}/git/commit",
+            post(project_location_commit),
+        )
+        .route(
             "/api/project-repositories/{id}/git/pull",
             post(pull_project_location),
         )
@@ -247,6 +267,26 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/workspace-repositories/{id}/compare",
             post(compare_workspace_location_commits),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git-status",
+            get(get_workspace_location_git_status),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git-diff",
+            post(workspace_location_git_diff),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git/stage",
+            post(workspace_location_stage),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git/unstage",
+            post(workspace_location_unstage),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git/commit",
+            post(workspace_location_commit),
         )
         .route(
             "/api/workspace-repositories/{id}",
