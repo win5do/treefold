@@ -1226,7 +1226,6 @@ function SidebarSessions({
       active: false,
       target: null,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const movePointerDrag = (event: React.PointerEvent<HTMLElement>) => {
@@ -1238,6 +1237,7 @@ function SidebarSessions({
       )
         return;
       drag.active = true;
+      event.currentTarget.setPointerCapture(event.pointerId);
       suppressClick.current = true;
       setDraggingSessionId(drag.sourceId);
     }
@@ -1308,6 +1308,9 @@ function SidebarSessions({
             onPointerDown={(event) => beginPointerDrag(session.id, event)}
             onPointerMove={movePointerDrag}
             onPointerUp={finishPointerDrag}
+            onClick={() =>
+              onNavigate(`/workspaces/${stream.id}/sessions/${session.id}`)
+            }
             onPointerCancel={(event) => {
               if (pointerDrag.current?.pointerId !== event.pointerId) return;
               clearPointerDrag();
@@ -1335,9 +1338,6 @@ function SidebarSessions({
             <button
               className="flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden px-2 text-left focus-visible:outline-none"
               title={session.name}
-              onClick={() =>
-                onNavigate(`/workspaces/${stream.id}/sessions/${session.id}`)
-              }
             >
               <SessionKindIcon kind={session.kind} />
               <span className="min-w-0 flex-1 truncate">{session.name}</span>
