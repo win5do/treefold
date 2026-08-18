@@ -20,6 +20,15 @@ owned by development units.
   owns their effects in the source checkout because they have no worktree or
   delivery isolation.
 
+## Deferred product work
+
+- **Repository-configured pull request creation.** After Treefold pushes a
+  Workspace feature branch, it may run a user-provided command such as
+  `gh pr create`. Treefold should only supply delivery context to and execute
+  that command; the configured CLI and the user's environment own provider
+  selection, credentials, and authentication. Treefold must not add its own Git
+  hosting token or authentication management for this workflow.
+
 The product should make `Create → Work → Sync → Verify → Finish → Cleanup`
 reliable without attempting to replace Git hosting, code review, CI, or Codex's
 own conversation history.
