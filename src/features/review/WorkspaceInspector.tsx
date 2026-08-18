@@ -139,11 +139,16 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
     finally { setLoading(false); }
   };
   const repository = repositories.find((item) => item.id === repositoryId);
+  const additions = status?.files.reduce((total, file) => total + file.additions, 0) ?? 0;
+  const deletions = status?.files.reduce((total, file) => total + file.deletions, 0) ?? 0;
   return <div className="flex min-h-full flex-col gap-3 p-3">
     {error && <p className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
     {!status ? <p className="py-8 text-center text-xs text-muted-foreground">Loading changes...</p> : status.files.length === 0 ? <p className="py-8 text-center text-xs text-muted-foreground">No changes</p> : <>
-      <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><GitBranch className="size-3.5" /><span className="min-w-0 flex-1 truncate font-mono">{status.branch}</span><span>{status.staged_count} staged</span></div>
-      {repository && <Button className="w-full" size="sm" variant="outline" onClick={() => onOpenChanges(repository)}><GitCompare data-icon="inline-start" />Review Changes</Button>}
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><GitBranch className="size-3.5" /><span className="min-w-0 flex-1 truncate font-mono">{status.branch}</span>{status.staged_count > 0 && <span>{status.staged_count} staged</span>}</div>
+      <div className="flex flex-col gap-2">
+        <div data-testid="git-change-summary" className="flex items-center gap-2 text-xs"><span className="text-muted-foreground">{status.files.length} files</span><span className="text-success">+{additions}</span><span className="text-destructive">−{deletions}</span>{status.staged_count > 0 && <><span className="text-muted-foreground">·</span><span className="text-muted-foreground">{status.staged_count} staged</span></>}</div>
+        {repository && <Button className="w-full" size="sm" variant="outline" onClick={() => onOpenChanges(repository)}><GitCompare data-icon="inline-start" />Review Changes</Button>}
+      </div>
       <Textarea aria-label="Commit message" placeholder="Commit message" value={message} disabled={loading} onChange={(event) => setMessage(event.target.value)} />
       <Button className="w-full" disabled={loading || !message.trim() || !status.staged_count} onClick={() => void commit()}><Check data-icon="inline-start" />Commit {status.staged_count || ""}</Button>
     </>}

@@ -13,6 +13,10 @@ try {
   await browser.$('button[role="tab"][aria-label="Changes"]').click();
   assert.equal((await browser.$$('h1=Git Changes')).length, 0, "Opening Changes must not open the diff view automatically");
   await (await browser.$('button=Review Changes')).waitForDisplayed({ timeout: 5_000 });
+  const summary = await browser.$('[data-testid="git-change-summary"]');
+  assert.ok((await summary.getText()).includes("2 files"), "Changes sidebar must show the changed file count");
+  assert.ok((await summary.getText()).includes("+2"), "Changes sidebar must show additions");
+  assert.ok((await summary.getText()).includes("−1"), "Changes sidebar must show deletions");
   await browser.$('button=Review Changes').click();
   await (await browser.$('h1=Git Changes')).waitForDisplayed({ timeout: 5_000 });
   assert.equal((await browser.getWindowHandles()).length, 1, "Changes must stay in the current window");
