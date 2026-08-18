@@ -1,15 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
-import { FileTree, useFileTree } from "@pierre/trees/react";
-import type { GitStatusEntry } from "@pierre/trees";
-import { ChevronDown, ChevronUp, File, FolderOpen, GitCompare, RefreshCw, X } from "lucide-react";
+import { FileTree, useFileTree } from "@win5do/pierre-trees/react";
+import type { GitStatusEntry } from "@win5do/pierre-trees";
+import { ChevronDown, ChevronUp, GitCompare, RefreshCw, X } from "lucide-react";
 import { projectsApi } from "@/api/projects";
 import { workspacesApi } from "@/api/workspaces";
 import { ApiError } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import type { GitChangeFile, GitDiffComparison, GitDiffRequest, GitStatus } from "@/domain/types";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +26,6 @@ type Props = {
 };
 
 type ParsedFile = { diff: FileDiffMetadata; path: string; additions: number; deletions: number; binary: boolean; status: "added" | "modified" | "deleted" | "renamed" };
-type WorkingTreeNode = { name: string; path: string; children: WorkingTreeNode[]; file?: GitChangeFile };
 
 export function GitChangesView({ repositoryKind, repositoryId, repositoryName, scope = "working-tree", initialPath, startCommit, endCommit, commitCount = 1, onStatusChange, onClose }: Props) {
   const [status, setStatus] = useState<GitStatus | null>(null);
@@ -115,17 +113,15 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
     finally { setMutatingPath(""); }
   };
 
-  const stageableFiles = status?.files.filter((file) => file.status !== "conflicted") ?? [];
-  const allStaged = stageableFiles.length > 0 && stageableFiles.every((file) => !file.has_unstaged_changes);
-  const someStaged = stageableFiles.some((file) => file.has_staged_changes);
-  const toggleAllStages = async () => {
-    if (scope !== "working-tree" || mutatingPath || stageableFiles.length === 0) return;
-    const stage = !allStaged;
-    const paths = stageableFiles
-      .filter((file) => stage ? file.has_unstaged_changes : file.has_staged_changes)
-      .map((file) => file.path);
-    if (paths.length === 0) return;
-    setMutatingPath("*");
+  const toggleStagePath = async (path: string, stage: boolean) => {
+    const targets = status?.files.filter((file) => file.status !== "conflicted" && (file.path === path || file.path.startsWith(`${path}/`))) ?? [];
+    if (targets.length === 1 && targets[0]?.path === path) {
+      await toggleStage(targets[0], stage);
+      return;
+    }
+    const paths = targets.filter((file) => stage ? file.has_unstaged_changes : file.has_staged_changes).map((file) => file.path);
+    if (paths.length === 0 || mutatingPath) return;
+    setMutatingPath(path);
     try {
       const next = stage ? await api.stage(repositoryId, paths) : await api.unstage(repositoryId, paths);
       setStatus(next); onStatusChange?.(next);
@@ -150,9 +146,8 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
         <div className="flex h-10 shrink-0 items-center gap-2 px-3 text-xs font-semibold">
           <span>Changed files</span>
           {status && <span className="ml-auto text-[10px] text-muted-foreground">{status.staged_count} staged</span>}
-          {scope === "working-tree" && <Checkbox aria-label={allStaged ? "Unstage all changes" : "Stage all changes"} checked={allStaged} indeterminate={!allStaged && someStaged} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} onCheckedChange={() => void toggleAllStages()} />}
         </div>
-        <ChangesTree files={files} selectedPath={selectedPath} onSelect={setSelectedPath} onToggle={scope === "commit" ? undefined : toggleStage} mutatingPath={mutatingPath} />
+        <ChangesTree key={status?.files.map((file) => `${file.path}:${file.has_staged_changes ? 1 : 0}:${file.has_unstaged_changes ? 1 : 0}`).join("|")} files={files} status={status} selectedPath={selectedPath} onSelect={setSelectedPath} onToggle={scope === "commit" ? undefined : (path, stage) => void toggleStagePath(path, stage)} mutatingPath={mutatingPath} />
       </aside>
       <section className="flex min-w-0 flex-1 flex-col">
         {current && <><div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3"><span className="min-w-0 flex-1 truncate font-mono text-xs">{current.path}</span><Button size="icon-sm" variant="ghost" aria-label="Previous file" onClick={() => setSelectedPath(files[Math.max(0, files.findIndex((file) => file.path === selectedPath) - 1)]?.path ?? selectedPath)}><ChevronUp /></Button><Button size="icon-sm" variant="ghost" aria-label="Next file" onClick={() => setSelectedPath(files[Math.min(files.length - 1, files.findIndex((file) => file.path === selectedPath) + 1)]?.path ?? selectedPath)}><ChevronDown /></Button></div><div className="min-h-0 flex-1 overflow-hidden" data-testid="git-diff-content">{error ? <State title="Could not load diff" detail={error} /> : current.binary || current.diff.hunks.length === 0 ? <State title={current.binary ? "Binary file changed" : "No line changes"} /> : <Virtualizer className="h-full overflow-auto" contentClassName="min-h-full"><FileDiff key={current.path} fileDiff={current.diff} options={{ diffStyle: "unified", diffIndicators: "bars", disableFileHeader: true, enableLineSelection: false, expandUnchanged: false, collapsedContextThreshold: 8, hunkSeparators: "line-info-basic", lineDiffType: "word-alt", overflow: "scroll", themeType: "system" }} /></Virtualizer>}</div></>}
@@ -161,63 +156,13 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
   </main>;
 }
 
-function ChangesTree({ files, selectedPath, onSelect, onToggle, mutatingPath }: { files: Array<GitChangeFile | ParsedFile>; selectedPath: string; onSelect: (path: string) => void; onToggle?: (file: GitChangeFile, stage: boolean) => void; mutatingPath: string }) {
-  return onToggle ? <WorkingTreeRows files={files as GitChangeFile[]} selectedPath={selectedPath} onSelect={onSelect} onToggle={onToggle} mutatingPath={mutatingPath} /> : <ReadonlyChangesTree files={files} selectedPath={selectedPath} onSelect={onSelect} />;
-}
-
-function ReadonlyChangesTree({ files, selectedPath, onSelect }: { files: Array<GitChangeFile | ParsedFile>; selectedPath: string; onSelect: (path: string) => void }) {
+function ChangesTree({ files, status: gitStatus, selectedPath, onSelect, onToggle, mutatingPath }: { files: Array<GitChangeFile | ParsedFile>; status: GitStatus | null; selectedPath: string; onSelect: (path: string) => void; onToggle?: (path: string, stage: boolean) => void; mutatingPath: string }) {
   const paths = useMemo(() => files.map((file) => file.path), [files]);
-  const status = useMemo<GitStatusEntry[]>(() => files.map((file) => ({ path: file.path, status: file.status === "added" ? "added" : file.status === "deleted" ? "deleted" : file.status === "renamed" ? "renamed" : "modified" })), [files]);
+  const statusEntries = useMemo<GitStatusEntry[]>(() => files.map((file) => ({ path: file.path, status: file.status === "added" ? "added" : file.status === "deleted" ? "deleted" : file.status === "renamed" ? "renamed" : "modified" })), [files]);
   const stats = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
-  const { model } = useFileTree({ paths, gitStatus: status, initialExpansion: "open", initialSelectedPaths: paths.slice(0, 1), onSelectionChange: (selected) => { const path = [...selected].reverse().find((item) => paths.includes(item)); if (path) onSelect(path); }, renderRowDecoration: ({ item }) => { if (item.kind !== "file") return null; const file = stats.get(item.path); if (!file) return null; return { text: `+${file.additions} −${file.deletions}`, title: `${file.additions} additions, ${file.deletions} deletions` }; } });
+  const { model } = useFileTree({ paths, gitStatus: statusEntries, initialExpansion: "open", initialSelectedPaths: paths.slice(0, 1), onSelectionChange: (selected) => { const path = [...selected].reverse().find((item) => paths.includes(item)); if (path) onSelect(path); }, renderRowDecoration: ({ item }) => { if (item.kind !== "file") return null; const file = stats.get(item.path); if (!file) return null; return { text: `+${file.additions} −${file.deletions}`, title: `${file.additions} additions, ${file.deletions} deletions` }; }, renderRowTrailing: onToggle && gitStatus ? ({ item }) => { const descendants = gitStatus.files.filter((file) => file.status !== "conflicted" && (item.kind === "file" ? file.path === item.path : file.path.startsWith(`${item.path}/`))); if (descendants.length === 0) return null; const checked = descendants.every((file) => !file.has_unstaged_changes); const indeterminate = !checked && descendants.some((file) => file.has_staged_changes); const title = checked ? `Unstage ${item.path}` : `Stage ${item.path}`; return { width: 24, render: (container) => { const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.checked = checked; checkbox.indeterminate = indeterminate; checkbox.disabled = Boolean(mutatingPath); checkbox.title = title; checkbox.setAttribute("aria-label", title); checkbox.setAttribute("data-item-checkbox", "true"); const stop = (event: Event) => event.stopPropagation(); const change = () => onToggle(item.path, checkbox.checked); checkbox.addEventListener("click", stop); checkbox.addEventListener("pointerdown", stop); checkbox.addEventListener("change", change); container.append(checkbox); return () => { checkbox.removeEventListener("click", stop); checkbox.removeEventListener("pointerdown", stop); checkbox.removeEventListener("change", change); checkbox.remove(); }; } }; } : undefined });
   useEffect(() => { model.getItem(selectedPath)?.select(); model.scrollToPath(selectedPath, { focus: false, offset: "nearest" }); }, [model, selectedPath]);
   return <div className="min-h-0 flex-1 overflow-auto"><FileTree model={model} aria-label="Changed files" className="min-h-full" style={{ height: "100%" }} /></div>;
-}
-
-function WorkingTreeRows({ files, selectedPath, onSelect, onToggle, mutatingPath }: { files: GitChangeFile[]; selectedPath: string; onSelect: (path: string) => void; onToggle: (file: GitChangeFile, stage: boolean) => void; mutatingPath: string }) {
-  const staged = files.filter((file) => file.has_staged_changes);
-  const changes = files.filter((file) => file.has_unstaged_changes);
-  const renderGroup = (title: string, group: GitChangeFile[], checked: boolean) => group.length === 0 ? null : <section className="border-b border-border/60 last:border-b-0">
-    <h2 className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{title}<span className="ml-1 font-normal">{group.length}</span></h2>
-    <div className="pb-1" role="tree" aria-label={title}>{renderWorkingTree(buildWorkingTree(group), 0, checked, selectedPath, mutatingPath, onSelect, onToggle)}</div>
-  </section>;
-  return <div className="min-h-full overflow-auto">{renderGroup("Staged Changes", staged, true)}{renderGroup("Changes", changes, false)}</div>;
-}
-
-function buildWorkingTree(files: GitChangeFile[]) {
-  const root: WorkingTreeNode = { name: "", path: "", children: [] };
-  for (const file of files) {
-    let parent = root;
-    const parts = file.path.split("/").filter(Boolean);
-    parts.forEach((name, index) => {
-      const path = parts.slice(0, index + 1).join("/");
-      let node = parent.children.find((child) => child.name === name);
-      if (!node) {
-        node = { name, path, children: [] };
-        parent.children.push(node);
-      }
-      if (index === parts.length - 1) node.file = file;
-      parent = node;
-    });
-  }
-  const sort = (nodes: WorkingTreeNode[]) => {
-    nodes.sort((left, right) => Number(Boolean(left.file)) - Number(Boolean(right.file)) || left.name.localeCompare(right.name));
-    nodes.forEach((node) => sort(node.children));
-  };
-  sort(root.children);
-  return root.children;
-}
-
-function renderWorkingTree(nodes: WorkingTreeNode[], depth: number, checked: boolean, selectedPath: string, mutatingPath: string, onSelect: (path: string) => void, onToggle: (file: GitChangeFile, stage: boolean) => void): React.ReactNode {
-  return nodes.map((node) => node.file ? <div key={node.path} role="treeitem" aria-selected={selectedPath === node.path} className={cn("flex min-w-0 items-center gap-2 py-1.5 pr-3 text-xs", selectedPath === node.path && "bg-accent text-accent-foreground")} style={{ paddingLeft: 12 + depth * 14 }}>
-    <File className="size-3.5 shrink-0 text-muted-foreground" />
-    <button type="button" className="min-w-0 flex-1 truncate text-left font-mono outline-none" title={node.path} onClick={() => onSelect(node.path)}>{node.name}</button>
-    <span className="flex shrink-0 items-center gap-1 font-mono text-[10px] leading-none tabular-nums"><span className="text-success">+{node.file.additions}</span><span className="text-destructive">−{node.file.deletions}</span></span>
-    <Checkbox data-testid={`git-change-checkbox-${checked ? "staged" : "unstaged"}-${node.path}`} aria-label={`${checked ? "Unstage" : "Stage"} ${node.path}`} checked={checked} disabled={node.file.status === "conflicted" || Boolean(mutatingPath)} onCheckedChange={() => onToggle(node.file!, !checked)} onClick={(event) => event.stopPropagation()} />
-  </div> : <div key={node.path} role="treeitem" aria-expanded="true">
-    <div className="flex min-w-0 items-center gap-2 py-1.5 pr-3 text-xs text-muted-foreground" style={{ paddingLeft: 12 + depth * 14 }}><FolderOpen className="size-3.5 shrink-0" /><span className="truncate font-mono">{node.name}</span></div>
-    <div role="group">{renderWorkingTree(node.children, depth + 1, checked, selectedPath, mutatingPath, onSelect, onToggle)}</div>
-  </div>);
 }
 
 function parseComparison(comparison: GitDiffComparison | null): { files: ParsedFile[]; error?: string } {

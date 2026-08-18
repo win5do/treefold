@@ -22,11 +22,10 @@ try {
   assert.equal((await browser.getWindowHandles()).length, 1, "Changes must stay in the current window");
   await (await browser.$('[data-testid="git-changes-refresh"]')).click();
   assert.equal((await browser.$$('button=Open Shell')).length, 0, "Changes must not expose an unrelated shell action");
-  assert.equal((await browser.$$('[data-testid^="git-change-checkbox-"]')).length, 2, "Changes tree must expose each changed file");
-  const stageAll = await browser.$('[aria-label="Stage all changes"]');
-  await stageAll.click();
+  const fileCheckboxes = await browser.$$('[data-item-type="file"] [data-item-checkbox]');
+  assert.equal(fileCheckboxes.length, 2, "Changes tree must expose each changed file checkbox");
+  await fileCheckboxes[0].click();
   await browser.waitUntil(() => harness.compareRequests.some((item) => item.action === "git/stage" && item.paths.includes("src/alpha.ts")), { timeout: 3_000 });
-  await (await browser.$('[aria-label="Unstage all changes"]')).waitForDisplayed({ timeout: 3_000 });
   const message = await browser.$('textarea[aria-label="Commit message"]');
   await message.setValue("Commit fixture changes");
   const commit = await browser.$('button*=Commit 2');
