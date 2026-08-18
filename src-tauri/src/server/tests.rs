@@ -167,12 +167,38 @@ mod current_workspace_tests {
             )
             .await
             .expect("reject dirty worktree deletion");
-        assert_eq!(dirty_response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(dirty_response.status(), StatusCode::ACCEPTED);
         let dirty_body = axum::body::to_bytes(dirty_response.into_body(), usize::MAX)
             .await
             .expect("read dirty worktree response");
         assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&dirty_body).unwrap()["error"]["message"],
+            serde_json::from_slice::<serde_json::Value>(&dirty_body).unwrap()["status"],
+            "deleting"
+        );
+        let mut dirty_operation = serde_json::Value::Null;
+        for _ in 0..50 {
+            let status_response = app(state.clone())
+                .oneshot(
+                    Request::get(format!(
+                        "/api/project-repositories/{repository_id}/worktrees/delete-status?path={stale_worktree_path}"
+                    ))
+                    .body(Body::empty())
+                    .expect("build dirty worktree status request"),
+                )
+                .await
+                .expect("get dirty worktree status");
+            let status_body = axum::body::to_bytes(status_response.into_body(), usize::MAX)
+                .await
+                .expect("read dirty worktree status response");
+            dirty_operation = serde_json::from_slice(&status_body).unwrap();
+            if dirty_operation["status"] != "deleting" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(dirty_operation["status"], "failed");
+        assert_eq!(
+            dirty_operation["error"],
             "worktree has uncommitted changes; commit, stash, or discard them before deleting it"
         );
         assert!(stale_worktree.join("uncommitted.txt").is_file());
@@ -216,7 +242,29 @@ mod current_workspace_tests {
             .await
             .expect("delete stale worktree registration");
 
-        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let mut stale_operation = serde_json::Value::Null;
+        for _ in 0..50 {
+            let status_response = app(state.clone())
+                .oneshot(
+                    Request::get(format!(
+                        "/api/project-repositories/{repository_id}/worktrees/delete-status?path={stale_worktree_path}"
+                    ))
+                    .body(Body::empty())
+                    .expect("build stale worktree status request"),
+                )
+                .await
+                .expect("get stale worktree status");
+            let status_body = axum::body::to_bytes(status_response.into_body(), usize::MAX)
+                .await
+                .expect("read stale worktree status response");
+            stale_operation = serde_json::from_slice(&status_body).unwrap();
+            if stale_operation["status"] != "deleting" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(stale_operation["status"], "completed");
         assert!(
             !git_worktrees(&repository.to_string_lossy())
                 .expect("list remaining worktrees")

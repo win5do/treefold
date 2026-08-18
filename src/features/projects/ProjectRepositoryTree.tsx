@@ -15,6 +15,7 @@ import {
 import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Collapsible,
   CollapsibleContent,
@@ -24,6 +25,7 @@ import type {
   Directory,
   GitWorktree,
   ProjectRepository,
+  WorktreeDeleteOperation,
 } from "@/domain/types";
 import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 
@@ -54,6 +56,7 @@ export function ProjectLocationTreeRow({
   onMakeDefault,
   onReattach,
   onDeleteWorktree,
+  worktreeDeletions,
 }: {
   directory: Directory;
   scopes?: Directory[];
@@ -67,6 +70,7 @@ export function ProjectLocationTreeRow({
   onMakeDefault: () => void;
   onReattach: () => void;
   onDeleteWorktree: (worktree: GitWorktree) => void;
+  worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
   const isRepository = directory.git_status !== "not_git";
   const [expanded, setExpanded] = useState(
@@ -304,6 +308,15 @@ export function ProjectLocationTreeRow({
                         {item.branch || "detached"}
                       </span>
                       {item.is_main && <Badge>Main checkout</Badge>}
+                      {worktreeDeletions[item.path]?.status === "deleting" && (
+                        <Badge variant="secondary">
+                          <Spinner data-icon="inline-start" />
+                          Deleting
+                        </Badge>
+                      )}
+                      {worktreeDeletions[item.path]?.status === "failed" && (
+                        <Badge variant="destructive">Delete failed</Badge>
+                      )}
                     </div>
                     <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
                       {item.head_commit && (
@@ -342,26 +355,47 @@ export function ProjectLocationTreeRow({
                     <Button
                       size="icon"
                       variant={
-                        item.workspace_id ? "muted" : "destructive-ghost"
+                        item.workspace_id ||
+                        worktreeDeletions[item.path]?.status === "deleting"
+                          ? "muted"
+                          : "destructive-ghost"
                       }
-                      disabled={busy}
-                      aria-disabled={Boolean(item.workspace_id)}
+                      disabled={
+                        busy ||
+                        worktreeDeletions[item.path]?.status === "deleting"
+                      }
+                      aria-disabled={Boolean(
+                        item.workspace_id ||
+                          worktreeDeletions[item.path]?.status === "deleting",
+                      )}
                       data-worktree-delete-state={
-                        item.workspace_id ? "blocked" : "available"
+                        item.workspace_id
+                          ? "blocked"
+                          : worktreeDeletions[item.path]?.status === "deleting"
+                            ? "deleting"
+                            : "available"
                       }
                       aria-label={
                         item.workspace_id
                           ? `Cannot delete worktree ${item.path}: active Workspace ${item.workspace_name || item.workspace_id}`
+                          : worktreeDeletions[item.path]?.status === "deleting"
+                            ? `Deleting worktree ${item.path}`
                           : `Delete worktree ${item.path}`
                       }
                       title={
                         item.workspace_id
                           ? `Finish Workspace “${item.workspace_name || item.workspace_id}” before deleting this worktree`
+                          : worktreeDeletions[item.path]?.status === "deleting"
+                            ? "Worktree deletion in progress"
                           : `Delete worktree ${item.path}`
                       }
                       onClick={() => onDeleteWorktree(item)}
                     >
-                      <Trash2 data-icon="inline-start" />
+                      {worktreeDeletions[item.path]?.status === "deleting" ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : (
+                        <Trash2 data-icon="inline-start" />
+                      )}
                     </Button>
                   )}
                 </div>
@@ -395,6 +429,7 @@ export function ProjectRepositoryTreeRow({
   onDeleteRepository,
   onDeleteDirectory,
   onDeleteWorktree,
+  worktreeDeletions,
 }: {
   repository: ProjectRepository;
   directories: Directory[];
@@ -411,6 +446,7 @@ export function ProjectRepositoryTreeRow({
   onDeleteRepository: () => void;
   onDeleteDirectory: (directory: Directory) => void;
   onDeleteWorktree: (worktree: GitWorktree) => void;
+  worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
   const [expanded, setExpanded] = useState(
     directories.some((directory) => directory.role === "primary") ||
@@ -606,6 +642,15 @@ export function ProjectRepositoryTreeRow({
                           {item.branch || "detached"}
                         </span>
                         {item.is_main && <Badge>Main checkout</Badge>}
+                        {worktreeDeletions[item.path]?.status === "deleting" && (
+                          <Badge variant="secondary">
+                            <Spinner data-icon="inline-start" />
+                            Deleting
+                          </Badge>
+                        )}
+                        {worktreeDeletions[item.path]?.status === "failed" && (
+                          <Badge variant="destructive">Delete failed</Badge>
+                        )}
                       </div>
                       <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
                         {item.head_commit && (
@@ -644,26 +689,47 @@ export function ProjectRepositoryTreeRow({
                       <Button
                         size="icon"
                         variant={
-                          item.workspace_id ? "muted" : "destructive-ghost"
+                          item.workspace_id ||
+                          worktreeDeletions[item.path]?.status === "deleting"
+                            ? "muted"
+                            : "destructive-ghost"
                         }
-                        disabled={busy}
-                        aria-disabled={Boolean(item.workspace_id)}
+                        disabled={
+                          busy ||
+                          worktreeDeletions[item.path]?.status === "deleting"
+                        }
+                        aria-disabled={Boolean(
+                          item.workspace_id ||
+                            worktreeDeletions[item.path]?.status === "deleting",
+                        )}
                         data-worktree-delete-state={
-                          item.workspace_id ? "blocked" : "available"
+                          item.workspace_id
+                            ? "blocked"
+                            : worktreeDeletions[item.path]?.status === "deleting"
+                              ? "deleting"
+                              : "available"
                         }
                         aria-label={
                           item.workspace_id
                             ? `Cannot delete worktree ${item.path}: active Workspace ${item.workspace_name || item.workspace_id}`
+                            : worktreeDeletions[item.path]?.status === "deleting"
+                              ? `Deleting worktree ${item.path}`
                             : `Delete worktree ${item.path}`
                         }
                         title={
                           item.workspace_id
                             ? `Finish Workspace “${item.workspace_name || item.workspace_id}” before deleting this worktree`
+                            : worktreeDeletions[item.path]?.status === "deleting"
+                              ? "Worktree deletion in progress"
                             : `Delete worktree ${item.path}`
                         }
                         onClick={() => onDeleteWorktree(item)}
                       >
-                        <Trash2 data-icon="inline-start" />
+                        {worktreeDeletions[item.path]?.status === "deleting" ? (
+                          <Spinner data-icon="inline-start" />
+                        ) : (
+                          <Trash2 data-icon="inline-start" />
+                        )}
                       </Button>
                     )}
                   </div>

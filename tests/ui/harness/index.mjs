@@ -51,6 +51,8 @@ async function startFixtureApi() {
     blockers: [],
     warnings: [],
   };
+  let worktreeDeleteOperation = null;
+  let worktreeDeletePolls = 0;
   const amuxStopRequests = [];
   const repositoryBranches = new Map();
   const gitDiffRoutes = createGitDiffRoutes({ fixture, readJson, sendJson });
@@ -215,15 +217,37 @@ async function startFixtureApi() {
     const worktreeDeleteMatch = pathname.match(
       /^\/api\/project-repositories\/([^/]+)\/worktrees$/,
     );
+    const worktreeDeleteStatusMatch = pathname.match(
+      /^\/api\/project-repositories\/([^/]+)\/worktrees\/delete-status$/,
+    );
+    if (request.method === "GET" && worktreeDeleteStatusMatch) {
+      if (!worktreeDeleteOperation) {
+        sendJson(response, 404, { error: "Worktree deletion not found" });
+        return;
+      }
+      worktreeDeletePolls += 1;
+      if (worktreeDeletePolls >= 2) {
+        worktreeDeleteOperation.status = "completed";
+        for (const detail of Object.values(fixture.projectDetails)) {
+          detail.worktrees = detail.worktrees.filter(
+            (item) => item.path !== worktreeDeleteOperation.path,
+          );
+        }
+      }
+      sendJson(response, 200, worktreeDeleteOperation);
+      return;
+    }
     if (request.method === "DELETE" && worktreeDeleteMatch) {
       const input = await readJson(request);
-      for (const detail of Object.values(fixture.projectDetails)) {
-        detail.worktrees = detail.worktrees.filter(
-          (item) => item.path !== input.path,
-        );
-      }
+      worktreeDeleteOperation = {
+        id: "worktree-delete-operation",
+        repository_id: worktreeDeleteMatch[1],
+        path: input.path,
+        status: "deleting",
+      };
+      worktreeDeletePolls = 0;
       deleteRequests.push({ kind: "worktree", path: input.path });
-      sendJson(response, 204, null);
+      sendJson(response, 202, worktreeDeleteOperation);
       return;
     }
     if (request.method === "POST" && pathname === "/api/projects") {

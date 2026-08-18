@@ -616,6 +616,39 @@ pub(super) struct DeleteWorktreePrecheck {
     warnings: Vec<String>,
 }
 
+#[derive(Clone, Serialize)]
+pub(super) struct DeleteWorktreeOperation {
+    id: String,
+    repository_id: String,
+    path: String,
+    status: String,
+    error: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct DeleteWorktreeStatusQuery {
+    path: String,
+}
+
+static WORKTREE_DELETE_OPERATIONS: OnceLock<Cache<String, DeleteWorktreeOperation>> =
+    OnceLock::new();
+
+fn worktree_delete_operations() -> &'static Cache<String, DeleteWorktreeOperation> {
+    WORKTREE_DELETE_OPERATIONS.get_or_init(|| {
+        Cache::builder()
+            .max_capacity(256)
+            .time_to_live(std::time::Duration::from_secs(30 * 60))
+            .build()
+    })
+}
+
+fn worktree_delete_key(repository_id: &str, path: &str) -> String {
+    format!(
+        "{repository_id}:{}",
+        normalized_path(path).to_string_lossy()
+    )
+}
+
 struct DeleteWorktreeInspection {
     project_id: String,
     repository_path: String,
@@ -639,39 +672,92 @@ pub(super) async fn delete_worktree(
     State(state): State<AppState>,
     AxumPath(repository_id): AxumPath<String>,
     ApiJson(input): ApiJson<DeleteWorktree>,
-) -> Result<StatusCode> {
-    let inspection = blocking_git_operation(move || {
-        inspect_delete_worktree(&state, &repository_id, &input.path)
-    })
-    .await?;
-    if let Some(blocker) = inspection.precheck.blockers.first() {
-        return Err(AppError::BadRequest(blocker.clone()));
-    }
-    let DeleteWorktreeInspection {
-        project_id,
-        repository_path,
-        worktree_path,
-        ..
-    } = inspection;
-    let worktrees_cache = project_worktrees_cache();
-    if let Some(mut worktrees) = worktrees_cache.get(&project_id).await {
-        let target = normalized_path(&worktree_path);
-        worktrees.retain(|worktree| normalized_path(&worktree.path) != target);
-        worktrees_cache.insert(project_id.clone(), worktrees).await;
+) -> Result<(StatusCode, Json<DeleteWorktreeOperation>)> {
+    let key = worktree_delete_key(&repository_id, &input.path);
+    if let Some(operation) = worktree_delete_operations().get(&key).await {
+        if operation.status == "deleting" {
+            return Ok((StatusCode::ACCEPTED, Json(operation)));
+        }
     }
 
-    let removal_path = worktree_path.clone();
-    blocking_git_operation(move || {
-        command_output(
-            Path::new(&repository_path),
-            "git",
-            &["worktree", "remove", &removal_path],
-        )
-        .map_err(AppError::BadRequest)
-    })
-    .await?;
-    project_worktrees_cache().invalidate(&project_id).await;
-    Ok(StatusCode::NO_CONTENT)
+    let operation = DeleteWorktreeOperation {
+        id: id(),
+        repository_id: repository_id.clone(),
+        path: input.path.clone(),
+        status: "deleting".into(),
+        error: None,
+    };
+    worktree_delete_operations()
+        .insert(key.clone(), operation.clone())
+        .await;
+    let operation_id = operation.id.clone();
+    let operation_repository_id = operation.repository_id.clone();
+    let operation_path = operation.path.clone();
+    tokio::spawn(async move {
+        let result = blocking_git_operation(move || {
+            let inspection = inspect_delete_worktree(&state, &repository_id, &input.path)?;
+            if let Some(blocker) = inspection.precheck.blockers.first() {
+                return Err(AppError::BadRequest(blocker.clone()));
+            }
+            let DeleteWorktreeInspection {
+                project_id,
+                repository_path,
+                worktree_path,
+                ..
+            } = inspection;
+            command_output(
+                Path::new(&repository_path),
+                "git",
+                &["worktree", "remove", &worktree_path],
+            )
+            .map_err(AppError::BadRequest)?;
+            Ok(project_id)
+        })
+        .await;
+        match result {
+            Ok(project_id) => {
+                project_worktrees_cache().invalidate(&project_id).await;
+                worktree_delete_operations()
+                    .insert(
+                        key,
+                        DeleteWorktreeOperation {
+                            id: operation_id,
+                            repository_id: operation_repository_id,
+                            path: operation_path,
+                            status: "completed".into(),
+                            error: None,
+                        },
+                    )
+                    .await;
+            }
+            Err(error) => {
+                worktree_delete_operations()
+                    .insert(
+                        key,
+                        DeleteWorktreeOperation {
+                            id: operation_id,
+                            repository_id: operation_repository_id,
+                            path: operation_path,
+                            status: "failed".into(),
+                            error: Some(error.to_string()),
+                        },
+                    )
+                    .await;
+            }
+        }
+    });
+    Ok((StatusCode::ACCEPTED, Json(operation)))
+}
+
+pub(super) async fn delete_worktree_status(
+    AxumPath(repository_id): AxumPath<String>,
+    Query(query): Query<DeleteWorktreeStatusQuery>,
+) -> Result<Json<DeleteWorktreeOperation>> {
+    worktree_delete_operations()
+        .get(&worktree_delete_key(&repository_id, &query.path))
+        .await
+        .map(Json)
+        .ok_or(AppError::NotFound)
 }
 
 fn inspect_delete_worktree(

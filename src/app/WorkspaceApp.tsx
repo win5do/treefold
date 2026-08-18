@@ -47,6 +47,7 @@ import type {
   WorkspaceLocation,
   GitWorktree,
   GitSyncItemResult,
+  WorktreeDeleteOperation,
 } from "@/domain/types";
 import {
   normalizeProject,
@@ -257,6 +258,9 @@ function Workspace() {
   >(null);
   const [deleteWorktreeTarget, setDeleteWorktreeTarget] =
     useState<GitWorktree | null>(null);
+  const [deletingWorktrees, setDeletingWorktrees] = useState<
+    Record<string, WorktreeDeleteOperation>
+  >({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
   const [closingSessionIds, setClosingSessionIds] = useState<Set<string>>(
@@ -272,6 +276,61 @@ function Workspace() {
   useEffect(() => {
     if (queryError instanceof Error) toast.error(queryError.message);
   }, [queryError]);
+
+  useEffect(() => {
+    const active = Object.values(deletingWorktrees).filter(
+      (operation) => operation.status === "deleting",
+    );
+    if (active.length === 0) return;
+    let cancelled = false;
+    const poll = async () => {
+      await Promise.all(
+        active.map(async (operation) => {
+          try {
+            const next = await projectsApi.worktreeDeleteStatus(
+              operation.repository_id,
+              operation.path,
+            );
+            if (cancelled) return;
+            if (next.status === "completed") {
+              setDeletingWorktrees((current) => {
+                if (current[operation.path]?.id !== operation.id) return current;
+                const { [operation.path]: _finished, ...remaining } = current;
+                return remaining;
+              });
+              toast.success("Worktree deleted", {
+                description: operation.path,
+              });
+              void Promise.all([
+                queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
+                params.projectId
+                  ? queryClient.invalidateQueries({
+                      queryKey: projectKeys.detail(params.projectId),
+                    })
+                  : Promise.resolve(),
+              ]);
+            } else if (next.status === "failed") {
+              setDeletingWorktrees((current) => ({
+                ...current,
+                [operation.path]: next,
+              }));
+              toast.error("Worktree deletion failed", {
+                description: next.error ?? operation.path,
+              });
+            }
+          } catch {
+            // Keep polling through transient status request failures.
+          }
+        }),
+      );
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [deletingWorktrees, params.projectId, queryClient]);
 
   const refresh = async () => {
     if (params.workspaceId)
@@ -843,14 +902,27 @@ function Workspace() {
 
   async function confirmRemoveWorktree() {
     if (!deleteWorktreeTarget) return false;
-    const ok = await act(() =>
-      projectsApi.removeWorktree(
-        deleteWorktreeTarget.project_location_id,
-        deleteWorktreeTarget,
-      ),
-    );
-    if (ok) setDeleteWorktreeTarget(null);
-    return ok;
+    const target = deleteWorktreeTarget;
+    try {
+      const operation = await projectsApi.removeWorktree(
+        target.project_location_id,
+        target,
+      );
+      setDeletingWorktrees((current) => ({
+        ...current,
+        [target.path]: operation,
+      }));
+      setDeleteWorktreeTarget(null);
+      toast.info("Worktree deletion started", {
+        description: "You can continue working while the checkout is removed.",
+      });
+      return true;
+    } catch (cause) {
+      toast.error(
+        cause instanceof Error ? cause.message : "Could not start worktree deletion",
+      );
+      return false;
+    }
   }
 
   async function refreshLocation(location: Directory) {
@@ -1365,6 +1437,7 @@ function Workspace() {
                     void removeProjectDirectory(directory)
                   }
                   onDeleteWorktree={(item) => void removeWorktree(item)}
+                  worktreeDeletions={deletingWorktrees}
                 />
               ) : (
                 <Overview

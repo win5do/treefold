@@ -43,6 +43,7 @@ export function DeleteWorktreeDialog({
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
   const [checkVersion, setCheckVersion] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!target) return;
@@ -69,12 +70,18 @@ export function DeleteWorktreeDialog({
 
   const canDelete =
     !checking &&
+    !submitting &&
     !error &&
     Boolean(precheck && precheck.status !== "blocked");
   const canRecheck = !checking && (Boolean(error) || precheck?.status === "blocked");
 
   async function remove() {
-    if (!(await onConfirm())) setCheckVersion((current) => current + 1);
+    setSubmitting(true);
+    try {
+      if (!(await onConfirm())) setCheckVersion((current) => current + 1);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -159,11 +166,11 @@ export function DeleteWorktreeDialog({
         )}
 
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={busy || submitting}>Cancel</AlertDialogCancel>
           {canRecheck && (
             <Button
               variant="outline"
-              disabled={busy}
+              disabled={busy || submitting}
               onClick={() => setCheckVersion((current) => current + 1)}
             >
               Check again
@@ -171,11 +178,11 @@ export function DeleteWorktreeDialog({
           )}
           <AlertDialogAction
             variant="destructive"
-            disabled={busy || !canDelete}
+            disabled={busy || submitting || !canDelete}
             onClick={() => void remove()}
           >
-            {busy && <Spinner data-icon="inline-start" />}
-            {busy ? "Deleting..." : "Delete worktree"}
+            {submitting && <Spinner data-icon="inline-start" />}
+            {submitting ? "Starting..." : "Delete worktree"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

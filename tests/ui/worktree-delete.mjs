@@ -59,6 +59,18 @@ try {
   assert.equal(await action.isEnabled(), true, "clean worktrees must be deletable");
   await action.click();
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  const deletingRow = await repository.$(
+    '[data-testid="project-worktree-row"]:has(button[data-worktree-delete-state="deleting"])',
+  );
+  await deletingRow.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await deletingRow.getText(), /Deleting/);
+  assert.equal(
+    await (
+      await deletingRow.$('button[data-worktree-delete-state="deleting"]')
+    ).isEnabled(),
+    false,
+    "deleting worktrees must disable repeated deletion",
+  );
   assert.equal(
     harness.deleteRequests.some(
       (request) => request.kind === "worktree" && request.path.includes("unmanaged-worktree"),
@@ -66,6 +78,7 @@ try {
     true,
     "worktree deletion must reach the API",
   );
+  await deletingRow.waitForDisplayed({ reverse: true, timeout: 5_000 });
   harness.assertNoUnexpectedRequests();
   console.log("✓ worktree deletion precheck, blocking, retry, and removal passed");
 } finally {

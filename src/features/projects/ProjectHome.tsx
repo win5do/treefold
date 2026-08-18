@@ -20,6 +20,7 @@ import type {
   ProjectRepository,
   Session,
   Workspace,
+  WorktreeDeleteOperation,
 } from "@/domain/types";
 
 export function ProjectHome({
@@ -39,6 +40,7 @@ export function ProjectHome({
   onDeleteRepository,
   onDeleteDirectory,
   onDeleteWorktree,
+  worktreeDeletions,
 }: {
   project: ProjectDetail;
   busy: boolean;
@@ -56,6 +58,7 @@ export function ProjectHome({
   onDeleteRepository: (repository: ProjectRepository) => void;
   onDeleteDirectory: (directory: Directory) => void;
   onDeleteWorktree: (worktree: GitWorktree) => void;
+  worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
   const rootWorkspaces = project.workspaces.filter(
     (stream) => !stream.parent_workspace_id,
@@ -132,6 +135,7 @@ export function ProjectHome({
                   onDeleteRepository={() => onDeleteRepository(repository)}
                   onDeleteDirectory={onDeleteDirectory}
                   onDeleteWorktree={onDeleteWorktree}
+                  worktreeDeletions={worktreeDeletions}
                 />
               );
             })}
@@ -163,6 +167,7 @@ export function ProjectHome({
                   onMakeDefault={() => undefined}
                   onReattach={() => undefined}
                   onDeleteWorktree={onDeleteWorktree}
+                  worktreeDeletions={worktreeDeletions}
                 />
               ))}
             </div>

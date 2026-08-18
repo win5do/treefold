@@ -6,6 +6,7 @@ import type {
   GitDiffComparison,
   GitWorktree,
   WorktreeDeletePrecheck,
+  WorktreeDeleteOperation,
   Project,
   ProjectDetail,
   ProjectLocationInspection,
@@ -110,10 +111,14 @@ export const projectsApi = {
       json: { path, preferred_remote_name: preferredRemoteName, confirm_unverified: true },
     }),
   removeWorktree: (repositoryId: string, worktree: GitWorktree) =>
-    request(`/api/project-repositories/${repositoryId}/worktrees`, {
+    request<WorktreeDeleteOperation>(`/api/project-repositories/${repositoryId}/worktrees`, {
       method: "DELETE",
       json: { path: worktree.path },
     }),
+  worktreeDeleteStatus: (repositoryId: string, path: string) =>
+    request<WorktreeDeleteOperation>(
+      `/api/project-repositories/${repositoryId}/worktrees/delete-status?path=${encodeURIComponent(path)}`,
+    ),
   precheckWorktreeDeletion: (
     repositoryId: string,
     worktree: GitWorktree,

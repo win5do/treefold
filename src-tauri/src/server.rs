@@ -219,6 +219,10 @@ fn app(state: AppState) -> Router {
             "/api/project-repositories/{id}/worktrees/delete-precheck",
             post(precheck_delete_worktree),
         )
+        .route(
+            "/api/project-repositories/{id}/worktrees/delete-status",
+            get(delete_worktree_status),
+        )
         .route("/api/projects/{id}/workspaces", post(create_workspace))
         .route("/api/workspaces/{id}/forks", post(create_fork))
         .route(

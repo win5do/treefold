@@ -240,6 +240,14 @@ export type WorktreeDeletePrecheck = {
   warnings: string[];
 };
 
+export type WorktreeDeleteOperation = {
+  id: string;
+  repository_id: string;
+  path: string;
+  status: "deleting" | "completed" | "failed";
+  error?: string;
+};
+
 export type GitCommit = {
   hash: string;
   short_hash: string;
