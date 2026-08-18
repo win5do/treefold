@@ -43,6 +43,7 @@ pub struct TerminalManager {
     embedded_shims: bool,
     bridge_started: Arc<AtomicBool>,
     process_events: tokio::sync::broadcast::Sender<TreefoldProcessEvent>,
+    snapshot_events: tokio::sync::broadcast::Sender<()>,
     process_state: ProcessStateMap,
     api_url: Arc<String>,
 }
@@ -101,6 +102,7 @@ impl TerminalManager {
 
     pub fn new_named(config: Config, daemon_name: String) -> Self {
         let (process_events, _) = tokio::sync::broadcast::channel(1024);
+        let (snapshot_events, _) = tokio::sync::broadcast::channel(16);
         Self {
             client: Client::named(config, &daemon_name),
             daemon_name: Arc::new(daemon_name),
@@ -108,6 +110,7 @@ impl TerminalManager {
             embedded_shims: false,
             bridge_started: Arc::new(AtomicBool::new(false)),
             process_events,
+            snapshot_events,
             process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
             api_url: Arc::new(DEFAULT_API_URL.into()),
         }
@@ -198,6 +201,10 @@ impl TerminalManager {
         self.process_events.subscribe()
     }
 
+    pub fn subscribe_snapshot_events(&self) -> tokio::sync::broadcast::Receiver<()> {
+        self.snapshot_events.subscribe()
+    }
+
     pub async fn process_snapshot(&self) -> Vec<TreefoldProcessView> {
         if !self.client.ready().await {
             return Vec::new();
@@ -239,9 +246,10 @@ impl TerminalManager {
         }
         let client = self.client.clone();
         let sender = self.process_events.clone();
+        let snapshot_sender = self.snapshot_events.clone();
         let state = self.process_state.clone();
         tokio::spawn(async move {
-            process_event_bridge(client, sender, state).await;
+            process_event_bridge(client, sender, snapshot_sender, state).await;
         });
     }
 
@@ -537,6 +545,7 @@ impl Default for TerminalManager {
             embedded_shims: true,
             bridge_started: Arc::new(AtomicBool::new(false)),
             process_events: tokio::sync::broadcast::channel(1024).0,
+            snapshot_events: tokio::sync::broadcast::channel(16).0,
             process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
             api_url: Arc::new(DEFAULT_API_URL.into()),
         }
@@ -566,6 +575,7 @@ fn response_process(bytes: &[u8]) -> anyhow::Result<Process> {
 async fn process_event_bridge(
     client: Client,
     sender: tokio::sync::broadcast::Sender<TreefoldProcessEvent>,
+    snapshot_sender: tokio::sync::broadcast::Sender<()>,
     state: ProcessStateMap,
 ) {
     loop {
@@ -595,6 +605,7 @@ async fn process_event_bridge(
                 );
             }
         }
+        let _ = snapshot_sender.send(());
         let path = format!(
             "/v1/processes/events?after={}&instance={}",
             snapshot.sequence, snapshot.daemon_instance_id

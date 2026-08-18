@@ -14,8 +14,8 @@ mod current_workspace_tests {
 
     use super::{
         ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject,
-        CreateSession, CreateWorkspace, FinishWorkspace, UpdateProject, UpdateWorkspaceLocation,
-        abort_parent_operation_impl, app, close_session, command_output,
+        CreateSession, CreateWorkspace, FinishWorkspace, RuntimeHub, UpdateProject,
+        UpdateWorkspaceLocation, abort_parent_operation_impl, app, close_session, command_output,
         create_delivery_preflight_impl, create_directory, create_fork, create_project,
         create_project_session, create_session, create_workspace,
         create_workspace_location_preflight_impl, delete_project_location, finish_workspace_impl,
@@ -37,6 +37,7 @@ mod current_workspace_tests {
             store: Store::open(&home.join("data/treefold.db")).expect("open test Store"),
             settings: SettingsStore::open(&home).expect("open test Settings"),
             terminals: TerminalManager::default(),
+            runtime: RuntimeHub::default(),
         }
     }
 
@@ -419,6 +420,12 @@ mod current_workspace_tests {
             exit_signal: String::new(),
         };
         reconcile_process(&state, &process, false).expect("discover Command");
+        let discovered = state
+            .store
+            .sessions(&workspace.id)
+            .expect("list discovered Session");
+        let first_updated_at = discovered[0].updated_at.clone();
+        let first_revision = state.runtime.revision();
         reconcile_process(&state, &process, false).expect("rediscover Command");
         let sessions = state.store.sessions(&workspace.id).expect("list Sessions");
         assert_eq!(
@@ -430,6 +437,8 @@ mod current_workspace_tests {
         assert_eq!(sessions[0].visibility, "visible");
         assert_eq!(sessions[0].argv, process.command);
         assert_eq!(sessions[0].io_mode, "pipe");
+        assert_eq!(sessions[0].updated_at, first_updated_at);
+        assert_eq!(state.runtime.revision(), first_revision);
 
         assert!(!state.terminals.daemon_status().await.running);
         stop_session(
@@ -1106,6 +1115,7 @@ mod current_workspace_tests {
             store: Store::open(&root.join("home/data/treefold.db")).expect("reopen Store"),
             settings: SettingsStore::open(&root.join("home")).expect("reopen Settings"),
             terminals: TerminalManager::default(),
+            runtime: RuntimeHub::default(),
         };
         let recovered =
             reconcile_parent_operation(&restarted, &conflicted).expect("reconcile after restart");
@@ -2034,6 +2044,7 @@ mod tests {
             store: Store::open(&home.join("data/treefold.db")).expect("open agent API store"),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
+            runtime: RuntimeHub::default(),
         };
         let (_, Json(project)) = create_project(
             State(state.clone()),
@@ -2289,6 +2300,7 @@ mod tests {
             store: Store::open(&home.join("data/treefold.db")).expect("open store"),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
+            runtime: RuntimeHub::default(),
         };
         let (_, Json(project)) = create_project(
             State(state.clone()),
@@ -2476,6 +2488,7 @@ mod tests {
             store: Store::open(&home.join("data/treefold.db")).expect("open rebase store"),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
+            runtime: RuntimeHub::default(),
         };
         let (_, Json(project)) = create_project(
             State(state.clone()),
@@ -2918,6 +2931,7 @@ mod tests {
             store: Store::open(&fixture.home.join("data/treefold.db")).expect("reopen reset store"),
             settings: test_settings(&fixture.home),
             terminals: TerminalManager::default(),
+            runtime: RuntimeHub::default(),
         };
         let restored = restore_reset(
             &restarted,
@@ -3305,6 +3319,7 @@ mod tests {
                 .expect("reopen conflicted store"),
             settings: test_settings(&fixture.home),
             terminals: TerminalManager::default(),
+            runtime: RuntimeHub::default(),
         };
         assert_eq!(
             rebase_status_impl(&restarted, &fixture.fork.id)
@@ -3484,6 +3499,7 @@ mod tests {
             store: Store::open(&home.join("data/treefold.db")).expect("open store"),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
+            runtime: RuntimeHub::default(),
         };
         state
             .settings

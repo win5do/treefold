@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
 import { applyThemePreference } from "@/lib/theme";
 import { setApiBase } from "@/api/client";
+import { RuntimeSync } from "@/features/app/RuntimeSync";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +33,7 @@ if (isTauri() && !import.meta.env.VITE_TREEFOLD_API_BASE) {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      <RuntimeSync />
       <TooltipProvider>
         <HashRouter>
           <App />

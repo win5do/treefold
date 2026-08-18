@@ -4,6 +4,10 @@ export function setApiBase(apiBase: string): void {
   API_BASE = apiBase.replace(/\/$/, "");
 }
 
+export function apiUrl(path: string): string {
+  return new URL(path, API_BASE).toString();
+}
+
 type ErrorBody = { error: { code: string; message: string; details?: unknown } };
 
 export class ApiError extends Error {
@@ -64,7 +68,7 @@ export async function request<T = void>(path: string, options: RequestOptions = 
 }
 
 export function websocketUrl(path: string): string {
-  const url = new URL(path, API_BASE);
+  const url = new URL(apiUrl(path));
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
 }

@@ -15,5 +15,4 @@ export const workspaceDetailQuery = (id: string) => queryOptions({
 export const workspaceSessionsQuery = (id: string) => queryOptions({
   queryKey: workspaceKeys.sessions(id),
   queryFn: ({ signal }) => workspacesApi.sessions(id, signal),
-  refetchInterval: 2500,
 });

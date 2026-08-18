@@ -22,7 +22,6 @@ pub(super) async fn list_project_sessions(
     AxumPath(project_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
     state.store.project(&project_id)?;
-    reconcile_daemon_sessions(&state).await?;
     Ok(Json(state.store.project_sessions(&project_id)?))
 }
 
@@ -152,7 +151,6 @@ pub(super) async fn list_sessions(
     AxumPath(workspace_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
     state.store.workspace(&workspace_id)?;
-    reconcile_daemon_sessions(&state).await?;
     Ok(Json(state.store.sessions(&workspace_id)?))
 }
 
@@ -349,13 +347,25 @@ pub(super) async fn create_session_for_workspace(
         Ok(process) => {
             session.argv = process.command;
             session.status = "running".into();
-            persist_amux_process(&state.store, &session.id, &session)?;
+            if persist_amux_process(&state.store, &session.id, &session)? {
+                state.runtime.publish(
+                    &["sidebar", "sessions", "processes"],
+                    Some(session.id.clone()),
+                );
+            }
         }
         Err(error) => {
             session.status = "failed".into();
-            state
-                .store
-                .set_session_runtime(&session.id, "failed", None, "", &session.argv)?;
+            let changed =
+                state
+                    .store
+                    .set_session_runtime(&session.id, "failed", None, "", &session.argv)?;
+            if changed {
+                state.runtime.publish(
+                    &["sidebar", "sessions", "processes"],
+                    Some(session.id.clone()),
+                );
+            }
             return Err(AppError::BadRequest(error.to_string()));
         }
     }
@@ -366,7 +376,6 @@ pub(super) async fn get_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
-    reconcile_daemon_sessions(&state).await?;
     Ok(Json(state.store.session(&id)?))
 }
 
@@ -669,14 +678,28 @@ pub(super) fn strict_process_status(status: &str) -> &'static str {
 }
 
 pub(super) async fn reconcile_daemon_sessions(state: &AppState) -> Result<()> {
-    // A query must never revive the daemon. Persisted activity is stale whenever
-    // the named daemon is absent, and a fresh snapshot is authoritative when it exists.
-    state.store.stop_active_sessions()?;
-    let Some(processes) = state.terminals.existing_processes().await? else {
-        return Ok(());
-    };
-    for process in processes {
+    let processes = state
+        .terminals
+        .existing_processes()
+        .await?
+        .unwrap_or_default();
+    let active = processes
+        .iter()
+        .map(|process| (process.workspace_name.as_str(), process.name.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+    for process in &processes {
         reconcile_process(state, &process, false)?;
+    }
+    for (id, workspace, process) in state.store.running_session_identities()? {
+        if !active.contains(&(workspace.as_str(), process.as_str())) {
+            let mut session = state.store.session(&id)?;
+            session.status = "stopped".into();
+            if persist_amux_process(&state.store, &id, &session)? {
+                state
+                    .runtime
+                    .publish(&["sidebar", "sessions", "processes"], Some(id));
+            }
+        }
     }
     Ok(())
 }
@@ -711,7 +734,13 @@ pub(super) fn reconcile_process(
         session.exit_code = process.exit_code.map(Into::into);
         session.exit_signal = process.exit_signal.clone();
         session.argv = process.command.clone();
-        return persist_amux_process(&state.store, &session.id, &session);
+        let id = session.id.clone();
+        if persist_amux_process(&state.store, &id, &session)? {
+            state
+                .runtime
+                .publish(&["sidebar", "sessions", "processes"], Some(id));
+        }
+        return Ok(());
     }
 
     // Removal is only a lifecycle update for an already known Session. In
@@ -732,7 +761,13 @@ pub(super) fn reconcile_process(
             session.exit_code = process.exit_code.map(Into::into);
             session.exit_signal = process.exit_signal.clone();
             session.argv = process.command.clone();
-            return persist_amux_process(&state.store, &session.id, &session);
+            let id = session.id.clone();
+            if persist_amux_process(&state.store, &id, &session)? {
+                state
+                    .runtime
+                    .publish(&["sidebar", "sessions", "processes"], Some(id));
+            }
+            return Ok(());
         }
         return Ok(());
     }
@@ -780,7 +815,12 @@ pub(super) fn reconcile_process(
         additional_directories: vec![],
     };
     match state.store.create_session(&session) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            state
+                .runtime
+                .publish(&["sidebar", "sessions", "processes"], Some(session.id));
+            Ok(())
+        }
         Err(_) => {
             // Snapshot and event reconciliation may race. The stable unique key
             // makes a concurrent insert harmless and the winner is refreshed.
@@ -792,7 +832,13 @@ pub(super) fn reconcile_process(
                 existing.argv = process.command.clone();
                 existing.exit_code = process.exit_code.map(Into::into);
                 existing.exit_signal = process.exit_signal.clone();
-                persist_amux_process(&state.store, &existing.id, &existing)
+                let id = existing.id.clone();
+                if persist_amux_process(&state.store, &id, &existing)? {
+                    state
+                        .runtime
+                        .publish(&["sidebar", "sessions", "processes"], Some(id));
+                }
+                Ok(())
             } else {
                 Err(AppError::BadRequest(
                     "failed to persist discovered Command Session".into(),
@@ -839,15 +885,14 @@ pub(super) async fn refresh_session_records(
         .collect()
 }
 
-pub(super) fn persist_amux_process(store: &Store, id: &str, session: &Session) -> Result<()> {
+pub(super) fn persist_amux_process(store: &Store, id: &str, session: &Session) -> Result<bool> {
     store.set_session_runtime(
         id,
         &session.status,
         session.exit_code,
         &session.exit_signal,
         &session.argv,
-    )?;
-    Ok(())
+    )
 }
 
 pub(super) async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
@@ -917,7 +962,11 @@ pub(super) async fn proxy_terminal(socket: WebSocket, state: AppState, id: Strin
             Err(_) => return,
         };
         apply_amux_process(&mut session, process);
-        let _ = persist_amux_process(&state.store, &id, &session);
+        if persist_amux_process(&state.store, &id, &session).unwrap_or(false) {
+            state
+                .runtime
+                .publish(&["sidebar", "sessions", "processes"], Some(id));
+        }
     }
 }
 

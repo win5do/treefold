@@ -107,19 +107,25 @@ impl Store {
         exit_code: Option<i64>,
         exit_signal: &str,
         argv: &[String],
-    ) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE sessions SET status=?,exit_code=?,exit_signal=?,argv=?,updated_at=? WHERE id=?",
+    ) -> Result<bool> {
+        let argv = serde_json::to_string(argv).unwrap_or_default();
+        let changed = self.0.lock().execute(
+            "UPDATE sessions SET status=?,exit_code=?,exit_signal=?,argv=?,updated_at=?
+             WHERE id=? AND (status IS NOT ? OR exit_code IS NOT ? OR exit_signal IS NOT ? OR argv IS NOT ?)",
             params![
                 status,
                 exit_code,
                 exit_signal,
-                serde_json::to_string(argv).unwrap_or_default(),
+                argv,
                 now(),
-                id
+                id,
+                status,
+                exit_code,
+                exit_signal,
+                argv,
             ],
         )?;
-        Ok(())
+        Ok(changed != 0)
     }
 
     pub fn set_session_visibility(&self, id: &str, visibility: &str) -> Result<()> {
@@ -154,6 +160,17 @@ impl Store {
             [now()],
         )?;
         Ok(())
+    }
+
+    pub fn running_session_identities(&self) -> Result<Vec<(String, String, String)>> {
+        let db = self.0.lock();
+        let mut statement = db.prepare(
+            "SELECT id,amux_workspace_name,amux_process_name FROM sessions WHERE status='running'",
+        )?;
+        let values = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(values)
     }
 
     pub fn session_by_amux_identity(

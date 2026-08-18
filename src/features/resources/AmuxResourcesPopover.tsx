@@ -36,7 +36,7 @@ export function AmuxResourcesPopover() {
   const [open, setOpen] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [stopping, setStopping] = useState(false);
-  const statusQuery = useQuery({ ...amuxQuery(), enabled: open, refetchInterval: open ? 1_000 : false });
+  const statusQuery = useQuery({ ...amuxQuery(), enabled: open });
   const status = statusQuery.data;
   const running = status?.running ?? false;
 

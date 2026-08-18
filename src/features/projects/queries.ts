@@ -18,7 +18,6 @@ export const projectSummariesQuery = () =>
 export const sidebarQuery = () =>
   queryOptions({
     queryKey: projectKeys.sidebar,
-    refetchInterval: 1_000,
     queryFn: async ({ signal }) => {
       const value = await projectsApi.sidebar(signal);
       return value.projects.map((project) => {
@@ -89,5 +88,4 @@ export const projectSessionsQuery = (id: string) =>
   queryOptions({
     queryKey: projectKeys.sessions(id),
     queryFn: ({ signal }) => projectsApi.sessions(id, signal),
-    refetchInterval: 2500,
   });

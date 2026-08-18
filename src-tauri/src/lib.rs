@@ -219,6 +219,7 @@ pub fn run() {
                 store,
                 settings,
                 terminals,
+                runtime: server::RuntimeHub::default(),
             };
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = server::serve(listener, state).await {

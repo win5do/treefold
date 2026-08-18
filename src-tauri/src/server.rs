@@ -6,6 +6,7 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::Command,
+    time::Duration,
 };
 
 use axum::{
@@ -15,14 +16,23 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, Method, StatusCode},
-    response::IntoResponse,
+    response::{
+        IntoResponse,
+        sse::{Event, KeepAlive, Sse},
+    },
     routing::{get, patch, post},
 };
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, stream};
 use moka::future::Cache;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::sync::OnceLock;
+use std::{
+    convert::Infallible,
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 
@@ -40,6 +50,50 @@ pub struct AppState {
     pub store: Store,
     pub settings: SettingsStore,
     pub terminals: TerminalManager,
+    pub runtime: RuntimeHub,
+}
+
+#[derive(Clone)]
+pub struct RuntimeHub {
+    revision: Arc<AtomicU64>,
+    changes: tokio::sync::broadcast::Sender<RuntimeChange>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct RuntimeChange {
+    pub revision: u64,
+    pub domains: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+impl Default for RuntimeHub {
+    fn default() -> Self {
+        let (changes, _) = tokio::sync::broadcast::channel(256);
+        Self {
+            revision: Arc::new(AtomicU64::new(0)),
+            changes,
+        }
+    }
+}
+
+impl RuntimeHub {
+    pub fn revision(&self) -> u64 {
+        self.revision.load(Ordering::Acquire)
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<RuntimeChange> {
+        self.changes.subscribe()
+    }
+
+    pub fn publish(&self, domains: &[&str], session_id: Option<String>) {
+        let revision = self.revision.fetch_add(1, Ordering::AcqRel) + 1;
+        let _ = self.changes.send(RuntimeChange {
+            revision,
+            domains: domains.iter().map(|domain| (*domain).into()).collect(),
+            session_id,
+        });
+    }
 }
 
 static PROJECT_WORKTREES: OnceLock<Cache<String, Vec<GitWorktree>>> = OnceLock::new();
@@ -70,21 +124,35 @@ pub async fn bind() -> anyhow::Result<tokio::net::TcpListener> {
 
 pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> anyhow::Result<()> {
     let mut process_events = state.terminals.subscribe_process_events();
+    let mut snapshot_events = state.terminals.subscribe_snapshot_events();
     state.terminals.connect_existing().await;
     reconcile_daemon_sessions(&state).await?;
     let bridge_state = state.clone();
     tokio::spawn(async move {
+        let mut fallback = tokio::time::interval(Duration::from_secs(30));
+        fallback.tick().await;
         loop {
-            match process_events.recv().await {
-                Ok(event) => {
-                    if let Err(error) = reconcile_process_event(&bridge_state, event) {
-                        log::error!("failed to reconcile amux process event: {error}");
+            tokio::select! {
+                event = process_events.recv() => match event {
+                    Ok(event) => {
+                        if let Err(error) = reconcile_process_event(&bridge_state, event) {
+                            log::error!("failed to reconcile amux process event: {error}");
+                        }
                     }
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let _ = reconcile_daemon_sessions(&bridge_state).await;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                },
+                snapshot = snapshot_events.recv() => match snapshot {
+                    Ok(()) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let _ = reconcile_daemon_sessions(&bridge_state).await;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                },
+                _ = fallback.tick() => {
                     let _ = reconcile_daemon_sessions(&bridge_state).await;
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
             }
         }
     });
@@ -123,6 +191,8 @@ fn app(state: AppState) -> Router {
         .route("/api/amux", get(amux_status))
         .route("/api/amux/stop", post(stop_amux))
         .route("/api/processes", get(list_background_processes))
+        .route("/api/events", get(runtime_events))
+        .route("/api/events/revision", get(runtime_revision))
         .route("/api/projects", get(list_projects).post(create_project))
         .route("/api/projects/summary", get(list_project_summaries))
         .route("/api/sidebar", get(get_sidebar))
@@ -382,6 +452,54 @@ fn app(state: AppState) -> Router {
         .method_not_allowed_fallback(method_not_allowed)
         .layer(cors)
         .with_state(state)
+}
+
+async fn runtime_revision(State(state): State<AppState>) -> Json<Value> {
+    Json(json!({ "revision": state.runtime.revision() }))
+}
+
+async fn runtime_events(
+    State(state): State<AppState>,
+) -> Sse<impl futures_util::Stream<Item = std::result::Result<Event, Infallible>>> {
+    let initial_revision = state.runtime.revision();
+    let receiver = state.runtime.subscribe();
+    let runtime = state.runtime.clone();
+    let events = stream::unfold(
+        (receiver, runtime, true, initial_revision),
+        |(mut receiver, runtime, initial, revision)| async move {
+            if initial {
+                let payload = json!({ "revision": revision });
+                return Some((
+                    Ok(Event::default()
+                        .event("runtime.sync")
+                        .data(payload.to_string())),
+                    (receiver, runtime, false, revision),
+                ));
+            }
+            match receiver.recv().await {
+                Ok(change) => {
+                    let next_revision = change.revision;
+                    let payload = serde_json::to_string(&change).unwrap_or_default();
+                    Some((
+                        Ok(Event::default().event("runtime.changed").data(payload)),
+                        (receiver, runtime, false, next_revision),
+                    ))
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    let current_revision = runtime.revision();
+                    let payload = json!({ "revision": current_revision });
+                    Some((
+                        Ok(Event::default()
+                            .event("runtime.sync")
+                            .data(payload.to_string())),
+                        (receiver, runtime, false, current_revision),
+                    ))
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => None,
+            }
+        },
+    );
+    Sse::new(events).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
 
 async fn route_not_found() -> AppError {

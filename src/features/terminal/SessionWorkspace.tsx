@@ -57,45 +57,146 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     terminal.open(host);
     try { terminal.loadAddon(new WebglAddon()); } catch { /* canvas renderer is fine */ }
     fit.fit();
+    const encoder = new TextEncoder();
+    const maxQueuedBytes = 1024 * 1024;
+    const socketHighWaterBytes = 256 * 1024;
+    const frameBytes = 16 * 1024;
+    const pendingInput: ArrayBuffer[] = [];
+    let pendingBytes = 0;
+    let inputPaused = false;
     let socket: WebSocket | null = null;
     let reconnectTimer = 0;
+    let flushTimer = 0;
+    let resizeFrame = 0;
+    let reconnectAttempt = 0;
+    let generation = 0;
+    let controllerId: number | null = null;
+    let lastRows = 0;
+    let lastCols = 0;
     let disposed = false;
+
+    const sendResize = (candidate: WebSocket, force = false) => {
+      fit.fit();
+      if (!force && terminal.rows === lastRows && terminal.cols === lastCols) return;
+      lastRows = terminal.rows;
+      lastCols = terminal.cols;
+      if (candidate.readyState === WebSocket.OPEN) {
+        candidate.send(JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols }));
+      }
+    };
+
+    const scheduleFlush = (flush: () => void) => {
+      if (flushTimer || disposed) return;
+      flushTimer = window.setTimeout(() => {
+        flushTimer = 0;
+        flush();
+      }, 16);
+    };
+
+    const flushInput = () => {
+      const candidate = socket;
+      if (!candidate || candidate.readyState !== WebSocket.OPEN) return;
+      while (pendingInput.length > 0 && candidate.bufferedAmount < socketHighWaterBytes) {
+        const data = pendingInput.shift()!;
+        pendingBytes -= data.byteLength;
+        candidate.send(data);
+      }
+      if (pendingInput.length > 0) scheduleFlush(flushInput);
+      else if (inputPaused) {
+        inputPaused = false;
+        terminal.options.disableStdin = false;
+      }
+    };
+
+    const scheduleReconnect = (connect: () => void) => {
+      if (reconnectTimer || disposed || session.status !== "running") return;
+      const baseDelay = Math.min(4_000, 250 * 2 ** reconnectAttempt++);
+      const delay = Math.round(baseDelay * (0.8 + Math.random() * 0.4));
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = 0;
+        connect();
+      }, delay);
+    };
+
     const connect = () => {
       if (disposed) return;
-      socket = new WebSocket(sessionsApi.terminalSocketUrl(session.id));
-      socket.binaryType = "arraybuffer";
-      socket.onopen = () => {
-        fit.fit();
-        socket?.send(JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols }));
+      const candidate = new WebSocket(sessionsApi.terminalSocketUrl(session.id));
+      const candidateGeneration = ++generation;
+      let relinquished = false;
+      socket = candidate;
+      candidate.binaryType = "arraybuffer";
+      candidate.onopen = () => {
+        if (disposed || socket !== candidate || generation !== candidateGeneration) return;
+        reconnectAttempt = 0;
+        controllerId = null;
+        sendResize(candidate, true);
+        flushInput();
         terminal.focus();
       };
-      socket.onmessage = (event) => {
+      candidate.onmessage = (event) => {
+        if (disposed || socket !== candidate || generation !== candidateGeneration) return;
         if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
         else if (typeof event.data === "string") {
           try {
-            const message = JSON.parse(event.data) as { type?: string; code?: string };
+            const message = JSON.parse(event.data) as { type?: string; code?: string; controller?: number };
             if (message.type === "exit") onExitRef.current();
             if (message.type === "error") terminal.writeln(`\r\n\x1b[31m${message.code || "terminal error"}\x1b[0m`);
+            if (message.type === "input_error") {
+              terminal.writeln("\r\n\x1b[31mterminal input failed; reconnecting\x1b[0m");
+              candidate.close();
+            }
+            if (message.type === "ownership_changed" && typeof message.controller === "number") {
+              if (controllerId === null) controllerId = message.controller;
+              else if (controllerId !== message.controller) {
+                relinquished = true;
+                inputPaused = true;
+                terminal.options.disableStdin = true;
+                terminal.writeln("\r\n\x1b[33mterminal control moved to another window\x1b[0m");
+                socket = null;
+                candidate.close();
+              }
+            }
           } catch { terminal.write(event.data); }
         }
       };
-      socket.onclose = () => {
-        if (!disposed && session.status === "running") reconnectTimer = window.setTimeout(connect, 1200);
+      candidate.onclose = () => {
+        if (socket === candidate) socket = null;
+        if (!relinquished && generation === candidateGeneration) scheduleReconnect(connect);
       };
-      socket.onerror = () => socket?.close();
+      candidate.onerror = () => candidate.close();
     };
     const input = terminal.onData((data) => {
-      if (socket?.readyState === WebSocket.OPEN) socket.send(new TextEncoder().encode(data));
+      const encoded = encoder.encode(data);
+      if (pendingBytes + encoded.byteLength > maxQueuedBytes) {
+        if (!inputPaused) {
+          inputPaused = true;
+          terminal.options.disableStdin = true;
+          terminal.writeln("\r\n\x1b[31mterminal input paused: reconnect buffer is full\x1b[0m");
+        }
+        return;
+      }
+      for (let offset = 0; offset < encoded.byteLength; offset += frameBytes) {
+        const frame = encoded.slice(offset, offset + frameBytes).buffer as ArrayBuffer;
+        pendingInput.push(frame);
+        pendingBytes += frame.byteLength;
+      }
+      flushInput();
     });
     const resizeObserver = new ResizeObserver(() => {
-      fit.fit();
-      if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "resize", rows: terminal.rows, cols: terminal.cols }));
+      window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = window.requestAnimationFrame(() => {
+        resizeFrame = 0;
+        const candidate = socket;
+        if (candidate) sendResize(candidate);
+      });
     });
     resizeObserver.observe(host);
     connect();
     return () => {
       disposed = true;
       window.clearTimeout(reconnectTimer);
+      window.clearTimeout(flushTimer);
+      window.cancelAnimationFrame(resizeFrame);
       resizeObserver.disconnect();
       input.dispose();
       socket?.close();

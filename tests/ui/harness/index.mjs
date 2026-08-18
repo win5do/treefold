@@ -33,6 +33,15 @@ async function readJson(request) {
 
 async function startFixtureApi() {
   const fixture = createSidebarCoreFixture();
+  const eventStreams = new Set();
+  let runtimeRevision = 0;
+  const publishRuntimeChange = (domains) => {
+    runtimeRevision += 1;
+    const payload = JSON.stringify({ revision: runtimeRevision, domains });
+    for (const response of eventStreams) {
+      response.write(`event: runtime.changed\ndata: ${payload}\n\n`);
+    }
+  };
   const unexpectedRequests = [];
   const syncRequests = [];
   let nextBulkSyncResults = null;
@@ -88,6 +97,21 @@ async function startFixtureApi() {
     }
     if (request.method === "GET" && pathname === "/api/processes") {
       sendJson(response, 200, fixture.processes);
+      return;
+    }
+    if (request.method === "GET" && pathname === "/api/events/revision") {
+      sendJson(response, 200, { revision: runtimeRevision });
+      return;
+    }
+    if (request.method === "GET" && pathname === "/api/events") {
+      response.writeHead(200, {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "no-cache",
+        "Content-Type": "text/event-stream",
+      });
+      response.write(`event: runtime.sync\ndata: ${JSON.stringify({ revision: runtimeRevision })}\n\n`);
+      eventStreams.add(response);
+      request.on("close", () => eventStreams.delete(response));
       return;
     }
     if (request.method === "POST" && pathname === "/api/amux/stop") {
@@ -1158,24 +1182,42 @@ async function startFixtureApi() {
     },
     setProcessState(id, state) {
       const process = fixture.processes.find((item) => item.id === id);
-      if (process) process.state = state;
+      let changed = false;
+      if (process && process.state !== state) {
+        process.state = state;
+        changed = true;
+      }
       for (const detail of Object.values(fixture.workspaceDetails)) {
         const session = detail.sessions.find((item) => item.id === id);
-        if (session) session.status = state;
+        if (session && session.status !== state) {
+          session.status = state;
+          changed = true;
+        }
       }
+      if (changed)
+        publishRuntimeChange(["sidebar", "sessions", "processes"]);
     },
     setWorktreeDeletePrecheck(value) {
       worktreeDeletePrecheck = { ...worktreeDeletePrecheck, ...value };
     },
     removeProcess(id) {
+      const processCount = fixture.processes.length;
       fixture.processes = fixture.processes.filter((item) => item.id !== id);
+      let changed = fixture.processes.length !== processCount;
       for (const detail of Object.values(fixture.workspaceDetails)) {
         const session = detail.sessions.find((item) => item.id === id);
-        if (session) session.status = "stopped";
+        if (session && session.status !== "stopped") {
+          session.status = "stopped";
+          changed = true;
+        }
       }
+      if (changed)
+        publishRuntimeChange(["sidebar", "sessions", "processes"]);
     },
     unexpectedRequests,
     async close() {
+      for (const response of eventStreams) response.end();
+      eventStreams.clear();
       await new Promise((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );

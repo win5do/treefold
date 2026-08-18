@@ -11,7 +11,6 @@ pub(super) async fn list_project_summaries(
 }
 
 pub(super) async fn get_sidebar(State(state): State<AppState>) -> Result<Json<SidebarData>> {
-    reconcile_daemon_sessions(&state).await?;
     Ok(Json(state.store.sidebar_async().await?))
 }
 
