@@ -231,6 +231,15 @@ export type GitWorktree = {
   workspace_name?: string;
 };
 
+export type WorktreeDeletePrecheck = {
+  status: "ready" | "blocked" | "stale";
+  directory_exists: boolean;
+  tracked_changes: number;
+  untracked_files: number;
+  blockers: string[];
+  warnings: string[];
+};
+
 export type GitCommit = {
   hash: string;
   short_hash: string;

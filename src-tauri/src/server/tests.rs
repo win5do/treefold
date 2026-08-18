@@ -132,6 +132,28 @@ mod current_workspace_tests {
         std::fs::write(stale_worktree.join("uncommitted.txt"), "keep me\n")
             .expect("create uncommitted worktree file");
 
+        let precheck_response = app(state.clone())
+            .oneshot(
+                Request::post(format!(
+                    "/api/project-repositories/{repository_id}/worktrees/delete-precheck"
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "path": stale_worktree_path }).to_string(),
+                ))
+                .expect("build dirty worktree precheck request"),
+            )
+            .await
+            .expect("precheck dirty worktree");
+        assert_eq!(precheck_response.status(), StatusCode::OK);
+        let precheck_body = axum::body::to_bytes(precheck_response.into_body(), usize::MAX)
+            .await
+            .expect("read dirty worktree precheck response");
+        let precheck: serde_json::Value = serde_json::from_slice(&precheck_body).unwrap();
+        assert_eq!(precheck["status"], "blocked");
+        assert_eq!(precheck["tracked_changes"], 0);
+        assert_eq!(precheck["untracked_files"], 1);
+
         let dirty_response = app(state.clone())
             .oneshot(
                 Request::delete(format!(
@@ -156,6 +178,29 @@ mod current_workspace_tests {
         assert!(stale_worktree.join("uncommitted.txt").is_file());
 
         std::fs::remove_dir_all(&stale_worktree).expect("remove worktree outside Treefold");
+
+        let stale_precheck_response = app(state.clone())
+            .oneshot(
+                Request::post(format!(
+                    "/api/project-repositories/{repository_id}/worktrees/delete-precheck"
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "path": stale_worktree_path }).to_string(),
+                ))
+                .expect("build stale worktree precheck request"),
+            )
+            .await
+            .expect("precheck stale worktree");
+        assert_eq!(stale_precheck_response.status(), StatusCode::OK);
+        let stale_precheck_body =
+            axum::body::to_bytes(stale_precheck_response.into_body(), usize::MAX)
+                .await
+                .expect("read stale worktree precheck response");
+        let stale_precheck: serde_json::Value =
+            serde_json::from_slice(&stale_precheck_body).unwrap();
+        assert_eq!(stale_precheck["status"], "stale");
+        assert_eq!(stale_precheck["directory_exists"], false);
 
         let response = app(state.clone())
             .oneshot(

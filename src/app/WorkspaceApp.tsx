@@ -73,6 +73,7 @@ import {
   RepositoryBranchesDialog,
 } from "@/features/projects/ProjectDialogs";
 import { ProjectHome } from "@/features/projects/ProjectHome";
+import { DeleteWorktreeDialog } from "@/features/projects/DeleteWorktreeDialog";
 import { Overview } from "@/features/projects/Overview";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import {
@@ -253,6 +254,8 @@ function Workspace() {
     | { kind: "workspace" | "fork"; value: Workspace }
     | null
   >(null);
+  const [deleteWorktreeTarget, setDeleteWorktreeTarget] =
+    useState<GitWorktree | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionMenu, setSessionMenu] = useState<SessionMenuState | null>(null);
   const [closingSessionIds, setClosingSessionIds] = useState<Set<string>>(
@@ -776,22 +779,26 @@ function Workspace() {
       );
   }
 
-  async function removeWorktree(worktree: GitWorktree) {
+  function removeWorktree(worktree: GitWorktree) {
     if (worktree.workspace_id) {
       toast.warning(
         `Worktree belongs to active Workspace “${worktree.workspace_name || worktree.workspace_id}”; use Finish Workspace.`,
       );
       return;
     }
-    if (
-      !window.confirm(
-        `确定删除 worktree？\n\n${worktree.path}\n\n未提交的改动会被丢弃。`,
-      )
-    )
-      return;
-    await act(() =>
-      projectsApi.removeWorktree(worktree.project_location_id, worktree),
+    setDeleteWorktreeTarget(worktree);
+  }
+
+  async function confirmRemoveWorktree() {
+    if (!deleteWorktreeTarget) return false;
+    const ok = await act(() =>
+      projectsApi.removeWorktree(
+        deleteWorktreeTarget.project_location_id,
+        deleteWorktreeTarget,
+      ),
     );
+    if (ok) setDeleteWorktreeTarget(null);
+    return ok;
   }
 
   async function refreshLocation(location: Directory) {
@@ -1640,6 +1647,14 @@ function Workspace() {
           if (!open) setDeleteTarget(null);
         }}
         onConfirm={() => void permanentlyDeleteTarget()}
+      />
+      <DeleteWorktreeDialog
+        target={deleteWorktreeTarget}
+        busy={busy}
+        onOpenChange={(open) => {
+          if (!open) setDeleteWorktreeTarget(null);
+        }}
+        onConfirm={confirmRemoveWorktree}
       />
       <SettingsDialog
         open={settingsOpen}

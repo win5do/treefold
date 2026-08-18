@@ -606,15 +606,53 @@ pub(super) struct DeleteWorktree {
     path: String,
 }
 
+#[derive(Serialize)]
+pub(super) struct DeleteWorktreePrecheck {
+    status: &'static str,
+    directory_exists: bool,
+    tracked_changes: usize,
+    untracked_files: usize,
+    blockers: Vec<String>,
+    warnings: Vec<String>,
+}
+
+struct DeleteWorktreeInspection {
+    project_id: String,
+    repository_path: String,
+    worktree_path: String,
+    precheck: DeleteWorktreePrecheck,
+}
+
+pub(super) async fn precheck_delete_worktree(
+    State(state): State<AppState>,
+    AxumPath(repository_id): AxumPath<String>,
+    ApiJson(input): ApiJson<DeleteWorktree>,
+) -> Result<Json<DeleteWorktreePrecheck>> {
+    blocking_git_operation(move || {
+        inspect_delete_worktree(&state, &repository_id, &input.path)
+            .map(|inspection| Json(inspection.precheck))
+    })
+    .await
+}
+
 pub(super) async fn delete_worktree(
     State(state): State<AppState>,
     AxumPath(repository_id): AxumPath<String>,
     ApiJson(input): ApiJson<DeleteWorktree>,
 ) -> Result<StatusCode> {
-    let (project_id, repository_path, worktree_path) = blocking_git_operation(move || {
-        prepare_delete_worktree(&state, &repository_id, &input.path)
+    let inspection = blocking_git_operation(move || {
+        inspect_delete_worktree(&state, &repository_id, &input.path)
     })
     .await?;
+    if let Some(blocker) = inspection.precheck.blockers.first() {
+        return Err(AppError::BadRequest(blocker.clone()));
+    }
+    let DeleteWorktreeInspection {
+        project_id,
+        repository_path,
+        worktree_path,
+        ..
+    } = inspection;
     let worktrees_cache = project_worktrees_cache();
     if let Some(mut worktrees) = worktrees_cache.get(&project_id).await {
         let target = normalized_path(&worktree_path);
@@ -636,11 +674,11 @@ pub(super) async fn delete_worktree(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn prepare_delete_worktree(
+fn inspect_delete_worktree(
     state: &AppState,
     repository_id: &str,
     worktree_path: &str,
-) -> Result<(String, String, String)> {
+) -> Result<DeleteWorktreeInspection> {
     let directory = state.store.repository_as_directory(repository_id)?;
     ensure_active_project(&state.store.project(&directory.project_id)?)?;
     if !directory.is_git {
@@ -650,28 +688,36 @@ fn prepare_delete_worktree(
     }
 
     let target = normalized_path(worktree_path);
+    let mut blockers = Vec::new();
+    let mut warnings = Vec::new();
     let project_directories = state.store.directories(&directory.project_id)?;
     if project_directories
         .iter()
         .any(|item| normalized_path(&item.path) == target)
     {
-        return Err(AppError::BadRequest(
-            "a Project directory cannot be removed as a worktree".into(),
-        ));
+        blockers.push("a Project directory cannot be removed as a worktree".into());
     }
     let listed = git_worktrees(&directory.path)?;
     let Some(listed_worktree) = listed
         .iter()
         .find(|item| normalized_path(&item.path) == target)
     else {
-        return Err(AppError::BadRequest(
-            "worktree does not belong to this Git repository".into(),
-        ));
+        return Ok(DeleteWorktreeInspection {
+            project_id: directory.project_id,
+            repository_path: directory.path,
+            worktree_path: worktree_path.to_owned(),
+            precheck: DeleteWorktreePrecheck {
+                status: "blocked",
+                directory_exists: Path::new(worktree_path).exists(),
+                tracked_changes: 0,
+                untracked_files: 0,
+                blockers: vec!["worktree does not belong to this Git repository".into()],
+                warnings,
+            },
+        });
     };
     if listed_worktree.is_main {
-        return Err(AppError::BadRequest(
-            "the repository's main worktree cannot be removed".into(),
-        ));
+        blockers.push("the repository's main worktree cannot be removed".into());
     }
 
     if let Some(workspace) = state
@@ -680,58 +726,66 @@ fn prepare_delete_worktree(
         .into_iter()
         .find(|item| item.status == "active" && normalized_path(&item.checkout_path) == target)
     {
-        return Err(AppError::BadRequest(format!(
+        blockers.push(format!(
             "worktree belongs to active Workspace '{}'; use Finish Workspace",
             workspace.name
-        )));
+        ));
     }
 
-    if Path::new(worktree_path).exists() {
-        let tracked_status = Command::new("git")
-            .current_dir(worktree_path)
-            .args(["diff-index", "--quiet", "HEAD", "--"])
-            .status()
-            .map_err(|error| AppError::BadRequest(format!("check worktree changes: {error}")))?;
-        match tracked_status.code() {
-            Some(0) => {}
-            Some(1) => {
-                return Err(AppError::BadRequest(
-                    "worktree has uncommitted tracked changes; commit or stash them before deleting it"
-                        .into(),
-                ));
-            }
-            _ => {
-                return Err(AppError::BadRequest(
-                    "failed to check worktree tracked changes".into(),
-                ));
-            }
-        }
-
+    let directory_exists = Path::new(worktree_path).exists();
+    let (tracked_changes, untracked_files) = if directory_exists {
+        let tracked = command_output(
+            Path::new(worktree_path),
+            "git",
+            &["status", "--porcelain=v1", "--untracked-files=no"],
+        )
+        .map_err(|error| AppError::BadRequest(format!("check worktree changes: {error}")))?;
         let untracked = command_output(
             Path::new(worktree_path),
             "git",
-            &[
-                "ls-files",
-                "--others",
-                "--exclude-standard",
-                "--directory",
-                "--no-empty-directory",
-            ],
+            &["ls-files", "--others", "--exclude-standard"],
         )
-        .map_err(AppError::BadRequest)?;
-        if !untracked.is_empty() {
-            return Err(AppError::BadRequest(
+        .map_err(|error| AppError::BadRequest(format!("check untracked files: {error}")))?;
+        let tracked_changes = tracked.lines().filter(|line| !line.is_empty()).count();
+        let untracked_files = untracked.lines().filter(|line| !line.is_empty()).count();
+        if tracked_changes > 0 {
+            blockers.push(
+                "worktree has uncommitted tracked changes; commit or stash them before deleting it"
+                    .into(),
+            );
+        } else if untracked_files > 0 {
+            blockers.push(
                 "worktree has uncommitted changes; commit, stash, or discard them before deleting it"
                     .into(),
-            ));
+            );
         }
-    }
+        (tracked_changes, untracked_files)
+    } else {
+        warnings.push(
+            "The worktree directory is missing. Treefold will remove only its stale Git registration."
+                .into(),
+        );
+        (0, 0)
+    };
 
-    Ok((
-        directory.project_id,
-        directory.path,
-        worktree_path.to_owned(),
-    ))
+    let status = if blockers.is_empty() {
+        if directory_exists { "ready" } else { "stale" }
+    } else {
+        "blocked"
+    };
+    Ok(DeleteWorktreeInspection {
+        project_id: directory.project_id,
+        repository_path: directory.path,
+        worktree_path: worktree_path.to_owned(),
+        precheck: DeleteWorktreePrecheck {
+            status,
+            directory_exists,
+            tracked_changes,
+            untracked_files,
+            blockers,
+            warnings,
+        },
+    })
 }
 
 pub(super) async fn delete_project(

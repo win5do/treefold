@@ -4,6 +4,7 @@ import type {
   GitHistory,
   GitDiffComparison,
   GitWorktree,
+  WorktreeDeletePrecheck,
   Project,
   ProjectDetail,
   ProjectLocationInspection,
@@ -112,6 +113,19 @@ export const projectsApi = {
       method: "DELETE",
       json: { path: worktree.path },
     }),
+  precheckWorktreeDeletion: (
+    repositoryId: string,
+    worktree: GitWorktree,
+    signal?: AbortSignal,
+  ) =>
+    request<WorktreeDeletePrecheck>(
+      `/api/project-repositories/${repositoryId}/worktrees/delete-precheck`,
+      {
+        method: "POST",
+        json: { path: worktree.path },
+        signal,
+      },
+    ),
   reveal: (id: string) =>
     request(`/api/projects/${id}/reveal`, { method: "POST" }),
   sync: (id: string, action: "pull" | "push") =>

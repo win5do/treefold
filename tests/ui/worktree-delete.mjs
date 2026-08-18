@@ -1,0 +1,74 @@
+import assert from "node:assert/strict";
+import { remote } from "webdriverio";
+import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
+import { startUiHarness } from "./ui-harness.mjs";
+
+const harness = await startUiHarness();
+const browser = await remote({
+  logLevel: "error",
+  capabilities: {
+    browserName: "chrome",
+    "goog:chromeOptions": {
+      args: ["--headless=new", "--window-size=1400,900", "--disable-gpu"],
+    },
+  },
+});
+
+try {
+  await browser.url(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+  const repository = await browser.$(
+    `[data-testid="project-location-${FIXTURE_IDS.primaryRepository}"]`,
+  );
+  await repository.waitForDisplayed({ timeout: 3_000 });
+  const worktreesToggle = await repository.$(
+    `[data-testid="project-repository-worktrees-${FIXTURE_IDS.primaryRepository}-toggle"]`,
+  );
+  if ((await worktreesToggle.getAttribute("aria-expanded")) !== "true")
+    await worktreesToggle.click();
+  const unmanaged = await repository.$(
+    '[data-testid="project-worktree-row"]:has(button[data-worktree-delete-state="available"])',
+  );
+  const deleteButton = await unmanaged.$(
+    'button[data-worktree-delete-state="available"]',
+  );
+
+  harness.setWorktreeDeletePrecheck({
+    status: "blocked",
+    blockers: [
+      "worktree has uncommitted changes; commit, stash, or discard them before deleting it",
+    ],
+    tracked_changes: 0,
+    untracked_files: 1,
+  });
+  await deleteButton.click();
+  const dialog = await browser.$('[data-testid="delete-worktree-dialog"]');
+  await dialog.waitForDisplayed({ timeout: 3_000 });
+  await (await dialog.$('[data-testid="worktree-delete-checking"]')).waitForDisplayed({ timeout: 3_000 });
+  const action = await dialog.$('button=Delete worktree');
+  assert.equal(await action.isEnabled(), false, "delete must stay disabled during precheck");
+  await (await dialog.$('[data-testid="worktree-delete-blocked"]')).waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await action.isEnabled(), false, "dirty worktrees must be blocked");
+
+  harness.setWorktreeDeletePrecheck({
+    status: "ready",
+    blockers: [],
+    untracked_files: 0,
+  });
+  await (await dialog.$("button=Check again")).click();
+  await (await dialog.$('[data-testid="worktree-delete-ready"]')).waitForDisplayed({ timeout: 3_000 });
+  assert.equal(await action.isEnabled(), true, "clean worktrees must be deletable");
+  await action.click();
+  await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  assert.equal(
+    harness.deleteRequests.some(
+      (request) => request.kind === "worktree" && request.path.includes("unmanaged-worktree"),
+    ),
+    true,
+    "worktree deletion must reach the API",
+  );
+  harness.assertNoUnexpectedRequests();
+  console.log("✓ worktree deletion precheck, blocking, retry, and removal passed");
+} finally {
+  await browser.deleteSession();
+  await harness.close();
+}

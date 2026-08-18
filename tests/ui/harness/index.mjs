@@ -42,6 +42,14 @@ async function startFixtureApi() {
   const renameRequests = [];
   const sessionOrderRequests = [];
   const deleteRequests = [];
+  let worktreeDeletePrecheck = {
+    status: "ready",
+    directory_exists: true,
+    tracked_changes: 0,
+    untracked_files: 0,
+    blockers: [],
+    warnings: [],
+  };
   const amuxStopRequests = [];
   const repositoryBranches = new Map();
   const gitDiffRoutes = createGitDiffRoutes({ fixture, readJson, sendJson });
@@ -191,6 +199,30 @@ async function startFixtureApi() {
     }
     if (request.method === "GET" && pathname === "/api/projects") {
       sendJson(response, 200, fixture.projects);
+      return;
+    }
+
+    const worktreePrecheckMatch = pathname.match(
+      /^\/api\/project-repositories\/([^/]+)\/worktrees\/delete-precheck$/,
+    );
+    if (request.method === "POST" && worktreePrecheckMatch) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      sendJson(response, 200, worktreeDeletePrecheck);
+      return;
+    }
+
+    const worktreeDeleteMatch = pathname.match(
+      /^\/api\/project-repositories\/([^/]+)\/worktrees$/,
+    );
+    if (request.method === "DELETE" && worktreeDeleteMatch) {
+      const input = await readJson(request);
+      for (const detail of Object.values(fixture.projectDetails)) {
+        detail.worktrees = detail.worktrees.filter(
+          (item) => item.path !== input.path,
+        );
+      }
+      deleteRequests.push({ kind: "worktree", path: input.path });
+      sendJson(response, 204, null);
       return;
     }
     if (request.method === "POST" && pathname === "/api/projects") {
@@ -1101,6 +1133,9 @@ async function startFixtureApi() {
         if (session) session.status = state;
       }
     },
+    setWorktreeDeletePrecheck(value) {
+      worktreeDeletePrecheck = { ...worktreeDeletePrecheck, ...value };
+    },
     removeProcess(id) {
       fixture.processes = fixture.processes.filter((item) => item.id !== id);
       for (const detail of Object.values(fixture.workspaceDetails)) {
@@ -1137,6 +1172,7 @@ export async function startUiHarness() {
       restoreActiveStreams() {},
       setProjectStatus() {},
       setProcessState() {},
+      setWorktreeDeletePrecheck() {},
       removeProcess() {},
       assertNoUnexpectedRequests() {},
       async close() {},
@@ -1192,6 +1228,7 @@ export async function startUiHarness() {
     restoreActiveStreams: fixtureApi.restoreActiveStreams,
     setProjectStatus: fixtureApi.setProjectStatus,
     setProcessState: fixtureApi.setProcessState,
+    setWorktreeDeletePrecheck: fixtureApi.setWorktreeDeletePrecheck,
     removeProcess: fixtureApi.removeProcess,
     assertNoUnexpectedRequests() {
       if (fixtureApi.unexpectedRequests.length > 0) {
