@@ -35,6 +35,7 @@ export function DiffViewer() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedPath, setSelectedPath] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(-1);
   const [treeWidth, setTreeWidth] = useState(260);
   const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
@@ -77,6 +78,7 @@ export function DiffViewer() {
     setError("");
     setComparison(null);
     setSelectedPath("");
+    setSelectedIndex(-1);
     const input = {
       start_commit: payload.startCommit,
       end_commit: payload.endCommit,
@@ -101,10 +103,18 @@ export function DiffViewer() {
 
   const parsed = useMemo(() => parseComparison(comparison), [comparison]);
   useEffect(() => {
-    setSelectedPath(parsed.files[0]?.path ?? "");
+    const firstPath = parsed.files[0]?.path ?? "";
+    setSelectedPath(firstPath);
+    setSelectedIndex(firstPath ? 0 : -1);
   }, [comparison, parsed.files]);
-  const currentIndex = parsed.files.findIndex((file) => file.path === selectedPath);
+  const currentIndex = selectedIndex >= 0 && selectedIndex < parsed.files.length ? selectedIndex : -1;
   const current = currentIndex >= 0 ? parsed.files[currentIndex] : undefined;
+  const selectPath = (path: string) => {
+    const index = parsed.files.findIndex((file) => file.path === path);
+    if (index < 0) return;
+    setSelectedIndex(index);
+    setSelectedPath(parsed.files[index].path);
+  };
 
   const resizeTree = (event: React.PointerEvent<HTMLDivElement>) => {
     resizeRef.current = { startX: event.clientX, startWidth: treeWidth };
@@ -138,7 +148,7 @@ export function DiffViewer() {
       : comparison ? <div className="flex min-h-0 flex-1">
         <>
           <aside className="min-h-0 shrink-0 overflow-hidden border-r border-border bg-muted/20" style={{ width: treeWidth }}>
-            <ChangesTree key={`${comparison.resolved_base}:${comparison.resolved_head}`} files={parsed.files} selectedPath={selectedPath} onSelect={setSelectedPath} />
+            <ChangesTree key={`${comparison.resolved_base}:${comparison.resolved_head}`} files={parsed.files} selectedPath={selectedPath} onSelect={selectPath} />
           </aside>
           <div
             role="separator"
@@ -158,8 +168,8 @@ export function DiffViewer() {
             <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
               <p className="min-w-0 flex-1 truncate font-mono text-xs" title={current.path}>{current.path}</p>
               <Separator orientation="vertical" className="h-5" />
-              <Button variant="outline" size="icon-sm" aria-label="Previous file" disabled={currentIndex <= 0} onClick={() => setSelectedPath(parsed.files[currentIndex - 1]?.path ?? selectedPath)}><ChevronUp /></Button>
-              <Button variant="outline" size="icon-sm" aria-label="Next file" disabled={currentIndex < 0 || currentIndex >= parsed.files.length - 1} onClick={() => setSelectedPath(parsed.files[currentIndex + 1]?.path ?? selectedPath)}><ChevronDown /></Button>
+              <Button variant="outline" size="icon-sm" aria-label="Previous file" disabled={currentIndex <= 0} onClick={() => selectPath(parsed.files[currentIndex - 1]?.path ?? selectedPath)}><ChevronUp /></Button>
+              <Button variant="outline" size="icon-sm" aria-label="Next file" disabled={currentIndex < 0 || currentIndex >= parsed.files.length - 1} onClick={() => selectPath(parsed.files[currentIndex + 1]?.path ?? selectedPath)}><ChevronDown /></Button>
             </div>
             <div className="min-h-0 flex-1 overflow-hidden bg-background" data-testid="git-diff-content">
               {current.binary ? <ViewerState title="Binary file changed" detail="A line-by-line preview is not available for this file." />
