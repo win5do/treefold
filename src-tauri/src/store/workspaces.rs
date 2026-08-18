@@ -314,7 +314,7 @@ impl Store {
     pub fn archive_workspace(&self, id: &str) -> Result<()> {
         let db = self.0.lock();
         let unfinished: bool = db.query_row(
-            "SELECT EXISTS(SELECT 1 FROM workspace_repositories WHERE workspace_id=? AND delivery_status NOT IN ('delivered','kept','discarded','remote_merged'))",
+            "SELECT EXISTS(SELECT 1 FROM workspace_repositories WHERE workspace_id=? AND delivery_status NOT IN ('delivered','pushed','kept','discarded'))",
             [id], |row| row.get(0),
         )?;
         if unfinished {
@@ -377,7 +377,7 @@ pub(super) fn workspace_row(row: &Row<'_>) -> rusqlite::Result<Workspace> {
         remote_name: None,
         remote_branch: None,
         branch_ownership: "managed".into(),
-        delivery_mode: "remote_review".into(),
+        delivery_mode: "push_branch".into(),
         delivery_status: "active".into(),
         close_outcome: None,
         integrated_commit: None,

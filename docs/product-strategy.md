@@ -14,8 +14,9 @@ owned by development units.
 - **Session is execution context.** It runs Shell or Codex in a Project source
   location or a Workspace/Fork checkout. Shells are ephemeral; Codex history is
   resumable.
-- **Delivery follows real repositories.** Teams can use remote review and CI;
-  individuals can merge locally and optionally push the target branch.
+- **Delivery follows real repositories.** Teams can push Workspace feature
+  branches for remote review and CI; individuals can merge locally when that is
+  their configured default. Treefold does not merge hosted pull requests.
 - **Direct work is honest.** Project Sessions are managed processes, but the user
   owns their effects in the source checkout because they have no worktree or
   delivery isolation.

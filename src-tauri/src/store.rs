@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS project_repositories (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, source_root TEXT NOT NULL, git_common_dir TEXT NOT NULL,
  repository_url TEXT, preferred_remote_name TEXT,
- base_branch TEXT NOT NULL DEFAULT 'main', delivery_mode TEXT NOT NULL DEFAULT 'remote_review',
+ base_branch TEXT NOT NULL DEFAULT 'main', delivery_mode TEXT NOT NULL DEFAULT 'push_branch',
  setup_command TEXT NOT NULL DEFAULT '', setup_workdir TEXT NOT NULL DEFAULT '.',
  git_status TEXT NOT NULL DEFAULT 'ready', last_checked_at TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT,
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS workspace_repositories (
  git_status TEXT NOT NULL, creation_error TEXT, worktree_id TEXT, checkout_path TEXT, branch TEXT,
  base_branch TEXT, start_commit TEXT, forked_from_commit TEXT,
  remote_name TEXT, remote_branch TEXT, branch_ownership TEXT NOT NULL DEFAULT 'managed',
- delivery_mode TEXT NOT NULL DEFAULT 'remote_review', delivery_status TEXT NOT NULL DEFAULT 'active',
+ delivery_mode TEXT NOT NULL DEFAULT 'push_branch', delivery_status TEXT NOT NULL DEFAULT 'active',
  close_outcome TEXT, integrated_commit TEXT, closed_at TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  UNIQUE(workspace_id,project_repository_id)
@@ -191,6 +191,7 @@ impl Store {
         migrate_development_schema(&connection, path)?;
         connection.execute_batch("PRAGMA journal_mode=WAL;")?;
         connection.execute_batch(SCHEMA)?;
+        migrate_delivery_strategy(&connection)?;
         migrate_parent_operations(&connection)?;
         let readers = PoolBuilder::new()
             .path(path)
@@ -205,6 +206,18 @@ impl Store {
         }
         Ok(Self(Arc::new(Mutex::new(connection)), readers))
     }
+}
+
+fn migrate_delivery_strategy(connection: &Connection) -> Result<()> {
+    connection.execute(
+        "UPDATE project_repositories SET delivery_mode='push_branch' WHERE delivery_mode='remote_review'",
+        [],
+    )?;
+    connection.execute(
+        "UPDATE workspace_repositories SET delivery_mode='push_branch' WHERE delivery_mode='remote_review'",
+        [],
+    )?;
+    Ok(())
 }
 
 fn migrate_parent_operations(connection: &Connection) -> Result<()> {
@@ -499,7 +512,7 @@ mod workspace_schema_tests {
                 status: "active".into(),
                 default_location_id: None,
                 default_base_branch: "main".into(),
-                default_delivery_mode: "remote_review".into(),
+                default_delivery_mode: "push_branch".into(),
                 created_at: timestamp.clone(),
                 updated_at: timestamp.clone(),
                 primary_directory_id: String::new(),

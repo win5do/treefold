@@ -409,6 +409,29 @@ pub(super) async fn sync_workspace_location(
     ))
 }
 
+pub(super) fn remote_branch_head(
+    repository: &str,
+    remote: &str,
+    branch: &str,
+) -> Result<Option<String>> {
+    let output = command_output(
+        Path::new(repository),
+        "git",
+        &[
+            "ls-remote",
+            "--heads",
+            remote,
+            &format!("refs/heads/{branch}"),
+        ],
+    )
+    .map_err(AppError::BadRequest)?;
+    Ok(output
+        .split_whitespace()
+        .next()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned))
+}
+
 pub(super) async fn archive_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,

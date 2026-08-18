@@ -35,6 +35,12 @@ function repositoryLabel(remote?: string) {
     .replace(/\.git$/, "");
 }
 
+function deliveryStrategyLabel(mode?: ProjectRepository["delivery_mode"]) {
+  if (mode === "local_merge") return "merge into local base";
+  if (mode === "keep") return "preserve";
+  return "push feature branch";
+}
+
 export function ProjectLocationTreeRow({
   directory,
   scopes = [],
@@ -96,9 +102,7 @@ export function ProjectLocationTreeRow({
       <span>{repositoryLabel(directory.repository_url)}</span>
       <span>·</span>
       <span>
-        {directory.delivery_mode === "local_merge"
-          ? "local merge"
-          : "remote review"}
+        {deliveryStrategyLabel(directory.delivery_mode)}
       </span>
     </>
   );
@@ -490,9 +494,7 @@ export function ProjectRepositoryTreeRow({
                 <span>{repositoryLabel(repository.repository_url)}</span>
                 <span>·</span>
                 <span>
-                  {repository.delivery_mode === "local_merge"
-                    ? "local merge"
-                    : "remote review"}
+                  {deliveryStrategyLabel(repository.delivery_mode)}
                 </span>
               </div>
               <code

@@ -17,12 +17,12 @@ mod current_workspace_tests {
         CreateSession, CreateWorkspace, FinishWorkspace, UpdateProject, UpdateWorkspaceLocation,
         abort_parent_operation_impl, app, close_session, command_output,
         create_delivery_preflight_impl, create_directory, create_fork, create_project,
-        create_project_session, create_session, create_workspace, delete_project_location,
-        finish_workspace_impl, finish_workspace_location_impl, get_project, git_head,
-        git_is_ancestor, git_worktrees, normalized_path, pull_workspace, push_workspace,
-        reconcile_parent_operation, reconcile_process, refresh_project_location,
-        start_parent_operation_impl, stop_session, undo_parent_operation_impl, update_project,
-        update_workspace_location,
+        create_project_session, create_session, create_workspace,
+        create_workspace_location_preflight_impl, delete_project_location, finish_workspace_impl,
+        finish_workspace_location_impl, get_project, git_head, git_is_ancestor, git_worktrees,
+        normalized_path, pull_workspace, push_workspace, reconcile_parent_operation,
+        reconcile_process, refresh_project_location, start_parent_operation_impl, stop_session,
+        undo_parent_operation_impl, update_project, update_workspace_location,
     };
     use crate::{
         model::{Session, Todo},
@@ -858,6 +858,13 @@ mod current_workspace_tests {
             "fork work\n",
         )
         .expect("write Fork change");
+        command_output(Path::new(&fork.checkout_path), "git", &["add", "fork.txt"]).unwrap();
+        command_output(
+            Path::new(&fork.checkout_path),
+            "git",
+            &["commit", "-m", "finish parallel work"],
+        )
+        .unwrap();
         let preflight = create_delivery_preflight_impl(
             &state,
             &fork.id,
@@ -1151,6 +1158,14 @@ mod current_workspace_tests {
             command_output(Path::new(path), "git", &["add", "shared.txt"]).unwrap();
             command_output(Path::new(path), "git", &["commit", "-m", message]).unwrap();
         }
+        let (_, Json(preflight)) = create_workspace_location_preflight_impl(
+            state.clone(),
+            fork_location.id.clone(),
+            CreateDeliveryPreflight {
+                code_action: "local_merge".into(),
+            },
+        )
+        .expect("create conflict Finish preflight");
         let input = FinishWorkspace {
             code_action: "local_merge".into(),
             todo_action: "carry".into(),
@@ -1159,7 +1174,7 @@ mod current_workspace_tests {
             delete_worktree: false,
             delete_branch: false,
             commit_message: None,
-            preflight_id: None,
+            preflight_id: Some(preflight.id),
             resume_finish: false,
         };
         let Json(paused) =
@@ -1211,6 +1226,192 @@ mod current_workspace_tests {
 
         drop(state);
         std::fs::remove_dir_all(root).expect("remove Finish conflict fixture");
+    }
+
+    #[tokio::test]
+    async fn finish_preflight_blocks_dirty_workspace_without_committing() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-finish-dirty-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        initialize_repository(&repository);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Dirty Finish".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_target_branch: Some("main".into()),
+                default_base_branch: Some("main".into()),
+                default_delivery_mode: Some("push_branch".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateWorkspace {
+                name: "Dirty Workspace".into(),
+                description: None,
+                branch: Some("feature/dirty-finish".into()),
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .unwrap();
+        std::fs::write(
+            Path::new(&workspace.checkout_path).join("dirty.txt"),
+            "dirty\n",
+        )
+        .unwrap();
+        let location = state
+            .store
+            .default_workspace_location(&workspace.id)
+            .unwrap();
+        let (_, Json(preflight)) = create_workspace_location_preflight_impl(
+            state.clone(),
+            location.id.clone(),
+            CreateDeliveryPreflight {
+                code_action: "keep".into(),
+            },
+        )
+        .unwrap();
+        assert!(
+            preflight
+                .blockers
+                .iter()
+                .any(|item| item.contains("uncommitted changes"))
+        );
+        let error = finish_workspace_location_impl(
+            state.clone(),
+            location.id,
+            FinishWorkspace {
+                code_action: "keep".into(),
+                todo_action: "".into(),
+                push_after_merge: false,
+                keep_session_history: true,
+                delete_worktree: false,
+                delete_branch: false,
+                commit_message: None,
+                preflight_id: Some(preflight.id),
+                resume_finish: false,
+            },
+        )
+        .expect_err("dirty Finish must be blocked");
+        assert!(error.to_string().contains("preflight is blocked"));
+        assert!(
+            Path::new(&workspace.checkout_path)
+                .join("dirty.txt")
+                .is_file()
+        );
+        drop(state);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn finish_push_branch_publishes_feature_branch_without_merging_base() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-finish-push-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let repository = root.join("repository");
+        let remote = root.join("remote.git");
+        initialize_repository(&repository);
+        let base_head = git_head(repository.to_str().unwrap()).unwrap();
+        std::fs::create_dir_all(&remote).unwrap();
+        command_output(&remote, "git", &["init", "--bare"]).unwrap();
+        command_output(
+            &repository,
+            "git",
+            &["remote", "add", "origin", remote.to_string_lossy().as_ref()],
+        )
+        .unwrap();
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Push Finish".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: Some("origin".into()),
+                default_target_branch: Some("main".into()),
+                default_base_branch: Some("main".into()),
+                default_delivery_mode: Some("push_branch".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateWorkspace {
+                name: "Publish Workspace".into(),
+                description: None,
+                branch: Some("feature/publish-finish".into()),
+                remote_name: Some("origin".into()),
+                remote_branch: Some("feature/publish-finish".into()),
+            }),
+        )
+        .await
+        .unwrap();
+        let location = state
+            .store
+            .default_workspace_location(&workspace.id)
+            .unwrap();
+        let (_, Json(preflight)) = create_workspace_location_preflight_impl(
+            state.clone(),
+            location.id.clone(),
+            CreateDeliveryPreflight {
+                code_action: "push_branch".into(),
+            },
+        )
+        .unwrap();
+        assert!(preflight.blockers.is_empty(), "{:#?}", preflight.blockers);
+        let Json(finished) = finish_workspace_location_impl(
+            state.clone(),
+            location.id.clone(),
+            FinishWorkspace {
+                code_action: "push_branch".into(),
+                todo_action: "".into(),
+                push_after_merge: false,
+                keep_session_history: true,
+                delete_worktree: false,
+                delete_branch: false,
+                commit_message: None,
+                preflight_id: Some(preflight.id),
+                resume_finish: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(finished.location.delivery_status, "pushed");
+        assert_eq!(
+            finished.location.close_outcome.as_deref(),
+            Some("push_branch")
+        );
+        let remote_head = command_output(
+            &repository,
+            "git",
+            &[
+                "--git-dir",
+                remote.to_string_lossy().as_ref(),
+                "rev-parse",
+                "refs/heads/feature/publish-finish",
+            ],
+        )
+        .unwrap();
+        assert_eq!(remote_head, git_head(&workspace.checkout_path).unwrap());
+        assert_eq!(git_head(repository.to_str().unwrap()).unwrap(), base_head);
+        drop(state);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]

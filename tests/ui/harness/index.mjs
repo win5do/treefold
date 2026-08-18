@@ -234,7 +234,7 @@ async function startFixtureApi() {
         description: input.description ?? "",
         status: "active",
         default_base_branch: "main",
-        default_delivery_mode: "remote_review",
+        default_delivery_mode: "push_branch",
         created_at: "2026-08-09T08:30:00.000Z",
         updated_at: "2026-08-09T08:30:00.000Z",
       };

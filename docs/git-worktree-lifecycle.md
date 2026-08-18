@@ -10,7 +10,7 @@ Create → Work → Sync → Rebase/Recover → Finish → Cleanup
 | Work | Managed Sessions and development Todos belong to Workspace/Fork |
 | Sync | Pull fast-forwards the feature branch; Push never forces |
 | Rebase | Rebase explicitly onto the fixed target with Continue/Abort recovery |
-| Finish | Preflight then verify remote merge, merge locally, preserve, or discard |
+| Finish | Preflight then merge locally, push the feature branch, or preserve |
 | Cleanup | Remove worktree/branch only after the selected outcome is proven |
 
 Project Pull/Push synchronizes the configured target branch in the source
@@ -25,5 +25,7 @@ parent Workspace by default.
 
 The finish operation advances through durable phases. A failed push after a
 local merge leaves the delivery resumable and does not pretend cleanup
-succeeded. Remote-review delivery fetches the remote target and proves that the
-Workspace head is reachable before removing local Git resources.
+succeeded. Feature-branch delivery pushes the Workspace branch without forcing
+and proves the remote feature ref contains the Workspace head before removing
+local Git resources. Pull request creation and merge remain hosting/user
+workflows.

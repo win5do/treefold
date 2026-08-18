@@ -264,7 +264,7 @@ pub(super) fn finish_workspace_location_impl(
     }
     if !matches!(
         location.delivery_status.as_str(),
-        "active" | "failed" | "conflicted"
+        "active" | "published" | "failed" | "conflicted"
     ) {
         return Ok(Json(FinishProgress {
             status: "finished".into(),
@@ -272,18 +272,29 @@ pub(super) fn finish_workspace_location_impl(
             operation: None,
         }));
     }
-    if let Some(preflight_id) = input.preflight_id.as_deref() {
-        let preflight = state.store.delivery_preflight(preflight_id)?;
-        if preflight.workspace_location_id != location.id
-            || preflight.code_action != input.code_action
-        {
-            return Err(AppError::BadRequest(
-                "preflight does not match this Workspace location".into(),
-            ));
-        }
-        if !preflight.blockers.is_empty() {
-            return Err(AppError::BadRequest("delivery preflight is blocked".into()));
-        }
+    if workspace.kind == "fork" && input.code_action == "push_branch" {
+        return Err(AppError::BadRequest(
+            "a Fork has no remote delivery target; merge it into its parent Workspace or preserve it"
+                .into(),
+        ));
+    }
+    let preflight_id = input.preflight_id.as_deref().ok_or_else(|| {
+        AppError::BadRequest(
+            "run delivery preflight before finishing this Workspace location".into(),
+        )
+    })?;
+    let preflight = state.store.delivery_preflight(preflight_id)?;
+    if preflight.workspace_location_id != location.id || preflight.code_action != input.code_action
+    {
+        return Err(AppError::BadRequest(
+            "preflight does not match this Workspace location".into(),
+        ));
+    }
+    if !preflight.blockers.is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "delivery preflight is blocked: {}",
+            preflight.blockers.join("; ")
+        )));
     }
     let source_path = workspace_location_git_path(&location)?.to_owned();
     let branch = location
@@ -292,21 +303,58 @@ pub(super) fn finish_workspace_location_impl(
         .ok_or_else(|| AppError::BadRequest("Workspace location has no branch".into()))?
         .to_owned();
     ensure_checked_out_branch(&source_path, &branch, "Workspace location")?;
-    if !command_output(Path::new(&source_path), "git", &["status", "--porcelain"])
-        .unwrap_or_default()
-        .is_empty()
-    {
-        let message = trimmed(input.commit_message.clone())
-            .filter(|v| !v.is_empty())
-            .ok_or_else(|| {
-                AppError::BadRequest("commit_message is required for uncommitted changes".into())
-            })?;
-        command_output(Path::new(&source_path), "git", &["add", "-A"])
-            .map_err(AppError::BadRequest)?;
-        command_output(Path::new(&source_path), "git", &["commit", "-m", &message])
-            .map_err(AppError::BadRequest)?;
-    }
+    let source_status = command_output(Path::new(&source_path), "git", &["status", "--porcelain"])
+        .map_err(AppError::BadRequest)?;
     let source_head = git_head(&source_path)?;
+    if source_head != preflight.source_head || source_status != preflight.source_status {
+        return Err(AppError::BadRequest(
+            "delivery preflight is stale; source Git state changed".into(),
+        ));
+    }
+    if !source_status.is_empty() {
+        return Err(AppError::BadRequest(
+            "Workspace has uncommitted changes; commit or discard them in Shell before finishing"
+                .into(),
+        ));
+    }
+    if input.code_action == "local_merge" {
+        let previous = state
+            .store
+            .latest_parent_operation(&location.id, "integrate")?;
+        if !previous
+            .as_ref()
+            .is_some_and(|operation| operation.status == "completed")
+        {
+            let (target_path, target_branch) =
+                workspace_location_delivery_target(&state, &workspace, &location)?;
+            let target_head = command_output(
+                Path::new(&target_path),
+                "git",
+                &["rev-parse", &target_branch],
+            )
+            .map_err(AppError::BadRequest)?;
+            if target_head != preflight.target_head {
+                return Err(AppError::BadRequest(
+                    "delivery preflight is stale; merge target moved".into(),
+                ));
+            }
+        }
+    }
+    if input.code_action == "push_branch" {
+        let remote = location.remote_name.as_deref().ok_or_else(|| {
+            AppError::BadRequest("Workspace location has no remote configured".into())
+        })?;
+        let remote_branch = location.remote_branch.as_deref().ok_or_else(|| {
+            AppError::BadRequest("Workspace location has no remote branch configured".into())
+        })?;
+        let remote_head =
+            remote_branch_head(&source_path, remote, remote_branch)?.unwrap_or_default();
+        if remote_head != preflight.target_head {
+            return Err(AppError::BadRequest(
+                "delivery preflight is stale; remote feature branch moved".into(),
+            ));
+        }
+    }
     let mut linked_operation = None;
     let (status, outcome, integrated) = match input.code_action.as_str() {
         "local_merge" => {
@@ -356,31 +404,54 @@ pub(super) fn finish_workspace_location_impl(
             linked_operation = Some(operation);
             ("delivered", "local_merge", Some(head))
         }
-        "remote_merged" => ("remote_merged", "remote_merged", Some(source_head.clone())),
+        "push_branch" => {
+            let remote = location.remote_name.as_deref().ok_or_else(|| {
+                AppError::BadRequest("Workspace location has no remote configured".into())
+            })?;
+            let remote_branch = location.remote_branch.as_deref().ok_or_else(|| {
+                AppError::BadRequest("Workspace location has no remote branch configured".into())
+            })?;
+            command_output(
+                Path::new(&source_path),
+                "git",
+                &["push", remote, &format!("{branch}:{remote_branch}")],
+            )
+            .map_err(AppError::BadRequest)?;
+            fetch_remote_branch(&source_path, remote, remote_branch)?;
+            if !git_is_ancestor(&source_path, &source_head, "FETCH_HEAD")? {
+                return Err(AppError::BadRequest(
+                    "remote feature branch does not contain the Workspace HEAD after push".into(),
+                ));
+            }
+            ("pushed", "push_branch", Some(source_head.clone()))
+        }
         "keep" => ("kept", "keep", Some(source_head.clone())),
-        "discard" => ("discarded", "discard", None),
         _ => unreachable!(),
     };
     if let Some(operation) = linked_operation.as_ref() {
         consume_parent_operation(&state, operation)?;
     }
-    if input.delete_worktree || input.code_action == "discard" {
+    if input.delete_worktree {
         let project_location = state
             .store
             .repository_as_directory(&location.project_location_id)?;
-        remove_worktree_if_present(
-            &project_location.path,
-            &source_path,
-            input.code_action == "discard",
-        )?;
-        if input.delete_branch || input.code_action == "discard" {
-            let target = location.base_branch.as_deref().unwrap_or("HEAD");
+        remove_worktree_if_present(&project_location.path, &source_path, false)?;
+        if input.delete_branch {
+            let (target, require_merged) = match input.code_action.as_str() {
+                "local_merge" => {
+                    let (_, target_branch) =
+                        workspace_location_delivery_target(&state, &workspace, &location)?;
+                    (target_branch, true)
+                }
+                "push_branch" => ("FETCH_HEAD".to_owned(), true),
+                _ => ("HEAD".to_owned(), false),
+            };
             delete_delivered_branch_if_present(
                 &project_location.path,
                 &branch,
-                target,
+                &target,
                 &source_head,
-                input.code_action != "discard",
+                require_merged,
             )?;
         }
     }
@@ -392,13 +463,13 @@ pub(super) fn finish_workspace_location_impl(
         integrated.as_deref(),
         &timestamp,
     )?;
-    if workspace.kind == "fork" && matches!(outcome, "local_merge" | "remote_merged") {
+    if workspace.kind == "fork" && outcome == "local_merge" {
         let all_delivered = state
             .store
             .workspace_locations(&workspace.id)?
             .iter()
             .filter(|item| item.access_mode == "read_write")
-            .all(|item| matches!(item.delivery_status.as_str(), "delivered" | "remote_merged"));
+            .all(|item| item.delivery_status == "delivered");
         if all_delivered && let Some(todo) = state.store.todo_for_fork(&workspace.id)? {
             state.store.update_todo(&todo.id, "done")?;
         }
@@ -1263,9 +1334,9 @@ pub(super) async fn finish_workspace_steps(
             "finish active Forks before finishing their parent Workspace".into(),
         ));
     }
-    if workspace.kind == "fork" && input.code_action == "remote_merged" {
+    if workspace.kind == "fork" && input.code_action == "push_branch" {
         return Err(AppError::BadRequest(
-            "a Fork must be merged into its parent Workspace locally".into(),
+            "a Fork must be merged into its parent Workspace locally or preserved".into(),
         ));
     }
     if workspace.kind == "fork" && input.push_after_merge {
@@ -1314,6 +1385,7 @@ pub(super) async fn finish_workspace_steps(
     let (target_path, target_branch) = workspace_delivery_target(state, &workspace)?;
 
     let source_is_managed = true;
+    ensure_clean_workspace(&workspace.checkout_path, "Workspace")?;
     let mut operation = match existing_operation {
         Some(operation) => {
             ensure_delivery_matches(&operation, input)?;
@@ -1336,20 +1408,7 @@ pub(super) async fn finish_workspace_steps(
                 ensure_clean_workspace(&target_path, "merge target")?;
                 ensure_target_branch(&target_path, &target_branch)?;
             }
-            let before_head = if input.code_action == "remote_merged" {
-                let remote = project.preferred_remote.as_deref().ok_or_else(|| {
-                    AppError::BadRequest("Project has no preferred remote target".into())
-                })?;
-                fetch_remote_branch_async(&repository_root, remote, &target_branch).await?;
-                command_output(
-                    Path::new(&repository_root),
-                    "git",
-                    &["rev-parse", "FETCH_HEAD"],
-                )
-                .map_err(AppError::BadRequest)?
-            } else {
-                git_head(&target_path)?
-            };
+            let before_head = git_head(&target_path)?;
             let source_head = if source_is_managed {
                 git_head(&workspace.checkout_path)?
             } else {
@@ -1366,7 +1425,7 @@ pub(super) async fn finish_workspace_steps(
                 keep_session_history: input.keep_session_history,
                 delete_worktree: input.delete_worktree,
                 delete_branch: input.delete_branch,
-                commit_message: trimmed(input.commit_message.clone()).unwrap_or_default(),
+                commit_message: String::new(),
                 before_head: before_head.clone(),
                 source_head,
                 target_head: before_head,
@@ -1394,12 +1453,6 @@ pub(super) async fn finish_workspace_steps(
                     operation.before_head, current_target_head
                 )));
             }
-            let commit_workspace = workspace.clone();
-            let commit_message = input.commit_message.clone();
-            blocking_git_operation(move || {
-                commit_source_if_needed(&commit_workspace, commit_message.as_deref())
-            })
-            .await?;
             source_head = git_head(&workspace.checkout_path)?;
             let merge_target = target_path.clone();
             let merge_branch = workspace.branch.clone();
@@ -1423,14 +1476,6 @@ pub(super) async fn finish_workspace_steps(
             }
             target_head = git_head(&target_path)?;
             integrated_commit = Some(target_head.clone());
-        } else if input.code_action == "keep" && input.delete_worktree {
-            let commit_workspace = workspace.clone();
-            let commit_message = input.commit_message.clone();
-            blocking_git_operation(move || {
-                commit_source_if_needed(&commit_workspace, commit_message.as_deref())
-            })
-            .await?;
-            source_head = git_head(&workspace.checkout_path)?;
         }
         state.store.advance_delivery(
             id,
@@ -1463,6 +1508,21 @@ pub(super) async fn finish_workspace_steps(
                         "Workspace was merged locally but target push failed: {error}"
                     ))
                 })?;
+        } else if input.code_action == "push_branch" {
+            let remote = workspace
+                .remote_name
+                .as_deref()
+                .ok_or_else(|| AppError::BadRequest("Workspace has no remote configured".into()))?;
+            let remote_branch = workspace.remote_branch.as_deref().ok_or_else(|| {
+                AppError::BadRequest("Workspace has no remote branch configured".into())
+            })?;
+            let refspec = format!("{}:{remote_branch}", workspace.branch);
+            git::output_async(
+                Path::new(&workspace.checkout_path),
+                &["push", remote, &refspec],
+            )
+            .await
+            .map_err(AppError::BadRequest)?;
         }
         state
             .store
@@ -1513,18 +1573,20 @@ pub(super) async fn finish_workspace_steps(
         if input.delete_worktree && source_is_managed {
             let repository = repository_root.clone();
             let checkout_path = workspace.checkout_path.clone();
-            let discard_changes = input.code_action == "discard";
             blocking_git_operation(move || {
-                remove_worktree_if_present(&repository, &checkout_path, discard_changes)
+                remove_worktree_if_present(&repository, &checkout_path, false)
             })
             .await?;
         }
         if input.delete_branch && !workspace.branch.is_empty() {
-            let merged_target = if input.code_action == "remote_merged" {
-                let remote = project.preferred_remote.as_deref().ok_or_else(|| {
-                    AppError::BadRequest("Project has no preferred remote target".into())
+            let merged_target = if input.code_action == "push_branch" {
+                let remote = workspace.remote_name.as_deref().ok_or_else(|| {
+                    AppError::BadRequest("Workspace has no remote configured".into())
                 })?;
-                fetch_remote_branch_async(&repository_root, remote, &target_branch).await?;
+                let remote_branch = workspace.remote_branch.as_deref().ok_or_else(|| {
+                    AppError::BadRequest("Workspace has no remote branch configured".into())
+                })?;
+                fetch_remote_branch_async(&repository_root, remote, remote_branch).await?;
                 "FETCH_HEAD"
             } else {
                 target_branch.as_str()
@@ -1533,8 +1595,7 @@ pub(super) async fn finish_workspace_steps(
             let branch = workspace.branch.clone();
             let merged_target = merged_target.to_owned();
             let source_head = operation.source_head.clone();
-            let require_merged =
-                input.code_action == "local_merge" || input.code_action == "remote_merged";
+            let require_merged = input.code_action != "keep";
             blocking_git_operation(move || {
                 delete_delivered_branch_if_present(
                     &repository,
@@ -1555,8 +1616,7 @@ pub(super) async fn finish_workspace_steps(
 
     let delivery_status = match input.code_action.as_str() {
         "local_merge" => "locally_merged",
-        "remote_merged" => "remotely_merged",
-        "discard" => "discarded",
+        "push_branch" => "pushed",
         _ => "preserved",
     };
     let timestamp = now();
@@ -1568,7 +1628,7 @@ pub(super) async fn finish_workspace_steps(
         &timestamp,
     )?;
     if workspace.kind == "fork"
-        && matches!(input.code_action.as_str(), "local_merge" | "remote_merged")
+        && input.code_action == "local_merge"
         && let Some(todo) = state.store.todo_for_fork(id)?
     {
         state.store.update_todo(&todo.id, "done")?;
@@ -1580,27 +1640,18 @@ pub(super) async fn finish_workspace_steps(
 }
 
 pub(super) fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
-    if !["local_merge", "remote_merged", "keep", "discard"].contains(&input.code_action.as_str()) {
+    if !["local_merge", "push_branch", "keep"].contains(&input.code_action.as_str()) {
         return Err(AppError::BadRequest("invalid code action".into()));
     }
-    if input.code_action == "keep" && input.delete_branch {
+    if input.push_after_merge {
         return Err(AppError::BadRequest(
-            "a preserved branch cannot be deleted".into(),
-        ));
-    }
-    if input.push_after_merge && input.code_action != "local_merge" {
-        return Err(AppError::BadRequest(
-            "push_after_merge is valid only for local_merge".into(),
+            "Finish does not push a merge target; choose push_branch to publish the Workspace feature branch"
+                .into(),
         ));
     }
     if input.delete_branch && !input.delete_worktree {
         return Err(AppError::BadRequest(
             "remove the managed worktree before deleting its checked-out branch".into(),
-        ));
-    }
-    if input.code_action == "discard" && (!input.delete_worktree || !input.delete_branch) {
-        return Err(AppError::BadRequest(
-            "discarding code requires removing both its managed worktree and branch".into(),
         ));
     }
     Ok(())
@@ -1610,14 +1661,12 @@ pub(super) fn ensure_delivery_matches(
     operation: &DeliveryOperation,
     input: &FinishWorkspace,
 ) -> Result<()> {
-    let commit_message = trimmed(input.commit_message.clone()).unwrap_or_default();
     if operation.code_action != input.code_action
         || operation.todo_action != input.todo_action
         || operation.push_after_merge != input.push_after_merge
         || operation.keep_session_history != input.keep_session_history
         || operation.delete_worktree != input.delete_worktree
         || operation.delete_branch != input.delete_branch
-        || operation.commit_message != commit_message
     {
         return Err(AppError::BadRequest(
             "delivery is already in progress with different options".into(),
@@ -1757,32 +1806,5 @@ pub(super) fn ensure_clean_workspace(path: &str, label: &str) -> Result<()> {
             "{label} has uncommitted changes"
         )));
     }
-    Ok(())
-}
-
-pub(super) fn commit_source_if_needed(workspace: &Workspace, message: Option<&str>) -> Result<()> {
-    let status = command_output(
-        Path::new(&workspace.checkout_path),
-        "git",
-        &["status", "--porcelain"],
-    )
-    .map_err(AppError::BadRequest)?;
-    if status.is_empty() {
-        return Ok(());
-    }
-    let message = message.map(str::trim).filter(|value| !value.is_empty()).ok_or_else(|| {
-        AppError::BadRequest(
-            "the workspace has uncommitted changes; provide a final commit message or choose Discard"
-                .into(),
-        )
-    })?;
-    command_output(Path::new(&workspace.checkout_path), "git", &["add", "-A"])
-        .map_err(AppError::BadRequest)?;
-    command_output(
-        Path::new(&workspace.checkout_path),
-        "git",
-        &["commit", "-m", message],
-    )
-    .map_err(AppError::BadRequest)?;
     Ok(())
 }

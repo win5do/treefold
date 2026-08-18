@@ -43,10 +43,10 @@ pub(super) async fn create_project(
         .unwrap_or_else(|| "main".into());
     let default_delivery_mode = trimmed(input.default_delivery_mode)
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "remote_review".into());
-    if default_delivery_mode != "remote_review" && default_delivery_mode != "local_merge" {
+        .unwrap_or_else(|| "push_branch".into());
+    if !["push_branch", "local_merge", "keep"].contains(&default_delivery_mode.as_str()) {
         return Err(AppError::BadRequest(
-            "default_delivery_mode must be remote_review or local_merge".into(),
+            "default_delivery_mode must be push_branch, local_merge, or keep".into(),
         ));
     }
     let inspected_path = input
@@ -972,10 +972,10 @@ pub(super) fn clone_project_repository_impl(
     if url.is_empty() {
         return Err(AppError::BadRequest("Git URL is required".into()));
     }
-    let delivery_mode = input.delivery_mode.as_deref().unwrap_or("remote_review");
-    if !["remote_review", "local_merge"].contains(&delivery_mode) {
+    let delivery_mode = input.delivery_mode.as_deref().unwrap_or("push_branch");
+    if !["push_branch", "local_merge", "keep"].contains(&delivery_mode) {
         return Err(AppError::BadRequest(
-            "delivery_mode must be remote_review or local_merge".into(),
+            "delivery_mode must be push_branch, local_merge, or keep".into(),
         ));
     }
     let repository_id = id();
@@ -1091,11 +1091,12 @@ pub(super) async fn create_directory(
     let name = basename(&path);
     let requested_delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
     if let Some(mode) = requested_delivery_mode.as_deref()
-        && mode != "remote_review"
+        && mode != "push_branch"
         && mode != "local_merge"
+        && mode != "keep"
     {
         return Err(AppError::BadRequest(
-            "delivery_mode must be remote_review or local_merge".into(),
+            "delivery_mode must be push_branch, local_merge, or keep".into(),
         ));
     }
     let directory = Directory {
@@ -1113,7 +1114,7 @@ pub(super) async fn create_directory(
             None
         },
         delivery_mode: if is_git {
-            Some(requested_delivery_mode.unwrap_or_else(|| "remote_review".into()))
+            Some(requested_delivery_mode.unwrap_or_else(|| "push_branch".into()))
         } else {
             None
         },
@@ -1143,7 +1144,7 @@ pub(super) async fn create_directory(
         ));
     }
     if directory.git_status == "ready" && directory.delivery_mode.is_none() {
-        directory.delivery_mode = Some("remote_review".into());
+        directory.delivery_mode = Some("push_branch".into());
     }
     let directory_id = state.store.create_directory(&directory)?;
     let directory = state.store.directory(&directory_id)?;
@@ -1167,7 +1168,7 @@ pub(super) async fn refresh_project_location(
     refresh_location_observation(&mut location)?;
     if location.git_status == "ready" {
         if location.delivery_mode.is_none() {
-            location.delivery_mode = Some("remote_review".into());
+            location.delivery_mode = Some("push_branch".into());
         }
     } else if was_git {
         // Persisted repository identity is intentionally retained when the path
@@ -1514,11 +1515,12 @@ pub(super) async fn update_directory(
         ));
     }
     if let Some(mode) = delivery_mode.as_deref()
-        && mode != "remote_review"
+        && mode != "push_branch"
         && mode != "local_merge"
+        && mode != "keep"
     {
         return Err(AppError::BadRequest(
-            "delivery_mode must be remote_review or local_merge".into(),
+            "delivery_mode must be push_branch, local_merge, or keep".into(),
         ));
     }
     state.store.update_directory(
@@ -1567,9 +1569,9 @@ pub(super) async fn update_project_repository(
     let delivery_mode = trimmed(input.delivery_mode)
         .filter(|value| !value.is_empty())
         .unwrap_or(current.delivery_mode);
-    if delivery_mode != "remote_review" && delivery_mode != "local_merge" {
+    if !["push_branch", "local_merge", "keep"].contains(&delivery_mode.as_str()) {
         return Err(AppError::BadRequest(
-            "delivery_mode must be remote_review or local_merge".into(),
+            "delivery_mode must be push_branch, local_merge, or keep".into(),
         ));
     }
     let setup_workdir = validate_setup_workdir(
@@ -1959,7 +1961,7 @@ pub(super) fn create_workspace_impl(
         .iter()
         .find(|location| location.id == default_repository_id)
         .and_then(|location| location.delivery_mode.clone())
-        .unwrap_or_else(|| "remote_review".into());
+        .unwrap_or_else(|| "push_branch".into());
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
@@ -1971,7 +1973,7 @@ pub(super) fn create_workspace_impl(
         let location_delivery_mode = location
             .delivery_mode
             .clone()
-            .unwrap_or_else(|| "remote_review".into());
+            .unwrap_or_else(|| "push_branch".into());
         let checkout_path =
             managed_worktree_path(&state.settings, &project.id, &location.id, &workspace_id)
                 .to_string_lossy()
@@ -1983,7 +1985,7 @@ pub(super) fn create_workspace_impl(
         } else {
             location.preferred_remote_name.clone()
         };
-        let remote_branch = if location.id == default_id {
+        let remote_branch = if location.id == default_repository_id {
             trimmed(input.remote_branch.clone()).filter(|v| !v.is_empty())
         } else {
             None

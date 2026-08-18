@@ -432,8 +432,31 @@ try {
     false,
     "Workspace context menu must not expose Project archive",
   );
+  await (
+    await nodeContextMenu.$('[data-testid="finish-workspace-action"]')
+  ).click();
+  const workspaceFinishDialog = await browser.$('[role="dialog"]');
+  await workspaceFinishDialog.waitForDisplayed({ timeout: 3_000 });
+  const workspaceStrategy = await workspaceFinishDialog.$(
+    "#finish-code-action",
+  );
+  assert.match(
+    await workspaceStrategy.getText(),
+    /Merge into local base branch[\s\S]*Push Workspace feature branch[\s\S]*Preserve without delivery/,
+    "Workspace Finish must expose local merge, feature push, and preserve strategies",
+  );
+  assert.equal(
+    await workspaceStrategy.getValue(),
+    "push_branch",
+    "Workspace Finish must inherit the Repository default strategy",
+  );
+  assert.equal(
+    await (await workspaceFinishDialog.$('input[placeholder*="commit"]')).isExisting(),
+    false,
+    "Finish must not offer an implicit commit message",
+  );
   await browser.keys(Key.Escape);
-  await nodeContextMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await workspaceFinishDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await (
     await browser.$('[data-testid="sidebar-fork-node"]')
   ).click({ button: "right" });
@@ -2621,6 +2644,35 @@ try {
     /Finish Fork location/,
     "Finish Fork must open from the sidebar menu",
   );
+  const forkStrategy = await finishForkDialog.$("#finish-code-action");
+  assert.match(
+    await forkStrategy.getText(),
+    /Merge into parent Workspace[\s\S]*Preserve without delivery/,
+    "Fork Finish must expose only parent merge and preserve strategies",
+  );
+  assert.equal(
+    (await forkStrategy.getText()).includes("Push Workspace feature branch"),
+    false,
+    "Fork Finish must not expose remote delivery",
+  );
+  const removeWorktree = await finishForkDialog.$("#finish-delete-worktree");
+  const deleteBranch = await finishForkDialog.$("#finish-delete-branch");
+  assert.equal(await removeWorktree.isSelected(), true);
+  assert.equal(await deleteBranch.isSelected(), true);
+  await forkStrategy.selectByAttribute("value", "keep");
+  assert.equal(await removeWorktree.isSelected(), false);
+  assert.equal(await deleteBranch.isSelected(), false);
+  assert.equal(await removeWorktree.isEnabled(), true);
+  assert.equal(await deleteBranch.isEnabled(), false);
+  await (
+    await finishForkDialog.$('label[for="finish-delete-worktree"]')
+  ).click();
+  assert.equal(await removeWorktree.isSelected(), true);
+  assert.equal(await deleteBranch.isEnabled(), true);
+  await (
+    await finishForkDialog.$('label[for="finish-delete-branch"]')
+  ).click();
+  assert.equal(await deleteBranch.isSelected(), true);
   await browser.keys(Key.Escape);
   await finishForkDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   const showForkInspector = await browser.$(

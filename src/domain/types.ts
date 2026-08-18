@@ -12,7 +12,7 @@ export type Project = {
   git_common_dir: string;
   preferred_remote?: string;
   default_target_branch: string;
-  default_delivery_mode: "remote_review" | "local_merge";
+  default_delivery_mode: "push_branch" | "local_merge" | "keep";
   updated_at: string;
 };
 
@@ -31,7 +31,7 @@ export type Directory = {
   repository_url?: string;
   preferred_remote_name?: string;
   base_branch?: string;
-  delivery_mode?: "remote_review" | "local_merge";
+  delivery_mode?: "push_branch" | "local_merge" | "keep";
   git_common_dir?: string;
   git_status:
     | "creating"
@@ -61,7 +61,7 @@ export type ProjectRepository = {
   repository_url?: string;
   preferred_remote_name?: string;
   base_branch: string;
-  delivery_mode: "remote_review" | "local_merge";
+  delivery_mode: "push_branch" | "local_merge" | "keep";
   setup_command: string;
   setup_workdir: string;
   git_status: Directory["git_status"];
@@ -120,7 +120,7 @@ export type Workspace = {
   remote_name?: string;
   remote_branch?: string;
   branch_ownership: string;
-  delivery_mode: "remote_review" | "local_merge";
+  delivery_mode: "push_branch" | "local_merge" | "keep";
   delivery_status: string;
   close_outcome?: string;
   integrated_commit?: string;
@@ -387,7 +387,7 @@ export type LocationDraft = {
   description: string;
   worktree_setup_command: string;
   base_branch: string;
-  delivery_mode: "remote_review" | "local_merge";
+  delivery_mode: "push_branch" | "local_merge" | "keep";
   inspection?: ProjectLocationInspection;
   inspectionError?: string;
 };

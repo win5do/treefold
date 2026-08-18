@@ -202,7 +202,7 @@ function newLocationDraft(): LocationDraft {
     description: "",
     worktree_setup_command: "",
     base_branch: "",
-    delivery_mode: "remote_review",
+    delivery_mode: "push_branch",
   };
 }
 
@@ -487,7 +487,7 @@ export function AddDirectoryDialog({
                         />
                       </label>
                       <label className="text-[11px] text-muted-foreground">
-                        Delivery mode
+                        Default Workspace finish strategy
                         <Select
                           className="mt-1"
                           aria-label={`Location ${index + 1} delivery mode`}
@@ -499,10 +499,9 @@ export function AddDirectoryDialog({
                             })
                           }
                         >
-                          <option value="remote_review">
-                            Remote review / CR-CI
-                          </option>
-                          <option value="local_merge">Local merge</option>
+                          <option value="push_branch">Push feature branch</option>
+                          <option value="local_merge">Merge into local base</option>
+                          <option value="keep">Preserve without delivery</option>
                         </Select>
                       </label>
                     </div>
@@ -759,15 +758,16 @@ export function EditRepositoryDialog({
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="repository-delivery-mode">
-                    Delivery mode
+                    Default Workspace finish strategy
                   </FieldLabel>
                   <Select
                     id="repository-delivery-mode"
                     name="delivery_mode"
                     defaultValue={repository.delivery_mode}
                   >
-                    <option value="remote_review">Remote review / CR-CI</option>
-                    <option value="local_merge">Local merge</option>
+                    <option value="push_branch">Push feature branch</option>
+                    <option value="local_merge">Merge into local base</option>
+                    <option value="keep">Preserve without delivery</option>
                   </Select>
                 </Field>
               </div>

@@ -1631,7 +1631,7 @@ function Workspace() {
               (updated as WorkspaceDetail).locations
                 .filter((item) => item.access_mode === "read_write")
                 .every((item) =>
-                  ["delivered", "kept", "discarded", "remote_merged"].includes(
+                  ["delivered", "pushed", "kept", "discarded"].includes(
                     item.delivery_status,
                   ),
                 )
@@ -1644,7 +1644,7 @@ function Workspace() {
             (updated as WorkspaceDetail).locations
               .filter((item) => item.access_mode === "read_write")
               .every((item) =>
-                ["delivered", "kept", "discarded", "remote_merged"].includes(
+                ["delivered", "pushed", "kept", "discarded"].includes(
                   item.delivery_status,
                 ),
               )
@@ -1665,6 +1665,17 @@ function Workspace() {
               ? `/projects/${finishWorkspaceDialog?.project.id}/sessions/${session.id}`
               : `/workspaces/${session.workspace_id}/sessions/${session.id}`,
           );
+        }}
+        onOpenShell={(locationId) => {
+          if (!finishWorkspaceDialog) return;
+          const owner = finishWorkspaceDialog;
+          const location = owner.locations.find((item) => item.id === locationId);
+          const directory = owner.directories.find(
+            (item) => item.repository_id === location?.project_location_id,
+          );
+          setFinishWorkspaceDialog(null);
+          setFinishParentOperation(null);
+          void createShell(owner, directory);
         }}
       />
       <ParentOperationDialog
