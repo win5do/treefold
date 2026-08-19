@@ -31,9 +31,12 @@ try {
     start_commit: FIXTURE_COMMITS[2].hash,
     end_commit: FIXTURE_COMMITS[0].hash,
     commit_count: 3,
-    path: "src/alpha.ts",
   });
   assert.equal(await browser.$('[data-testid="git-diff-content"]').isDisplayed(), true, "inline diff content must be displayed");
+  const next = await browser.$('button[aria-label="Next file"]');
+  await next.waitForEnabled({ timeout: 3_000 });
+  await next.click();
+  await (await browser.$('[title="src/alpha.ts"]')).waitForDisplayed({ timeout: 3_000 });
   harness.assertNoUnexpectedRequests();
   console.log("✓ Git History opens commit diff in the Workspace main view");
 } catch (error) {

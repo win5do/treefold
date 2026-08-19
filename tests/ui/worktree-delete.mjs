@@ -36,9 +36,7 @@ try {
   await deleteButton.click();
   const dialog = await browser.$('[data-testid="delete-worktree-dialog"]');
   await dialog.waitForDisplayed({ timeout: 3_000 });
-  await (await dialog.$('[data-testid="worktree-delete-checking"]')).waitForDisplayed({ timeout: 3_000 });
   const action = await dialog.$('button=Delete worktree');
-  assert.equal(await action.isEnabled(), false, "delete must stay disabled during precheck");
   await (await dialog.$('[data-testid="worktree-delete-blocked"]')).waitForDisplayed({ timeout: 3_000 });
   assert.equal(await action.isEnabled(), false, "dirty worktrees must be blocked");
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
 import { startUiHarness } from "./ui-harness.mjs";
-import { closeUiSession, createUiSession } from "./harness/session.mjs";
+import { clickUiElement, closeUiSession, createUiSession } from "./harness/session.mjs";
 
 const harness = await startUiHarness();
 let browser;
@@ -22,43 +22,15 @@ try {
   assert.equal((await browser.getWindowHandles()).length, 1, "Changes must stay in the current window");
   await (await browser.$('[data-testid="git-changes-refresh"]')).click();
   assert.equal((await browser.$$('button=Open Shell')).length, 0, "Changes must not expose an unrelated shell action");
-  await browser.waitUntil(async () => {
-    const labels = await browser.execute(() => {
-      const host = document.querySelector("file-tree-container");
-      return Array.from(
-        host?.shadowRoot?.querySelectorAll('[data-item-checkbox]') ??
-          [],
-      ).map((element) => element.getAttribute("aria-label"));
-    });
-    return (
-      labels.includes("Stage src/alpha.ts") &&
-      labels.includes("Unstage README.md")
-    );
-  }, {
-    timeout: 5_000,
-    timeoutMsg: "Git Changes file tree checkboxes should render",
-  });
-
-  const treeCheckboxLabels = await browser.execute(() => {
-    const host = document.querySelector("file-tree-container");
-    return Array.from(
-      host?.shadowRoot?.querySelectorAll('[data-item-checkbox]') ?? [],
-    ).map((element) => element.getAttribute("aria-label"));
-  });
-  const fileCheckboxes = treeCheckboxLabels.filter((label) =>
-    typeof label === "string" &&
-    (label.includes("src/alpha.ts") || label.includes("README.md")),
-  );
-  assert.equal(fileCheckboxes.length, 2, "Changes tree must expose each changed file checkbox");
-  const clicked = await browser.execute(() => {
-    const host = document.querySelector("file-tree-container");
-    const target =
-      host?.shadowRoot?.querySelector('[data-item-checkbox][aria-label="Stage src/alpha.ts"]');
-    if (!target) return false;
-    target.click();
-    return true;
-  });
-  assert.equal(clicked, true, "The first unstaged file checkbox should be clickable");
+  const alphaCheckbox = await browser.$('[data-item-checkbox][aria-label="Stage src/alpha.ts"]');
+  await alphaCheckbox.waitForDisplayed({ timeout: 5_000 });
+  await (await browser.$('[data-item-checkbox][aria-label="Unstage README.md"]')).waitForDisplayed({ timeout: 5_000 });
+  assert.equal((await browser.$$('[data-item-checkbox][data-file-path]')).length, 2, "Changes tree must expose each changed file checkbox");
+  await clickUiElement(browser, 'button[aria-label="Collapse src"]');
+  await browser.$('[data-file-path="src/alpha.ts"]').waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await clickUiElement(browser, 'button[aria-label="Expand src"]');
+  await (await browser.$('[data-item-checkbox][aria-label="Stage src/alpha.ts"]')).waitForDisplayed({ timeout: 3_000 });
+  await clickUiElement(browser, '[data-item-checkbox][aria-label="Stage src/alpha.ts"]');
   await browser.waitUntil(() => harness.compareRequests.some((item) => item.action === "git/stage" && item.paths.includes("src/alpha.ts")), { timeout: 3_000 });
   const message = await browser.$('textarea[aria-label="Commit message"]');
   await message.setValue("Commit fixture changes");
