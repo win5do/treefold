@@ -49,8 +49,8 @@ just dev
 
 The `just dev` and `just dev-no-watch` recipes keep development state in the
 repository-local `.treefold-dev/` directory, separate from the normal
-`~/.treefold` installation. Each launch also selects a free loopback port for
-the Vite dev server. In both development and packaged builds, the Rust backend
+`~/.treefold` installation. Development UI launches use loopback port `15011`
+for the Vite dev server. In both development and packaged builds, the Rust backend
 asks the operating system for a free loopback port and injects the resulting
 API URL into the WebView and Treefold-managed terminal sessions. Set
 `TREEFOLD_DEV_HOME` to use another development state directory:

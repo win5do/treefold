@@ -1,24 +1,9 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
-
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close();
-        reject(new Error("could not allocate a loopback port"));
-        return;
-      }
-      server.close((error) => error ? reject(error) : resolve(address.port));
-    });
-  });
+const devServerPort = process.env.TREEFOLD_DEV_SERVER_PORT || "15011";
+if (!/^\d+$/.test(devServerPort)) {
+  console.error(`[treefold dev] invalid TREEFOLD_DEV_SERVER_PORT: ${devServerPort}`);
+  process.exit(1);
 }
-
-const devServerPort = await freePort();
 
 const apiPort = process.env.TREEFOLD_API_PORT;
 if (apiPort !== undefined && !/^\d+$/.test(apiPort)) {
