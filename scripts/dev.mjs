@@ -14,10 +14,7 @@ if (apiPort !== undefined && !/^\d+$/.test(apiPort)) {
 
 const devUrl = `http://127.0.0.1:${devServerPort}`;
 const config = JSON.stringify({ build: { devUrl } });
-const env = {
-  ...process.env,
-  TREEFOLD_UI_PORT: String(devServerPort),
-};
+const env = { ...process.env };
 
 if (apiPort !== undefined) {
   env.TREEFOLD_API_ADDR = `127.0.0.1:${apiPort}`;
