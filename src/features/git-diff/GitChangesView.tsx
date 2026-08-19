@@ -36,10 +36,41 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
   const [mutatingPath, setMutatingPath] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [diffRevision, setDiffRevision] = useState(0);
+  const [treeWidth, setTreeWidth] = useState(() => {
+    const stored = Number(window.localStorage.getItem("treefold.git-changes.tree-width"));
+    return Number.isFinite(stored) ? Math.min(520, Math.max(220, stored)) : 320;
+  });
+  const [resizingTree, setResizingTree] = useState(false);
   const api = repositoryKind === "project" ? projectsApi : workspacesApi;
   const files = useMemo(() => scope === "commit" ? parseComparison(comparison).files : (status?.files ?? []).filter((file) => scope === "staged" ? file.has_staged_changes : true), [comparison, scope, status]);
   const parsed = useMemo(() => scope === "commit" ? parseComparison(comparison).files : parseComparison(comparison).files, [comparison, scope]);
   const selected = files.find((file) => file.path === selectedPath) ?? files[0];
+
+  useEffect(() => {
+    if (!resizingTree) return;
+    const resize = (event: PointerEvent) => {
+      const bounds = document.querySelector<HTMLElement>("[data-git-changes-view]")?.getBoundingClientRect();
+      const maximum = Math.max(280, Math.min(520, (bounds?.width ?? window.innerWidth) - 360));
+      setTreeWidth(Math.min(maximum, Math.max(220, event.clientX - (bounds?.left ?? 0))));
+    };
+    const stop = () => setResizingTree(false);
+    const previousCursor = document.body.style.cursor;
+    const previousSelection = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stop, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", stop);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousSelection;
+    };
+  }, [resizingTree]);
+
+  useEffect(() => {
+    window.localStorage.setItem("treefold.git-changes.tree-width", String(treeWidth));
+  }, [treeWidth]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -145,7 +176,7 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
 
   const parsedFiles = scope === "commit" ? parsed : comparison ? parseComparison(comparison).files : [];
   const current = parsedFiles.find((file) => file.path === selectedPath);
-  return <main className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+  return <main data-git-changes-view className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
       <GitCompare className="size-4 text-muted-foreground" />
       <h1 className="truncate text-sm font-semibold">{scope === "commit" ? "Commit Diff" : "Git Changes"}</h1>
@@ -155,13 +186,28 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
       {onClose && <Button size="icon-sm" variant="ghost" aria-label="Close Git Changes" onClick={onClose}><X /></Button>}
     </header>
     {loading ? <State title="Loading Git changes" /> : error && !current ? <State title="Could not load Git changes" detail={error} /> : files.length === 0 ? <State title="No changes" /> : <div className="flex min-h-0 flex-1">
-      <aside className="flex w-[min(34%,360px)] min-w-[220px] shrink-0 flex-col border-r border-border bg-muted/20">
+      <aside className="flex min-w-[220px] shrink-0 flex-col border-r border-border bg-muted/20" style={{ width: treeWidth }}>
         <div className="flex h-10 shrink-0 items-center gap-2 px-3 text-xs font-semibold">
           <span>Changed files</span>
-          {status && <span className="ml-auto text-[10px] text-muted-foreground">{status.staged_count} staged</span>}
         </div>
         <ChangesTree key={status?.files.map((file) => `${file.path}:${file.has_staged_changes ? 1 : 0}:${file.has_unstaged_changes ? 1 : 0}`).join("|")} files={files} status={status} selectedPath={selectedPath} onSelect={setSelectedPath} onToggle={scope === "commit" ? undefined : (path, stage) => void toggleStagePath(path, stage)} onToggleAll={scope === "commit" ? undefined : (stage) => void toggleStageAll(stage)} mutatingPath={mutatingPath} />
       </aside>
+      <div
+        data-testid="git-changes-tree-resize-handle"
+        role="separator"
+        aria-label="Resize changed files panel"
+        aria-orientation="vertical"
+        aria-valuemin={220}
+        aria-valuemax={520}
+        aria-valuenow={treeWidth}
+        tabIndex={0}
+        className="w-1 shrink-0 cursor-col-resize touch-none hover:bg-ring/50 focus:bg-ring/50"
+        onPointerDown={(event) => { event.preventDefault(); setResizingTree(true); }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") { event.preventDefault(); setTreeWidth((value) => Math.max(220, value - 16)); }
+          if (event.key === "ArrowRight") { event.preventDefault(); setTreeWidth((value) => Math.min(520, value + 16)); }
+        }}
+      />
       <section className="flex min-w-0 flex-1 flex-col">
         {current && <><div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3"><span className="min-w-0 flex-1 truncate font-mono text-xs">{current.path}</span><Button size="icon-sm" variant="ghost" aria-label="Previous file" onClick={() => setSelectedPath(files[Math.max(0, files.findIndex((file) => file.path === selectedPath) - 1)]?.path ?? selectedPath)}><ChevronUp /></Button><Button size="icon-sm" variant="ghost" aria-label="Next file" onClick={() => setSelectedPath(files[Math.min(files.length - 1, files.findIndex((file) => file.path === selectedPath) + 1)]?.path ?? selectedPath)}><ChevronDown /></Button></div><div className="min-h-0 flex-1 overflow-hidden" data-testid="git-diff-content">{error ? <State title="Could not load diff" detail={error} /> : current.binary || current.diff.hunks.length === 0 ? <State title={current.binary ? "Binary file changed" : "No line changes"} /> : <Virtualizer className="h-full overflow-auto" contentClassName="min-h-full"><FileDiff key={current.path} fileDiff={current.diff} options={{ diffStyle: "unified", diffIndicators: "bars", disableFileHeader: true, enableLineSelection: false, expandUnchanged: false, collapsedContextThreshold: 8, hunkSeparators: "line-info-basic", lineDiffType: "word-alt", overflow: "scroll", themeType: "system" }} /></Virtualizer>}</div></>}
       </section>
@@ -178,7 +224,7 @@ function ChangesTree({ files, status: gitStatus, selectedPath, onSelect, onToggl
   const allIndeterminate = !allChecked && stageableFiles.some((file) => file.has_staged_changes);
   const { model } = useFileTree({ paths, gitStatus: statusEntries, initialExpansion: "open", initialSelectedPaths: paths.slice(0, 1), onSelectionChange: (selected) => { const path = [...selected].reverse().find((item) => paths.includes(item)); if (path) onSelect(path); }, renderRowDecoration: ({ item }) => { if (item.kind !== "file") return null; const file = stats.get(item.path); if (!file) return null; return { text: `+${file.additions} −${file.deletions}`, title: `${file.additions} additions, ${file.deletions} deletions` }; }, renderRowTrailing: onToggle && gitStatus ? ({ item }) => { const normalizedPath = item.path.endsWith("/") ? item.path.slice(0, -1) : item.path; const descendants = gitStatus.files.filter((file) => file.status !== "conflicted" && (item.kind === "file" ? file.path === normalizedPath : file.path.startsWith(`${normalizedPath}/`))); if (descendants.length === 0) return null; const checked = descendants.every((file) => !file.has_unstaged_changes); const indeterminate = !checked && descendants.some((file) => file.has_staged_changes); const title = checked ? `Unstage ${normalizedPath}` : `Stage ${normalizedPath}`; return { width: 24, render: (container) => { const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.checked = checked; checkbox.indeterminate = indeterminate; checkbox.disabled = Boolean(mutatingPath); checkbox.title = title; checkbox.setAttribute("aria-label", title); checkbox.setAttribute("data-item-checkbox", "true"); const stop = (event: Event) => event.stopPropagation(); const change = () => onToggle(normalizedPath, checkbox.checked); checkbox.addEventListener("click", stop); checkbox.addEventListener("pointerdown", stop); checkbox.addEventListener("change", change); container.append(checkbox); return () => { checkbox.removeEventListener("click", stop); checkbox.removeEventListener("pointerdown", stop); checkbox.removeEventListener("change", change); checkbox.remove(); }; } }; } : undefined });
   useEffect(() => { model.getItem(selectedPath)?.select(); model.scrollToPath(selectedPath, { focus: false, offset: "nearest" }); }, [model, selectedPath]);
-  return <div className="min-h-0 flex-1 overflow-auto">{onToggleAll && gitStatus && stageableFiles.length > 0 && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-3"><span className="ml-auto text-xs text-muted-foreground">All changes</span><input type="checkbox" checked={allChecked} ref={(element) => { if (element) element.indeterminate = allIndeterminate; }} disabled={Boolean(mutatingPath)} aria-label={allChecked ? "Unstage all changes" : "Stage all changes"} data-item-checkbox="true" onClick={(event) => event.stopPropagation()} onChange={(event) => onToggleAll(event.currentTarget.checked)} /></div>}<FileTree model={model} aria-label="Changed files" className="min-h-full" style={{ height: "100%" }} /></div>;
+  return <div className="min-h-0 flex-1 overflow-auto">{onToggleAll && gitStatus && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-4"><span className="ml-auto truncate text-xs text-muted-foreground">All changes</span><span className="text-[10px] text-muted-foreground">{gitStatus.staged_count} staged</span><span className="flex w-6 shrink-0 justify-center"><input type="checkbox" checked={allChecked} ref={(element) => { if (element) element.indeterminate = allIndeterminate; }} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} aria-label={allChecked ? "Unstage all changes" : "Stage all changes"} data-item-checkbox="true" onClick={(event) => event.stopPropagation()} onChange={(event) => onToggleAll(event.currentTarget.checked)} /></span></div>}<FileTree model={model} aria-label="Changed files" className="min-h-full" style={{ height: "100%" }} /></div>;
 }
 
 function parseComparison(comparison: GitDiffComparison | null): { files: ParsedFile[]; error?: string } {
