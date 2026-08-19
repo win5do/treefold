@@ -109,10 +109,6 @@ impl Store {
         Ok(())
     }
 
-
-
-
-
     pub fn parent_operation(&self, id: &str) -> Result<ParentOperation> {
         let db = self.0.lock();
         Ok(db.query_row(
@@ -283,7 +279,6 @@ impl Store {
             delivery_preflight_row,
         )?)
     }
-
 }
 
 const SETTLEMENT_OPERATION_COLUMNS: &str = "workspace_repository_id AS workspace_location_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
@@ -309,7 +304,6 @@ fn delivery_operation_row(r: &Row<'_>) -> rusqlite::Result<DeliveryOperation> {
         updated_at: r.get("updated_at")?,
     })
 }
-
 
 const PARENT_OPERATION_COLUMNS: &str = "id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,undo_available,error,started_at,updated_at,completed_at";
 
@@ -344,7 +338,6 @@ fn parent_operation_row(r: &Row<'_>) -> rusqlite::Result<ParentOperation> {
         completed_at: r.get("completed_at")?,
     })
 }
-
 
 fn delivery_preflight_row(r: &Row<'_>) -> rusqlite::Result<DeliveryPreflight> {
     Ok(DeliveryPreflight {

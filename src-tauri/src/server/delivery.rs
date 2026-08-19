@@ -364,8 +364,6 @@ pub(super) fn delete_recovery_ref(repository: &str, recovery_ref: &str) -> Resul
     Ok(())
 }
 
-
-
 pub(super) fn git_rebase_output(dir: &Path, args: &[&str]) -> std::result::Result<String, String> {
     let mut command_args = Vec::with_capacity(args.len() + 1);
     command_args.push("rebase");
@@ -430,11 +428,15 @@ pub(super) async fn finish_workspace_impl(
     input: &FinishWorkspace,
     fail_after_phase: Option<&str>,
 ) -> Result<Workspace> {
+    let was_active = state.store.workspace(id)?.status == "active";
     let result = finish_workspace_steps(state, id, input, fail_after_phase).await;
     if let Err(error) = &result
         && state.store.delivery_operation(id).ok().flatten().is_some()
     {
         let _ = state.store.set_delivery_error(id, &error.to_string());
+    }
+    if result.is_ok() && was_active {
+        state.runtime.publish_sessions();
     }
     result
 }

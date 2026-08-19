@@ -8,5 +8,5 @@ export const appApi = {
   amuxStatus: (signal?: AbortSignal) => request<AmuxStatus>("/api/amux", { signal }),
   stopAmux: () => request<void>("/api/amux/stop", { method: "POST" }),
   backgroundProcesses: (signal?: AbortSignal) => request<BackgroundProcess[]>("/api/processes", { signal }),
-  runtimeRevision: (signal?: AbortSignal) => request<{ revision: number }>("/api/events/revision", { signal }),
+  runtimeRevision: (signal?: AbortSignal) => request<{ instance_id: string; revision: number }>("/api/events/revision", { signal }),
 };

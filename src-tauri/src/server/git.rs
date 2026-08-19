@@ -1,6 +1,5 @@
 use super::*;
 
-
 pub(super) async fn get_project_location_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
@@ -1020,10 +1019,9 @@ pub(super) async fn archive_workspace(
             .await;
         state.store.set_session_status(&session.id, "stopped")?;
     }
+    state.runtime.publish_sessions();
     Ok(Json(state.store.workspace(&id)?))
 }
-
-
 
 pub(super) async fn pull_workspace(
     State(state): State<AppState>,

@@ -2,46 +2,45 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { appApi } from "@/api/app";
 import { apiUrl } from "@/api/client";
-import { appKeys } from "@/features/app/queries";
-import { projectKeys } from "@/features/projects/queries";
+import { invalidateRuntimeQueries, type RuntimeDomain } from "@/features/app/runtimeInvalidation";
 
 type RuntimeChange = {
+  instance_id: string;
   revision: number;
-  domains?: string[];
+  domains?: RuntimeDomain[];
 };
 
 const FALLBACK_INTERVAL_MS = 30_000;
 
 export function RuntimeSync() {
   const queryClient = useQueryClient();
-  const revisionRef = useRef<number | null>(null);
+  const cursorRef = useRef<Pick<RuntimeChange, "instance_id" | "revision"> | null>(null);
 
   useEffect(() => {
-    const invalidate = (domains: string[] = ["sidebar", "sessions", "processes"]) => {
-      if (domains.includes("sidebar")) {
-        void queryClient.invalidateQueries({ queryKey: projectKeys.sidebar });
+    const accept = (change: RuntimeChange, sync: boolean) => {
+      const previous = cursorRef.current;
+      if (previous === null) {
+        cursorRef.current = change;
+        return;
       }
-      if (domains.includes("sessions")) {
-        void queryClient.invalidateQueries({ queryKey: ["project-sessions"] });
-        void queryClient.invalidateQueries({ queryKey: ["workspace-sessions"] });
+      if (change.instance_id !== previous.instance_id) {
+        cursorRef.current = change;
+        void invalidateRuntimeQueries(queryClient);
+        return;
       }
-      if (domains.includes("processes")) {
-        void queryClient.invalidateQueries({ queryKey: appKeys.processes });
-        void queryClient.invalidateQueries({ queryKey: appKeys.amux });
+      if (change.revision <= previous.revision) return;
+      cursorRef.current = change;
+      if (sync || change.revision !== previous.revision + 1) {
+        void invalidateRuntimeQueries(queryClient);
+        return;
       }
-    };
-
-    const accept = (change: RuntimeChange, initial: boolean) => {
-      const previous = revisionRef.current;
-      if (previous !== null && change.revision <= previous) return;
-      revisionRef.current = change.revision;
-      if (!initial && previous !== null) invalidate(change.domains);
+      void invalidateRuntimeQueries(queryClient, change.domains);
     };
 
     const events = new EventSource(apiUrl("/api/events"));
     events.addEventListener("runtime.sync", (event) => {
       try {
-        accept(JSON.parse((event as MessageEvent<string>).data) as RuntimeChange, revisionRef.current === null);
+        accept(JSON.parse((event as MessageEvent<string>).data) as RuntimeChange, true);
       } catch {
         // The 30-second revision check recovers malformed or interrupted events.
       }
@@ -55,14 +54,8 @@ export function RuntimeSync() {
     });
 
     const fallback = window.setInterval(() => {
-      void appApi.runtimeRevision().then(({ revision }) => {
-        const previous = revisionRef.current;
-        if (previous === null) {
-          revisionRef.current = revision;
-        } else if (previous !== revision) {
-          revisionRef.current = revision;
-          invalidate();
-        }
+      void appApi.runtimeRevision().then((cursor) => {
+        accept(cursor, true);
       }).catch(() => {
         // EventSource and the next fallback tick will retry independently.
       });

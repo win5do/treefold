@@ -414,7 +414,7 @@ fn table_has_column(connection: &Connection, table: &str, column: &str) -> Resul
 
 #[cfg(test)]
 mod workspace_schema_tests {
-    use super::{Connection, Store, now, table_exists, table_has_column};
+    use super::{Connection, SCHEMA, Store, now, table_exists, table_has_column};
     use crate::model::{Directory, Project};
 
     fn temporary_database(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {

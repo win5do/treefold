@@ -55,14 +55,31 @@ pub struct AppState {
 
 #[derive(Clone)]
 pub struct RuntimeHub {
+    instance_id: Arc<str>,
     revision: Arc<AtomicU64>,
     changes: tokio::sync::broadcast::Sender<RuntimeChange>,
 }
 
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeDomain {
+    Sidebar,
+    Sessions,
+    Processes,
+    Amux,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RuntimeCursor {
+    pub instance_id: String,
+    pub revision: u64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct RuntimeChange {
+    pub instance_id: String,
     pub revision: u64,
-    pub domains: Vec<String>,
+    pub domains: Vec<RuntimeDomain>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
 }
@@ -71,6 +88,7 @@ impl Default for RuntimeHub {
     fn default() -> Self {
         let (changes, _) = tokio::sync::broadcast::channel(256);
         Self {
+            instance_id: Arc::from(Uuid::new_v4().to_string()),
             revision: Arc::new(AtomicU64::new(0)),
             changes,
         }
@@ -82,17 +100,77 @@ impl RuntimeHub {
         self.revision.load(Ordering::Acquire)
     }
 
+    pub fn cursor(&self) -> RuntimeCursor {
+        RuntimeCursor {
+            instance_id: self.instance_id.to_string(),
+            revision: self.revision(),
+        }
+    }
+
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<RuntimeChange> {
         self.changes.subscribe()
     }
 
-    pub fn publish(&self, domains: &[&str], session_id: Option<String>) {
+    pub fn subscribe_with_cursor(
+        &self,
+    ) -> (
+        tokio::sync::broadcast::Receiver<RuntimeChange>,
+        RuntimeCursor,
+    ) {
+        let receiver = self.subscribe();
+        let cursor = self.cursor();
+        (receiver, cursor)
+    }
+
+    pub fn publish(&self, domains: &[RuntimeDomain], session_id: Option<String>) {
         let revision = self.revision.fetch_add(1, Ordering::AcqRel) + 1;
         let _ = self.changes.send(RuntimeChange {
+            instance_id: self.instance_id.to_string(),
             revision,
-            domains: domains.iter().map(|domain| (*domain).into()).collect(),
+            domains: domains.to_vec(),
             session_id,
         });
+    }
+
+    pub fn publish_session(&self, session_id: impl Into<String>) {
+        self.publish(
+            &[
+                RuntimeDomain::Sidebar,
+                RuntimeDomain::Sessions,
+                RuntimeDomain::Processes,
+            ],
+            Some(session_id.into()),
+        );
+    }
+
+    pub fn publish_session_list(&self, session_id: Option<String>) {
+        self.publish(
+            &[RuntimeDomain::Sidebar, RuntimeDomain::Sessions],
+            session_id,
+        );
+    }
+
+    pub fn publish_sessions(&self) {
+        self.publish(
+            &[
+                RuntimeDomain::Sidebar,
+                RuntimeDomain::Sessions,
+                RuntimeDomain::Processes,
+            ],
+            None,
+        );
+    }
+
+    pub fn publish_daemon_stopped(&self) {
+        self.publish(
+            &[
+                RuntimeDomain::Sidebar,
+                RuntimeDomain::Sessions,
+                RuntimeDomain::Processes,
+                RuntimeDomain::Amux,
+            ],
+            None,
+        );
     }
 }
 
@@ -435,44 +513,43 @@ fn app(state: AppState) -> Router {
 }
 
 async fn runtime_revision(State(state): State<AppState>) -> Json<Value> {
-    Json(json!({ "revision": state.runtime.revision() }))
+    Json(json!(state.runtime.cursor()))
 }
 
 async fn runtime_events(
     State(state): State<AppState>,
 ) -> Sse<impl futures_util::Stream<Item = std::result::Result<Event, Infallible>>> {
-    let initial_revision = state.runtime.revision();
-    let receiver = state.runtime.subscribe();
+    // Subscribe before reading the cursor so a publish racing with connection
+    // setup is either represented by the sync cursor or queued on the receiver.
+    let (receiver, initial_cursor) = state.runtime.subscribe_with_cursor();
     let runtime = state.runtime.clone();
     let events = stream::unfold(
-        (receiver, runtime, true, initial_revision),
-        |(mut receiver, runtime, initial, revision)| async move {
-            if initial {
-                let payload = json!({ "revision": revision });
+        (receiver, runtime, Some(initial_cursor)),
+        |(mut receiver, runtime, initial_cursor)| async move {
+            if let Some(cursor) = initial_cursor {
+                let payload = json!(cursor);
                 return Some((
                     Ok(Event::default()
                         .event("runtime.sync")
                         .data(payload.to_string())),
-                    (receiver, runtime, false, revision),
+                    (receiver, runtime, None),
                 ));
             }
             match receiver.recv().await {
                 Ok(change) => {
-                    let next_revision = change.revision;
                     let payload = serde_json::to_string(&change).unwrap_or_default();
                     Some((
                         Ok(Event::default().event("runtime.changed").data(payload)),
-                        (receiver, runtime, false, next_revision),
+                        (receiver, runtime, None),
                     ))
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                    let current_revision = runtime.revision();
-                    let payload = json!({ "revision": current_revision });
+                    let payload = json!(runtime.cursor());
                     Some((
                         Ok(Event::default()
                             .event("runtime.sync")
                             .data(payload.to_string())),
-                        (receiver, runtime, false, current_revision),
+                        (receiver, runtime, None),
                     ))
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => None,

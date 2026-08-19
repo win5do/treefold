@@ -10,6 +10,7 @@ import "@azurity/pure-nerd-font/pure-nerd-font.css";
 import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import type { Session } from "@/domain/types";
+import { prepareTerminalInput } from "@/features/terminal/inputQueue";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
@@ -66,10 +67,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       terminal.refresh(0, terminal.rows - 1);
     }).catch(() => { /* existing font fallbacks remain available */ });
     fit.fit();
-    const encoder = new TextEncoder();
-    const maxQueuedBytes = 1024 * 1024;
     const socketHighWaterBytes = 256 * 1024;
-    const frameBytes = 16 * 1024;
     const pendingInput: ArrayBuffer[] = [];
     let pendingBytes = 0;
     let inputPaused = false;
@@ -174,8 +172,12 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       candidate.onerror = () => candidate.close();
     };
     const input = terminal.onData((data) => {
-      const encoded = encoder.encode(data);
-      if (pendingBytes + encoded.byteLength > maxQueuedBytes) {
+      const prepared = prepareTerminalInput(data, pendingBytes);
+      if (!prepared.accepted && prepared.reason === "single-input-too-large") {
+        terminal.writeln("\r\n\x1b[31mterminal input rejected: a single paste cannot exceed 1 MiB\x1b[0m");
+        return;
+      }
+      if (!prepared.accepted) {
         if (!inputPaused) {
           inputPaused = true;
           terminal.options.disableStdin = true;
@@ -183,8 +185,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
         }
         return;
       }
-      for (let offset = 0; offset < encoded.byteLength; offset += frameBytes) {
-        const frame = encoded.slice(offset, offset + frameBytes).buffer as ArrayBuffer;
+      for (const frame of prepared.frames) {
         pendingInput.push(frame);
         pendingBytes += frame.byteLength;
       }

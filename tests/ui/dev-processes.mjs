@@ -33,6 +33,9 @@ try {
   await browser.waitUntil(async () => (await devServer.getText()).includes("exited"), { timeout: 4_000, timeoutMsg: "Command Session state did not refresh from the backend snapshot" });
   harness.removeProcess(FIXTURE_IDS.sessionDevServer);
   await browser.waitUntil(async () => (await devServer.getText()).includes("stopped"), { timeout: 4_000, timeoutMsg: "Removed Commands must remain visible as stopped Sessions" });
+  harness.restartRuntimeInstance();
+  harness.setProcessState(FIXTURE_IDS.sessionDevServer, "running");
+  await browser.waitUntil(async () => (await devServer.getText()).includes("running"), { timeout: 4_000, timeoutMsg: "Session state did not refresh after a backend instance switch and revision reset" });
 
   harness.assertNoUnexpectedRequests();
   console.log("✓ daemon Commands are first-class worktree Sessions and retain lifecycle state");

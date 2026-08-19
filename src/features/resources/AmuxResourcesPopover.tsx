@@ -9,7 +9,8 @@ import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitl
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AmuxStatus } from "@/domain/types";
-import { amuxQuery, appKeys } from "@/features/app/queries";
+import { amuxQuery } from "@/features/app/queries";
+import { invalidateRuntimeQueries } from "@/features/app/runtimeInvalidation";
 import { toast } from "@/lib/toast";
 
 function formatDaemonUptime(status: AmuxStatus | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
@@ -46,7 +47,7 @@ export function AmuxResourcesPopover() {
       await appApi.stopAmux();
       setConfirmStop(false);
       setOpen(true);
-      await queryClient.invalidateQueries({ queryKey: appKeys.amux });
+      await invalidateRuntimeQueries(queryClient);
       toast.success("amux Daemon stopped");
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : t("resources.stopFailed"));

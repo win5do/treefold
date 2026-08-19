@@ -34,10 +34,11 @@ async function readJson(request) {
 async function startFixtureApi() {
   const fixture = createSidebarCoreFixture();
   const eventStreams = new Set();
+  let runtimeInstanceId = "runtime-ui-fixture-1";
   let runtimeRevision = 0;
   const publishRuntimeChange = (domains) => {
     runtimeRevision += 1;
-    const payload = JSON.stringify({ revision: runtimeRevision, domains });
+    const payload = JSON.stringify({ instance_id: runtimeInstanceId, revision: runtimeRevision, domains });
     for (const response of eventStreams) {
       response.write(`event: runtime.changed\ndata: ${payload}\n\n`);
     }
@@ -100,7 +101,7 @@ async function startFixtureApi() {
       return;
     }
     if (request.method === "GET" && pathname === "/api/events/revision") {
-      sendJson(response, 200, { revision: runtimeRevision });
+      sendJson(response, 200, { instance_id: runtimeInstanceId, revision: runtimeRevision });
       return;
     }
     if (request.method === "GET" && pathname === "/api/events") {
@@ -109,7 +110,7 @@ async function startFixtureApi() {
         "Cache-Control": "no-cache",
         "Content-Type": "text/event-stream",
       });
-      response.write(`event: runtime.sync\ndata: ${JSON.stringify({ revision: runtimeRevision })}\n\n`);
+      response.write(`event: runtime.sync\ndata: ${JSON.stringify({ instance_id: runtimeInstanceId, revision: runtimeRevision })}\n\n`);
       eventStreams.add(response);
       request.on("close", () => eventStreams.delete(response));
       return;
@@ -120,7 +121,13 @@ async function startFixtureApi() {
       fixture.amux.started_at = undefined;
       fixture.amux.active_groups = 0;
       fixture.amux.active_processes = 0;
+      for (const detail of Object.values(fixture.workspaceDetails)) {
+        for (const session of detail.sessions) {
+          if (session.status === "running") session.status = "stopped";
+        }
+      }
       sendJson(response, 204, null);
+      publishRuntimeChange(["sidebar", "sessions", "processes", "amux"]);
       return;
     }
     if (request.method === "PATCH" && pathname === "/api/settings") {
@@ -1197,6 +1204,10 @@ async function startFixtureApi() {
       if (changed)
         publishRuntimeChange(["sidebar", "sessions", "processes"]);
     },
+    restartRuntimeInstance() {
+      runtimeInstanceId = `runtime-ui-fixture-${Date.now()}`;
+      runtimeRevision = 0;
+    },
     setWorktreeDeletePrecheck(value) {
       worktreeDeletePrecheck = { ...worktreeDeletePrecheck, ...value };
     },
@@ -1246,6 +1257,7 @@ export async function startUiHarness() {
       restoreActiveStreams() {},
       setProjectStatus() {},
       setProcessState() {},
+      restartRuntimeInstance() {},
       setWorktreeDeletePrecheck() {},
       removeProcess() {},
       assertNoUnexpectedRequests() {},
@@ -1303,6 +1315,7 @@ export async function startUiHarness() {
     restoreActiveStreams: fixtureApi.restoreActiveStreams,
     setProjectStatus: fixtureApi.setProjectStatus,
     setProcessState: fixtureApi.setProcessState,
+    restartRuntimeInstance: fixtureApi.restartRuntimeInstance,
     setWorktreeDeletePrecheck: fixtureApi.setWorktreeDeletePrecheck,
     removeProcess: fixtureApi.removeProcess,
     assertNoUnexpectedRequests() {

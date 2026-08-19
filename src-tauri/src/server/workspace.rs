@@ -221,6 +221,9 @@ pub(super) async fn update_project(
             .store
             .update_project_defaults(&id, default_id, branch, mode)?;
     }
+    if status == "archived" && current.status != "archived" {
+        state.runtime.publish_sessions();
+    }
     Ok(Json(state.store.project(&id)?))
 }
 
@@ -257,7 +260,6 @@ pub(super) async fn get_project(
     detail.sessions = refresh_session_records(&state, detail.sessions).await?;
     Ok(Json(detail))
 }
-
 
 pub(super) async fn reveal_project(
     State(state): State<AppState>,
@@ -692,7 +694,6 @@ pub(super) async fn get_project_directory(
 ) -> Result<Json<ProjectDirectory>> {
     Ok(Json(state.store.directory_record(&id)?))
 }
-
 
 #[derive(Deserialize)]
 pub(super) struct CloneProjectRepository {

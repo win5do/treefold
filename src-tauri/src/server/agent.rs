@@ -22,6 +22,7 @@ pub(super) async fn amux_status(
 pub(super) async fn stop_amux(State(state): State<AppState>) -> Result<StatusCode> {
     state.terminals.stop_daemon().await?;
     state.store.stop_active_sessions()?;
+    state.runtime.publish_daemon_stopped();
     Ok(StatusCode::NO_CONTENT)
 }
 

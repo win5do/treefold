@@ -14,15 +14,15 @@ mod current_workspace_tests {
 
     use super::{
         ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject,
-        CreateSession, CreateWorkspace, FinishWorkspace, RuntimeHub, UpdateProject,
+        CreateSession, CreateWorkspace, FinishWorkspace, RuntimeDomain, RuntimeHub, UpdateProject,
         UpdateWorkspaceLocation, abort_parent_operation_impl, app, close_session, command_output,
         create_delivery_preflight_impl, create_directory, create_fork, create_project,
         create_project_session, create_session, create_workspace,
         create_workspace_location_preflight_impl, delete_project_location, finish_workspace_impl,
         finish_workspace_location_impl, get_project, git_head, git_is_ancestor, git_worktrees,
         normalized_path, pull_workspace, push_workspace, reconcile_parent_operation,
-        reconcile_process, refresh_project_location, start_parent_operation_impl, stop_session,
-        undo_parent_operation_impl, update_project, update_workspace_location,
+        reconcile_process, refresh_project_location, start_parent_operation_impl, stop_amux,
+        stop_session, undo_parent_operation_impl, update_project, update_workspace_location,
     };
     use crate::{
         model::{Session, Todo},
@@ -39,6 +39,33 @@ mod current_workspace_tests {
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
         }
+    }
+
+    #[tokio::test]
+    async fn runtime_hub_uses_instance_scoped_monotonic_cursors_without_setup_gaps() {
+        let hub = RuntimeHub::default();
+        let other = RuntimeHub::default();
+        assert_ne!(hub.cursor().instance_id, other.cursor().instance_id);
+        assert_eq!(hub.revision(), 0);
+
+        hub.publish(&[RuntimeDomain::Sidebar], None);
+        assert_eq!(hub.revision(), 1);
+
+        let (mut receiver, cursor) = hub.subscribe_with_cursor();
+        assert_eq!(cursor.revision, 1);
+        hub.publish_session("session-race");
+        let change = receiver.recv().await.expect("queued runtime change");
+        assert_eq!(change.instance_id, cursor.instance_id);
+        assert_eq!(change.revision, 2);
+        assert_eq!(
+            change.domains,
+            vec![
+                RuntimeDomain::Sidebar,
+                RuntimeDomain::Sessions,
+                RuntimeDomain::Processes,
+            ]
+        );
+        assert_eq!(change.session_id.as_deref(), Some("session-race"));
     }
 
     fn initialize_repository(repository: &Path) {
@@ -452,6 +479,7 @@ mod current_workspace_tests {
             state.store.session(&sessions[0].id).unwrap().status,
             "stopped"
         );
+        assert_eq!(state.runtime.revision(), first_revision + 1);
 
         let mut late_exit = process.clone();
         late_exit.state = "exited".into();
@@ -461,11 +489,35 @@ mod current_workspace_tests {
             state.store.session(&sessions[0].id).unwrap().status,
             "stopped"
         );
+        assert_eq!(state.runtime.revision(), first_revision + 2);
+        let reconciled_revision = state.runtime.revision();
+        reconcile_process(&state, &late_exit, false).expect("repeat late Stop exit");
+        assert_eq!(state.runtime.revision(), reconciled_revision);
 
         reconcile_process(&state, &process, false).expect("reconcile explicit Restart");
         assert_eq!(
             state.store.session(&sessions[0].id).unwrap().status,
             "running"
+        );
+        let before_daemon_stop = state.runtime.revision();
+        let mut runtime_changes = state.runtime.subscribe();
+        stop_amux(State(state.clone()))
+            .await
+            .expect("stop daemon lifecycle");
+        assert_eq!(state.runtime.revision(), before_daemon_stop + 1);
+        let daemon_change = runtime_changes.recv().await.expect("daemon runtime change");
+        assert_eq!(
+            daemon_change.domains,
+            vec![
+                RuntimeDomain::Sidebar,
+                RuntimeDomain::Sessions,
+                RuntimeDomain::Processes,
+                RuntimeDomain::Amux,
+            ]
+        );
+        assert_eq!(
+            state.store.session(&sessions[0].id).unwrap().status,
+            "stopped"
         );
         reconcile_process(&state, &process, true).expect("remove Command runtime");
         assert_eq!(
@@ -2015,10 +2067,10 @@ mod tests {
         CreateTodo, CreateWorkspace, FinishWorkspace, ParsedGitWorktree, UpdateProject, app,
         command_output, create_delivery_preflight_impl, create_fork, create_project,
         create_project_session, create_session, create_todo, create_workspace, delete_project,
-        finish_workspace, finish_workspace_impl, git_head, git_is_ancestor,
-        git_worktrees, id_for_operation, normalized_path, parse_git_history, parse_git_worktrees,
-        rebase_in_progress, reveal_in_file_manager, slug,
-        treefold_developer_instructions, update_project,
+        finish_workspace, finish_workspace_impl, git_head, git_is_ancestor, git_worktrees,
+        id_for_operation, normalized_path, parse_git_history, parse_git_worktrees,
+        rebase_in_progress, reveal_in_file_manager, slug, treefold_developer_instructions,
+        update_project,
     };
 
     use crate::{
@@ -2759,8 +2811,6 @@ mod tests {
         drop(fixture);
         std::fs::remove_dir_all(root).expect("remove delivery preflight fixture");
     }
-
-
 
     #[tokio::test]
     async fn fork_delivery_merges_code_carries_todos_and_cleans_git_resources() {
