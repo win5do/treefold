@@ -7,6 +7,7 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
+  Copy,
   Download,
   Ellipsis,
   Folder,
@@ -51,6 +52,7 @@ import type {
 } from "@/domain/types";
 import { AmuxResourcesPopover } from "@/features/resources/AmuxResourcesPopover";
 import { cn } from "@/lib/utils";
+import { toast } from "@/lib/toast";
 
 export function WorkspaceSidebar({
   projects,
@@ -523,6 +525,23 @@ function SidebarOwnerContextMenu({
 }) {
   const { t } = useTranslation();
   const directories = stream?.directories ?? project.directories;
+  const pathTargets = stream
+    ? (stream.locations ?? []).flatMap((location) =>
+        location.checkout_path
+          ? [
+              {
+                id: location.id,
+                name: location.location_name,
+                path: location.checkout_path,
+              },
+            ]
+          : [],
+      )
+    : project.repositories.map((repository) => ({
+        id: repository.id,
+        name: repository.name,
+        path: repository.source_root,
+      }));
   const syncTargets = !stream
     ? project.repositories
         .filter((repository) => repository.git_status === "ready")
@@ -679,6 +698,49 @@ function SidebarOwnerContextMenu({
         )}
         <ContextMenuSeparator />
         <ContextMenuGroup>
+          <ContextMenuSub>
+            <ContextMenuSubTrigger
+              data-testid="copy-absolute-path-menu"
+              disabled={pathTargets.length === 0}
+            >
+              <Copy />
+              {t("sidebar.copyAbsolutePath")}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent
+              data-testid="copy-absolute-path-submenu"
+              className="w-52"
+            >
+              <ContextMenuGroup>
+                <ContextMenuLabel>
+                  {t("sidebar.selectRepository")}
+                </ContextMenuLabel>
+                {pathTargets.map((target) => (
+                  <ContextMenuItem
+                    key={target.id}
+                    data-testid={`copy-absolute-path-${target.id}`}
+                    onClick={() => {
+                      void navigator.clipboard
+                        .writeText(target.path)
+                        .then(() =>
+                          toast.success(
+                            t("sidebar.absolutePathCopied", {
+                              name: target.name,
+                            }),
+                          ),
+                        )
+                        .catch((cause) => {
+                          console.error("Could not copy absolute path", cause);
+                          toast.error(t("sidebar.copyAbsolutePathFailed"));
+                        });
+                    }}
+                  >
+                    <FolderGit2 />
+                    {target.name}
+                  </ContextMenuItem>
+                ))}
+              </ContextMenuGroup>
+            </ContextMenuSubContent>
+          </ContextMenuSub>
           <ContextMenuItem onClick={onOpenInFinder}>
             <FolderOpen />
             {t("sidebar.openInFinder")}

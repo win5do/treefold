@@ -475,6 +475,39 @@ try {
     false,
     "Fork context menu must not expose Project archive",
   );
+  await browser.execute(() => {
+    window.__treefoldCopiedPath = null;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          window.__treefoldCopiedPath = value;
+        },
+      },
+    });
+  });
+  await moveUiPointerTo(
+    browser,
+    await nodeContextMenu.$('[data-testid="copy-absolute-path-menu"]'),
+  );
+  const copyPathSubmenu = await browser.$(
+    '[data-testid="copy-absolute-path-submenu"]',
+  );
+  await copyPathSubmenu.waitForDisplayed({ timeout: 3_000 });
+  await (
+    await copyPathSubmenu.$(
+      `[data-testid="copy-absolute-path-${FIXTURE_IDS.forkSecondaryLocation}"]`,
+    )
+  ).click();
+  await browser.waitUntil(
+    async () =>
+      (await browser.execute(() => window.__treefoldCopiedPath)) ===
+      "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture-api",
+    {
+      timeout: 3_000,
+      timeoutMsg: "copy path action must write the selected repo worktree path",
+    },
+  );
   await pressUiEscape(browser);
   await browser.execute(() => {
     document.querySelector('[data-testid="sidebar-fork-node"]')?.dispatchEvent(
