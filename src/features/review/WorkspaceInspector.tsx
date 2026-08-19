@@ -22,9 +22,10 @@ import { toast } from "@/lib/toast";
 type InspectorRepository = { id: string; name: string };
 
 export function WorkspaceInspector({ open, project, workspace, session, gitChangesActive, onOpenChanges, onOpenDiff }: { open: boolean; project: ProjectDetail; workspace: WorkspaceDetail | null; session: Session | null; gitChangesActive: boolean; onOpenChanges: (repository: InspectorRepository) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
-  const [tab, setTab] = useState<"info" | "changes" | "history">("info");
+  const [tab, setTab] = useState<"info" | "changes" | "history">("changes");
   const [history, setHistory] = useState<GitHistory | null>(null);
   const [historyError, setHistoryError] = useState("");
+  useEffect(() => { if (open) setTab("changes"); }, [open]);
   useEffect(() => { if (gitChangesActive) setTab("changes"); }, [gitChangesActive]);
   const historyRepositories = workspace
     ? workspace.repositories
