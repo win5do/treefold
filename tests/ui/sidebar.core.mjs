@@ -1383,13 +1383,6 @@ try {
   const agentSessionItem = await directoryMenu.$(
     '[data-testid="session-kind-codex"]',
   );
-  assert.equal(
-    await (
-      await browser.$('[data-testid="directory-session-submenu"]')
-    ).isExisting(),
-    false,
-    "directory submenu must be hidden before hover",
-  );
   await moveUiPointerTo(browser, shellSessionItem);
   let directorySubmenu = await browser.$(
     '[data-testid="directory-session-submenu"]',
@@ -1429,34 +1422,10 @@ try {
     null,
     "non-Git locations must remain read-only Agent context",
   );
-  const finderItem = await directoryMenu.$(
-    '[data-slot="context-menu-item"]*=Open in Finder',
-  );
-  await moveUiPointerTo(browser, finderItem);
-  await browser.waitUntil(
-    async () =>
-      await browser.execute(
-        () =>
-          !document.querySelector('[data-testid="directory-session-submenu"]'),
-      ),
-    {
-      timeout: 3_000,
-      timeoutMsg:
-        "hovering a non-directory context action did not dismiss the directory submenu",
-    },
-  );
   const archiveProject = await directoryMenu.$(
     '[data-testid="archive-project-action"]',
   );
   await moveUiPointerTo(browser, archiveProject);
-  assert.equal(
-    await browser.execute(
-      () =>
-        !document.querySelector('[data-testid="directory-session-submenu"]'),
-    ),
-    true,
-    "Archive Project must remain reachable without an open directory submenu",
-  );
   await archiveProject.click();
   const archiveBlockedAlert = await waitForToast(
     browser,

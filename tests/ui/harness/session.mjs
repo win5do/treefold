@@ -250,6 +250,16 @@ export async function moveUiPointerTo(browser, target) {
   const element = typeof target === "string" ? await browser.$(target) : target;
   if (defaultConfig.transport !== "tauri") {
     await element.moveTo();
+    // Reopening a menu often leaves WebDriver's virtual pointer at the exact
+    // same coordinates. In that case Chrome emits no new mouseenter event, so
+    // submenu triggers need a click fallback when hover did not expand them.
+    if (
+      (await element.getAttribute("aria-haspopup")) === "menu" &&
+      (await element.getAttribute("aria-expanded")) !== "true"
+    ) {
+      await element.click();
+    }
+    await browser.pause(50);
     return;
   }
   await browser.execute((targetElement, targetSelector) => {
