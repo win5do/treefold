@@ -1,20 +1,13 @@
 import assert from "node:assert/strict";
-import { remote } from "webdriverio";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
 import { startUiHarness } from "./ui-harness.mjs";
+import { closeUiSession, createUiSession } from "./harness/session.mjs";
 
 const harness = await startUiHarness();
-const browser = await remote({
-  logLevel: "error",
-  capabilities: {
-    browserName: "chrome",
-    "goog:chromeOptions": {
-      args: ["--headless=new", "--window-size=1400,900", "--disable-gpu"],
-    },
-  },
-});
+let browser;
 
 try {
+  browser = await createUiSession({ sessionName: "worktree-delete" });
   await browser.url(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
   const repository = await browser.$(
     `[data-testid="project-location-${FIXTURE_IDS.primaryRepository}"]`,
@@ -82,6 +75,6 @@ try {
   harness.assertNoUnexpectedRequests();
   console.log("✓ worktree deletion precheck, blocking, retry, and removal passed");
 } finally {
-  await browser.deleteSession();
+  await closeUiSession(browser);
   await harness.close();
 }

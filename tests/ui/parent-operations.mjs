@@ -1,35 +1,32 @@
 import assert from "node:assert/strict";
-import { Key, remote } from "webdriverio";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
 import { startUiHarness } from "./ui-harness.mjs";
+import {
+  closeUiSession,
+  createUiSession,
+  openUiContextMenu,
+  pressUiEscape,
+} from "./harness/session.mjs";
 
 const harness = await startUiHarness();
 let browser;
 
 async function ownerMenu(selector) {
-  await (await browser.$(selector)).click({ button: "right" });
+  await openUiContextMenu(browser, selector);
   const menu = await browser.$('[data-testid="directory-session-context-menu"]');
   await menu.waitForDisplayed({ timeout: 3_000 });
   return menu;
 }
 
 try {
-  browser = await remote({
-    logLevel: "error",
-    capabilities: {
-      browserName: "chrome",
-      "goog:chromeOptions": {
-        args: ["--headless=new", "--window-size=1400,900", "--disable-gpu"],
-      },
-    },
-  });
+  browser = await createUiSession({ sessionName: "parent-operations" });
   await browser.url(`${harness.baseUrl}/workspaces/${FIXTURE_IDS.workspace}`);
   await (await browser.$('[data-testid="workspace-sidebar"]')).waitForDisplayed({ timeout: 10_000 });
 
   let menu = await ownerMenu('[data-testid="sidebar-project-node"]');
   assert.equal(await (await menu.$('[data-testid="update-from-parent-action"]')).isExisting(), false);
   assert.equal(await (await menu.$('[data-testid="integrate-into-parent-action"]')).isExisting(), false);
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
 
   const projectNode = await browser.$('[data-testid="sidebar-project-node"]');
   const projectToggle = await projectNode.$('[data-testid="sidebar-tree-toggle"]');
@@ -38,11 +35,11 @@ try {
   const workspaceToggle = await workspaceNode.$('[data-testid="sidebar-tree-toggle"]');
   if ((await workspaceToggle.getAttribute("aria-expanded")) !== "true") await workspaceToggle.click();
   const session = await browser.$(`[data-testid="sidebar-session-${FIXTURE_IDS.workspaceShell}"]`);
-  await session.click({ button: "right" });
+  await openUiContextMenu(browser, session);
   const sessionMenu = await browser.$('[data-testid="session-context-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await sessionMenu.$('[data-testid="update-from-parent-action"]')).isExisting(), false);
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
 
   menu = await ownerMenu('[data-testid="sidebar-workspace-node"]');
   assert.equal(await (await menu.$('[data-testid="update-from-parent-action"]')).isDisplayed(), true);
@@ -92,6 +89,6 @@ try {
   assert.ok(harness.parentOperationRequests.some((item) => item.endsWith(":undo")));
   harness.assertNoUnexpectedRequests();
 } finally {
-  if (browser) await browser.deleteSession();
+  await closeUiSession(browser);
   await harness.close();
 }

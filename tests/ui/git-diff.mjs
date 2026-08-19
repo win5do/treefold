@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
-import { remote } from "webdriverio";
 import { FIXTURE_COMMITS, FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
 import { startUiHarness } from "./ui-harness.mjs";
+import {
+  closeUiSession,
+  createUiSession,
+  openUiContextMenu,
+} from "./harness/session.mjs";
 
 const harness = await startUiHarness();
 let browser;
 try {
-  browser = await remote({ logLevel: "error", capabilities: { browserName: "chrome", "goog:chromeOptions": { args: ["--headless=new", "--window-size=1400,900", "--disable-gpu"] } } });
+  browser = await createUiSession({ sessionName: "git-diff" });
   await browser.url(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
   await (await browser.$('[data-testid="workspace-sidebar"]')).waitForDisplayed({ timeout: 10_000 });
   await browser.$('button[aria-label="Show right sidebar"]').click();
@@ -15,7 +19,7 @@ try {
   const commits = await browser.$$('[data-testid="git-history-commit"]');
   await commits[0].click();
   await browser.execute((element) => element.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })), commits[2]);
-  await commits[1].click({ button: "right" });
+  await openUiContextMenu(browser, commits[1]);
   await (await browser.$('[data-testid="view-git-diff-action"]')).click();
   await (await browser.$('h1=Commit Diff')).waitForDisplayed({ timeout: 5_000 });
   assert.equal((await browser.getWindowHandles()).length, 1, "View Diff must remain in the current window");
@@ -36,6 +40,6 @@ try {
   await browser?.saveScreenshot("/tmp/treefold-git-diff-failure.png").catch(() => {});
   throw error;
 } finally {
-  await browser?.deleteSession();
+  await closeUiSession(browser);
   await harness.close();
 }

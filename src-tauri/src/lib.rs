@@ -140,7 +140,12 @@ pub fn run() {
     let shutdown = std::sync::Arc::new(std::sync::Mutex::new(None));
     let shutdown_state = shutdown.clone();
     let daemon_stopped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(debug_assertions)]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![treefold_api_url])
         .on_window_event(|window, event| {

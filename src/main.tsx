@@ -25,7 +25,7 @@ const queryClient = new QueryClient({
 
 applyThemePreference("system");
 
-if (isTauri()) {
+if (isTauri() && !import.meta.env.VITE_TREEFOLD_API_BASE) {
   setApiBase(await invoke<string>("treefold_api_url"));
 }
 

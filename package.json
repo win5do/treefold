@@ -13,6 +13,7 @@
     "dev:desktop": "node scripts/dev.mjs",
     "build": "vite build",
     "test:ui": "node tests/ui/run.mjs",
+    "test:ui:tauri": "TREEFOLD_UI_TRANSPORT=tauri node tests/ui/run.mjs",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri"
   },
@@ -52,6 +53,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.5",
+    "@wdio/tauri-service": "^1.3.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.0",
     "vite": "^8.2.0",

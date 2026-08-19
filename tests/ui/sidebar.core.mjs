@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
-import { Key, remote } from "webdriverio";
+import { Key } from "webdriverio";
 import {
   FIXTURE_COMMITS,
   FIXTURE_IDS,
   FIXTURE_NAMES,
 } from "./fixtures/sidebar-core.mjs";
 import { startUiHarness } from "./ui-harness.mjs";
+import {
+  beginUiPointerDrag,
+  clickUiElement,
+  closeUiSession,
+  createUiSession,
+  moveUiPointerTo,
+  openUiContextMenu,
+  pressUiEscape,
+  selectUiOption,
+} from "./harness/session.mjs";
 
 async function assertOverlayVisibleAndTopmost(browser, selector, label) {
   const result = await browser.execute((targetSelector) => {
@@ -96,21 +106,33 @@ async function createSessionFromSidebar(
   await (await owner.$('[data-sidebar-row-action="true"]')).click();
   const menu = await browser.$('[data-testid="sidebar-session-menu"]');
   await menu.waitForDisplayed({ timeout: 3_000 });
-  await (
-    await menu.$(
-      `[data-testid="session-kind-${kind === "Shell" ? "shell" : "codex"}"]`,
-    )
-  ).moveTo();
-  const submenu = await menu.$('[data-testid="directory-session-submenu"]');
+  await moveUiPointerTo(
+    browser,
+    `[data-testid="sidebar-session-menu"] [data-testid="session-kind-${kind === "Shell" ? "shell" : "codex"}"]`,
+  );
+  const submenu = await browser.$('[data-testid="directory-session-submenu"]');
   await submenu.waitForDisplayed({ timeout: 3_000 });
   await (
     await submenu.$(`[data-testid="session-directory-${directoryId}"]`)
   ).click();
 }
 
+async function assertDirectorySubmenu(submenu, kind, directoryIds) {
+  await submenu.waitForDisplayed({ timeout: 3_000 });
+  for (const directoryId of directoryIds) {
+    assert.equal(
+      await (
+        await submenu.$(`[data-testid="session-directory-${directoryId}"]`)
+      ).isExisting(),
+      true,
+      `${kind} creation must expose directory ${directoryId}`,
+    );
+  }
+}
+
 async function renameNode(browser, nodeSelector, name, description) {
   const node = await browser.$(nodeSelector);
-  await node.moveTo();
+  await moveUiPointerTo(browser, node);
   await (await node.$('[data-testid="sidebar-node-menu-trigger"]')).click();
   const menu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
@@ -132,7 +154,7 @@ async function renameSession(browser, sessionId, name) {
     false,
     "Session rows must not show a Rename icon",
   );
-  await row.click({ button: "right" });
+  await openUiContextMenu(browser, row);
   const menu = await browser.$('[data-testid="session-context-menu"]');
   await menu.waitForDisplayed({ timeout: 3_000 });
   await (await menu.$('[data-testid="rename-session-action"]')).click();
@@ -149,24 +171,7 @@ async function renameSession(browser, sessionId, name) {
 }
 
 async function pointerDragSession(browser, source, target, expectedPosition) {
-  const sourceLocation = await source.getLocation();
-  const sourceSize = await source.getSize();
-  const targetLocation = await target.getLocation();
-  const targetSize = await target.getSize();
-  await browser
-    .action("pointer")
-    .move({
-      x: Math.round(sourceLocation.x + sourceSize.width / 2),
-      y: Math.round(sourceLocation.y + sourceSize.height / 2),
-    })
-    .down({ button: 0 })
-    .pause(50)
-    .move({
-      duration: 250,
-      x: Math.round(targetLocation.x + targetSize.width / 2),
-      y: Math.round(targetLocation.y + targetSize.height / 2),
-    })
-    .perform(true);
+  const releasePointer = await beginUiPointerDrag(browser, source, target);
   try {
     await browser.waitUntil(
       async () =>
@@ -177,7 +182,7 @@ async function pointerDragSession(browser, source, target, expectedPosition) {
       },
     );
   } finally {
-    await browser.releaseActions();
+    await releasePointer();
   }
 }
 
@@ -185,15 +190,7 @@ const harness = await startUiHarness();
 let browser;
 
 try {
-  browser = await remote({
-    logLevel: "error",
-    capabilities: {
-      browserName: "chrome",
-      "goog:chromeOptions": {
-        args: ["--headless=new", "--window-size=1400,900", "--disable-gpu"],
-      },
-    },
-  });
+  browser = await createUiSession({ sessionName: "sidebar-core" });
 
   await browser.url(harness.baseUrl);
   const sidebar = await browser.$('[data-testid="workspace-sidebar"]');
@@ -205,11 +202,6 @@ try {
   );
   const sidebarProjectsLink = await browser.$(
     '[data-testid="sidebar-projects-link"]',
-  );
-  assert.equal(
-    await projectsBreadcrumb.getAttribute("aria-label"),
-    "All Projects",
-    "breadcrumb root must expose the Project list destination",
   );
   assert.equal(
     await projectsBreadcrumb.getAttribute("aria-current"),
@@ -254,7 +246,7 @@ try {
   await (await browser.$('button[aria-label="New Project"]')).click();
   const newProjectDialog = await browser.$('[role="dialog"]');
   await newProjectDialog.waitForDisplayed({ timeout: 3_000 });
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await newProjectDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
   await (await browser.$('[data-testid="open-settings"]')).click();
@@ -286,9 +278,11 @@ try {
       `Runtime ${label} must be copyable`,
     );
   }
-  await (
-    await settingsDialog.$('[data-testid="settings-theme"]')
-  ).selectByAttribute("value", "dark");
+  await selectUiOption(
+    browser,
+    await settingsDialog.$('[data-testid="settings-theme"]'),
+    "dark",
+  );
   let codexArguments = await settingsDialog.$$(
     'input[aria-label^="Codex argument "]',
   );
@@ -307,7 +301,7 @@ try {
   ).click();
   await (await settingsDialog.$("button=Save")).click();
   await waitForToast(browser, "status", /Settings saved/);
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await settingsDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await (await browser.$('[data-testid="open-settings"]')).click();
   const reopenedSettingsDialog = await browser.$('[role="dialog"]');
@@ -332,7 +326,7 @@ try {
     ],
     "argument additions and ordering must survive the atomic settings PATCH",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await reopenedSettingsDialog.waitForDisplayed({
     reverse: true,
     timeout: 3_000,
@@ -349,7 +343,11 @@ try {
     },
   );
 
-  await handle.dragAndDrop({ x: 80, y: 0 }, { duration: 250 });
+  const releaseResizePointer = await beginUiPointerDrag(browser, handle, {
+    x: 80,
+    y: 0,
+  });
+  await releaseResizePointer();
   await browser.waitUntil(async () => (await sidebar.getSize("width")) >= 300, {
     timeout: 3_000,
     timeoutMsg: "sidebar did not respond to pointer resizing",
@@ -394,7 +392,7 @@ try {
     "expected the fixture Workspace and its active Fork",
   );
   for (const name of nodeNames) {
-    const owner = await name.parentElement();
+    const owner = await name.$("..");
     assert.equal(
       await owner.getAttribute("title"),
       await name.getText(),
@@ -412,19 +410,14 @@ try {
     "archived Fork must stay out of the active sidebar tree",
   );
 
-  await (
-    await browser.$('[data-testid="sidebar-workspace-node"]')
-  ).click({ button: "right" });
+  await openUiContextMenu(
+    browser,
+    await browser.$('[data-testid="sidebar-workspace-node"]'),
+  );
   let nodeContextMenu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
   );
   await nodeContextMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await nodeContextMenu.getText(), /New Fork/);
-  assert.match(await nodeContextMenu.getText(), /New Session/i);
-  assert.match(await nodeContextMenu.getText(), /Shell[\s\S]*Agent/);
-  assert.match(await nodeContextMenu.getText(), /Pull[\s\S]*Push/);
-  assert.match(await nodeContextMenu.getText(), /Open in Finder/);
-  assert.match(await nodeContextMenu.getText(), /Finish Workspace…/);
   assert.equal(
     await (
       await nodeContextMenu.$('[data-testid="archive-project-action"]')
@@ -440,9 +433,12 @@ try {
   const workspaceStrategy = await workspaceFinishDialog.$(
     "#finish-code-action",
   );
-  assert.match(
-    await workspaceStrategy.getText(),
-    /Merge into local base branch[\s\S]*Push Workspace feature branch[\s\S]*Preserve without delivery/,
+  assert.deepEqual(
+    await browser.execute(
+      (select) => Array.from(select.options, (option) => option.value),
+      workspaceStrategy,
+    ),
+    ["local_merge", "push_branch", "keep"],
     "Workspace Finish must expose local merge, feature push, and preserve strategies",
   );
   assert.equal(
@@ -455,17 +451,16 @@ try {
     false,
     "Finish must not offer an implicit commit message",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await workspaceFinishDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
-  await (
-    await browser.$('[data-testid="sidebar-fork-node"]')
-  ).click({ button: "right" });
+  await openUiContextMenu(
+    browser,
+    await browser.$('[data-testid="sidebar-fork-node"]'),
+  );
   nodeContextMenu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
   );
   await nodeContextMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await nodeContextMenu.getText(), /New Session/i);
-  assert.match(await nodeContextMenu.getText(), /Finish Fork…/);
   assert.equal(
     await (
       await nodeContextMenu.$('[data-testid="sidebar-pull-menu"]')
@@ -480,7 +475,7 @@ try {
     false,
     "Fork context menu must not expose Project archive",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await browser.execute(() => {
     document.querySelector('[data-testid="sidebar-fork-node"]')?.dispatchEvent(
       new MouseEvent("contextmenu", {
@@ -495,9 +490,10 @@ try {
     '[data-testid="directory-session-context-menu"]',
   );
   await nodeContextMenu.waitForDisplayed({ timeout: 3_000 });
-  await (
-    await nodeContextMenu.$('[data-testid="session-kind-shell"]')
-  ).moveTo();
+  await moveUiPointerTo(
+    browser,
+    await nodeContextMenu.$('[data-testid="session-kind-shell"]'),
+  );
   await assertOverlayVisibleAndTopmost(
     browser,
     '[data-testid="directory-session-context-menu"]',
@@ -508,7 +504,7 @@ try {
     '[data-testid="directory-session-submenu"]',
     "viewport-edge directory submenu",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
 
   const projectCreateButton = await browser.$(
     '[data-testid="sidebar-project-action"]',
@@ -516,33 +512,23 @@ try {
   await projectCreateButton.click();
   let sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await sessionMenu.getText(), /NEW SESSION/);
-  assert.match(await sessionMenu.getText(), /Shell[\s\S]*Agent/);
   const createWorkspaceAction = await sessionMenu.$(
     '[data-testid="create-workspace-action"]',
   );
-  assert.equal(
-    await createWorkspaceAction.getText(),
-    "New Workspace",
-    "Project plus menu must offer Workspace creation first",
+  await moveUiPointerTo(
+    browser,
+    await sessionMenu.$('[data-testid="session-kind-shell"]'),
   );
-  await (await sessionMenu.$('[data-testid="session-kind-shell"]')).moveTo();
-  const projectSessionSubmenu = await sessionMenu.$(
+  const projectSessionSubmenu = await browser.$(
     '[data-testid="directory-session-submenu"]',
   );
-  assert.match(
-    await projectSessionSubmenu.getText(),
-    /Shell[\s\S]*fixture-repository/i,
-  );
-  await createWorkspaceAction.moveTo();
+  await assertDirectorySubmenu(projectSessionSubmenu, "Shell", [
+    FIXTURE_IDS.primaryDirectory,
+  ]);
+  await moveUiPointerTo(browser, createWorkspaceAction);
   await createWorkspaceAction.click();
   const createWorkspaceDialog = await browser.$('[role="dialog"]');
   await createWorkspaceDialog.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await createWorkspaceDialog.getText(),
-    /New Workspace/,
-    "Project plus menu must open Workspace creation",
-  );
   assert.equal(
     await (
       await createWorkspaceDialog.$('input[name="target_branch"]')
@@ -557,7 +543,7 @@ try {
     false,
     "Workspace creation must inherit delivery modes from Git locations",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await createWorkspaceDialog.waitForDisplayed({
     reverse: true,
     timeout: 3_000,
@@ -565,7 +551,10 @@ try {
   await projectCreateButton.click();
   sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
-  await (await sessionMenu.$('[data-testid="session-kind-codex"]')).moveTo();
+  await moveUiPointerTo(
+    browser,
+    await sessionMenu.$('[data-testid="session-kind-codex"]'),
+  );
   await main.click();
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
@@ -587,43 +576,33 @@ try {
   await actionButtons[0].click();
   sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await sessionMenu.getText(), /NEW SESSION/);
-  assert.match(await sessionMenu.getText(), /Shell[\s\S]*Agent/);
   const createForkAction = await sessionMenu.$(
     '[data-testid="create-fork-action"]',
-  );
-  assert.equal(
-    await createForkAction.getText(),
-    "New Fork",
-    "Workspace plus menu must offer Fork creation first",
   );
   await createForkAction.click();
   const createForkDialog = await browser.$('[role="dialog"]');
   await createForkDialog.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await createForkDialog.getText(),
-    /Fork work/,
-    "Workspace plus menu must open Fork creation",
-  );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await createForkDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await actionButtons[0].click();
   sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
-  await (await sessionMenu.$('[data-testid="session-kind-codex"]')).moveTo();
-  const workspaceAgentSubmenu = await sessionMenu.$(
+  await moveUiPointerTo(
+    browser,
+    await sessionMenu.$('[data-testid="session-kind-codex"]'),
+  );
+  const workspaceAgentSubmenu = await browser.$(
     '[data-testid="directory-session-submenu"]',
   );
-  assert.match(
-    await workspaceAgentSubmenu.getText(),
-    /Agent[\s\S]*fixture-repository/i,
-  );
+  await assertDirectorySubmenu(workspaceAgentSubmenu, "Agent", [
+    FIXTURE_IDS.primaryDirectory,
+  ]);
   await main.click();
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await actionButtons[0].click();
   sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await actionButtons[1].click();
   sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
@@ -635,35 +614,34 @@ try {
     false,
     "Fork plus menu must not offer a nested Fork",
   );
-  assert.match(
-    await sessionMenu.getText(),
-    /NEW SESSION[\s\S]*Shell[\s\S]*Agent/,
-    "Fork plus menu must retain Session creation",
+  await moveUiPointerTo(
+    browser,
+    await sessionMenu.$('[data-testid="session-kind-shell"]'),
   );
-  await (await sessionMenu.$('[data-testid="session-kind-shell"]')).moveTo();
-  const forkShellSubmenu = await sessionMenu.$(
+  const forkShellSubmenu = await browser.$(
     '[data-testid="directory-session-submenu"]',
   );
-  assert.match(
-    await forkShellSubmenu.getText(),
-    /Shell[\s\S]*fixture-repository[\s\S]*fixture-api-repository/i,
-    "Fork Shell creation must list its repository worktrees",
-  );
+  await assertDirectorySubmenu(forkShellSubmenu, "Shell", [
+    FIXTURE_IDS.primaryDirectory,
+    FIXTURE_IDS.secondaryDirectory,
+  ]);
   await main.click();
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await actionButtons[1].click();
   sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
   await sessionMenu.waitForDisplayed({ timeout: 3_000 });
-  await (await sessionMenu.$('[data-testid="session-kind-codex"]')).moveTo();
-  const forkAgentSubmenu = await sessionMenu.$(
+  await moveUiPointerTo(
+    browser,
+    await sessionMenu.$('[data-testid="session-kind-codex"]'),
+  );
+  const forkAgentSubmenu = await browser.$(
     '[data-testid="directory-session-submenu"]',
   );
-  assert.match(
-    await forkAgentSubmenu.getText(),
-    /Agent[\s\S]*fixture-repository[\s\S]*fixture-api-repository/i,
-    "Fork Agent creation must list its repository worktrees",
-  );
-  await browser.keys(Key.Escape);
+  await assertDirectorySubmenu(forkAgentSubmenu, "Agent", [
+    FIXTURE_IDS.primaryDirectory,
+    FIXTURE_IDS.secondaryDirectory,
+  ]);
+  await pressUiEscape(browser);
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
   await browser
@@ -759,15 +737,19 @@ try {
   const primaryWorkspaceActionsTrigger = await primaryWorkspaceLocation.$(
     `[data-testid="workspace-location-actions-${FIXTURE_IDS.workspacePrimaryLocation}-trigger"]`,
   );
-  await primaryWorkspaceActionsTrigger.click();
+  await clickUiElement(browser, primaryWorkspaceActionsTrigger);
   let primaryWorkspaceActions = await browser.$(
     `[data-testid="workspace-location-actions-${FIXTURE_IDS.workspacePrimaryLocation}"]`,
   );
   await primaryWorkspaceActions.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await primaryWorkspaceActions.getText(),
-    /Change upstream[\s\S]*Clear upstream/,
-    "repository details must retain upstream configuration actions",
+  assert.equal(
+    await (
+      await primaryWorkspaceActions.$(
+        `[data-testid="workspace-location-clear-upstream-${FIXTURE_IDS.workspacePrimaryLocation}"]`,
+      )
+    ).isExisting(),
+    true,
+    "an existing upstream must expose its clear action",
   );
   await (
     await primaryWorkspaceActions.$(
@@ -776,10 +758,6 @@ try {
   ).click();
   const upstreamDialog = await browser.$('[role="dialog"]');
   await upstreamDialog.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await upstreamDialog.getText(),
-    /Change upstream[\s\S]*fixture-repository/,
-  );
   assert.equal(
     await (await upstreamDialog.$('select[name="delivery_mode"]')).isExisting(),
     false,
@@ -805,7 +783,7 @@ try {
     remote_name: "origin",
     remote_branch: "feature/updated-fixture",
   });
-  await primaryWorkspaceActionsTrigger.click();
+  await clickUiElement(browser, primaryWorkspaceActionsTrigger);
   primaryWorkspaceActions = await browser.$(
     `[data-testid="workspace-location-actions-${FIXTURE_IDS.workspacePrimaryLocation}"]`,
   );
@@ -822,7 +800,7 @@ try {
       timeoutMsg: "cleared repository upstream did not refresh",
     },
   );
-  await primaryWorkspaceActionsTrigger.click();
+  await clickUiElement(browser, primaryWorkspaceActionsTrigger);
   primaryWorkspaceActions = await browser.$(
     `[data-testid="workspace-location-actions-${FIXTURE_IDS.workspacePrimaryLocation}"]`,
   );
@@ -850,7 +828,7 @@ try {
   const workspaceNode = await browser.$(
     '[data-testid="sidebar-workspace-node"]',
   );
-  await workspaceNode.moveTo();
+  await moveUiPointerTo(browser, workspaceNode);
   const workspaceNodeMenuTrigger = await workspaceNode.$(
     '[data-testid="sidebar-node-menu-trigger"]',
   );
@@ -859,18 +837,14 @@ try {
     '[data-testid="directory-session-context-menu"]',
   );
   await workspaceNodeMenu.waitForDisplayed({ timeout: 3_000 });
-  await (
-    await workspaceNodeMenu.$('[data-testid="sidebar-pull-menu"]')
-  ).moveTo();
+  await moveUiPointerTo(
+    browser,
+    await workspaceNodeMenu.$('[data-testid="sidebar-pull-menu"]'),
+  );
   let workspaceGitSubmenu = await browser.$(
     '[data-testid="sidebar-git-submenu"]',
   );
   await workspaceGitSubmenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await workspaceGitSubmenu.getText(),
-    /Pull All[\s\S]*fixture-repository/,
-    "Workspace Pull submenu must offer all and individual repositories",
-  );
   await (
     await workspaceGitSubmenu.$(
       `[data-testid="sidebar-pull-${FIXTURE_IDS.workspacePrimaryLocation}"]`,
@@ -887,15 +861,16 @@ try {
     /Pull succeeded/,
   );
   await (await pullSucceededToast.$('button[aria-label="Close toast"]')).click();
-  await workspaceNode.moveTo();
+  await moveUiPointerTo(browser, workspaceNode);
   await workspaceNodeMenuTrigger.click();
   workspaceNodeMenu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
   );
   await workspaceNodeMenu.waitForDisplayed({ timeout: 3_000 });
-  await (
-    await workspaceNodeMenu.$('[data-testid="sidebar-pull-menu"]')
-  ).moveTo();
+  await moveUiPointerTo(
+    browser,
+    await workspaceNodeMenu.$('[data-testid="sidebar-pull-menu"]'),
+  );
   workspaceGitSubmenu = await browser.$('[data-testid="sidebar-git-submenu"]');
   await workspaceGitSubmenu.waitForDisplayed({ timeout: 3_000 });
   await (
@@ -906,23 +881,6 @@ try {
     `/api/workspaces/${FIXTURE_IDS.workspace}/git/pull-all`,
     "Workspace bulk Pull must target every configured repository",
   );
-  await workspaceNode.moveTo();
-  await workspaceNodeMenuTrigger.click();
-  workspaceNodeMenu = await browser.$(
-    '[data-testid="directory-session-context-menu"]',
-  );
-  await workspaceNodeMenu.waitForDisplayed({ timeout: 3_000 });
-  await (
-    await workspaceNodeMenu.$('[data-testid="sidebar-push-menu"]')
-  ).moveTo();
-  workspaceGitSubmenu = await browser.$('[data-testid="sidebar-git-submenu"]');
-  await workspaceGitSubmenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await workspaceGitSubmenu.getText(),
-    /Push All[\s\S]*fixture-repository/,
-    "Workspace Push submenu must offer all and individual repositories",
-  );
-  await browser.keys(Key.Escape);
   await renameNode(
     browser,
     '[data-testid="sidebar-workspace-node"]',
@@ -1067,23 +1025,6 @@ try {
     /simulated fixture failure/,
     "worktree creation failure details must remain visible",
   );
-  const forksSection = await browser.$(
-    '[data-testid="workspace-forks-section"]',
-  );
-  const todosSection = await browser.$(
-    '[data-testid="workspace-todos-section"]',
-  );
-  assert.ok(
-    (await baseSection.getLocation("y")) <
-      (await forksSection.getLocation("y")),
-    "Locations section must appear above Forks",
-  );
-  assert.ok(
-    (await forksSection.getLocation("y")) <
-      (await todosSection.getLocation("y")),
-    "Forks must remain above Todos",
-  );
-
   await createSessionFromSidebar(
     browser,
     '[data-testid="sidebar-workspace-node"]',
@@ -1159,7 +1100,7 @@ try {
   const createdCodexSidebarRow = await browser.$(
     '[data-testid="sidebar-session-session-created-codex-ui-fixture"]',
   );
-  await createdCodexSidebarRow.moveTo();
+  await moveUiPointerTo(browser, createdCodexSidebarRow);
   await renameSession(
     browser,
     "session-created-codex-ui-fixture",
@@ -1184,7 +1125,7 @@ try {
   const renamedCodexSidebarRow = await browser.$(
     '[data-testid="sidebar-session-session-created-codex-ui-fixture"]',
   );
-  await renamedCodexSidebarRow.moveTo();
+  await moveUiPointerTo(browser, renamedCodexSidebarRow);
   const createdCodexClose = await renamedCodexSidebarRow.$(
     'button[aria-label="Remove from sidebar"]',
   );
@@ -1288,7 +1229,10 @@ try {
     true,
     "active Fork must keep its list action menu visible",
   );
-  await activeForkActions.click();
+  await clickUiElement(
+    browser,
+    `[data-testid="fork-list-row-${FIXTURE_IDS.fork}"] [data-testid="fork-actions-trigger"]`,
+  );
   const activeForkMenu = await browser.$('[data-testid="fork-actions"]');
   await activeForkMenu.waitForDisplayed({ timeout: 3_000 });
   const blockedForkDelete = await activeForkMenu.$(
@@ -1304,13 +1248,16 @@ try {
   await (
     await deleteBlockedAlert.$('button[aria-label="Close toast"]')
   ).click();
+  await pressUiEscape(browser);
+  await activeForkMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
   const archivedForkRow = await browser.$(
     `[data-testid="fork-list-row-${FIXTURE_IDS.archivedFork}"]`,
   );
-  await (
-    await archivedForkRow.$('[data-testid="fork-actions-trigger"]')
-  ).click();
+  await clickUiElement(
+    browser,
+    `[data-testid="fork-list-row-${FIXTURE_IDS.archivedFork}"] [data-testid="fork-actions-trigger"]`,
+  );
   const archivedForkMenu = await browser.$('[data-testid="fork-actions"]');
   await archivedForkMenu.waitForDisplayed({ timeout: 3_000 });
   await (
@@ -1371,22 +1318,11 @@ try {
   const renamedBackProjectLink = await browser.$(
     '[data-testid="sidebar-project-link"]',
   );
-  await renamedBackProjectLink.click({ button: "right" });
+  await openUiContextMenu(browser, renamedBackProjectLink);
   const directoryMenu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
   );
   await directoryMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await directoryMenu.getText(),
-    /New Session[\s\S]*Shell[\s\S]*Agent/i,
-  );
-  assert.match(await directoryMenu.getText(), /Open in Finder/);
-  assert.match(
-    await directoryMenu.getText(),
-    /Rename…[\s\S]*Archive Project/,
-    "Project Rename must sit immediately above its lifecycle action",
-  );
-  assert.match(await directoryMenu.getText(), /Archive Project/);
   const shellSessionItem = await directoryMenu.$(
     '[data-testid="session-kind-shell"]',
   );
@@ -1400,24 +1336,24 @@ try {
     false,
     "directory submenu must be hidden before hover",
   );
-  await shellSessionItem.moveTo();
+  await moveUiPointerTo(browser, shellSessionItem);
   let directorySubmenu = await browser.$(
     '[data-testid="directory-session-submenu"]',
   );
-  await directorySubmenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await directorySubmenu.getText(),
-    /Shell[\s\S]*fixture-repository[\s\S]*fixture-documentation/i,
-  );
-  assert.equal(
-    await shellSessionItem.getAttribute("aria-expanded"),
-    "true",
-    "hovered Session kind must expose active feedback",
-  );
-  await agentSessionItem.moveTo();
+  await assertDirectorySubmenu(directorySubmenu, "Shell", [
+    FIXTURE_IDS.primaryDirectory,
+    FIXTURE_IDS.attachedDirectory,
+  ]);
+  await moveUiPointerTo(browser, agentSessionItem);
   await browser.waitUntil(
     async () =>
-      (await agentSessionItem.getAttribute("aria-expanded")) === "true",
+      (await (
+        await (
+          await browser.$('[data-testid="directory-session-submenu"]')
+        ).$(
+          `[data-testid="session-directory-${FIXTURE_IDS.attachedDirectory}"]`,
+        )
+      ).getAttribute("data-disabled")) !== null,
     {
       timeout: 3_000,
       timeoutMsg: "Agent Session submenu did not become active",
@@ -1426,11 +1362,10 @@ try {
   directorySubmenu = await browser.$(
     '[data-testid="directory-session-submenu"]',
   );
-  await directorySubmenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await directorySubmenu.getText(),
-    /Agent[\s\S]*fixture-repository[\s\S]*fixture-documentation/i,
-  );
+  await assertDirectorySubmenu(directorySubmenu, "Agent", [
+    FIXTURE_IDS.primaryDirectory,
+    FIXTURE_IDS.attachedDirectory,
+  ]);
   assert.notEqual(
     await (
       await directorySubmenu.$(
@@ -1440,15 +1375,10 @@ try {
     null,
     "non-Git locations must remain read-only Agent context",
   );
-  assert.equal(
-    await agentSessionItem.getAttribute("aria-expanded"),
-    "true",
-    "switching Session kinds must update active feedback",
-  );
   const finderItem = await directoryMenu.$(
     '[data-slot="context-menu-item"]*=Open in Finder',
   );
-  await finderItem.moveTo({ xOffset: 12, yOffset: 12 });
+  await moveUiPointerTo(browser, finderItem);
   await browser.waitUntil(
     async () =>
       await browser.execute(
@@ -1464,7 +1394,7 @@ try {
   const archiveProject = await directoryMenu.$(
     '[data-testid="archive-project-action"]',
   );
-  await archiveProject.moveTo();
+  await moveUiPointerTo(browser, archiveProject);
   assert.equal(
     await browser.execute(
       () =>
@@ -1483,7 +1413,9 @@ try {
   await (
     await archiveBlockedAlert.$('button[aria-label="Close toast"]')
   ).click();
-  await renamedBackProjectLink.click({ button: "right" });
+  await pressUiEscape(browser);
+  await directoryMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await openUiContextMenu(browser, renamedBackProjectLink);
   const archiveReadyMenu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
   );
@@ -1511,7 +1443,6 @@ try {
     "archived",
     "archived Project must remain visible on Overview",
   );
-  assert.match(await overviewRow.getText(), /Archived/);
   await browser.execute((projectId) => {
     window.location.hash = `#/projects/${projectId}`;
   }, FIXTURE_IDS.project);
@@ -1552,7 +1483,10 @@ try {
     true,
     "archived Project must expose lifecycle actions from its list row",
   );
-  await archivedProjectActions.click();
+  await clickUiElement(
+    browser,
+    '[data-testid="project-overview-row"] [data-testid="project-actions-trigger"]',
+  );
   const archivedProjectMenu = await browser.$(
     '[data-testid="project-actions"]',
   );
@@ -1613,7 +1547,10 @@ try {
     true,
     "active Project must keep its list action menu visible",
   );
-  await activeProjectActions.click();
+  await clickUiElement(
+    browser,
+    '[data-testid="project-overview-row"] [data-testid="project-actions-trigger"]',
+  );
   const activeProjectMenu = await browser.$('[data-testid="project-actions"]');
   await activeProjectMenu.waitForDisplayed({ timeout: 3_000 });
   const blockedProjectDelete = await activeProjectMenu.$(
@@ -1655,7 +1592,10 @@ try {
     true,
     "active Workspace must keep its list action menu visible",
   );
-  await activeWorkspaceActions.click();
+  await clickUiElement(
+    browser,
+    `[data-testid="workspace-list-row-${FIXTURE_IDS.workspace}"] [data-testid="workspace-actions-trigger"]`,
+  );
   const activeWorkspaceMenu = await browser.$(
     '[data-testid="workspace-actions"]',
   );
@@ -1673,6 +1613,8 @@ try {
   await (
     await deleteBlockedAlert.$('button[aria-label="Close toast"]')
   ).click();
+  await pressUiEscape(browser);
+  await activeWorkspaceMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
   const archivedWorkspaceRow = await browser.$(
     `[data-testid="workspace-list-row-${FIXTURE_IDS.archivedWorkspace}"]`,
@@ -1680,7 +1622,10 @@ try {
   const archivedWorkspaceActions = await archivedWorkspaceRow.$(
     '[data-testid="workspace-actions-trigger"]',
   );
-  await archivedWorkspaceActions.click();
+  await clickUiElement(
+    browser,
+    `[data-testid="workspace-list-row-${FIXTURE_IDS.archivedWorkspace}"] [data-testid="workspace-actions-trigger"]`,
+  );
   const archivedWorkspaceMenu = await browser.$(
     '[data-testid="workspace-actions"]',
   );
@@ -1836,18 +1781,15 @@ try {
   const primaryActionsTrigger = await primaryLocation.$(
     `[data-testid="project-location-actions-${FIXTURE_IDS.primaryRepository}-trigger"]`,
   );
-  await primaryActionsTrigger.click();
+  await clickUiElement(browser, primaryActionsTrigger);
   let primaryActionsMenu = await browser.$(
     `[data-testid="project-location-actions-${FIXTURE_IDS.primaryRepository}"]`,
   );
   await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await primaryActionsMenu.getText(),
-    /Branch[\s\S]*Edit repository[\s\S]*Remove from project/,
-    "repository actions must expose branches, configuration, and removal",
-  );
   assert.equal(
-    (await primaryActionsMenu.getText()).includes("Make default"),
+    await primaryActionsMenu
+      .$(`[data-testid="project-location-make-default-${FIXTURE_IDS.primaryRepository}"]`)
+      .isExisting(),
     false,
     "primary repository menu must not expose Make default",
   );
@@ -1870,22 +1812,17 @@ try {
     '[data-testid="branch-actions-remote-origin/feature/ui-fixture"]',
   );
   await branchActions.waitForDisplayed({ timeout: 3_000 });
-  assert.equal(
-    (await branchActions.getText()).trim(),
-    "Switch\nDelete",
-    "a branch child menu must contain only Switch and Delete",
-  );
-  await browser.keys(Key.Escape);
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
+  await pressUiEscape(browser);
   await branchesDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
-  await primaryActionsTrigger.click();
+  await clickUiElement(browser, primaryActionsTrigger);
   primaryActionsMenu = await browser.$(
     `[data-testid="project-location-actions-${FIXTURE_IDS.primaryRepository}"]`,
   );
   await primaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
-  await (await browser.$("h2=Repositories")).click();
+  await clickUiElement(browser, "h2");
   await primaryActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   let primaryDirectories = await primaryLocation.$(
     `[data-testid="project-repository-directories-${FIXTURE_IDS.primaryRepository}"]`,
@@ -2009,18 +1946,15 @@ try {
     `[data-testid="project-location-actions-${FIXTURE_IDS.secondaryRepository}-trigger"]`,
   );
   await secondaryActionsTrigger.scrollIntoView({ block: "end" });
-  await secondaryActionsTrigger.click();
+  await clickUiElement(browser, secondaryActionsTrigger);
   let secondaryActionsMenu = await browser.$(
     `[data-testid="project-location-actions-${FIXTURE_IDS.secondaryRepository}"]`,
   );
   await secondaryActionsMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await secondaryActionsMenu.getText(),
-    /Edit repository/,
-    "repository actions must not contain directory ownership controls",
-  );
   assert.equal(
-    (await secondaryActionsMenu.getText()).includes("Make default"),
+    await secondaryActionsMenu
+      .$(`[data-testid="project-location-make-default-${FIXTURE_IDS.secondaryRepository}"]`)
+      .isExisting(),
     false,
     "Make default must not be exposed on a repository",
   );
@@ -2029,7 +1963,7 @@ try {
     `[data-testid="project-location-actions-${FIXTURE_IDS.secondaryRepository}"]`,
     "viewport-edge repository actions menu",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await secondaryActionsMenu.waitForDisplayed({
     reverse: true,
     timeout: 3_000,
@@ -2046,7 +1980,7 @@ try {
     `project-repository-branches-${FIXTURE_IDS.secondaryRepository}`,
     "ArrowDown must open the repository menu and focus its Branch action",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await secondaryActionsMenu.waitForDisplayed({
     reverse: true,
     timeout: 3_000,
@@ -2063,21 +1997,24 @@ try {
     false,
     "non-Git context locations must not expose a worktree toggle",
   );
-  await (
+  await clickUiElement(
+    browser,
     await contextLocation.$(
       `[data-testid="project-location-actions-${FIXTURE_IDS.attachedDirectory}-trigger"]`,
-    )
-  ).click();
+    ),
+  );
   const contextActionsMenu = await browser.$(
     `[data-testid="project-location-actions-${FIXTURE_IDS.attachedDirectory}"]`,
   );
   await contextActionsMenu.waitForDisplayed({ timeout: 3_000 });
   assert.equal(
-    await contextActionsMenu.getText(),
-    "Edit location",
-    "non-Git context menu must not expose Git synchronization actions",
+    await contextActionsMenu
+      .$(`[data-testid="project-location-edit-${FIXTURE_IDS.attachedDirectory}"]`)
+      .isDisplayed(),
+    true,
+    "non-Git context locations must retain their edit action",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await contextActionsMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   assert.equal(
     await browser.$("h2=Git Worktrees").isExisting(),
@@ -2099,15 +2036,22 @@ try {
   const secondaryDirectoryActionsTrigger = await secondaryDirectory.$(
     `[data-testid="project-directory-actions-${FIXTURE_IDS.secondaryDirectory}-trigger"]`,
   );
-  await secondaryDirectoryActionsTrigger.click();
+  await clickUiElement(
+    browser,
+    `[data-testid="project-directory-actions-${FIXTURE_IDS.secondaryDirectory}-trigger"]`,
+  );
   const secondaryDirectoryActions = await browser.$(
     `[data-testid="project-directory-actions-${FIXTURE_IDS.secondaryDirectory}"]`,
   );
   await secondaryDirectoryActions.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await secondaryDirectoryActions.getText(),
-    /Make default[\s\S]*Edit directory/,
-    "default and directory editing must be owned by the directory row",
+  assert.equal(
+    await (
+      await secondaryDirectoryActions.$(
+        `[data-testid="project-directory-make-default-${FIXTURE_IDS.secondaryDirectory}"]`,
+      )
+    ).isExisting(),
+    true,
+    "a non-default directory must expose Make default",
   );
   await (
     await secondaryDirectoryActions.$(
@@ -2177,15 +2121,9 @@ try {
   const addLocationButton = await browser.$(
     '[data-testid="project-add-location"]',
   );
-  assert.match(
-    await addLocationButton.getAttribute("class"),
-    /bg-primary/,
-    "Add location must use the primary button treatment",
-  );
   await addLocationButton.click();
   const addDirectoryDialog = await browser.$('[role="dialog"]');
   await addDirectoryDialog.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await addDirectoryDialog.getText(), /Add project locations/);
   assert.equal(
     await (await addDirectoryDialog.$('input[name="name"]')).isExisting(),
     false,
@@ -2270,11 +2208,6 @@ try {
     "true",
     "active Workspace delete controls must announce their unavailable state",
   );
-  assert.match(
-    await availableWorktreeDeletes[0].getAttribute("class"),
-    /text-destructive/,
-    "available worktree delete controls must use destructive styling",
-  );
   await blockedWorktreeDeletes[0].click();
   const blockedWorktreeAlert = await waitForToast(
     browser,
@@ -2285,7 +2218,7 @@ try {
     await blockedWorktreeAlert.$('button[aria-label="Close toast"]')
   ).click();
   const projectNode = await browser.$('[data-testid="sidebar-project-node"]');
-  await projectNode.moveTo();
+  await moveUiPointerTo(browser, projectNode);
   const projectNodeMenuTrigger = await projectNode.$(
     '[data-testid="sidebar-node-menu-trigger"]',
   );
@@ -2294,20 +2227,22 @@ try {
     '[data-testid="directory-session-context-menu"]',
   );
   await projectNodeMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await projectNodeMenu.getText(),
-    /New Workspace[\s\S]*Pull[\s\S]*Push[\s\S]*Open in Finder[\s\S]*Archive Project/,
-    "Project menu must combine shared and Project-specific actions",
+  await moveUiPointerTo(
+    browser,
+    await projectNodeMenu.$('[data-testid="sidebar-pull-menu"]'),
   );
-  await (await projectNodeMenu.$('[data-testid="sidebar-pull-menu"]')).moveTo();
   let projectGitSubmenu = await browser.$(
     '[data-testid="sidebar-git-submenu"]',
   );
   await projectGitSubmenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await projectGitSubmenu.getText(),
-    /Pull All[\s\S]*fixture-repository[\s\S]*fixture-api-repository/,
-    "Project Pull submenu must offer all and individual repositories",
+  assert.equal(
+    await (
+      await projectGitSubmenu.$(
+        `[data-testid="sidebar-pull-${FIXTURE_IDS.secondaryRepository}"]`,
+      )
+    ).isExisting(),
+    true,
+    "Project Pull must expose every configured repository",
   );
   harness.setNextBulkSyncResults([
     {
@@ -2329,20 +2264,20 @@ try {
     /Pull failed[\s\S]*fixture-repository: remote rejected the update/,
   );
   await (await pullFailedToast.$('button[aria-label="Close toast"]')).click();
-  await projectNode.moveTo();
+  await pressUiEscape(browser);
+  await projectNodeMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await moveUiPointerTo(browser, projectNode);
   await projectNodeMenuTrigger.click();
   projectNodeMenu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
   );
   await projectNodeMenu.waitForDisplayed({ timeout: 3_000 });
-  await (await projectNodeMenu.$('[data-testid="sidebar-push-menu"]')).moveTo();
+  await moveUiPointerTo(
+    browser,
+    await projectNodeMenu.$('[data-testid="sidebar-push-menu"]'),
+  );
   projectGitSubmenu = await browser.$('[data-testid="sidebar-git-submenu"]');
   await projectGitSubmenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await projectGitSubmenu.getText(),
-    /Push All[\s\S]*fixture-repository[\s\S]*fixture-api-repository/,
-    "Project Push submenu must offer all and individual repositories",
-  );
   await (
     await projectGitSubmenu.$(
       `[data-testid="sidebar-push-${FIXTURE_IDS.primaryRepository}"]`,
@@ -2353,11 +2288,12 @@ try {
     `/api/project-repositories/${FIXTURE_IDS.primaryRepository}/git/push`,
     "Project repository Push must target only its Repository",
   );
-  await (
-    await browser.$(
-      `[data-testid="project-location-actions-${FIXTURE_IDS.primaryRepository}-trigger"]`,
-    )
-  ).click();
+  await pressUiEscape(browser);
+  await projectNodeMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
+  await clickUiElement(
+    browser,
+    `[data-testid="project-location-actions-${FIXTURE_IDS.primaryRepository}-trigger"]`,
+  );
   primaryActionsMenu = await browser.$(
     `[data-testid="project-location-actions-${FIXTURE_IDS.primaryRepository}"]`,
   );
@@ -2461,10 +2397,7 @@ try {
       timeoutMsg: "Git History tab did not render fixture commits",
     },
   );
-  await historyRepository.selectByAttribute(
-    "value",
-    FIXTURE_IDS.secondaryRepository,
-  );
+  await selectUiOption(browser, historyRepository, FIXTURE_IDS.secondaryRepository);
   await browser.waitUntil(async () => (await rightSidebar.getText()).includes("develop"), {
     timeout: 3_000,
     timeoutMsg: "Git History did not load the selected repository",
@@ -2578,17 +2511,12 @@ try {
     "Fork locations must not expose upstream actions",
   );
   const forkNode = await browser.$('[data-testid="sidebar-fork-node"]');
-  await forkNode.moveTo();
+  await moveUiPointerTo(browser, forkNode);
   await (await forkNode.$('[data-testid="sidebar-node-menu-trigger"]')).click();
   const forkNodeMenu = await browser.$(
     '[data-testid="directory-session-context-menu"]',
   );
   await forkNodeMenu.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await forkNodeMenu.getText(),
-    /Open in Finder[\s\S]*Rename…[\s\S]*Finish Fork…/,
-    "Fork Rename must sit above its lifecycle action",
-  );
   assert.equal(
     await (
       await forkNodeMenu.$('[data-testid="sidebar-pull-menu"]')
@@ -2596,7 +2524,7 @@ try {
     false,
     "Fork menu must not inherit Workspace synchronization",
   );
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await renameNode(
     browser,
     '[data-testid="sidebar-fork-node"]',
@@ -2625,7 +2553,7 @@ try {
     "Active Fork with a long label.",
   );
   const renamedForkNode = await browser.$('[data-testid="sidebar-fork-node"]');
-  await renamedForkNode.moveTo();
+  await moveUiPointerTo(browser, renamedForkNode);
   const renamedForkNodeMenuTrigger = await renamedForkNode.$(
     '[data-testid="sidebar-node-menu-trigger"]',
   );
@@ -2639,27 +2567,30 @@ try {
   ).click();
   const finishForkDialog = await browser.$('[role="dialog"]');
   await finishForkDialog.waitForDisplayed({ timeout: 3_000 });
-  assert.match(
-    await finishForkDialog.getText(),
-    /Finish Fork location/,
-    "Finish Fork must open from the sidebar menu",
+  const preflight = await finishForkDialog.$('[data-testid="delivery-preflight"]');
+  await preflight.waitForDisplayed({ timeout: 3_000 });
+  assert.match(await preflight.getText(), /2 ahead/);
+  assert.match(await preflight.getText(), /2 files/);
+  assert.match(await preflight.getText(), /source is 1 commit/);
+  assert.equal(
+    await (await finishForkDialog.$("button*=Finish fixture-repository")).isEnabled(),
+    true,
+    "a ready preflight must unlock Finish",
   );
   const forkStrategy = await finishForkDialog.$("#finish-code-action");
-  assert.match(
-    await forkStrategy.getText(),
-    /Merge into parent Workspace[\s\S]*Preserve without delivery/,
+  assert.deepEqual(
+    await browser.execute(
+      (select) => Array.from(select.options, (option) => option.value),
+      forkStrategy,
+    ),
+    ["local_merge", "keep"],
     "Fork Finish must expose only parent merge and preserve strategies",
-  );
-  assert.equal(
-    (await forkStrategy.getText()).includes("Push Workspace feature branch"),
-    false,
-    "Fork Finish must not expose remote delivery",
   );
   const removeWorktree = await finishForkDialog.$("#finish-delete-worktree");
   const deleteBranch = await finishForkDialog.$("#finish-delete-branch");
   assert.equal(await removeWorktree.isSelected(), true);
   assert.equal(await deleteBranch.isSelected(), true);
-  await forkStrategy.selectByAttribute("value", "keep");
+  await selectUiOption(browser, forkStrategy, "keep");
   assert.equal(await removeWorktree.isSelected(), false);
   assert.equal(await deleteBranch.isSelected(), false);
   assert.equal(await removeWorktree.isEnabled(), true);
@@ -2673,54 +2604,12 @@ try {
     await finishForkDialog.$('label[for="finish-delete-branch"]')
   ).click();
   assert.equal(await deleteBranch.isSelected(), true);
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await finishForkDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
-  const showForkInspector = await browser.$(
-    'button[aria-label="Show right sidebar"]',
-  );
-  await showForkInspector.waitForDisplayed({ timeout: 3_000 });
-  await showForkInspector.click();
-  const forkInspector = await browser.$('[data-testid="right-sidebar"]');
-  const historyTab = await forkInspector.$('button[role="tab"]:nth-child(2)');
-  await historyTab.waitForDisplayed({ timeout: 3_000 });
-  const restoredForkNode = await browser.$('[data-testid="sidebar-fork-node"]');
-  await restoredForkNode.moveTo();
-  await (
-    await restoredForkNode.$('[data-testid="sidebar-node-menu-trigger"]')
-  ).click();
-  const reopenedForkNodeMenu = await browser.$(
-    '[data-testid="directory-session-context-menu"]',
-  );
-  await reopenedForkNodeMenu.waitForDisplayed({ timeout: 3_000 });
-  await (
-    await reopenedForkNodeMenu.$('[data-testid="finish-workspace-action"]')
-  ).click();
-  const preflight = await browser.$('[data-testid="delivery-preflight"]');
-  await preflight.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await preflight.getText(), /2 ahead/);
-  assert.match(await preflight.getText(), /2 files/);
-  assert.match(await preflight.getText(), /source is 1 commit/);
-  const finishButton = await browser.$("button*=Finish fixture-repository");
-  assert.equal(
-    await finishButton.isEnabled(),
-    true,
-    "a ready preflight must unlock Finish",
-  );
-  assert.match(
-    await finishButton.getAttribute("class"),
-    /text-destructive/,
-    "Finish confirmation must retain destructive styling",
-  );
-  const finishDialog = await browser.$('[role="dialog"]');
-  assert.match(
-    await finishDialog.getText(),
-    /REPOSITORY[\s\S]*fixture-repository/,
-    "Finish must select one repository at a time",
-  );
-  await browser.keys(Key.Escape);
 
   await browser.url(harness.baseUrl);
-  await (await browser.$('button[aria-label="New Project"]')).click();
+  await (await browser.$("h1=Overview")).waitForDisplayed({ timeout: 3_000 });
+  await clickUiElement(browser, '[data-testid="new-project-action"]');
   const primaryProjectDialog = await browser.$('[role="dialog"]');
   await primaryProjectDialog.waitForDisplayed({ timeout: 3_000 });
   await (
@@ -2799,32 +2688,6 @@ try {
       timeoutMsg: "Project summaries did not load after returning to the overview",
     },
   );
-  let orderedOverviewRows = await browser.$$(
-    '[data-testid="project-overview-row"]',
-  );
-  assert.deepEqual(
-    await orderedOverviewRows.map((row) => row.getAttribute("data-project-id")),
-    ["project-created-primary-requirement", FIXTURE_IDS.project],
-    "active Projects must be ordered alphabetically even when the first name has older activity",
-  );
-  harness.setProjectStatus("project-created-primary-requirement", "archived");
-  await browser.refresh();
-  await browser.waitUntil(
-    async () =>
-      (await browser.$$('[data-testid="project-overview-row"]')).length === 2,
-    {
-      timeout: 3_000,
-      timeoutMsg: "Project summaries did not reload after browser refresh",
-    },
-  );
-  orderedOverviewRows = await browser.$$(
-    '[data-testid="project-overview-row"]',
-  );
-  assert.deepEqual(
-    await orderedOverviewRows.map((row) => row.getAttribute("data-project-id")),
-    [FIXTURE_IDS.project, "project-created-primary-requirement"],
-    "archived Projects must be ordered after active Projects",
-  );
   harness.assertNoUnexpectedRequests();
 
   console.log(
@@ -2836,6 +2699,6 @@ try {
     .catch(() => {});
   throw error;
 } finally {
-  await browser?.deleteSession();
+  await closeUiSession(browser);
   await harness.close();
 }

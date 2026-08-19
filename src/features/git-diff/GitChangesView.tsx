@@ -5,11 +5,13 @@ import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree } from "@win5do/pierre-trees/react";
 import type { GitStatusEntry } from "@win5do/pierre-trees";
 import { ChevronDown, ChevronUp, GitCompare, RefreshCw, X } from "lucide-react";
+import { createRoot } from "react-dom/client";
 import { projectsApi } from "@/api/projects";
 import { workspacesApi } from "@/api/workspaces";
 import { ApiError } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { GitChangeFile, GitDiffComparison, GitDiffRequest, GitStatus } from "@/domain/types";
 import { cn } from "@/lib/utils";
 
@@ -211,9 +213,85 @@ function ChangesTree({ files, status: gitStatus, selectedPath, onSelect, onToggl
   const stageableFiles = gitStatus?.files.filter((file) => file.status !== "conflicted") ?? [];
   const allChecked = stageableFiles.length > 0 && stageableFiles.every((file) => !file.has_unstaged_changes);
   const allIndeterminate = !allChecked && stageableFiles.some((file) => file.has_staged_changes);
-  const { model } = useFileTree({ paths, gitStatus: statusEntries, initialExpansion: "open", initialSelectedPaths: paths.slice(0, 1), onSelectionChange: (selected) => { const path = [...selected].reverse().find((item) => paths.includes(item)); if (path) onSelect(path); }, renderRowDecoration: ({ item }) => { if (item.kind !== "file") return null; const file = stats.get(item.path); if (!file) return null; return { text: `+${file.additions} −${file.deletions}`, title: `${file.additions} additions, ${file.deletions} deletions` }; }, renderRowTrailing: onToggle && gitStatus ? ({ item }) => { const normalizedPath = item.path.endsWith("/") ? item.path.slice(0, -1) : item.path; const descendants = gitStatus.files.filter((file) => file.status !== "conflicted" && (item.kind === "file" ? file.path === normalizedPath : file.path.startsWith(`${normalizedPath}/`))); if (descendants.length === 0) return null; const checked = descendants.every((file) => !file.has_unstaged_changes); const indeterminate = !checked && descendants.some((file) => file.has_staged_changes); const title = checked ? `Unstage ${normalizedPath}` : `Stage ${normalizedPath}`; return { width: 24, render: (container) => { const checkbox = document.createElement("input"); checkbox.type = "checkbox"; checkbox.checked = checked; checkbox.indeterminate = indeterminate; checkbox.disabled = Boolean(mutatingPath); checkbox.title = title; checkbox.setAttribute("aria-label", title); checkbox.setAttribute("data-item-checkbox", "true"); const stop = (event: Event) => event.stopPropagation(); const change = () => onToggle(normalizedPath, checkbox.checked); checkbox.addEventListener("click", stop); checkbox.addEventListener("pointerdown", stop); checkbox.addEventListener("change", change); container.append(checkbox); return () => { checkbox.removeEventListener("click", stop); checkbox.removeEventListener("pointerdown", stop); checkbox.removeEventListener("change", change); checkbox.remove(); }; } }; } : undefined });
+  const checkboxClassName = "size-4 shrink-0 align-middle";
+  const checkboxStyle = (checked: boolean, indeterminate: boolean): React.CSSProperties => ({
+    width: "1rem",
+    height: "1rem",
+    minWidth: "1rem",
+    minHeight: "1rem",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "4px",
+    border: `1px solid ${checked || indeterminate ? "var(--primary)" : "var(--input)"}`,
+    background: checked || indeterminate ? "var(--primary)" : "transparent",
+    color: checked || indeterminate ? "var(--primary-foreground)" : "var(--foreground)",
+    boxSizing: "border-box",
+    flexShrink: 0,
+    padding: 0,
+    margin: 0,
+    alignSelf: "center",
+    backgroundColor: checked || indeterminate ? "var(--primary)" : "transparent",
+  });
+  const { model } = useFileTree({
+    paths,
+    gitStatus: statusEntries,
+    initialExpansion: "open",
+    initialSelectedPaths: paths.slice(0, 1),
+    onSelectionChange: (selected) => {
+      const path = [...selected].reverse().find((item) => paths.includes(item));
+      if (path) onSelect(path);
+    },
+    renderRowDecoration: ({ item }) => {
+      if (item.kind !== "file") return null;
+      const file = stats.get(item.path);
+      if (!file) return null;
+      return { text: `+${file.additions} −${file.deletions}`, title: `${file.additions} additions, ${file.deletions} deletions` };
+    },
+    renderRowTrailing: onToggle && gitStatus
+      ? ({ item }) => {
+        const normalizedPath = item.path.endsWith("/") ? item.path.slice(0, -1) : item.path;
+        const descendants = gitStatus.files.filter(
+          (file) => file.status !== "conflicted" &&
+            (item.kind === "file" ? file.path === normalizedPath : file.path.startsWith(`${normalizedPath}/`))
+        );
+        if (descendants.length === 0) return null;
+        const checked = descendants.every((file) => !file.has_unstaged_changes);
+        const indeterminate = !checked && descendants.some((file) => file.has_staged_changes);
+        const title = checked ? `Unstage ${normalizedPath}` : `Stage ${normalizedPath}`;
+
+        return {
+          width: 24,
+          render: (container) => {
+            const mount = document.createElement("span");
+            const root = createRoot(mount);
+            root.render(
+              <Checkbox
+                className={checkboxClassName}
+                style={checkboxStyle(checked, indeterminate)}
+                checked={checked}
+                indeterminate={indeterminate}
+                disabled={Boolean(mutatingPath)}
+                title={title}
+                aria-label={title}
+                data-item-checkbox="true"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onCheckedChange={(next) => onToggle(normalizedPath, next === true)}
+              />
+            );
+            container.append(mount);
+            return () => {
+              mount.remove();
+              queueMicrotask(() => root.unmount());
+            };
+          },
+        };
+      }
+      : undefined,
+  });
   useEffect(() => { model.getItem(selectedPath)?.select(); model.scrollToPath(selectedPath, { focus: false, offset: "nearest" }); }, [model, selectedPath]);
-  return <div className="min-h-0 flex-1 overflow-auto">{onToggleAll && gitStatus && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-4 pr-3"><span className="ml-auto text-[10px] text-muted-foreground">{gitStatus.staged_count} staged</span><span className="flex w-6 shrink-0 justify-center"><input className="size-4" type="checkbox" checked={allChecked} ref={(element) => { if (element) element.indeterminate = allIndeterminate; }} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} aria-label={allChecked ? "Unstage all changes" : "Stage all changes"} data-item-checkbox="true" onClick={(event) => event.stopPropagation()} onChange={(event) => onToggleAll(event.currentTarget.checked)} /></span></div>}<FileTree model={model} aria-label="Changed files" className="min-h-full w-full" style={{ height: "100%", width: "100%" }} /></div>;
+  return <div className="min-h-0 flex-1 overflow-auto">{onToggleAll && gitStatus && <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-4 pr-3"><span className="ml-auto text-[10px] text-muted-foreground">{gitStatus.staged_count} staged</span><span className="flex w-6 shrink-0 justify-center"><Checkbox className={checkboxClassName} style={checkboxStyle(allChecked, allIndeterminate)} checked={allChecked} indeterminate={allIndeterminate} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} aria-label={allChecked ? "Unstage all changes" : "Stage all changes"} data-item-checkbox="true" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onCheckedChange={(value) => onToggleAll?.(value === true)} /></span></div>}<FileTree model={model} aria-label="Changed files" className="min-h-full w-full" style={{ height: "100%", width: "100%" }} /></div>;
 }
 
 function parseComparison(comparison: GitDiffComparison | null): { files: ParsedFile[]; error?: string } {

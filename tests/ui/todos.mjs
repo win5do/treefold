@@ -1,21 +1,13 @@
 import assert from "node:assert/strict";
-import { remote } from "webdriverio";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
 import { startUiHarness } from "./ui-harness.mjs";
+import { closeUiSession, createUiSession } from "./harness/session.mjs";
 
 const harness = await startUiHarness();
 let browser;
 
 try {
-  browser = await remote({
-    logLevel: "error",
-    capabilities: {
-      browserName: "chrome",
-      "goog:chromeOptions": {
-        args: ["--headless=new", "--window-size=900,760", "--disable-gpu"],
-      },
-    },
-  });
+  browser = await createUiSession({ windowSize: "900,760", sessionName: "todos" });
   await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
   await browser
     .$('[data-testid="workspace-todos-section"]')
@@ -83,6 +75,6 @@ try {
   harness.assertNoUnexpectedRequests();
   console.log("✓ Todo CRUD and Todo Fork launch passed");
 } finally {
-  if (browser) await browser.deleteSession();
+  await closeUiSession(browser);
   await harness.close();
 }

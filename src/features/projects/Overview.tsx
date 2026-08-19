@@ -47,7 +47,7 @@ export function Overview({
               {t("overview.title")}
             </h1>
           </div>
-          <Button onClick={onCreate}>
+          <Button data-testid="new-project-action" onClick={onCreate}>
             <FolderPlus data-icon="inline-start" />
             {t("overview.newProject")}
           </Button>

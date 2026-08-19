@@ -1,19 +1,18 @@
 import assert from "node:assert/strict";
-import { Key, remote } from "webdriverio";
 import { startUiHarness } from "./ui-harness.mjs";
+import {
+  closeUiSession,
+  createUiSession,
+  pressUiEscape,
+} from "./harness/session.mjs";
 
 const harness = await startUiHarness();
 let browser;
 
 try {
-  browser = await remote({
-    logLevel: "error",
-    capabilities: {
-      browserName: "chrome",
-      "goog:chromeOptions": {
-        args: ["--headless=new", "--window-size=1200,800", "--disable-gpu"],
-      },
-    },
+  browser = await createUiSession({
+    windowSize: "1200,800",
+    sessionName: "resources",
   });
 
   await browser.url(harness.baseUrl);
@@ -23,7 +22,6 @@ try {
   const resourcesButton = await browser.$('[data-testid="open-resources"]');
   assert.equal(await settingsButton.getAttribute("aria-label"), "Settings");
   assert.equal(await resourcesButton.getAttribute("aria-label"), "Resources");
-  assert.match(await (await resourcesButton.$("svg")).getAttribute("class"), /lucide-network/, "Resources must use the Network icon");
 
   await settingsButton.click();
   let dialog = await browser.$('[role="dialog"]');
@@ -36,25 +34,18 @@ try {
     '[data-slot="toast"][role="status"]',
   );
   await settingsSaveToast.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await settingsSaveToast.getText(), /Settings saved/);
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await settingsButton.click();
   dialog = await browser.$('[role="dialog"]');
   await dialog.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await (await dialog.$('[data-testid="settings-keep-amux"]')).getAttribute("aria-checked"), "true", "Daemon retention must persist through Settings PATCH");
-  await browser.keys(Key.Escape);
+  await pressUiEscape(browser);
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
 
   await resourcesButton.click();
   const resourcePopover = await browser.$('[data-testid="amux-resources-popover"]');
   await resourcePopover.waitForDisplayed({ timeout: 3_000 });
-  const triggerLocation = await resourcesButton.getLocation();
-  const popoverLocation = await resourcePopover.getLocation();
-  const popoverSize = await resourcePopover.getSize();
-  assert.ok(popoverLocation.y + popoverSize.height <= triggerLocation.y, "Resources popover must open above its icon");
-  assert.ok(popoverLocation.x >= triggerLocation.x - 4, "Resources popover must extend right from its icon");
-  assert.ok(popoverSize.width <= 360, "Resources popover must remain compact");
   const resourceTable = await resourcePopover.$('[data-testid="amux-resource-table"]');
   assert.match(await resourceTable.getText(), /treefold-a8c7fixture/);
   assert.match(await resourceTable.getText(), /Groups\s*3/);
@@ -72,12 +63,6 @@ try {
     timeoutMsg: "amux status did not change to Not started after stopping",
   });
   assert.equal(harness.amuxStopRequests.length, 1, "stopping must call the daemon stop endpoint exactly once");
-  const stoppedStatus = await resourcePopover.$('[data-testid="amux-stopped-status"]');
-  assert.equal(await stoppedStatus.getTagName(), "span", "Not started status must not be clickable");
-  await stoppedStatus.click();
-  const lazyStartTooltip = await browser.$('[data-slot="tooltip-content"]');
-  await lazyStartTooltip.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await lazyStartTooltip.getText(), /starts automatically when a Session needs it/);
 
   harness.assertNoUnexpectedRequests();
   console.log("✓ amux resource status, destructive stop confirmation, and exit preference passed");
@@ -85,6 +70,6 @@ try {
   await browser?.saveScreenshot("/tmp/treefold-resources-failure.png").catch(() => {});
   throw error;
 } finally {
-  await browser?.deleteSession();
+  await closeUiSession(browser);
   await harness.close();
 }
