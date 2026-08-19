@@ -107,9 +107,17 @@ source of truth for this configuration.
 
 ## UI verification workflow
 
-Treefold is delivered as a Tauri desktop App, so the current desktop build is the final acceptance surface for every user-visible frontend change. Browser-based tools remain required for deterministic regression coverage and are useful for inspecting DOM, accessibility state, geometry, and console errors, but browser behavior or screenshots must not be treated as proof that the App behaves or renders the same way. Every user-visible frontend change must run the existing WebdriverIO core flow, complete focused browser diagnostics where useful, and finish with a focused Treefold App acceptance pass. Running the existing suite is required; adding or changing automated coverage is not. New UI tests must pass the admission gate below.
+Treefold is delivered as a Tauri desktop App, but deterministic browser-based
+coverage is the default verification surface. Use WebdriverIO for regression
+coverage and focused browser diagnostics for DOM state, accessibility, geometry,
+screenshots, and console errors. Important behavior that depends on the Tauri
+runtime, WebView, or native integration may additionally use focused automated
+Tauri UI tests. Do not use Computer Use to control the real App or perform a
+manual desktop acceptance pass unless the user explicitly requests it. Running
+the existing browser suite is required; adding or changing automated coverage is
+not. New UI tests must pass the admission gate below.
 
-### Required checks
+### Default checks
 
 Run the following from the repository root:
 
@@ -117,9 +125,14 @@ Run the following from the repository root:
 2. `npm run build` for layout, routing, dependency, or production-bundle changes.
 3. `npm run test:ui` for every user-visible UI change.
 4. After the automated checks pass, use Codex browser control when it helps inspect DOM state, accessibility, element bounds, hit testing, or browser console errors.
-5. Perform final visual and interaction acceptance in the current Treefold desktop App. Use Computer Use to operate the App as a user would and inspect App screenshots for the affected states.
 
-Do not report a UI change complete while a required check is failing or while the desktop App acceptance pass is blocked. Do not substitute browser verification when the App cannot be launched, is stale, or cannot expose the affected flow; report the work as incomplete and state the blocker instead. The final handoff must state which commands passed, which browser diagnostics were used, which App states and interactions were exercised, and any behavior that remains unverified.
+For important or critical behavior that crosses the browser/Tauri boundary, run
+or add a focused Tauri UI test when it provides meaningful regression coverage.
+Do not treat manual App acceptance as a default completion requirement. If the
+user explicitly requests manual App verification, report the exercised App
+states and any remaining gaps. The final handoff must state which commands
+passed, which browser diagnostics or Tauri UI tests were used, and any behavior
+that remains unverified.
 
 ### Deterministic UI fixture
 
@@ -148,7 +161,7 @@ Add or update an automated UI test only when the regression would change at leas
 - keyboard behavior or another accessibility semantic;
 - shared overlay reachability or occlusion behavior covered under the representative-overlay rules below.
 
-Do not add or update automated tests for presentation-only changes, including spacing, alignment, centering, dimensions, colors, typography, icon placement, animation names, static copy, or visual hierarchy. A useful test must survive a pure CSS refactor that preserves behavior and accessibility. Verify presentation changes by running the existing suite and inspecting the current Treefold App instead.
+Do not add or update automated tests for presentation-only changes, including spacing, alignment, centering, dimensions, colors, typography, icon placement, animation names, static copy, or visual hierarchy. A useful test must survive a pure CSS refactor that preserves behavior and accessibility. Verify presentation changes with focused browser diagnostics and screenshots. Inspect the current Treefold App only when the user explicitly requests manual App verification.
 
 Outside the representative overlay helper, automated tests must not assert exact pixels, element coordinates, computed CSS properties, DOM sibling order, or animation implementation details. Do not use `getLocation`, `getSize`, `getCSSProperty`, or `compareDocumentPosition` to encode visual design. Functional resize limits may assert the resulting persisted value, but not incidental page offsets.
 
@@ -179,11 +192,16 @@ Add or extend automated overlay coverage only when a shared overlay implementati
 
 The WebdriverIO session and all harness services must always be closed. Save a failure screenshot under `/tmp` when practical.
 
-### Browser diagnostics and desktop App acceptance
+### Browser diagnostics and optional desktop App acceptance
 
-After WebdriverIO passes, use browser control as an information-rich diagnostic surface where it adds value. Browser inspection is preferred for DOM and accessibility snapshots, computed layout, exact bounds, representative hit testing, and console errors. It may explain a defect and support automated coverage, but it is not the final visual or interaction authority.
+After WebdriverIO passes, use browser control as an information-rich diagnostic surface where it adds value. Browser inspection is preferred for DOM and accessibility snapshots, computed layout, exact bounds, representative hit testing, screenshots, and console errors.
 
-Then launch or connect to a Treefold desktop App built from the current working revision and inspect the change as a user would. Use an isolated `TREEFOLD_HOME` whenever the acceptance flow could mutate persistent application data. Avoid validating against a stale packaged App or an unrelated already-running dev process. In the App:
+Only when the user explicitly requests manual App acceptance, launch or connect
+to a Treefold desktop App built from the current working revision and inspect the
+change as a user would. Use an isolated `TREEFOLD_HOME` whenever the acceptance
+flow could mutate persistent application data. Avoid validating against a stale
+packaged App or an unrelated already-running dev process. In that requested App
+acceptance pass:
 
 - If a Treefold dev App already opened by the user blocks the acceptance run (for example, by holding an application or server port), the agent may identify and terminate that specific dev App and its owned child processes before launching the current revision. Resolve exact process IDs first and do not terminate unrelated applications or development servers.
 - exercise each changed state, including applicable expanded, collapsed, empty, long-label, and contextual states;
@@ -193,10 +211,20 @@ Then launch or connect to a Treefold desktop App built from the current working 
 - confirm contextual controls do not leak into unrelated routes;
 - watch the desktop dev-process output for runtime errors when available.
 
-Platform-sensitive interactions—including drag and drop, pointer capture, focus transfer, keyboard shortcuts, IME, clipboard behavior, context menus, scrolling, file drops, and WebView-dependent event behavior—must be exercised in the desktop App even when the same flow passes in Chrome. If App acceptance disagrees with Browser, the App result is authoritative.
+For important platform-sensitive interactions—including drag and drop, pointer
+capture, focus transfer, keyboard shortcuts, IME, clipboard behavior, context
+menus, scrolling, file drops, and WebView-dependent event behavior—prefer a
+focused automated Tauri UI test when practical. Exercise them manually in the
+desktop App only when the user explicitly requests it. If a requested App
+acceptance pass disagrees with browser or automated Tauri results, report the
+disagreement and treat the real App result as authoritative.
 
-If exploration reveals a stable and mechanically testable regression risk, add automated coverage only when it passes the admission gate above. Presentation regressions remain part of focused App visual inspection and must not be converted into pixel or CSS assertions.
+If exploration reveals a stable and mechanically testable regression risk, add automated coverage only when it passes the admission gate above. Presentation regressions must not be converted into pixel or CSS assertions.
 
 ### Tauri-specific changes
 
-Changes involving the native title bar, window controls, menus, filesystem dialogs, terminal integration, or other Tauri APIs require a focused `npm run dev:desktop` check of the affected native flow in addition to the general App acceptance pass. Browser-only validation is never sufficient for these changes.
+For important logic involving the native title bar, window controls, menus,
+filesystem dialogs, terminal integration, or other Tauri APIs, use focused Tauri
+UI test coverage when it can exercise the affected contract. Do not run
+`npm run dev:desktop`, use Computer Use, or perform manual real-App acceptance
+unless the user explicitly requests it.
