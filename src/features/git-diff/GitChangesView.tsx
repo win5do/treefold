@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type * as React from "react";
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree } from "@win5do/pierre-trees/react";
@@ -40,33 +41,11 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
     const stored = Number(window.localStorage.getItem("treefold.git-changes.tree-width"));
     return Number.isFinite(stored) ? Math.min(520, Math.max(220, stored)) : 320;
   });
-  const [resizingTree, setResizingTree] = useState(false);
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const api = repositoryKind === "project" ? projectsApi : workspacesApi;
   const files = useMemo(() => scope === "commit" ? parseComparison(comparison).files : (status?.files ?? []).filter((file) => scope === "staged" ? file.has_staged_changes : true), [comparison, scope, status]);
   const parsed = useMemo(() => scope === "commit" ? parseComparison(comparison).files : parseComparison(comparison).files, [comparison, scope]);
   const selected = files.find((file) => file.path === selectedPath) ?? files[0];
-
-  useEffect(() => {
-    if (!resizingTree) return;
-    const resize = (event: PointerEvent) => {
-      const bounds = document.querySelector<HTMLElement>("[data-git-changes-view]")?.getBoundingClientRect();
-      const maximum = Math.max(280, Math.min(520, (bounds?.width ?? window.innerWidth) - 360));
-      setTreeWidth(Math.min(maximum, Math.max(220, event.clientX - (bounds?.left ?? 0))));
-    };
-    const stop = () => setResizingTree(false);
-    const previousCursor = document.body.style.cursor;
-    const previousSelection = document.body.style.userSelect;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", stop, { once: true });
-    return () => {
-      window.removeEventListener("pointermove", resize);
-      window.removeEventListener("pointerup", stop);
-      document.body.style.cursor = previousCursor;
-      document.body.style.userSelect = previousSelection;
-    };
-  }, [resizingTree]);
 
   useEffect(() => {
     window.localStorage.setItem("treefold.git-changes.tree-width", String(treeWidth));
@@ -176,6 +155,18 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
 
   const parsedFiles = scope === "commit" ? parsed : comparison ? parseComparison(comparison).files : [];
   const current = parsedFiles.find((file) => file.path === selectedPath);
+  const resizeTree = (event: React.PointerEvent<HTMLDivElement>) => {
+    resizeRef.current = { startX: event.clientX, startWidth: treeWidth };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const continueResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeRef.current) return;
+    setTreeWidth(Math.max(220, Math.min(520, resizeRef.current.startWidth + event.clientX - resizeRef.current.startX)));
+  };
+  const stopResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    resizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   return <main data-git-changes-view className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
       <GitCompare className="size-4 text-muted-foreground" />
@@ -200,13 +191,11 @@ export function GitChangesView({ repositoryKind, repositoryId, repositoryName, s
         aria-valuemin={220}
         aria-valuemax={520}
         aria-valuenow={treeWidth}
-        tabIndex={0}
         className="w-1 shrink-0 cursor-col-resize touch-none hover:bg-ring/50 focus:bg-ring/50"
-        onPointerDown={(event) => { event.preventDefault(); setResizingTree(true); }}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowLeft") { event.preventDefault(); setTreeWidth((value) => Math.max(220, value - 16)); }
-          if (event.key === "ArrowRight") { event.preventDefault(); setTreeWidth((value) => Math.min(520, value + 16)); }
-        }}
+        onPointerDown={resizeTree}
+        onPointerMove={continueResize}
+        onPointerUp={stopResize}
+        onPointerCancel={stopResize}
       />
       <section className="flex min-w-0 flex-1 flex-col">
         {current && <><div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3"><span className="min-w-0 flex-1 truncate font-mono text-xs">{current.path}</span><Button size="icon-sm" variant="ghost" aria-label="Previous file" onClick={() => setSelectedPath(files[Math.max(0, files.findIndex((file) => file.path === selectedPath) - 1)]?.path ?? selectedPath)}><ChevronUp /></Button><Button size="icon-sm" variant="ghost" aria-label="Next file" onClick={() => setSelectedPath(files[Math.min(files.length - 1, files.findIndex((file) => file.path === selectedPath) + 1)]?.path ?? selectedPath)}><ChevronDown /></Button></div><div className="min-h-0 flex-1 overflow-hidden" data-testid="git-diff-content">{error ? <State title="Could not load diff" detail={error} /> : current.binary || current.diff.hunks.length === 0 ? <State title={current.binary ? "Binary file changed" : "No line changes"} /> : <Virtualizer className="h-full overflow-auto" contentClassName="min-h-full"><FileDiff key={current.path} fileDiff={current.diff} options={{ diffStyle: "unified", diffIndicators: "bars", disableFileHeader: true, enableLineSelection: false, expandUnchanged: false, collapsedContextThreshold: 8, hunkSeparators: "line-info-basic", lineDiffType: "word-alt", overflow: "scroll", themeType: "system" }} /></Virtualizer>}</div></>}
