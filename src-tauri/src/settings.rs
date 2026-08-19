@@ -36,7 +36,6 @@ pub struct Settings {
     pub language: String,
     #[serde(default = "default_theme")]
     pub theme: String,
-    pub worktree_root: String,
     #[serde(default)]
     pub agents: AgentsSettings,
     #[serde(default)]
@@ -44,21 +43,11 @@ pub struct Settings {
 }
 
 impl Settings {
-    fn defaults(treefold_home: &Path, user_home: &Path) -> Self {
-        let default_home = user_home.join(".treefold");
-        let worktree_root = if treefold_home == default_home {
-            "~/.treefold/worktrees".into()
-        } else {
-            treefold_home
-                .join("worktrees")
-                .to_string_lossy()
-                .into_owned()
-        };
+    fn defaults() -> Self {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
             language: "system".into(),
             theme: default_theme(),
-            worktree_root,
             agents: AgentsSettings {
                 codex: CodexAgentSettings { extra_args: vec![] },
             },
@@ -76,7 +65,6 @@ impl Settings {
         }
         validate_language(&self.language)?;
         validate_theme(&self.theme)?;
-        validate_worktree_root(&self.worktree_root)?;
         validate_extra_args(&self.agents.codex.extra_args)?;
         Ok(())
     }
@@ -92,7 +80,6 @@ struct SettingsHeader {
 pub struct SettingsPatch {
     pub language: Option<String>,
     pub theme: Option<String>,
-    pub worktree_root: Option<String>,
     pub agents: Option<AgentsSettingsPatch>,
     pub amux: Option<AmuxSettingsPatch>,
 }
@@ -122,9 +109,6 @@ impl SettingsPatch {
         }
         if let Some(theme) = &self.theme {
             validate_theme(theme)?;
-        }
-        if let Some(worktree_root) = &self.worktree_root {
-            validate_worktree_root(worktree_root)?;
         }
         if let Some(extra_args) = self
             .agents
@@ -156,13 +140,6 @@ fn validate_theme(theme: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn validate_worktree_root(worktree_root: &str) -> anyhow::Result<()> {
-    if worktree_root.trim().is_empty() {
-        bail!("worktree_root must not be empty");
-    }
-    Ok(())
-}
-
 fn validate_extra_args(extra_args: &[String]) -> anyhow::Result<()> {
     for (index, argument) in extra_args.iter().enumerate() {
         if argument.is_empty() {
@@ -179,12 +156,11 @@ fn validate_extra_args(extra_args: &[String]) -> anyhow::Result<()> {
 pub struct SettingsStore {
     path: PathBuf,
     treefold_home: PathBuf,
-    user_home: PathBuf,
     write_lock: Arc<Mutex<()>>,
 }
 
 impl SettingsStore {
-    pub fn open(treefold_home: &Path, user_home: &Path) -> anyhow::Result<Self> {
+    pub fn open(treefold_home: &Path) -> anyhow::Result<Self> {
         let config_dir = treefold_home.join("config");
         fs::create_dir_all(&config_dir).with_context(|| {
             format!("create Treefold config directory {}", config_dir.display())
@@ -192,11 +168,10 @@ impl SettingsStore {
         let store = Self {
             path: config_dir.join("settings.toml"),
             treefold_home: treefold_home.to_path_buf(),
-            user_home: user_home.to_path_buf(),
             write_lock: Arc::new(Mutex::new(())),
         };
         if !store.path.exists() {
-            let settings = Settings::defaults(treefold_home, user_home);
+            let settings = Settings::defaults();
             store.write_new(&settings)?;
         }
         store.load()?;
@@ -231,10 +206,6 @@ impl SettingsStore {
             settings.theme = theme;
             document["theme"] = value(settings.theme.clone());
         }
-        if let Some(worktree_root) = patch.worktree_root {
-            settings.worktree_root = worktree_root;
-            document["worktree_root"] = value(settings.worktree_root.clone());
-        }
         if let Some(extra_args) = patch
             .agents
             .and_then(|agents| agents.codex)
@@ -252,29 +223,11 @@ impl SettingsStore {
         Ok(settings)
     }
 
-    pub fn worktree_root(&self) -> anyhow::Result<PathBuf> {
-        let settings = self.load()?;
-        let configured = settings.worktree_root.trim();
-        if configured == "~" {
-            return Ok(self.user_home.clone());
-        }
-        if let Some(relative) = configured.strip_prefix("~/") {
-            return Ok(self.user_home.join(relative));
-        }
-        let path = PathBuf::from(configured);
-        if path.is_absolute() {
-            Ok(path)
-        } else {
-            Ok(self.treefold_home.join(path))
-        }
-    }
-
     fn write_new(&self, settings: &Settings) -> anyhow::Result<()> {
         let mut document = DocumentMut::new();
         document["schema_version"] = value(i64::from(settings.schema_version));
         document["language"] = value(settings.language.clone());
         document["theme"] = value(settings.theme.clone());
-        document["worktree_root"] = value(settings.worktree_root.clone());
         let mut agents = Table::new();
         agents.set_implicit(true);
         agents.insert("codex", Item::Table(Table::new()));
@@ -372,10 +325,10 @@ mod tests {
     }
 
     #[test]
-    fn creates_versioned_defaults_and_resolves_the_default_worktree_root() {
+    fn creates_versioned_defaults_without_a_worktree_setting() {
         let (root, user_home) = fixture("defaults");
         let treefold_home = user_home.join(".treefold");
-        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let store = SettingsStore::open(&treefold_home).expect("open settings");
 
         assert_eq!(
             store.load().expect("load settings"),
@@ -383,16 +336,11 @@ mod tests {
                 schema_version: SETTINGS_SCHEMA_VERSION,
                 language: "system".into(),
                 theme: "system".into(),
-                worktree_root: "~/.treefold/worktrees".into(),
                 agents: AgentsSettings {
                     codex: CodexAgentSettings { extra_args: vec![] },
                 },
                 amux: AmuxSettings::default(),
             }
-        );
-        assert_eq!(
-            store.worktree_root().expect("resolve worktree root"),
-            treefold_home.join("worktrees")
         );
         let settings_file = treefold_home.join("config/settings.toml");
         assert!(settings_file.is_file());
@@ -412,15 +360,14 @@ mod tests {
 
     #[test]
     fn updates_settings_without_removing_comments_or_unknown_keys() {
-        let (root, user_home) = fixture("update");
+        let (root, _user_home) = fixture("update");
         let treefold_home = root.join("custom-treefold-home");
-        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let store = SettingsStore::open(&treefold_home).expect("open settings");
         let path = treefold_home.join("config/settings.toml");
         std::fs::write(
             &path,
             format!(
-                "# user comment\nschema_version = 1\nlanguage = \"system\"\nworktree_root = \"{}\"\nfuture_setting = \"preserve-me\"\n",
-                treefold_home.join("worktrees").display()
+                "# user comment\nschema_version = 1\nlanguage = \"system\"\nfuture_setting = \"preserve-me\"\n",
             ),
         )
         .expect("customize settings");
@@ -429,7 +376,6 @@ mod tests {
             .update(SettingsPatch {
                 language: Some("zh-CN".into()),
                 theme: Some("dark".into()),
-                worktree_root: None,
                 agents: Some(AgentsSettingsPatch {
                     codex: Some(CodexAgentSettingsPatch {
                         extra_args: Some(vec![
@@ -463,17 +409,17 @@ mod tests {
 
     #[test]
     fn rejects_an_unsupported_schema_version() {
-        let (root, user_home) = fixture("schema");
+        let (root, _user_home) = fixture("schema");
         let treefold_home = root.join("home");
         let config_dir = treefold_home.join("config");
         std::fs::create_dir_all(&config_dir).expect("create config directory");
         std::fs::write(
             config_dir.join("settings.toml"),
-            "schema_version = 2\nlanguage = \"system\"\nworktree_root = \"worktrees\"\n",
+            "schema_version = 2\nlanguage = \"system\"\n",
         )
         .expect("write unsupported settings");
 
-        let error = SettingsStore::open(&treefold_home, &user_home)
+        let error = SettingsStore::open(&treefold_home)
             .err()
             .expect("reject unsupported schema");
         assert!(
@@ -487,9 +433,9 @@ mod tests {
 
     #[test]
     fn rejects_invalid_partial_updates_without_rewriting_the_file() {
-        let (root, user_home) = fixture("invalid-update");
+        let (root, _user_home) = fixture("invalid-update");
         let treefold_home = root.join("home");
-        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let store = SettingsStore::open(&treefold_home).expect("open settings");
         let path = treefold_home.join("config/settings.toml");
         let before = std::fs::read_to_string(&path).expect("read settings before update");
 
@@ -510,9 +456,9 @@ mod tests {
 
     #[test]
     fn rejects_invalid_theme_without_rewriting_the_file() {
-        let (root, user_home) = fixture("invalid-theme");
+        let (root, _user_home) = fixture("invalid-theme");
         let treefold_home = root.join("home");
-        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let store = SettingsStore::open(&treefold_home).expect("open settings");
         let path = treefold_home.join("config/settings.toml");
         let before = std::fs::read_to_string(&path).expect("read settings before update");
 
@@ -533,9 +479,9 @@ mod tests {
 
     #[test]
     fn rejects_empty_codex_arguments_without_rewriting_the_file() {
-        let (root, user_home) = fixture("invalid-args");
+        let (root, _user_home) = fixture("invalid-args");
         let treefold_home = root.join("home");
-        let store = SettingsStore::open(&treefold_home, &user_home).expect("open settings");
+        let store = SettingsStore::open(&treefold_home).expect("open settings");
         let path = treefold_home.join("config/settings.toml");
         let before = std::fs::read_to_string(&path).expect("read settings before update");
 

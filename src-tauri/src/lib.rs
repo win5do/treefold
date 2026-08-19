@@ -174,7 +174,7 @@ pub fn run() {
             let home = std::env::var_os("TREEFOLD_HOME")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| user_home.join(".treefold"));
-            let settings = settings::SettingsStore::open(&home, &user_home)?;
+            let settings = settings::SettingsStore::open(&home)?;
             let open_item =
                 MenuItem::with_id(app, TRAY_OPEN_ID, "Open Treefold", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;

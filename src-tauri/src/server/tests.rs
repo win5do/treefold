@@ -35,7 +35,7 @@ mod current_workspace_tests {
         let home = root.join("home");
         AppState {
             store: Store::open(&home.join("data/treefold.db")).expect("open test Store"),
-            settings: SettingsStore::open(&home, root).expect("open test Settings"),
+            settings: SettingsStore::open(&home).expect("open test Settings"),
             terminals: TerminalManager::default(),
         }
     }
@@ -1104,7 +1104,7 @@ mod current_workspace_tests {
         assert_eq!(conflicted.status, "conflicted");
         let restarted = AppState {
             store: Store::open(&root.join("home/data/treefold.db")).expect("reopen Store"),
-            settings: SettingsStore::open(&root.join("home"), &root).expect("reopen Settings"),
+            settings: SettingsStore::open(&root.join("home")).expect("reopen Settings"),
             terminals: TerminalManager::default(),
         };
         let recovered =
@@ -2021,7 +2021,7 @@ mod tests {
     };
 
     fn test_settings(home: &Path) -> SettingsStore {
-        SettingsStore::open(home, home.parent().unwrap_or(home)).expect("open test settings")
+        SettingsStore::open(home).expect("open test settings")
     }
 
     async fn agent_api_fixture() -> (PathBuf, AppState, Session, Session) {
@@ -3485,11 +3485,9 @@ mod tests {
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
         };
-        let configured_worktree_root = root.join("configured-worktrees");
         state
             .settings
             .update(SettingsPatch {
-                worktree_root: Some(configured_worktree_root.to_string_lossy().into_owned()),
                 agents: Some(AgentsSettingsPatch {
                     codex: Some(CodexAgentSettingsPatch {
                         extra_args: Some(vec![
@@ -3530,7 +3528,7 @@ mod tests {
         )
         .await
         .expect("create workspace");
-        assert!(Path::new(&workspace.checkout_path).starts_with(&configured_worktree_root));
+        assert!(Path::new(&workspace.checkout_path).starts_with(&home));
         let (_, Json(fork)) = create_fork(
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),

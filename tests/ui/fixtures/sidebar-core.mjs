@@ -767,7 +767,6 @@ export function createSidebarCoreFixture() {
       schema_version: 1,
       language: "en-US",
       theme: "system",
-      worktree_root: "/fixture/treefold/worktrees",
       agents: {
         codex: {
           extra_args: [

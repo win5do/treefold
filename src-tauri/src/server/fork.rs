@@ -193,7 +193,7 @@ pub(super) fn create_fork_impl(
             &project.id,
             &parent_location.project_location_id,
             &fork_id,
-        )?
+        )
         .to_string_lossy()
         .into_owned();
         let base_branch = parent_location.branch.clone().unwrap_or_default();

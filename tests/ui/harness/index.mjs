@@ -105,7 +105,6 @@ async function startFixtureApi() {
       const allowed = new Set([
         "language",
         "theme",
-        "worktree_root",
         "agents",
         "amux",
       ]);
@@ -116,8 +115,6 @@ async function startFixtureApi() {
       if (input.language !== undefined)
         fixture.settings.language = input.language;
       if (input.theme !== undefined) fixture.settings.theme = input.theme;
-      if (input.worktree_root !== undefined)
-        fixture.settings.worktree_root = input.worktree_root;
       if (input.agents?.codex?.extra_args !== undefined) {
         fixture.settings.agents.codex.extra_args = [
           ...input.agents.codex.extra_args,

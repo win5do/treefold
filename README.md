@@ -102,12 +102,15 @@ Treefold stores its files under `~/.treefold` by default:
 ├── data/
 │   ├── treefold.db
 │   └── amux/
-└── worktrees/
+└── projects/
+    └── <project-id>/repos/<repository-id>/
+        ├── source/
+        └── worktrees/<workspace-id>/
 ```
 
 Set `TREEFOLD_HOME` before starting the app to relocate this complete tree. The
-settings file owns durable user preferences (`language`, `worktree_root`, and
-agent launch defaults); SQLite owns Projects, Workspaces, Sessions, Todos, and
+settings file owns durable user preferences (`language` and agent launch
+defaults); SQLite owns Projects, Workspaces, Sessions, Todos, and
 operation records. Treefold creates `settings.toml` with `schema_version = 1` on
 first launch. Configuration changes made outside the app are picked up on the
 next settings read; invalid or unsupported schemas are reported instead of
@@ -117,7 +120,6 @@ Sessions default to bypassing approvals and sandboxing, configure:
 ```toml
 schema_version = 1
 language = "system"
-worktree_root = "~/.treefold/worktrees"
 
 [agents.codex]
 extra_args = ["--dangerously-bypass-approvals-and-sandbox"]

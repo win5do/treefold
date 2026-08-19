@@ -451,7 +451,6 @@ export type AppSettings = {
   schema_version: number;
   language: LanguagePreference;
   theme: ThemePreference;
-  worktree_root: string;
   agents: {
     codex: {
       extra_args: string[];
