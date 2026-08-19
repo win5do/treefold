@@ -113,18 +113,32 @@ coverage and focused browser diagnostics for DOM state, accessibility, geometry,
 screenshots, and console errors. Important behavior that depends on the Tauri
 runtime, WebView, or native integration may additionally use focused automated
 Tauri UI tests. Do not use Computer Use to control the real App or perform a
-manual desktop acceptance pass unless the user explicitly requests it. Running
-the existing browser suite is required; adding or changing automated coverage is
-not. New UI tests must pass the admission gate below.
+manual desktop acceptance pass unless the user explicitly requests it. Run the
+existing browser suite for user-visible behavior changes and broader frontend
+work; presentation-only fixes may use the faster browser-diagnostics workflow
+below. Adding or changing automated coverage is not required. New UI tests must
+pass the admission gate below.
 
 ### Default checks
 
 Run the following from the repository root:
 
-1. `npm run typecheck` after changing TypeScript or React code.
-2. `npm run build` for layout, routing, dependency, or production-bundle changes.
-3. `npm run test:ui` for every user-visible UI change.
-4. After the automated checks pass, use Codex browser control when it helps inspect DOM state, accessibility, element bounds, hit testing, or browser console errors.
+1. Run `npm run typecheck` after every TypeScript or React change, including
+   small presentation-only TSX changes. It is the default fast correctness
+   check and should not be skipped merely because the edit is visually small.
+2. Run `npm run build` for substantial frontend features, routing or lazy-load
+   changes, dependency changes, production-bundle changes, or broad layout
+   refactors. It is not required for an isolated spacing, color, typography, or
+   class-name adjustment when `typecheck` is sufficient.
+3. Run `npm run test:ui` for user-visible behavior changes and broader frontend
+   work. Presentation-only changes that do not pass the automated UI-test
+   admission gate may instead use focused browser diagnostics against a current
+   dev UI.
+4. For UI presentation defects, prefer a short feedback loop: connect Codex
+   browser control to a user-provided running UI URL, reproduce the affected
+   state, and inspect screenshots, DOM state, computed styles, element bounds,
+   hit testing, accessibility, and console errors as relevant. Do not start a
+   duplicate UI process when the provided instance is current and usable.
 
 For important or critical behavior that crosses the browser/Tauri boundary, run
 or add a focused Tauri UI test when it provides meaningful regression coverage.
@@ -195,6 +209,12 @@ The WebdriverIO session and all harness services must always be closed. Save a f
 ### Browser diagnostics and optional desktop App acceptance
 
 After WebdriverIO passes, use browser control as an information-rich diagnostic surface where it adds value. Browser inspection is preferred for DOM and accessibility snapshots, computed layout, exact bounds, representative hit testing, screenshots, and console errors.
+
+For presentation-only investigation, browser control may be used directly
+against a current dev UI supplied by the user, without first running the full
+WebdriverIO suite. Treat that session as focused diagnosis of the reported
+state, not as deterministic regression coverage, and state what was inspected
+in the handoff.
 
 Only when the user explicitly requests manual App acceptance, launch or connect
 to a Treefold desktop App built from the current working revision and inspect the
