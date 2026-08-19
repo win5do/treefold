@@ -169,15 +169,6 @@ CREATE TABLE IF NOT EXISTS delivery_preflights (
 );
 CREATE INDEX IF NOT EXISTS delivery_preflights_repository_created
  ON delivery_preflights(workspace_repository_id,created_at DESC);
-CREATE TABLE IF NOT EXISTS reset_operations (
- id TEXT PRIMARY KEY, workspace_repository_id TEXT NOT NULL REFERENCES workspace_repositories(id) ON DELETE CASCADE,
- status TEXT NOT NULL, mode TEXT NOT NULL, before_head TEXT NOT NULL,
- target_head TEXT NOT NULL, result_head TEXT, recovery_ref TEXT NOT NULL,
- error TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, updated_at TEXT NOT NULL,
- completed_at TEXT
-);
-CREATE INDEX IF NOT EXISTS reset_operations_repository_started
- ON reset_operations(workspace_repository_id,started_at DESC);
 DROP TABLE IF EXISTS settings;
 "#;
 

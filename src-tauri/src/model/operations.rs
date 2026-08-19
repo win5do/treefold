@@ -152,26 +152,6 @@ pub struct FinishProgress {
     pub operation: Option<ParentOperation>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ResetOperation {
-    pub id: String,
-    pub workspace_location_id: String,
-    #[serde(skip)]
-    pub workspace_id: String,
-    pub status: String,
-    pub mode: String,
-    pub before_head: String,
-    pub target_head: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub result_head: Option<String>,
-    pub recovery_ref: String,
-    pub error: String,
-    pub started_at: String,
-    pub updated_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<String>,
-}
-
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct GitOperationRecord {
     pub id: String,

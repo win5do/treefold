@@ -412,14 +412,6 @@ fn app(state: AppState) -> Router {
             post(undo_parent_operation),
         )
         .route(
-            "/api/workspace-repositories/{id}/reset",
-            get(get_workspace_location_reset).post(reset_workspace_location),
-        )
-        .route(
-            "/api/workspace-repositories/{id}/reset/restore",
-            post(restore_workspace_location_reset),
-        )
-        .route(
             "/api/workspace-repositories/{id}/finish",
             post(finish_workspace_location),
         )

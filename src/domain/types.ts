@@ -328,7 +328,7 @@ export type DeliveryPreflight = {
 
 export type GitOperationRecord = {
   id: string;
-  kind: "delivery" | "parent" | "rebase" | "reset";
+  kind: "delivery" | "parent" | "rebase";
   action: string;
   status: string;
   before_head: string;

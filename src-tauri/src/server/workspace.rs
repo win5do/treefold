@@ -501,42 +501,6 @@ pub(super) fn reconcile_project(
                 Vec::new(),
             ));
         }
-        let reset_operation = state.store.latest_reset_operation(&workspace.id)?;
-        let reset_operation = if workspace.status == "active"
-            && reset_operation
-                .as_ref()
-                .is_some_and(|operation| operation.status == "active")
-        {
-            reset_status_impl(state, &workspace.id)?
-        } else {
-            reset_operation
-        };
-        if let Some(operation) = reset_operation
-            && (operation.status == "active" || operation.status == "failed")
-        {
-            issues.push(reconciliation_issue(
-                if operation.status == "active" {
-                    "reset_interrupted"
-                } else {
-                    "reset_failed"
-                },
-                "warning",
-                format!(
-                    "Workspace '{}' has reset status {} with recovery ref {}{}",
-                    workspace.name,
-                    operation.status,
-                    operation.recovery_ref,
-                    if operation.error.is_empty() {
-                        String::new()
-                    } else {
-                        format!(": {}", operation.error)
-                    }
-                ),
-                Some(workspace),
-                Some(&workspace.checkout_path),
-                Vec::new(),
-            ));
-        }
     }
 
     for worktree in listed.iter().filter(|worktree| !worktree.is_main) {

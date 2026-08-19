@@ -354,76 +354,6 @@ impl Store {
         )?)
     }
 
-    pub fn reset_operation(&self, id: &str) -> Result<ResetOperation> {
-        let db = self.0.lock();
-        Ok(db.query_row(
-            &format!("SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE id=?"),
-            [id],
-            reset_operation_row,
-        )?)
-    }
-
-    pub fn latest_reset_operation(&self, workspace_id: &str) -> Result<Option<ResetOperation>> {
-        let location_id = self.resolve_workspace_location_id(workspace_id)?;
-        let db = self.0.lock();
-        Ok(db
-            .query_row(
-                &format!("SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workspace_repository_id=? ORDER BY started_at DESC,rowid DESC LIMIT 1"),
-                [location_id],
-                reset_operation_row,
-            )
-            .optional()?)
-    }
-
-    pub fn reset_operations(&self, workspace_id: &str) -> Result<Vec<ResetOperation>> {
-        let location_id = self.resolve_workspace_location_id(workspace_id)?;
-        let db = self.0.lock();
-        let mut stmt = db.prepare(&format!(
-            "SELECT {RESET_OPERATION_COLUMNS} FROM reset_operations WHERE workspace_repository_id=? ORDER BY started_at DESC,rowid DESC"
-        ))?;
-        let values = stmt
-            .query_map([location_id], reset_operation_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
-    }
-
-    pub fn create_reset_operation(&self, operation: &ResetOperation) -> Result<()> {
-        self.0.lock().execute(
-            "INSERT INTO reset_operations(id,workspace_repository_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at)
-             VALUES(:id,:workspace_location_id,:status,:mode,:before_head,:target_head,:result_head,:recovery_ref,:error,:started_at,:updated_at,:completed_at)",
-            named_params! {
-                ":id": operation.id,
-                ":workspace_location_id": operation.workspace_location_id,
-                ":status": operation.status,
-                ":mode": operation.mode,
-                ":before_head": operation.before_head,
-                ":target_head": operation.target_head,
-                ":result_head": operation.result_head,
-                ":recovery_ref": operation.recovery_ref,
-                ":error": operation.error,
-                ":started_at": operation.started_at,
-                ":updated_at": operation.updated_at,
-                ":completed_at": operation.completed_at,
-            },
-        )?;
-        Ok(())
-    }
-
-    pub fn update_reset_operation(
-        &self,
-        id: &str,
-        status: &str,
-        result_head: Option<&str>,
-        error: &str,
-        completed: bool,
-    ) -> Result<()> {
-        let timestamp = now();
-        self.0.lock().execute(
-            "UPDATE reset_operations SET status=?,result_head=COALESCE(?,result_head),error=?,updated_at=?,completed_at=CASE WHEN ? THEN COALESCE(completed_at,?) ELSE completed_at END WHERE id=?",
-            params![status, result_head, error, timestamp, completed, timestamp, id],
-        )?;
-        Ok(())
-    }
 }
 
 const SETTLEMENT_OPERATION_COLUMNS: &str = "workspace_repository_id AS workspace_location_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
@@ -496,26 +426,6 @@ fn rebase_operation_row(r: &Row<'_>) -> rusqlite::Result<RebaseOperation> {
         before_head: r.get("before_head")?,
         target_head: r.get("target_head")?,
         rebased_head: r.get("rebased_head")?,
-        recovery_ref: r.get("recovery_ref")?,
-        error: r.get("error")?,
-        started_at: r.get("started_at")?,
-        updated_at: r.get("updated_at")?,
-        completed_at: r.get("completed_at")?,
-    })
-}
-
-const RESET_OPERATION_COLUMNS: &str = "id,workspace_repository_id AS workspace_location_id,status,mode,before_head,target_head,result_head,recovery_ref,error,started_at,updated_at,completed_at";
-
-fn reset_operation_row(r: &Row<'_>) -> rusqlite::Result<ResetOperation> {
-    Ok(ResetOperation {
-        id: r.get("id")?,
-        workspace_location_id: r.get("workspace_location_id")?,
-        workspace_id: r.get("workspace_location_id")?,
-        status: r.get("status")?,
-        mode: r.get("mode")?,
-        before_head: r.get("before_head")?,
-        target_head: r.get("target_head")?,
-        result_head: r.get("result_head")?,
         recovery_ref: r.get("recovery_ref")?,
         error: r.get("error")?,
         started_at: r.get("started_at")?,

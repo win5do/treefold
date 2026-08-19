@@ -1333,25 +1333,6 @@ pub(super) fn git_operation_history(state: &AppState, id: &str) -> Result<Vec<Gi
                 updated_at: operation.updated_at,
             }),
     );
-    records.extend(
-        state
-            .store
-            .reset_operations(id)?
-            .into_iter()
-            .map(|operation| GitOperationRecord {
-                id: operation.id,
-                kind: "reset".into(),
-                action: operation.mode,
-                status: operation.status,
-                before_head: operation.before_head,
-                target_head: operation.target_head,
-                result_head: operation.result_head,
-                recovery_ref: Some(operation.recovery_ref),
-                error: operation.error,
-                started_at: operation.started_at,
-                updated_at: operation.updated_at,
-            }),
-    );
     let mut seen = HashSet::new();
     records.retain(|record| seen.insert(record.id.clone()));
     records.sort_by(|left, right| right.started_at.cmp(&left.started_at));
