@@ -61,7 +61,7 @@ export function GitChangesTree({ files, allFiles, stagedCount, selectedPath, mut
   };
 
   return <div className="min-h-0 flex-1 overflow-auto">
-    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-3"><span className="ml-auto text-[10px] text-muted-foreground">{stagedCount} staged</span><span className="flex w-6 shrink-0 justify-center"><Checkbox checked={allChecked} indeterminate={allIndeterminate} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} aria-label={allChecked ? "Unstage all changes" : "Stage all changes"} data-item-checkbox="true" onCheckedChange={(value) => onToggleAll(value === true)} /></span></div>
+    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2"><span className="ml-auto text-[10px] text-muted-foreground">{stagedCount} staged</span><span className="flex w-6 shrink-0 justify-center"><Checkbox checked={allChecked} indeterminate={allIndeterminate} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} aria-label={allChecked ? "Unstage all changes" : "Stage all changes"} data-item-checkbox="true" onCheckedChange={(value) => onToggleAll(value === true)} /></span></div>
     <div role="tree" aria-label="Changed files" className="py-1">{nodes.map((node) => <TreeNodeRow key={node.path} node={node} depth={0} selectedPath={selectedPath} collapsedPaths={collapsedPaths} mutatingPath={mutatingPath} onSelect={onSelect} onToggle={onToggle} onDirectoryOpenChange={setDirectoryOpen} />)}</div>
   </div>;
 }
