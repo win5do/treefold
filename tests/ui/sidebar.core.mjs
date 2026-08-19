@@ -494,6 +494,14 @@ try {
     '[data-testid="copy-absolute-path-submenu"]',
   );
   await copyPathSubmenu.waitForDisplayed({ timeout: 3_000 });
+  const copyDirectoryGroups = await copyPathSubmenu.$$(
+    '[data-testid^="directory-group-"]',
+  );
+  assert.equal(
+    await copyDirectoryGroups[0].getAttribute("data-testid"),
+    `directory-group-${FIXTURE_IDS.primaryRepository}`,
+    "copy path must use the same primary-first Repository groups as Session creation",
+  );
   await (
     await copyPathSubmenu.$(
       `[data-testid="copy-absolute-path-${FIXTURE_IDS.secondaryDirectory}"]`,
@@ -505,7 +513,7 @@ try {
       "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture-api",
     {
       timeout: 3_000,
-      timeoutMsg: "copy path action must write the selected repo worktree path",
+      timeoutMsg: "copy path action must write the selected Directory path",
     },
   );
   await pressUiEscape(browser);

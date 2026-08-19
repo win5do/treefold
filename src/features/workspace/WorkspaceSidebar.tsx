@@ -522,6 +522,68 @@ function groupDirectories(directories: Directory[]): DirectoryGroup[] {
     });
 }
 
+function DirectoryMenuGroups({
+  groups,
+  surface,
+  testIdPrefix,
+  disabled,
+  onSelect,
+}: {
+  groups: DirectoryGroup[];
+  surface: "context" | "sidebar";
+  testIdPrefix: string;
+  disabled?: (directory: Directory) => boolean;
+  onSelect: (directory: Directory) => void;
+}) {
+  const { t } = useTranslation();
+  if (surface === "context") {
+    return groups.map((group) => (
+      <ContextMenuGroup
+        key={group.id}
+        data-testid={`directory-group-${group.id}`}
+      >
+        <ContextMenuLabel>
+          {group.name ?? t("sidebar.otherDirectories")}
+        </ContextMenuLabel>
+        {group.directories.map((directory) => (
+          <ContextMenuItem
+            key={directory.id}
+            data-testid={`${testIdPrefix}-${directory.id}`}
+            disabled={disabled?.(directory)}
+            onClick={() => onSelect(directory)}
+          >
+            {directory.is_git ? <FolderGit2 /> : <Folder />}
+            {directory.name}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuGroup>
+    ));
+  }
+  return groups.map((group) => (
+    <div
+      key={group.id}
+      role="group"
+      aria-label={group.name ?? t("sidebar.otherDirectories")}
+      data-testid={`directory-group-${group.id}`}
+    >
+      <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {group.name ?? t("sidebar.otherDirectories")}
+      </p>
+      {group.directories.map((directory) => (
+        <SidebarMenuButton
+          key={directory.id}
+          testId={`${testIdPrefix}-${directory.id}`}
+          icon={directory.is_git ? <FolderGit2 /> : <Folder />}
+          disabled={disabled?.(directory)}
+          onClick={() => onSelect(directory)}
+        >
+          {directory.name}
+        </SidebarMenuButton>
+      ))}
+    </div>
+  ));
+}
+
 function SidebarOwnerContextMenu({
   project,
   stream,
@@ -554,14 +616,19 @@ function SidebarOwnerContextMenu({
   const { t } = useTranslation();
   const directories = stream?.directories ?? project.directories;
   const directoryGroups = groupDirectories(directories);
-  const pathTargets = directoryGroups
-    .flatMap((group) => group.directories)
-    .map((directory) => ({
-      id: directory.id,
-      name: directory.name,
-      path: directory.path,
-      isGit: directory.is_git,
-    }));
+  const copyDirectoryPath = (directory: Directory) => {
+    void navigator.clipboard
+      .writeText(directory.path)
+      .then(() =>
+        toast.success(
+          t("sidebar.absolutePathCopied", { name: directory.name }),
+        ),
+      )
+      .catch((cause) => {
+        console.error("Could not copy absolute path", cause);
+        toast.error(t("sidebar.copyAbsolutePathFailed"));
+      });
+  };
   const syncTargets = !stream
     ? project.repositories
         .filter((repository) => repository.git_status === "ready")
@@ -618,35 +685,20 @@ function SidebarOwnerContextMenu({
                 data-testid="directory-session-submenu"
                 className="w-44"
               >
-                {directoryGroups.map((group) => (
-                  <ContextMenuGroup
-                    key={group.id}
-                    data-testid={`directory-group-${group.id}`}
-                  >
-                    <ContextMenuLabel>
-                      {group.name ?? t("sidebar.otherDirectories")}
-                    </ContextMenuLabel>
-                    {group.directories.map((directory) => (
-                      <ContextMenuItem
-                        key={directory.id}
-                        data-testid={`session-directory-${directory.id}`}
-                        disabled={
-                          kind === "codex" &&
-                          (!directory.is_git ||
-                            directory.git_status !== "ready")
-                        }
-                        onClick={() =>
-                          kind === "shell"
-                            ? onCreateShell(directory)
-                            : onCreateCodex(directory)
-                        }
-                      >
-                        {directory.is_git ? <FolderGit2 /> : <Folder />}
-                        {directory.name}
-                      </ContextMenuItem>
-                    ))}
-                  </ContextMenuGroup>
-                ))}
+                <DirectoryMenuGroups
+                  groups={directoryGroups}
+                  surface="context"
+                  testIdPrefix="session-directory"
+                  disabled={(directory) =>
+                    kind === "codex" &&
+                    (!directory.is_git || directory.git_status !== "ready")
+                  }
+                  onSelect={(directory) =>
+                    kind === "shell"
+                      ? onCreateShell(directory)
+                      : onCreateCodex(directory)
+                  }
+                />
               </ContextMenuSubContent>
             </ContextMenuSub>
           ))}
@@ -724,7 +776,7 @@ function SidebarOwnerContextMenu({
           <ContextMenuSub>
             <ContextMenuSubTrigger
               data-testid="copy-absolute-path-menu"
-              disabled={pathTargets.length === 0}
+              disabled={directories.length === 0}
             >
               <Copy />
               {t("sidebar.copyAbsolutePath")}
@@ -733,35 +785,12 @@ function SidebarOwnerContextMenu({
               data-testid="copy-absolute-path-submenu"
               className="w-52"
             >
-              <ContextMenuGroup>
-                <ContextMenuLabel>
-                  {t("sidebar.selectDirectory")}
-                </ContextMenuLabel>
-                {pathTargets.map((target) => (
-                  <ContextMenuItem
-                    key={target.id}
-                    data-testid={`copy-absolute-path-${target.id}`}
-                    onClick={() => {
-                      void navigator.clipboard
-                        .writeText(target.path)
-                        .then(() =>
-                          toast.success(
-                            t("sidebar.absolutePathCopied", {
-                              name: target.name,
-                            }),
-                          ),
-                        )
-                        .catch((cause) => {
-                          console.error("Could not copy absolute path", cause);
-                          toast.error(t("sidebar.copyAbsolutePathFailed"));
-                        });
-                    }}
-                  >
-                    {target.isGit ? <FolderGit2 /> : <Folder />}
-                    {target.name}
-                  </ContextMenuItem>
-                ))}
-              </ContextMenuGroup>
+              <DirectoryMenuGroups
+                groups={directoryGroups}
+                surface="context"
+                testIdPrefix="copy-absolute-path"
+                onSelect={copyDirectoryPath}
+              />
             </ContextMenuSubContent>
           </ContextMenuSub>
           <ContextMenuItem onClick={onOpenInFinder}>
@@ -1125,36 +1154,20 @@ function SessionDirectoryMenu({
           className="directory-session-submenu absolute left-full w-44 rounded-lg border border-border bg-card p-1 shadow-xl"
           style={{ top: submenuTop }}
         >
-          {directoryGroups.map((group) => (
-            <div
-              key={group.id}
-              role="group"
-              aria-label={group.name ?? t("sidebar.otherDirectories")}
-              data-testid={`directory-group-${group.id}`}
-            >
-              <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {group.name ?? t("sidebar.otherDirectories")}
-              </p>
-              {group.directories.map((directory) => (
-                <SidebarMenuButton
-                  key={directory.id}
-                  testId={`session-directory-${directory.id}`}
-                  icon={directory.is_git ? <FolderGit2 /> : <Folder />}
-                  disabled={
-                    activeSessionKind === "codex" &&
-                    (!directory.is_git || directory.git_status !== "ready")
-                  }
-                  onClick={() =>
-                    activeSessionKind === "shell"
-                      ? onShell(directory)
-                      : onCodex(directory)
-                  }
-                >
-                  {directory.name}
-                </SidebarMenuButton>
-              ))}
-            </div>
-          ))}
+          <DirectoryMenuGroups
+            groups={directoryGroups}
+            surface="sidebar"
+            testIdPrefix="session-directory"
+            disabled={(directory) =>
+              activeSessionKind === "codex" &&
+              (!directory.is_git || directory.git_status !== "ready")
+            }
+            onSelect={(directory) =>
+              activeSessionKind === "shell"
+                ? onShell(directory)
+                : onCodex(directory)
+            }
+          />
         </div>
       )}
       {activeSync && (

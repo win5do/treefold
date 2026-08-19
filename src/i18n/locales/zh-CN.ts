@@ -35,7 +35,6 @@ export const zhCN = {
     noWorkspaces: "暂无工作流",
     newSessionIn: "新建会话",
     copyAbsolutePath: "复制绝对路径",
-    selectDirectory: "选择目录",
     otherDirectories: "其他目录",
     absolutePathCopied: "已复制 {{name}} 的路径",
     copyAbsolutePathFailed: "无法复制绝对路径",

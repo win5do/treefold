@@ -33,7 +33,6 @@ export const enUS = {
     noWorkspaces: "No Workspaces yet",
     newSessionIn: "New Session",
     copyAbsolutePath: "Copy Absolute Path",
-    selectDirectory: "Select Directory",
     otherDirectories: "Other Directories",
     absolutePathCopied: "{{name}} path copied",
     copyAbsolutePathFailed: "Could not copy absolute path",
