@@ -186,7 +186,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
     </header>
     {loading ? <State title="Loading Git changes" /> : error && !current ? <State title="Could not load Git changes" detail={error} /> : files.length === 0 ? <State title="No changes" /> : <div className="flex min-h-0 flex-1">
       <aside className="flex min-w-[220px] shrink-0 flex-col border-r border-border bg-muted/20" style={{ width: treeWidth }}>
-        <div className="flex h-10 shrink-0 items-center gap-2 px-3 text-xs font-semibold">
+        <div className="flex h-10 shrink-0 items-center gap-2 px-2 text-xs font-semibold">
           <span>Changed files</span>
           {status && <Badge variant="outline" className="ml-auto">{status.files.length} files</Badge>}
           <Button size="icon-sm" variant="ghost" data-testid="git-changes-refresh" aria-label="Refresh Git changes" title="Refresh Git changes" disabled={loading || refreshing || Boolean(mutatingPath)} onClick={() => void refreshChanges()}><RefreshCw className={cn(refreshing && "animate-spin")} /></Button>
