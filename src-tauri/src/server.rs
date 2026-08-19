@@ -216,6 +216,14 @@ fn app(state: AppState) -> Router {
             post(project_location_commit),
         )
         .route(
+            "/api/project-repositories/{id}/git/revert",
+            post(project_location_revert_commit),
+        )
+        .route(
+            "/api/project-repositories/{id}/git/reset",
+            post(project_location_reset_commit),
+        )
+        .route(
             "/api/project-repositories/{id}/git/pull",
             post(pull_project_location),
         )
@@ -287,6 +295,14 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/workspace-repositories/{id}/git/commit",
             post(workspace_location_commit),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git/revert",
+            post(workspace_location_revert_commit),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git/reset",
+            post(workspace_location_reset_commit),
         )
         .route(
             "/api/workspace-repositories/{id}",

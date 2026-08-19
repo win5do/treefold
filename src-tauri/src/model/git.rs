@@ -80,6 +80,25 @@ pub struct GitCommitInput {
     pub expected_snapshot: String,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct GitCommitTargetInput {
+    pub commit: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GitResetMode {
+    Soft,
+    Mixed,
+    Hard,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct GitResetCommitInput {
+    pub commit: String,
+    pub mode: GitResetMode,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct GitCommitResult {
     pub hash: String,

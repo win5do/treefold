@@ -163,4 +163,6 @@ export const projectsApi = {
   stage: (id: string, paths: string[]) => request<GitStatus>(`/api/project-repositories/${id}/git/stage`, { method: "POST", json: { paths } }),
   unstage: (id: string, paths: string[]) => request<GitStatus>(`/api/project-repositories/${id}/git/unstage`, { method: "POST", json: { paths } }),
   commit: (id: string, message: string, expected_snapshot: string) => request<GitCommitResult>(`/api/project-repositories/${id}/git/commit`, { method: "POST", json: { message, expected_snapshot } }),
+  revertCommit: (id: string, commit: string) => request<GitHistory>(`/api/project-repositories/${id}/git/revert`, { method: "POST", json: { commit } }),
+  resetCommit: (id: string, commit: string, mode: "soft" | "mixed" | "hard") => request<GitHistory>(`/api/project-repositories/${id}/git/reset`, { method: "POST", json: { commit, mode } }),
 };

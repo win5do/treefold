@@ -190,6 +190,118 @@ pub(super) async fn workspace_location_commit(
     blocking_git_operation_for(common, move || commit_repository(&path, input)).await
 }
 
+pub(super) async fn project_location_revert_commit(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitCommitTargetInput>,
+) -> Result<Json<GitHistory>> {
+    mutate_project_history(state, id, input.commit, GitHistoryAction::Revert).await
+}
+
+pub(super) async fn workspace_location_revert_commit(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitCommitTargetInput>,
+) -> Result<Json<GitHistory>> {
+    mutate_workspace_history(state, id, input.commit, GitHistoryAction::Revert).await
+}
+
+pub(super) async fn project_location_reset_commit(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitResetCommitInput>,
+) -> Result<Json<GitHistory>> {
+    mutate_project_history(state, id, input.commit, GitHistoryAction::Reset(input.mode)).await
+}
+
+pub(super) async fn workspace_location_reset_commit(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(input): ApiJson<GitResetCommitInput>,
+) -> Result<Json<GitHistory>> {
+    mutate_workspace_history(state, id, input.commit, GitHistoryAction::Reset(input.mode)).await
+}
+
+enum GitHistoryAction {
+    Revert,
+    Reset(GitResetMode),
+}
+
+async fn mutate_project_history(
+    state: AppState,
+    id: String,
+    commit: String,
+    action: GitHistoryAction,
+) -> Result<Json<GitHistory>> {
+    let mut location = state.store.repository_as_directory(&id)?;
+    refresh_location_observation(&mut location)?;
+    ensure_location_ready(&location)?;
+    let path = location.path.clone();
+    let common = location
+        .git_common_dir
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    blocking_git_operation_for(common, move || {
+        mutate_git_history(&path, &commit, action)?;
+        Ok(Json(git_history(&path)?))
+    })
+    .await
+}
+
+async fn mutate_workspace_history(
+    state: AppState,
+    id: String,
+    commit: String,
+    action: GitHistoryAction,
+) -> Result<Json<GitHistory>> {
+    let location = state.store.workspace_location(&id)?;
+    let path = workspace_location_git_path(&location)?.to_owned();
+    let common = state
+        .store
+        .repository(&location.project_location_id)?
+        .git_common_dir;
+    blocking_git_operation_for(common, move || {
+        mutate_git_history(&path, &commit, action)?;
+        Ok(Json(git_history(&path)?))
+    })
+    .await
+}
+
+fn mutate_git_history(repository: &str, revision: &str, action: GitHistoryAction) -> Result<()> {
+    let revision = revision.trim();
+    if revision.is_empty() {
+        return Err(AppError::BadRequest("commit must not be empty".into()));
+    }
+    let resolved = command_output(
+        Path::new(repository),
+        "git",
+        &["rev-parse", "--verify", &format!("{revision}^{{commit}}")],
+    )
+    .map_err(|error| AppError::BadRequest(format!("resolve commit {revision}: {error}")))?;
+    match action {
+        GitHistoryAction::Revert => {
+            if let Err(error) = command_output(
+                Path::new(repository),
+                "git",
+                &["revert", "--no-edit", &resolved],
+            ) {
+                let _ = command_output(Path::new(repository), "git", &["revert", "--abort"]);
+                return Err(AppError::BadRequest(format!("revert commit: {error}")));
+            }
+        }
+        GitHistoryAction::Reset(mode) => {
+            let flag = match mode {
+                GitResetMode::Soft => "--soft",
+                GitResetMode::Mixed => "--mixed",
+                GitResetMode::Hard => "--hard",
+            };
+            command_output(Path::new(repository), "git", &["reset", flag, &resolved])
+                .map_err(|error| AppError::BadRequest(format!("reset commit: {error}")))?;
+        }
+    }
+    Ok(())
+}
+
 async fn mutate_project_paths(
     state: AppState,
     id: String,

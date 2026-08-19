@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type * as React from "react";
-import { Bot, Check, Copy, GitBranch, GitCommitHorizontal, GitCompare, History, Info, PanelsTopLeft, TerminalSquare } from "lucide-react";
+import { Bot, Check, Copy, GitBranch, GitCommitHorizontal, GitCompare, History, Info, PanelsTopLeft, RotateCcw, TerminalSquare, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -13,7 +14,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import type { GitDiffLaunchPayload, GitHistory, GitStatus, ProjectDetail, Session, WorkspaceDetail } from "@/domain/types";
+import type { GitCommit, GitDiffLaunchPayload, GitHistory, GitStatus, ProjectDetail, Session, WorkspaceDetail } from "@/domain/types";
 import { projectsApi } from "@/api/projects";
 import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
@@ -86,7 +87,7 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
       </div>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
-    {tab === "changes" ? <GitCommitPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} onOpenChanges={onOpenChanges} /> : tab === "history" ? <GitHistoryPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} history={history} error={historyError} onOpenDiff={onOpenDiff} /> : session ? <div className="flex flex-col gap-6 p-4">
+    {tab === "changes" ? <GitCommitPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} onOpenChanges={onOpenChanges} /> : tab === "history" ? <GitHistoryPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} history={history} error={historyError} onHistoryChange={setHistory} onOpenDiff={onOpenDiff} /> : session ? <div className="flex flex-col gap-6 p-4">
       <div><div className="flex items-center gap-2"><div className="grid size-9 place-items-center rounded-lg bg-muted">{session.kind === "codex" ? <Bot className="size-4" /> : session.kind === "command" ? <PanelsTopLeft className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{session.name}</p><div className="mt-1 flex items-center gap-2"><Badge>{session.kind}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "destructive" : "secondary"}>{session.status}</Badge></div></div></div></div>
       <InspectorGroup title="Process"><InspectorRow label="Workspace" value={session.amux_workspace_name} mono /><InspectorRow label="Name" value={session.amux_process_name} mono /><InspectorRow label="I/O" value={session.io_mode} /><InspectorRow label="Exit" value={session.exit_code === undefined ? "—" : `${session.exit_code}${session.exit_signal ? ` · ${session.exit_signal}` : ""}`} /></InspectorGroup>
       <InspectorGroup title={workspace ? "Workspace" : "Project Session"}>{workspace && <><InspectorRow label="Workspace" value={workspace.name} /><InspectorRow label="Runtime" value={workspace.runtime_name} /><InspectorRow label="Workspace ID" value={workspace.runtime_id} mono /></>}<InspectorRow label="Workdir" value={session.cwd} mono />{session.original_cwd !== session.cwd && <InspectorRow label="Original" value={session.original_cwd} mono />}</InspectorGroup>
@@ -156,8 +157,12 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
   </div>;
 }
 
-function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, error, onOpenDiff }: { repositoryKind: "project" | "workspace"; repositories: { id: string; name: string }[]; repositoryId: string; history: GitHistory | null; error: string; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
+function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, error, onHistoryChange, onOpenDiff }: { repositoryKind: "project" | "workspace"; repositories: { id: string; name: string }[]; repositoryId: string; history: GitHistory | null; error: string; onHistoryChange: (history: GitHistory) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
   const [selection, setSelection] = useState<{ anchor: number; first: number; last: number } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ kind: "revert" | "reset"; commit: GitCommit } | null>(null);
+  const [resetMode, setResetMode] = useState<"soft" | "mixed" | "hard">("mixed");
+  const [actionPending, setActionPending] = useState(false);
+  const [actionError, setActionError] = useState("");
   useEffect(() => setSelection(null), [history, repositoryId]);
   const selectCommit = (index: number, extend: boolean) => {
     setSelection((current) => {
@@ -165,12 +170,12 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
       return { anchor: current.anchor, first: Math.min(current.anchor, index), last: Math.max(current.anchor, index) };
     });
   };
-  const viewDiff = () => {
-    if (!history || !selection) return;
+  const viewDiff = (range: { first: number; last: number } | null = selection) => {
+    if (!history || !range) return;
     const repository = repositories.find((item) => item.id === repositoryId);
     if (!repository) return;
-    const newest = history.commits[selection.first];
-    const oldest = history.commits[selection.last];
+    const newest = history.commits[range.first];
+    const oldest = history.commits[range.last];
     if (!newest || !oldest) return;
     onOpenDiff({
       repositoryKind,
@@ -178,8 +183,32 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
       repositoryName: repository.name,
       startCommit: oldest.hash,
       endCommit: newest.hash,
-      commitCount: selection.last - selection.first + 1,
+      commitCount: range.last - range.first + 1,
     });
+  };
+  const openAction = (kind: "revert" | "reset", commit: GitCommit) => {
+    setResetMode("mixed");
+    setActionError("");
+    setPendingAction({ kind, commit });
+  };
+  const runAction = async () => {
+    if (!pendingAction || !repositoryId || actionPending) return;
+    setActionPending(true);
+    setActionError("");
+    try {
+      const api = repositoryKind === "workspace" ? workspacesApi : projectsApi;
+      const nextHistory = pendingAction.kind === "revert"
+        ? await api.revertCommit(repositoryId, pendingAction.commit.hash)
+        : await api.resetCommit(repositoryId, pendingAction.commit.hash, resetMode);
+      onHistoryChange(nextHistory);
+      setSelection(null);
+      setPendingAction(null);
+      toast.success(pendingAction.kind === "revert" ? "Commit reverted" : `Repository reset (${resetMode})`);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : `Could not ${pendingAction.kind} commit`);
+    } finally {
+      setActionPending(false);
+    }
   };
   const copyCommit = (hash: string) => {
     void navigator.clipboard.writeText(hash).then(() => {
@@ -189,7 +218,7 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
       toast.error("Could not copy commit");
     });
   };
-  return <div>
+  return <><div>
     <div className="flex flex-col gap-2 border-b border-border/60 p-3">
       {history && <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><GitBranch className="size-3.5" /><span className="min-w-0 flex-1 truncate font-mono" title={history.branch}>{history.branch}</span><span>{history.commits.length} commits</span></div>}
     </div>
@@ -207,6 +236,10 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
             tabIndex={0}
             className={cn("cursor-default px-4 py-3.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset", selected && "bg-accent text-accent-foreground", rangeStart && "rounded-t-md", rangeEnd && "rounded-b-md")}
             onClick={(event) => selectCommit(index, event.shiftKey)}
+            onDoubleClick={() => {
+              selectCommit(index, false);
+              viewDiff({ first: index, last: index });
+            }}
             onContextMenu={() => {
               if (!selected) selectCommit(index, false);
             }}
@@ -220,19 +253,56 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
         </ContextMenuTrigger>
         <ContextMenuContent>
           <ContextMenuGroup>
+            <ContextMenuItem data-testid="view-git-diff-action" onClick={() => viewDiff()}>
+              <GitCompare data-icon="inline-start" />
+              View Diff
+            </ContextMenuItem>
             <ContextMenuItem data-testid="copy-git-commit-action" onClick={() => copyCommit(commit.hash)}>
               <Copy data-icon="inline-start" />
               Copy Commit
             </ContextMenuItem>
-            <ContextMenuItem data-testid="view-git-diff-action" onClick={viewDiff}>
-              <GitCompare data-icon="inline-start" />
-              View Diff
+            <ContextMenuItem onClick={() => openAction("revert", commit)}>
+              <Undo2 data-icon="inline-start" />
+              Revert Commit
+            </ContextMenuItem>
+            <ContextMenuItem variant="destructive" onClick={() => openAction("reset", commit)}>
+              <RotateCcw data-icon="inline-start" />
+              Reset to Commit
             </ContextMenuItem>
           </ContextMenuGroup>
         </ContextMenuContent>
       </ContextMenu>;
     })}</div>}
-  </div>;
+  </div>
+  <Dialog open={Boolean(pendingAction)} onOpenChange={(nextOpen) => { if (!nextOpen && !actionPending) setPendingAction(null); }}>
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>{pendingAction?.kind === "revert" ? "Revert commit?" : "Reset repository to commit?"}</DialogTitle>
+        <DialogDescription>
+          {pendingAction?.kind === "revert"
+            ? "This creates a new commit that reverses the selected commit."
+            : "This moves the current branch to the selected commit. Commits after it will no longer be on the current branch."}
+        </DialogDescription>
+      </DialogHeader>
+      {pendingAction && <div className="rounded-lg bg-muted p-3"><p className="break-words font-medium">{pendingAction.commit.subject}</p><code className="mt-1 block text-[10px] text-muted-foreground">{pendingAction.commit.short_hash}</code></div>}
+      {pendingAction?.kind === "reset" && <div className="flex flex-col gap-2">
+        <label htmlFor="git-reset-mode" className="font-medium">Reset strategy</label>
+        <NativeSelect id="git-reset-mode" value={resetMode} disabled={actionPending} onChange={(event) => setResetMode(event.target.value as "soft" | "mixed" | "hard")}>
+          <NativeSelectOption value="soft">Soft — keep changes staged</NativeSelectOption>
+          <NativeSelectOption value="mixed">Mixed — keep changes unstaged</NativeSelectOption>
+          <NativeSelectOption value="hard">Hard — discard tracked changes</NativeSelectOption>
+        </NativeSelect>
+        {resetMode === "hard" && <p className="text-destructive">Hard reset permanently discards tracked working tree and index changes.</p>}
+      </div>}
+      {actionError && <p role="alert" className="text-destructive">{actionError}</p>}
+      <DialogFooter>
+        <Button variant="outline" disabled={actionPending} onClick={() => setPendingAction(null)}>Cancel</Button>
+        <Button variant={pendingAction?.kind === "reset" ? "destructive" : "default"} disabled={actionPending} onClick={() => void runAction()}>
+          {actionPending ? "Working…" : pendingAction?.kind === "revert" ? "Revert Commit" : `Reset (${resetMode})`}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog></>;
 }
 
 function formatExactGitTime(value: string) {
