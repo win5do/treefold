@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-const devServerPort = process.env.FE_DEV_SERVER_PORT || "15011";
+const devServerPort = process.env.TREEFOLD_DEV_SERVER_PORT || "15011";
 if (!/^\d+$/.test(devServerPort)) {
-  console.error(`[treefold dev] invalid FE_DEV_SERVER_PORT: ${devServerPort}`);
+  console.error(`[treefold dev] invalid TREEFOLD_DEV_SERVER_PORT: ${devServerPort}`);
   process.exit(1);
 }
 
@@ -16,12 +16,12 @@ const devUrl = `http://127.0.0.1:${devServerPort}`;
 const config = JSON.stringify({ build: { devUrl } });
 const env = {
   ...process.env,
-  FE_DEV_SERVER_PORT: String(devServerPort),
+  TREEFOLD_DEV_SERVER_PORT: String(devServerPort),
 };
 
 if (apiPort !== undefined) {
   env.TREEFOLD_API_ADDR = `127.0.0.1:${apiPort}`;
-  env.FE_API_BASE = `http://127.0.0.1:${apiPort}`;
+  env.VITE_TREEFOLD_API_BASE = `http://127.0.0.1:${apiPort}`;
 }
 
 console.log(`[treefold dev] UI:  ${devUrl}`);

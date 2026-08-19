@@ -1222,7 +1222,7 @@ export async function startUiHarness() {
       root: projectRoot,
       logLevel: "error",
       define: {
-        "import.meta.env.FE_API_BASE": JSON.stringify(
+        "import.meta.env.VITE_TREEFOLD_API_BASE": JSON.stringify(
           fixtureApi.baseUrl,
         ),
       },
