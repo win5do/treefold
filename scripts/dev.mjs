@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-const devServerPort = process.env.TREEFOLD_DEV_SERVER_PORT || "15011";
+const devServerPort = process.env.TREEFOLD_UI_PORT || "15011";
 if (!/^\d+$/.test(devServerPort)) {
-  console.error(`[treefold dev] invalid TREEFOLD_DEV_SERVER_PORT: ${devServerPort}`);
+  console.error(`[treefold dev] invalid TREEFOLD_UI_PORT: ${devServerPort}`);
   process.exit(1);
 }
 
@@ -16,7 +16,7 @@ const devUrl = `http://127.0.0.1:${devServerPort}`;
 const config = JSON.stringify({ build: { devUrl } });
 const env = {
   ...process.env,
-  TREEFOLD_DEV_SERVER_PORT: String(devServerPort),
+  TREEFOLD_UI_PORT: String(devServerPort),
 };
 
 if (apiPort !== undefined) {
