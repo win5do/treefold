@@ -24,21 +24,20 @@ npm install
 npm run dev:desktop
 ```
 
-To also open the development UI in an external browser, use one API port
-environment variable for both the Rust API and browser-side Vite requests:
+Development launches automatically choose an available API port in the
+`50001-59999` range and provide it to both the Rust API and browser-side Vite
+requests. Open the `[treefold dev] UI:` URL printed by the command in an
+external browser. To request a specific API port, set:
 
 ```bash
-TREEFOLD_API_PORT="$(node scripts/random-port.mjs)" just app-default
+TREEFOLD_API_PORT=55001 just app-default
 ```
 
-Or use the convenience recipe, which chooses an available port in the
-`50000-59999` range automatically:
+The available-port helper can also be called independently:
 
 ```bash
-just app-default-browser
+node scripts/random-port.mjs
 ```
-
-Open the `[treefold dev] UI:` URL printed by the command in the browser.
 
 Or from the repository root:
 
@@ -50,9 +49,10 @@ just dev
 The `just dev` and `just dev-no-watch` recipes keep development state in the
 repository-local `.treefold-dev/` directory, separate from the normal
 `~/.treefold` installation. Development UI launches use loopback port `15011`
-for the Vite dev server. In both development and packaged builds, the Rust backend
-asks the operating system for a free loopback port and injects the resulting
-API URL into the WebView and Treefold-managed terminal sessions. Set
+for the Vite dev server. Development launches select the API port before Vite
+starts so the external browser and Rust backend share the same address. Packaged
+builds ask the operating system for a free loopback API port and inject the
+resulting URL into the WebView and Treefold-managed terminal sessions. Set
 `TREEFOLD_DEV_HOME` to use another development state directory:
 
 ```bash

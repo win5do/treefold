@@ -1,7 +1,8 @@
 import { randomInt } from "node:crypto";
 import { createServer } from "node:net";
+import { pathToFileURL } from "node:url";
 
-const MIN_PORT = 50_000;
+const MIN_PORT = 50_001;
 const MAX_PORT = 60_000;
 const MAX_ATTEMPTS = 32;
 
@@ -15,13 +16,20 @@ function availablePort(port) {
   });
 }
 
-for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-  const port = randomInt(MIN_PORT, MAX_PORT);
-  if (await availablePort(port)) {
-    process.stdout.write(`${port}\n`);
-    process.exit(0);
+export async function findAvailablePort() {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    const port = randomInt(MIN_PORT, MAX_PORT);
+    if (await availablePort(port)) return port;
   }
+
+  throw new Error(`could not find an available port in ${MIN_PORT}-${MAX_PORT - 1}`);
 }
 
-console.error(`[treefold] could not find an available port in ${MIN_PORT}-${MAX_PORT - 1}`);
-process.exit(1);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    process.stdout.write(`${await findAvailablePort()}\n`);
+  } catch (error) {
+    console.error(`[treefold] ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = 1;
+  }
+}

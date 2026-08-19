@@ -12,9 +12,6 @@ app-dev:
 app-default:
     TREEFOLD_HOME="{{ default-home }}" npm run dev:desktop
 
-app-default-browser:
-    TREEFOLD_HOME="{{ default-home }}" TREEFOLD_API_PORT="$$(node scripts/random-port.mjs)" npm run dev:desktop
-
 app-dev-no-watch:
     TREEFOLD_HOME="{{ dev-home }}" npm run dev:desktop -- --no-watch
 
