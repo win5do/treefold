@@ -135,10 +135,12 @@ Run the following from the repository root:
    admission gate may instead use focused browser diagnostics against a current
    dev UI.
 4. For UI presentation defects, prefer a short feedback loop: connect Codex
-   browser control to a user-provided running UI URL, reproduce the affected
-   state, and inspect screenshots, DOM state, computed styles, element bounds,
-   hit testing, accessibility, and console errors as relevant. Do not start a
-   duplicate UI process when the provided instance is current and usable.
+   browser control to the current dev UI URL emitted by the repository's normal
+   development workflow, including `default-app` and similar commands,
+   reproduce the affected state, and inspect screenshots, DOM state, computed
+   styles, element bounds, hit testing, accessibility, and console errors as
+   relevant. Discover and reuse an already-running current instance before
+   starting a duplicate UI process.
 
 For important or critical behavior that crosses the browser/Tauri boundary, run
 or add a focused Tauri UI test when it provides meaningful regression coverage.
@@ -211,10 +213,11 @@ The WebdriverIO session and all harness services must always be closed. Save a f
 After WebdriverIO passes, use browser control as an information-rich diagnostic surface where it adds value. Browser inspection is preferred for DOM and accessibility snapshots, computed layout, exact bounds, representative hit testing, screenshots, and console errors.
 
 For presentation-only investigation, browser control may be used directly
-against a current dev UI supplied by the user, without first running the full
-WebdriverIO suite. Treat that session as focused diagnosis of the reported
-state, not as deterministic regression coverage, and state what was inspected
-in the handoff.
+against the current dev UI started by the normal development workflow, without
+first running the full WebdriverIO suite. The URL is normally emitted by that
+workflow and does not need to be supplied explicitly by the user. Treat that
+session as focused diagnosis of the reported state, not as deterministic
+regression coverage, and state what was inspected in the handoff.
 
 Only when the user explicitly requests manual App acceptance, launch or connect
 to a Treefold desktop App built from the current working revision and inspect the
