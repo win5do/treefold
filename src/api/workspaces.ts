@@ -7,7 +7,6 @@ import type {
   GitDiffRequest,
   GitCommitResult,
   GitStatus,
-  GitOperationRecord,
   GitSyncItemResult,
   ParentOperation,
   ParentOperationDirection,

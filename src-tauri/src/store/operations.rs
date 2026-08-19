@@ -109,79 +109,9 @@ impl Store {
         Ok(())
     }
 
-    pub fn latest_rebase_operation(&self, workspace_id: &str) -> Result<Option<RebaseOperation>> {
-        let location_id = self.resolve_workspace_location_id(workspace_id)?;
-        let db = self.0.lock();
-        Ok(db
-            .query_row(
-                &format!(
-                    "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workspace_repository_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 1"
-                ),
-                [location_id],
-                rebase_operation_row,
-            )
-            .optional()?)
-    }
 
-    pub fn rebase_operations(&self, workspace_id: &str) -> Result<Vec<RebaseOperation>> {
-        let location_id = self.resolve_workspace_location_id(workspace_id)?;
-        let db = self.0.lock();
-        let mut stmt = db.prepare(&format!(
-            "SELECT {REBASE_OPERATION_COLUMNS} FROM rebase_operations WHERE workspace_repository_id=? ORDER BY started_at DESC,rowid DESC"
-        ))?;
-        let values = stmt
-            .query_map([location_id], rebase_operation_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
-    }
 
-    pub fn create_rebase_operation(&self, operation: &RebaseOperation) -> Result<()> {
-        self.0.lock().execute(
-            "INSERT INTO rebase_operations(id,workspace_repository_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at)
-             VALUES(:id,:workspace_location_id,:status,:phase,:before_head,:target_head,:rebased_head,:recovery_ref,:error,:started_at,:updated_at,:completed_at)",
-            named_params! {
-                ":id": operation.id,
-                ":workspace_location_id": operation.workspace_location_id,
-                ":status": operation.status,
-                ":phase": operation.phase,
-                ":before_head": operation.before_head,
-                ":target_head": operation.target_head,
-                ":rebased_head": operation.rebased_head,
-                ":recovery_ref": operation.recovery_ref,
-                ":error": operation.error,
-                ":started_at": operation.started_at,
-                ":updated_at": operation.updated_at,
-                ":completed_at": operation.completed_at,
-            },
-        )?;
-        Ok(())
-    }
 
-    pub fn update_rebase_operation(
-        &self,
-        id: &str,
-        status: &str,
-        phase: &str,
-        rebased_head: Option<&str>,
-        error: &str,
-        completed: bool,
-    ) -> Result<()> {
-        let timestamp = now();
-        self.0.lock().execute(
-            "UPDATE rebase_operations SET status=?,phase=?,rebased_head=COALESCE(?,rebased_head),error=?,updated_at=?,completed_at=CASE WHEN ? THEN COALESCE(completed_at,?) ELSE completed_at END WHERE id=?",
-            params![
-                status,
-                phase,
-                rebased_head,
-                error,
-                timestamp,
-                completed,
-                timestamp,
-                id,
-            ],
-        )?;
-        Ok(())
-    }
 
     pub fn parent_operation(&self, id: &str) -> Result<ParentOperation> {
         let db = self.0.lock();
@@ -380,7 +310,6 @@ fn delivery_operation_row(r: &Row<'_>) -> rusqlite::Result<DeliveryOperation> {
     })
 }
 
-const REBASE_OPERATION_COLUMNS: &str = "id,workspace_repository_id AS workspace_location_id,status,phase,before_head,target_head,rebased_head,recovery_ref,error,started_at,updated_at,completed_at";
 
 const PARENT_OPERATION_COLUMNS: &str = "id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,undo_available,error,started_at,updated_at,completed_at";
 
@@ -416,23 +345,6 @@ fn parent_operation_row(r: &Row<'_>) -> rusqlite::Result<ParentOperation> {
     })
 }
 
-fn rebase_operation_row(r: &Row<'_>) -> rusqlite::Result<RebaseOperation> {
-    Ok(RebaseOperation {
-        id: r.get("id")?,
-        workspace_location_id: r.get("workspace_location_id")?,
-        workspace_id: r.get("workspace_location_id")?,
-        status: r.get("status")?,
-        phase: r.get("phase")?,
-        before_head: r.get("before_head")?,
-        target_head: r.get("target_head")?,
-        rebased_head: r.get("rebased_head")?,
-        recovery_ref: r.get("recovery_ref")?,
-        error: r.get("error")?,
-        started_at: r.get("started_at")?,
-        updated_at: r.get("updated_at")?,
-        completed_at: r.get("completed_at")?,
-    })
-}
 
 fn delivery_preflight_row(r: &Row<'_>) -> rusqlite::Result<DeliveryPreflight> {
     Ok(DeliveryPreflight {

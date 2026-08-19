@@ -68,10 +68,6 @@ export const projectsApi = {
     request<Directory>(`/api/project-directories/${id}/refresh`, {
       method: "POST",
     }),
-  repositories: (id: string, signal?: AbortSignal) =>
-    request<ProjectRepository[]>(`/api/projects/${id}/repositories`, {
-      signal,
-    }),
   updateRepository: (id: string, json: unknown) =>
     request<ProjectRepository>(`/api/project-repositories/${id}`, {
       method: "PATCH",

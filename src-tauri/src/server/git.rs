@@ -1,17 +1,5 @@
 use super::*;
 
-pub(super) async fn get_workspace_git_history(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> Result<Json<GitHistory>> {
-    blocking_git_operation(move || {
-        let repository = state.store.default_workspace_location(&id)?;
-        Ok(Json(git_history(workspace_location_git_path(
-            &repository,
-        )?)?))
-    })
-    .await
-}
 
 pub(super) async fn get_project_location_git_history(
     State(state): State<AppState>,
@@ -1035,80 +1023,7 @@ pub(super) async fn archive_workspace(
     Ok(Json(state.store.workspace(&id)?))
 }
 
-pub(super) async fn pull_project(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> Result<Json<GitSyncResult>> {
-    let project = state.store.project(&id)?;
-    let directory = state.store.directory(&project.primary_directory_id)?;
-    ensure_git_directory(&directory)?;
-    let repository_root = repository_root_for_directory(&state, &project.primary_directory_id)?;
-    ensure_clean_workspace(&repository_root, "Project source checkout")?;
-    ensure_checked_out_branch(
-        &repository_root,
-        &project.default_target_branch,
-        "Project source checkout",
-    )?;
-    let remote = project
-        .preferred_remote
-        .ok_or_else(|| AppError::BadRequest("Project has no preferred remote".into()))?;
-    let remote_branch = project.default_target_branch.clone();
-    let before_head = git_head(&repository_root)?;
-    fetch_remote_branch_async(&repository_root, &remote, &remote_branch).await?;
-    git::output_async(
-        Path::new(&repository_root),
-        &["merge", "--ff-only", "FETCH_HEAD"],
-    )
-    .await
-    .map_err(|error| {
-        AppError::BadRequest(format!(
-            "Project target cannot fast-forward from {remote}/{remote_branch}: {error}"
-        ))
-    })?;
-    let after_head = git_head(&repository_root)?;
-    Ok(Json(sync_result(
-        "project",
-        "pull",
-        &project.default_target_branch,
-        &remote,
-        &remote_branch,
-        before_head,
-        after_head,
-    )))
-}
 
-pub(super) async fn push_project(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> Result<Json<GitSyncResult>> {
-    let project = state.store.project(&id)?;
-    let directory = state.store.directory(&project.primary_directory_id)?;
-    ensure_git_directory(&directory)?;
-    let repository_root = repository_root_for_directory(&state, &project.primary_directory_id)?;
-    let remote = project
-        .preferred_remote
-        .ok_or_else(|| AppError::BadRequest("Project has no preferred remote".into()))?;
-    let remote_branch = project.default_target_branch.clone();
-    let before_head = command_output(
-        Path::new(&repository_root),
-        "git",
-        &["rev-parse", &project.default_target_branch],
-    )
-    .map_err(AppError::BadRequest)?;
-    let refspec = format!("{}:{remote_branch}", project.default_target_branch);
-    git::output_async(Path::new(&repository_root), &["push", &remote, &refspec])
-        .await
-        .map_err(AppError::BadRequest)?;
-    Ok(Json(sync_result(
-        "project",
-        "push",
-        &project.default_target_branch,
-        &remote,
-        &remote_branch,
-        before_head.clone(),
-        before_head,
-    )))
-}
 
 pub(super) async fn pull_workspace(
     State(state): State<AppState>,
@@ -1264,80 +1179,6 @@ pub(super) fn sync_result(
     }
 }
 
-pub(super) async fn get_git_operations(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> Result<Json<Vec<GitOperationRecord>>> {
-    state.store.workspace(&id)?;
-    Ok(Json(git_operation_history(&state, &id)?))
-}
-
-pub(super) fn git_operation_history(state: &AppState, id: &str) -> Result<Vec<GitOperationRecord>> {
-    let mut records = Vec::new();
-    if let Some(operation) = state.store.delivery_operation(id)? {
-        records.push(GitOperationRecord {
-            id: format!("delivery:{}", operation.workspace_id),
-            kind: "delivery".into(),
-            action: operation.code_action,
-            status: if operation.phase == "archived" {
-                "completed".into()
-            } else if operation.error.is_empty() {
-                "active".into()
-            } else {
-                "failed".into()
-            },
-            before_head: operation.before_head,
-            target_head: operation.target_head,
-            result_head: operation.integrated_commit,
-            recovery_ref: None,
-            error: operation.error,
-            started_at: operation.started_at,
-            updated_at: operation.updated_at,
-        });
-    }
-    records.extend(
-        state
-            .store
-            .parent_operations(id)?
-            .into_iter()
-            .map(|operation| GitOperationRecord {
-                id: operation.id,
-                kind: "parent".into(),
-                action: format!("{}_{}", operation.direction, operation.strategy),
-                status: operation.status,
-                before_head: operation.before_head,
-                target_head: operation.parent_head,
-                result_head: operation.result_head,
-                recovery_ref: Some(operation.recovery_ref),
-                error: operation.error,
-                started_at: operation.started_at,
-                updated_at: operation.updated_at,
-            }),
-    );
-    records.extend(
-        state
-            .store
-            .rebase_operations(id)?
-            .into_iter()
-            .map(|operation| GitOperationRecord {
-                id: operation.id,
-                kind: "rebase".into(),
-                action: "onto_target".into(),
-                status: operation.status,
-                before_head: operation.before_head,
-                target_head: operation.target_head,
-                result_head: operation.rebased_head,
-                recovery_ref: Some(operation.recovery_ref),
-                error: operation.error,
-                started_at: operation.started_at,
-                updated_at: operation.updated_at,
-            }),
-    );
-    let mut seen = HashSet::new();
-    records.retain(|record| seen.insert(record.id.clone()));
-    records.sort_by(|left, right| right.started_at.cmp(&left.started_at));
-    Ok(records)
-}
 pub(super) fn id() -> String {
     Uuid::new_v4().simple().to_string()
 }
@@ -1982,39 +1823,6 @@ pub(super) fn choose_shared_branch(
     Err(AppError::BadRequest(
         "could not allocate a shared Workspace branch".into(),
     ))
-}
-
-pub(super) fn read_only_workspace_location(
-    workspace_id: &str,
-    location: &ProjectLocation,
-    timestamp: &str,
-) -> WorkspaceLocation {
-    WorkspaceLocation {
-        id: id(),
-        workspace_id: workspace_id.into(),
-        project_location_id: location.id.clone(),
-        location_name: location.name.clone(),
-        source_path: location.path.clone(),
-        access_mode: "read_only".into(),
-        git_status: "not_git".into(),
-        creation_error: None,
-        worktree_id: None,
-        checkout_path: None,
-        branch: None,
-        base_branch: None,
-        start_commit: None,
-        forked_from_commit: None,
-        remote_name: None,
-        remote_branch: None,
-        branch_ownership: "none".into(),
-        delivery_mode: "keep".into(),
-        delivery_status: "not_applicable".into(),
-        close_outcome: None,
-        integrated_commit: None,
-        closed_at: None,
-        created_at: timestamp.into(),
-        updated_at: timestamp.into(),
-    }
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -210,10 +210,6 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/projects/{id}/reveal", post(reveal_project))
         .route(
-            "/api/projects/{id}/reconciliation",
-            get(get_project_reconciliation).post(repair_project),
-        )
-        .route(
             "/api/projects/{id}/directories",
             get(list_project_directories).post(create_directory),
         )
@@ -230,10 +226,6 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/project-directories/{id}/refresh",
             post(refresh_project_location),
-        )
-        .route(
-            "/api/projects/{id}/repositories",
-            get(list_project_repositories),
         )
         .route(
             "/api/projects/{id}/repositories/clone",
@@ -389,10 +381,6 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/workspace-repositories/{id}/delivery-preflight",
             post(create_workspace_location_preflight),
-        )
-        .route(
-            "/api/workspace-repositories/{id}/rebase",
-            get(get_workspace_location_rebase).post(update_workspace_location_rebase),
         )
         .route(
             "/api/workspace-repositories/{id}/parent-operation",
