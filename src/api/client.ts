@@ -1,4 +1,4 @@
-let API_BASE = import.meta.env.VITE_TREEFOLD_API_BASE || "http://127.0.0.1:7331";
+let API_BASE = import.meta.env.VITE_TREEFOLD_API_BASE || "http://127.0.0.1:15001";
 
 export function setApiBase(apiBase: string): void {
   API_BASE = apiBase.replace(/\/$/, "");

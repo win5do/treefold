@@ -4,8 +4,6 @@ use clap::{Args, Parser, Subcommand};
 use reqwest::{Method, StatusCode, blocking::Client};
 use serde_json::{Value, json};
 
-const DEFAULT_API_URL: &str = "http://127.0.0.1:7331";
-
 fn api_url() -> String {
     env::var("TREEFOLD_API_URL")
         .ok()
@@ -21,7 +19,7 @@ fn api_url() -> String {
                 .map(|value| value.trim().to_owned())
                 .filter(|value| !value.is_empty())
         })
-        .unwrap_or_else(|| DEFAULT_API_URL.into())
+        .unwrap_or_else(|| treefold_lib::DEFAULT_API_URL.into())
 }
 
 #[derive(Debug, Parser)]

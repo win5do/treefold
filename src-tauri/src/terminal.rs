@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tokio_tungstenite::WebSocketStream;
 
-use crate::model::Session;
+use crate::{DEFAULT_API_URL, model::Session};
 
 const REPLAY_BYTES: usize = 64 * 1024;
 type ProcessStateMap = Arc<tokio::sync::RwLock<BTreeMap<String, (ProcessView, Option<String>)>>>;
@@ -109,7 +109,7 @@ impl TerminalManager {
             bridge_started: Arc::new(AtomicBool::new(false)),
             process_events,
             process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
-            api_url: Arc::new("http://127.0.0.1:7331".into()),
+            api_url: Arc::new(DEFAULT_API_URL.into()),
         }
     }
 
@@ -538,7 +538,7 @@ impl Default for TerminalManager {
             bridge_started: Arc::new(AtomicBool::new(false)),
             process_events: tokio::sync::broadcast::channel(1024).0,
             process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
-            api_url: Arc::new("http://127.0.0.1:7331".into()),
+            api_url: Arc::new(DEFAULT_API_URL.into()),
         }
     }
 }

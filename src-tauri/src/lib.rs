@@ -6,6 +6,8 @@ mod settings;
 mod store;
 mod terminal;
 
+pub const DEFAULT_API_URL: &str = "http://127.0.0.1:15001";
+
 use anyhow::Context;
 use sha2::{Digest, Sha256};
 use tauri::{
