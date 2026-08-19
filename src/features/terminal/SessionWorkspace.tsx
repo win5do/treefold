@@ -6,9 +6,12 @@ import { sessionsApi } from "@/api/sessions";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
+import "@azurity/pure-nerd-font/pure-nerd-font.css";
 import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import type { Session } from "@/domain/types";
+
+const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
 export function SessionWorkspace({ session, busy, onStop, onRestart, onClose, onExit }: { session: Session; busy: boolean; onStop: () => void; onRestart: () => void; onClose: () => void; onExit: () => void }) {
   const running = session.status === "running";
@@ -32,10 +35,11 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    let disposed = false;
     const terminal = new Terminal({
       cursorBlink: true,
       convertEol: false,
-      fontFamily: '"SFMono-Regular", "JetBrains Mono", Menlo, monospace',
+      fontFamily: terminalFontFamily,
       fontSize: 13,
       lineHeight: 1.2,
       scrollback: 10000,
@@ -56,6 +60,11 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     terminal.loadAddon(new WebLinksAddon());
     terminal.open(host);
     try { terminal.loadAddon(new WebglAddon()); } catch { /* canvas renderer is fine */ }
+    void document.fonts.load('13px "Pure Nerd Font"').then(() => {
+      if (disposed) return;
+      terminal.clearTextureAtlas();
+      terminal.refresh(0, terminal.rows - 1);
+    }).catch(() => { /* existing font fallbacks remain available */ });
     fit.fit();
     const encoder = new TextEncoder();
     const maxQueuedBytes = 1024 * 1024;
@@ -73,7 +82,6 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     let controllerId: number | null = null;
     let lastRows = 0;
     let lastCols = 0;
-    let disposed = false;
 
     const sendResize = (candidate: WebSocket, force = false) => {
       fit.fit();
