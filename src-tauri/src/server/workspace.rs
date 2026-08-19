@@ -2061,7 +2061,7 @@ pub(super) fn create_workspace_impl(
             .clone()
             .unwrap_or_else(|| "push_branch".into());
         let checkout_path =
-            managed_worktree_path(&state.settings, &project.id, &location.id, &workspace_id)
+            managed_worktree_path(&state.settings, &project.id, &location.id, &workspace_id)?
                 .to_string_lossy()
                 .into_owned();
         let remote_name = if location.id == default_repository_id {
@@ -2183,15 +2183,15 @@ pub(super) fn managed_worktree_path(
     project_id: &str,
     repository_id: &str,
     workspace_id: &str,
-) -> PathBuf {
-    settings
-        .treefold_home()
+) -> anyhow::Result<PathBuf> {
+    Ok(settings
+        .worktree_root()?
         .join("projects")
         .join(project_id)
         .join("repos")
         .join(repository_id)
         .join("worktrees")
-        .join(workspace_id)
+        .join(workspace_id))
 }
 
 pub(super) fn create_workspace_worktrees(
