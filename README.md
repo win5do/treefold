@@ -24,6 +24,22 @@ npm install
 npm run dev:desktop
 ```
 
+To also open the development UI in an external browser, use one API port
+environment variable for both the Rust API and browser-side Vite requests:
+
+```bash
+TREEFOLD_API_PORT="$(node scripts/random-port.mjs)" just app-default
+```
+
+Or use the convenience recipe, which chooses an available port in the
+`50000-59999` range automatically:
+
+```bash
+just app-default-browser
+```
+
+Open the `[treefold dev] UI:` URL printed by the command in the browser.
+
 Or from the repository root:
 
 ```bash

@@ -20,12 +20,24 @@ function freePort() {
 
 const devServerPort = await freePort();
 
+const apiPort = process.env.TREEFOLD_API_PORT;
+if (apiPort !== undefined && !/^\d+$/.test(apiPort)) {
+  console.error(`[treefold dev] invalid TREEFOLD_API_PORT: ${apiPort}`);
+  process.exitCode = 1;
+  process.exit();
+}
+
 const devUrl = `http://127.0.0.1:${devServerPort}`;
 const config = JSON.stringify({ build: { devUrl } });
 const env = {
   ...process.env,
   TREEFOLD_DEV_SERVER_PORT: String(devServerPort),
 };
+
+if (apiPort !== undefined) {
+  env.TREEFOLD_API_ADDR = `127.0.0.1:${apiPort}`;
+  env.VITE_TREEFOLD_API_BASE = `http://127.0.0.1:${apiPort}`;
+}
 
 console.log(`[treefold dev] UI:  ${devUrl}`);
 
