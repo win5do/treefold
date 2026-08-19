@@ -484,14 +484,42 @@ export type SidebarStream = Workspace & {
 };
 export type SessionDropPosition = "before" | "after";
 
-function directoryMenuLabel(directory: Directory, directories: Directory[]) {
-  const duplicate = directories.some(
-    (candidate) =>
-      candidate.id !== directory.id && candidate.name === directory.name,
-  );
-  return duplicate && directory.repository_name
-    ? `${directory.name} · ${directory.repository_name}`
-    : directory.name;
+type DirectoryGroup = {
+  id: string;
+  name?: string;
+  directories: Directory[];
+};
+
+function groupDirectories(directories: Directory[]): DirectoryGroup[] {
+  const groups = new Map<string, DirectoryGroup>();
+  directories.forEach((directory) => {
+    const id = directory.repository_id ?? "other";
+    const group = groups.get(id) ?? {
+      id,
+      name: directory.repository_name,
+      directories: [],
+    };
+    group.directories.push(directory);
+    groups.set(id, group);
+  });
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      directories: [...group.directories].sort((left, right) => {
+        if (left.role === "primary") return -1;
+        if (right.role === "primary") return 1;
+        if (left.relative_path === ".") return -1;
+        if (right.relative_path === ".") return 1;
+        return 0;
+      }),
+    }))
+    .sort((left, right) => {
+      if (left.directories.some((directory) => directory.role === "primary"))
+        return -1;
+      if (right.directories.some((directory) => directory.role === "primary"))
+        return 1;
+      return 0;
+    });
 }
 
 function SidebarOwnerContextMenu({
@@ -525,23 +553,15 @@ function SidebarOwnerContextMenu({
 }) {
   const { t } = useTranslation();
   const directories = stream?.directories ?? project.directories;
-  const pathTargets = stream
-    ? (stream.locations ?? []).flatMap((location) =>
-        location.checkout_path
-          ? [
-              {
-                id: location.id,
-                name: location.location_name,
-                path: location.checkout_path,
-              },
-            ]
-          : [],
-      )
-    : project.repositories.map((repository) => ({
-        id: repository.id,
-        name: repository.name,
-        path: repository.source_root,
-      }));
+  const directoryGroups = groupDirectories(directories);
+  const pathTargets = directoryGroups
+    .flatMap((group) => group.directories)
+    .map((directory) => ({
+      id: directory.id,
+      name: directory.name,
+      path: directory.path,
+      isGit: directory.is_git,
+    }));
   const syncTargets = !stream
     ? project.repositories
         .filter((repository) => repository.git_status === "ready")
@@ -598,32 +618,35 @@ function SidebarOwnerContextMenu({
                 data-testid="directory-session-submenu"
                 className="w-44"
               >
-                <ContextMenuGroup>
-                  <ContextMenuLabel>
-                    {kind === "shell" ? "Shell" : "Agent"}
-                  </ContextMenuLabel>
-                  {directories.map((directory) => (
-                    <ContextMenuItem
-                      key={directory.id}
-                      data-testid={`session-directory-${directory.id}`}
-                      disabled={
-                        kind === "codex" &&
-                        (!directory.is_git || directory.git_status !== "ready")
-                      }
-                      onClick={() =>
-                        kind === "shell"
-                          ? onCreateShell(directory)
-                          : onCreateCodex(directory)
-                      }
-                    >
-                      {directory.is_git ? <FolderGit2 /> : <Folder />}
-                      {directoryMenuLabel(directory, directories)}
-                      {directory.role === "primary"
-                        ? ` · ${t("sidebar.primary")}`
-                        : ""}
-                    </ContextMenuItem>
-                  ))}
-                </ContextMenuGroup>
+                {directoryGroups.map((group) => (
+                  <ContextMenuGroup
+                    key={group.id}
+                    data-testid={`directory-group-${group.id}`}
+                  >
+                    <ContextMenuLabel>
+                      {group.name ?? t("sidebar.otherDirectories")}
+                    </ContextMenuLabel>
+                    {group.directories.map((directory) => (
+                      <ContextMenuItem
+                        key={directory.id}
+                        data-testid={`session-directory-${directory.id}`}
+                        disabled={
+                          kind === "codex" &&
+                          (!directory.is_git ||
+                            directory.git_status !== "ready")
+                        }
+                        onClick={() =>
+                          kind === "shell"
+                            ? onCreateShell(directory)
+                            : onCreateCodex(directory)
+                        }
+                      >
+                        {directory.is_git ? <FolderGit2 /> : <Folder />}
+                        {directory.name}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuGroup>
+                ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
           ))}
@@ -712,7 +735,7 @@ function SidebarOwnerContextMenu({
             >
               <ContextMenuGroup>
                 <ContextMenuLabel>
-                  {t("sidebar.selectRepository")}
+                  {t("sidebar.selectDirectory")}
                 </ContextMenuLabel>
                 {pathTargets.map((target) => (
                   <ContextMenuItem
@@ -734,7 +757,7 @@ function SidebarOwnerContextMenu({
                         });
                     }}
                   >
-                    <FolderGit2 />
+                    {target.isGit ? <FolderGit2 /> : <Folder />}
                     {target.name}
                   </ContextMenuItem>
                 ))}
@@ -944,6 +967,7 @@ function SessionDirectoryMenu({
   onCodex: (directory: Directory) => void;
 }) {
   const { t } = useTranslation();
+  const directoryGroups = groupDirectories(directories);
   const [submenu, setSubmenu] = useState<SidebarSubmenu | null>(null);
   const [submenuTop, setSubmenuTop] = useState(0);
   const activate = (
@@ -1016,14 +1040,14 @@ function SessionDirectoryMenu({
               activate(
                 { kind: "session", sessionKind },
                 event.currentTarget,
-                42 + directories.length * 36,
+                16 + directoryGroups.length * 28 + directories.length * 36,
               )
             }
             onFocus={(event) =>
               activate(
                 { kind: "session", sessionKind },
                 event.currentTarget,
-                42 + directories.length * 36,
+                16 + directoryGroups.length * 28 + directories.length * 36,
               )
             }
           >
@@ -1101,27 +1125,35 @@ function SessionDirectoryMenu({
           className="directory-session-submenu absolute left-full w-44 rounded-lg border border-border bg-card p-1 shadow-xl"
           style={{ top: submenuTop }}
         >
-          <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {activeSessionKind === "shell" ? "Shell" : "Agent"}
-          </p>
-          {directories.map((directory) => (
-            <SidebarMenuButton
-              key={directory.id}
-              testId={`session-directory-${directory.id}`}
-              icon={directory.is_git ? <FolderGit2 /> : <Folder />}
-              disabled={
-                activeSessionKind === "codex" &&
-                (!directory.is_git || directory.git_status !== "ready")
-              }
-              onClick={() =>
-                activeSessionKind === "shell"
-                  ? onShell(directory)
-                  : onCodex(directory)
-              }
+          {directoryGroups.map((group) => (
+            <div
+              key={group.id}
+              role="group"
+              aria-label={group.name ?? t("sidebar.otherDirectories")}
+              data-testid={`directory-group-${group.id}`}
             >
-              {directoryMenuLabel(directory, directories)}
-              {directory.role === "primary" ? ` · ${t("sidebar.primary")}` : ""}
-            </SidebarMenuButton>
+              <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {group.name ?? t("sidebar.otherDirectories")}
+              </p>
+              {group.directories.map((directory) => (
+                <SidebarMenuButton
+                  key={directory.id}
+                  testId={`session-directory-${directory.id}`}
+                  icon={directory.is_git ? <FolderGit2 /> : <Folder />}
+                  disabled={
+                    activeSessionKind === "codex" &&
+                    (!directory.is_git || directory.git_status !== "ready")
+                  }
+                  onClick={() =>
+                    activeSessionKind === "shell"
+                      ? onShell(directory)
+                      : onCodex(directory)
+                  }
+                >
+                  {directory.name}
+                </SidebarMenuButton>
+              ))}
+            </div>
           ))}
         </div>
       )}

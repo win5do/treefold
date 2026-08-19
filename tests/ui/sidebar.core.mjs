@@ -496,7 +496,7 @@ try {
   await copyPathSubmenu.waitForDisplayed({ timeout: 3_000 });
   await (
     await copyPathSubmenu.$(
-      `[data-testid="copy-absolute-path-${FIXTURE_IDS.forkSecondaryLocation}"]`,
+      `[data-testid="copy-absolute-path-${FIXTURE_IDS.secondaryDirectory}"]`,
     )
   ).click();
   await browser.waitUntil(
@@ -658,6 +658,19 @@ try {
     FIXTURE_IDS.primaryDirectory,
     FIXTURE_IDS.secondaryDirectory,
   ]);
+  const forkDirectoryGroups = await forkShellSubmenu.$$(
+    '[data-testid^="directory-group-"]',
+  );
+  assert.equal(
+    await forkDirectoryGroups[0].getAttribute("data-testid"),
+    `directory-group-${FIXTURE_IDS.primaryRepository}`,
+    "the Repository containing the primary Directory must render first",
+  );
+  assert.equal(
+    (await forkShellSubmenu.getText()).includes("primary"),
+    false,
+    "Directory choices must communicate the default through ordering instead of a primary suffix",
+  );
   await main.click();
   await sessionMenu.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await actionButtons[1].click();
