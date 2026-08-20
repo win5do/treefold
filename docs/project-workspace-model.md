@@ -92,7 +92,10 @@ compatible.
 
 ## Development schema migration
 
-This development-generation change does not translate old business records.
-On first detection of the old schema, Treefold writes the versioned SQLite
-backup `*.pre-repository-scopes-v2.db`, rebuilds Project/Workspace business
-tables, and leaves TOML user settings untouched.
+SQLite schema versions are managed by the centralized migration registry and
+SQLite `user_version`. The complete current schema is the forward-only
+`0001_initial.sql` baseline. During pre-release development, changing that
+baseline requires closing Treefold and deleting `treefold.db`,
+`treefold.db-wal`, and `treefold.db-shm`; unversioned development databases are
+rejected and are not backed up or rewritten automatically. After the first
+release, schema changes must append migrations instead of changing the baseline.

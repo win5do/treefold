@@ -71,6 +71,14 @@ hard storage boundary.
 - `$TREEFOLD_HOME/data/treefold.db` owns Projects, Directories, Workspaces,
   Sessions, Todos, delivery/rebase/reset operations, and similar relational
   runtime records. Do not add user preferences or keymaps to SQLite.
+- SQLite schema changes must be registered in the centralized migration
+  registry under `src-tauri/src/store/migrations.rs`, with SQL loaded via
+  `include_str!`. Never add startup-time ad-hoc `ALTER`, `DROP`, or data-rewrite
+  logic outside that registry.
+- Before the first release, update `0001_initial.sql` directly and rebuild the
+  development database by closing Treefold and deleting `treefold.db`,
+  `treefold.db-wal`, and `treefold.db-shm`. After the first release, never edit
+  an applied migration; append a new forward-only migration instead.
 - Temporary UI state may use SQLite or frontend local storage. Caches and
   derived data may use SQLite or a future cache directory, but neither is a
   source of truth for user preferences.
