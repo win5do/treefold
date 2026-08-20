@@ -1,3 +1,0 @@
-interface:
-  display_name: "amux"
-  short_description: "Manage persistent Treefold Session processes"

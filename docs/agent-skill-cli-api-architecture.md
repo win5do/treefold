@@ -17,6 +17,10 @@ Treefold App
 
 Treefold 不包装 `amux run/logs/restart`，也不实现第二套子 Agent 编排。进程管理由独立的 amux CLI 和 Skill 承担；Codex 使用自身的子 Agent 能力。
 
+amux 是可脱离 Treefold 使用的独立模块，也是 `amux` CLI 与 Skill 的唯一源码和版本
+所有者。Treefold 仓库只维护自己的 `cli/skills/treefold`；release 构建从选定的 amux
+源码 staging 二进制与 `skills/amux`，并以 amux package version 同时标记两者。
+
 ## `treefold` CLI
 
 桌面 App 使用内部可执行文件 `treefold-app`；用户 CLI 是不链接 Tauri 的独立
@@ -45,8 +49,9 @@ CLI 约束：
 
 ## 安装、更新与所有权
 
-App bundle 是集成资源的唯一版本源，manifest 记录 schema、bundle、protocol、CLI
-和 Skill 版本。App 启动时只读检查；缺失、过期、不完整或冲突时，在单次 App
+安装时 App bundle 是集成资源的版本源，manifest 记录 schema、bundle、protocol、CLI
+和 Skill 版本；其中 amux CLI 与 Skill 的版本在 release staging 时取自 amux 模块。
+App 启动时只读检查；缺失、过期、不完整或冲突时，在单次 App
 进程内提示一次，并持续显示左下角异常状态。只有用户点击“安装集成/同步”才修改：
 
 ```text

@@ -148,8 +148,13 @@ impl IntegrationManager {
         };
         let amux_skill = if skill_root.join("amux/SKILL.md").is_file() {
             skill_root.join("amux")
+        } else if let Some(path) = std::env::var_os("TREEFOLD_AMUX_SKILL_DIR") {
+            PathBuf::from(path)
         } else {
-            development_root.join("cli/skills/amux")
+            development_root
+                .parent()
+                .expect("Treefold development root has a parent")
+                .join("amux/skills/amux")
         };
         Ok(Self::from_parts(
             treefold_home,

@@ -88,7 +88,9 @@ Treefold manages workspace identity and Todos. It intentionally does not store
 per-turn Agent reports or wrap process commands. Persistent processes, TTYs,
 logs, and restarts use the independent `amux` CLI and Skill.
 
-The CLI-paired Agent Skills live under [`cli/skills`](cli/skills).
+The Treefold CLI Skill lives at [`cli/skills/treefold`](cli/skills/treefold).
+The amux module owns its independent CLI and Skill; release builds stage both
+from the selected amux source instead of keeping a Treefold copy.
 
 At startup the App checks, without modifying the filesystem, whether the
 bundled CLI and Skills are integrated. The lower-left Agent Integration panel
@@ -157,7 +159,10 @@ assets.
 Create a release bundle with `npm run bundle:desktop`. It builds the pinned CLI
 sidecars before applying `src-tauri/tauri.bundle.conf.json`. The default
 co-workspace layout expects the amux repository at `../amux`; set
-`TREEFOLD_AMUX_MANIFEST` when its `Cargo.toml` lives elsewhere.
+`TREEFOLD_AMUX_MANIFEST` when its `Cargo.toml` lives elsewhere. The build reads
+the amux package version and stages `skills/amux` from that same module, so its
+CLI and Skill stay one release unit. Development runs can override Skill
+discovery with `TREEFOLD_AMUX_SKILL_DIR`.
 
 ## Product documentation
 
