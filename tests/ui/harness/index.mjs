@@ -9,6 +9,7 @@ import {
 import { createGitDiffRoutes } from "./routes/git-diff.mjs";
 import { createParentOperationRoutes } from "./routes/parent-operations.mjs";
 import { createTodoRoutes } from "./routes/todos.mjs";
+import { createAgentIntegrationRoutes } from "./routes/agent-integration.mjs";
 
 const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -72,6 +73,7 @@ async function startFixtureApi() {
     sendJson,
   });
   const todoRoutes = createTodoRoutes({ fixture, readJson, sendJson });
+  const agentIntegrationRoutes = createAgentIntegrationRoutes({ fixture, sendJson });
   let slowWorkspaceRefreshesRemaining = 0;
   const server = http.createServer(async (request, response) => {
     if (request.method === "OPTIONS") {
@@ -84,6 +86,7 @@ async function startFixtureApi() {
     if (await gitDiffRoutes.handle(request, response, pathname)) return;
     if (await parentOperationRoutes.handle(request, response, pathname)) return;
     if (await todoRoutes.handle(request, response, pathname)) return;
+    if (await agentIntegrationRoutes.handle(request, response, pathname)) return;
     if (request.method === "GET" && pathname === "/api/system") {
       sendJson(response, 200, fixture.system);
       return;
@@ -1149,6 +1152,8 @@ async function startFixtureApi() {
     sessionOrderRequests,
     deleteRequests,
     amuxStopRequests,
+    agentIntegrationRequests: agentIntegrationRoutes.requests,
+    setAgentIntegrationState: agentIntegrationRoutes.setState,
     parentOperationRequests: parentOperationRoutes.requests,
     todoRequests: todoRoutes.requests,
     compareRequests: gitDiffRoutes.requests,
@@ -1308,6 +1313,8 @@ export async function startUiHarness() {
     sessionOrderRequests: fixtureApi.sessionOrderRequests,
     deleteRequests: fixtureApi.deleteRequests,
     amuxStopRequests: fixtureApi.amuxStopRequests,
+    agentIntegrationRequests: fixtureApi.agentIntegrationRequests,
+    setAgentIntegrationState: fixtureApi.setAgentIntegrationState,
     parentOperationRequests: fixtureApi.parentOperationRequests,
     todoRequests: fixtureApi.todoRequests,
     compareRequests: fixtureApi.compareRequests,

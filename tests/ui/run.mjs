@@ -11,6 +11,7 @@ const preferredOrder = [
   "git-changes.mjs",
   "parent-operations.mjs",
   "resources.mjs",
+  "agent-integration.mjs",
   "dev-processes.mjs",
 ];
 const orderByFile = new Map(

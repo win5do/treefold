@@ -1,6 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Treefold",
+  "mainBinaryName": "treefold-app",
   "version": "0.1.0",
   "identifier": "com.win5do.treefold",
   "build": {

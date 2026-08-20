@@ -1,0 +1,13 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/treefold",
+      "binaries/amux"
+    ],
+    "resources": {
+      "resources/agent-integration/manifest.json": "agent-integration/manifest.json",
+      "../skills/treefold": "agent-integration/skills/treefold",
+      "../bundled/skills/amux": "agent-integration/skills/amux"
+    }
+  }
+}

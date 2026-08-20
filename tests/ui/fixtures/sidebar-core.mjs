@@ -696,6 +696,19 @@ export function createSidebarCoreFixture() {
       active_groups: 3,
       active_processes: 8,
     },
+    agentIntegration: {
+      state: "ready",
+      app_version: "0.1.0",
+      bundle_version: "0.1.0",
+      protocol_version: "1",
+      bundle_path: "/Applications/Treefold.app/Contents/Resources/agent-integration",
+      components: [
+        { id: "treefold_cli", version: "0.1.0", source_path: "/Applications/Treefold.app/Contents/MacOS/treefold", install_path: "/Users/fixture/.local/bin/treefold", state: "ready" },
+        { id: "amux_cli", version: "0.1.0-alpha.1", source_path: "/Applications/Treefold.app/Contents/MacOS/amux", state: "ready", detail: "Private Session resource; not installed globally" },
+        { id: "treefold_skill", version: "1.0.0", source_path: "/Applications/Treefold.app/Contents/Resources/agent-integration/skills/treefold", install_path: "/Users/fixture/.agents/skills/treefold", state: "ready" },
+        { id: "amux_skill", version: "1.0.0", source_path: "/Applications/Treefold.app/Contents/Resources/agent-integration/skills/amux", install_path: "/Users/fixture/.agents/skills/amux", state: "ready" },
+      ],
+    },
     processes: [
       {
         id: "process-session-root-ui-fixture",

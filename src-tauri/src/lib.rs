@@ -1,5 +1,6 @@
 mod error;
 mod git;
+mod integration;
 mod model;
 mod server;
 mod settings;
@@ -86,7 +87,7 @@ fn amux_identity(home: &std::path::Path) -> anyhow::Result<(String, amux::config
             .map(|v| format!("{v:02x}"))
             .collect::<String>()
     );
-    let config = amux::config::Config::named(amux::config::state_root()?, &name)?;
+    let config = amux::config::Config::named(home.join("data/amux"), &name)?;
     Ok((name, config))
 }
 
@@ -180,6 +181,16 @@ pub fn run() {
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(|| user_home.join(".treefold"));
             let settings = settings::SettingsStore::open(&home)?;
+            let executable_dir = std::env::current_exe()?
+                .parent()
+                .context("Treefold executable has no parent")?
+                .to_path_buf();
+            let integration = integration::IntegrationManager::new(
+                &home,
+                &user_home,
+                &app.path().resource_dir()?,
+                &executable_dir,
+            )?;
             let open_item =
                 MenuItem::with_id(app, TRAY_OPEN_ID, "Open Treefold", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
@@ -207,6 +218,8 @@ pub fn run() {
             let api_url_file = publish_api_url(&home, &api_url)?;
             app.manage(ApiEndpoint(api_url.clone()));
             let terminals = terminal::TerminalManager::new_named(daemon_config, daemon_name)
+                .with_treefold_home(home.clone())
+                .with_bundled_bin_dir(integration.bundled_bin_dir())
                 .with_api_url(api_url.clone());
             *shutdown_state.lock().expect("lock shutdown state") = Some((
                 settings.clone(),
@@ -220,6 +233,7 @@ pub fn run() {
                 settings,
                 terminals,
                 runtime: server::RuntimeHub::default(),
+                integration,
             };
             tauri::async_runtime::spawn(async move {
                 if let Err(error) = server::serve(listener, state).await {

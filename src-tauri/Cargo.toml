@@ -1,5 +1,5 @@
 [package]
-name = "treefold"
+name = "treefold-app"
 version = "0.1.0"
 description = "Local-first macOS workspace for parallel coding agents"
 authors = ["Treefold contributors"]
@@ -14,6 +14,10 @@ rust-version = "1.97.1"
 name = "treefold_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[[bin]]
+name = "treefold-app"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 
@@ -22,12 +26,10 @@ anyhow = "1"
 amux = { package = "amux-runtime", path = "/Users/admin/code/codebase/self/rs-agent/amux" }
 axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", features = ["serde"] }
-clap = { version = "4", features = ["derive"] }
 futures-util = "0.3"
 http = "1"
 http-body-util = "0.1"
 parking_lot = "0.12"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json"] }
 rusqlite = { version = "=0.40.1", features = ["bundled"] }
 rusqlite_migration = "2.6"
 moka = { version = "0.12", features = ["future"] }

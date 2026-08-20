@@ -39,6 +39,7 @@ use uuid::Uuid;
 use crate::{
     error::{ApiJson, AppError, Result},
     git,
+    integration::IntegrationManager,
     model::*,
     settings::{SettingsPatch, SettingsStore},
     store::{ParentOperationUpdate, Store, now},
@@ -51,6 +52,7 @@ pub struct AppState {
     pub settings: SettingsStore,
     pub terminals: TerminalManager,
     pub runtime: RuntimeHub,
+    pub integration: IntegrationManager,
 }
 
 #[derive(Clone)]
@@ -268,6 +270,12 @@ fn app(state: AppState) -> Router {
         .route("/api/system", get(system_status))
         .route("/api/amux", get(amux_status))
         .route("/api/amux/stop", post(stop_amux))
+        .route(
+            "/api/agent-integration",
+            get(agent_integration_status)
+                .post(sync_agent_integration)
+                .delete(uninstall_agent_integration),
+        )
         .route("/api/processes", get(list_background_processes))
         .route("/api/events", get(runtime_events))
         .route("/api/events/revision", get(runtime_revision))

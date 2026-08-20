@@ -1,26 +1,8 @@
 use std::{env, path::PathBuf, process::Command};
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use reqwest::{Method, StatusCode, blocking::Client};
 use serde_json::{Value, json};
-
-fn api_url() -> String {
-    env::var("TREEFOLD_API_URL")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .or_else(|| {
-            let home = env::var_os("TREEFOLD_HOME")
-                .map(PathBuf::from)
-                .or_else(|| {
-                    env::var_os("HOME").map(|home| PathBuf::from(home).join(".treefold"))
-                })?;
-            std::fs::read_to_string(home.join("runtime/api-url"))
-                .ok()
-                .map(|value| value.trim().to_owned())
-                .filter(|value| !value.is_empty())
-        })
-        .unwrap_or_else(|| treefold_lib::DEFAULT_API_URL.into())
-}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -38,11 +20,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum CliCommand {
-    /// Open or focus the Treefold desktop app.
-    Open {
-        /// Optional directory to open with Treefold.
-        path: Option<PathBuf>,
-    },
+    /// Open or focus the Treefold desktop App.
+    Open { path: Option<PathBuf> },
     /// Show the current Treefold-managed Session context.
     Current,
     /// Manage Todos belonging to the current Workspace.
@@ -58,17 +37,15 @@ enum CliCommand {
 
 #[derive(Debug, Subcommand)]
 enum TodoCommand {
-    /// List Todos in the current Workspace.
     List,
-    /// Show one Todo.
-    Show { id: String },
-    /// Create a Todo.
+    Show {
+        id: String,
+    },
     Add(TodoAddArgs),
-    /// Edit Todo Markdown content.
     Edit(TodoEditArgs),
-    /// Permanently remove a Todo.
-    Remove { id: String },
-    /// Mark a Todo blocked with a concise reason.
+    Remove {
+        id: String,
+    },
     Block {
         id: String,
         #[arg(long)]
@@ -88,13 +65,8 @@ struct TodoEditArgs {
     content: String,
 }
 
-pub enum Outcome {
-    LaunchApp,
-    Done,
-}
-
 #[derive(Debug)]
-pub struct CliError {
+struct CliError {
     message: String,
     code: i32,
 }
@@ -106,14 +78,12 @@ impl CliError {
             code: 2,
         }
     }
-
     fn unavailable(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
             code: 3,
         }
     }
-
     fn api(status: StatusCode, message: impl Into<String>) -> Self {
         let code = match status {
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => 4,
@@ -126,10 +96,6 @@ impl CliError {
             code,
         }
     }
-
-    pub fn exit_code(&self) -> i32 {
-        self.code
-    }
 }
 
 impl std::fmt::Display for CliError {
@@ -138,35 +104,41 @@ impl std::fmt::Display for CliError {
     }
 }
 
-impl std::error::Error for CliError {}
-
-pub fn run() -> Result<Outcome, CliError> {
-    run_cli(Cli::parse())
+fn main() {
+    if let Err(error) = run(Cli::parse()) {
+        eprintln!("{}", error.message);
+        std::process::exit(error.code);
+    }
 }
 
-fn run_cli(cli: Cli) -> Result<Outcome, CliError> {
+fn run(cli: Cli) -> Result<(), CliError> {
     let Some(command) = cli.command else {
-        return Ok(Outcome::LaunchApp);
+        Cli::command()
+            .print_help()
+            .map_err(|error| CliError::unavailable(error.to_string()))?;
+        println!();
+        return Ok(());
     };
     match command {
-        CliCommand::Open { path } => open_app(path)?,
+        CliCommand::Open { path } => open_app(path),
         CliCommand::Current => {
             let value =
                 ApiClient::from_env()?.request(Method::GET, "/api/v1/agent/current", None)?;
-            print_value(&value, cli.json, HumanOutput::Current);
+            print_value(&value, cli.json, Output::Current);
+            Ok(())
         }
-        CliCommand::Todo { command } => run_todo(command, cli.json)?,
-        CliCommand::Doctor => run_doctor(cli.json)?,
+        CliCommand::Todo { command } => run_todo(command, cli.json),
+        CliCommand::Doctor => run_doctor(cli.json),
         CliCommand::Version => {
             let value = json!({"version": env!("CARGO_PKG_VERSION")});
             if cli.json {
-                print_json(&value);
+                print_json(&value)
             } else {
-                println!("treefold {}", env!("CARGO_PKG_VERSION"));
+                println!("treefold {}", env!("CARGO_PKG_VERSION"))
             }
+            Ok(())
         }
     }
-    Ok(Outcome::Done)
 }
 
 fn run_todo(command: TodoCommand, json_output: bool) -> Result<(), CliError> {
@@ -176,37 +148,42 @@ fn run_todo(command: TodoCommand, json_output: bool) -> Result<(), CliError> {
             Method::GET,
             "/api/v1/agent/todos".into(),
             None,
-            HumanOutput::TodoList,
+            Output::TodoList,
         ),
         TodoCommand::Show { id } => (
             Method::GET,
             format!("/api/v1/agent/todos/{id}"),
             None,
-            HumanOutput::Todo,
+            Output::Todo,
         ),
         TodoCommand::Add(args) => (
             Method::POST,
             "/api/v1/agent/todos".into(),
             Some(json!({"content": args.content})),
-            HumanOutput::Todo,
+            Output::Todo,
         ),
         TodoCommand::Edit(args) => (
             Method::PATCH,
             format!("/api/v1/agent/todos/{}", args.id),
             Some(json!({"content": args.content})),
-            HumanOutput::Todo,
+            Output::Todo,
         ),
         TodoCommand::Remove { id } => (
             Method::DELETE,
             format!("/api/v1/agent/todos/{id}"),
             None,
-            HumanOutput::Removed,
+            Output::Removed,
         ),
         TodoCommand::Block { id, reason } => {
             if reason.trim().is_empty() {
                 return Err(CliError::invalid("--reason must not be empty"));
             }
-            todo_action(id, "block", Some(json!({"reason": reason})))
+            (
+                Method::POST,
+                format!("/api/v1/agent/todos/{id}/block"),
+                Some(json!({"reason": reason})),
+                Output::Todo,
+            )
         }
     };
     let value = client.request(method, &path, body.as_ref())?;
@@ -214,53 +191,34 @@ fn run_todo(command: TodoCommand, json_output: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-fn todo_action(
-    id: String,
-    action: &str,
-    body: Option<Value>,
-) -> (Method, String, Option<Value>, HumanOutput) {
-    (
-        Method::POST,
-        format!("/api/v1/agent/todos/{id}/{action}"),
-        body,
-        HumanOutput::Todo,
-    )
-}
-
 fn run_doctor(json_output: bool) -> Result<(), CliError> {
-    let mut checks = Vec::new();
     let api_url = api_url();
-    let api = Client::new()
-        .get(format!("{}/api/health", api_url.trim_end_matches('/')))
-        .send()
-        .map(|response| response.status().is_success())
-        .unwrap_or(false);
-    checks.push(json!({"name":"app_api", "ok":api, "value":api_url}));
+    let mut checks = vec![json!({
+        "name": "app_api",
+        "ok": Client::new().get(format!("{}/api/health", api_url.trim_end_matches('/'))).send().is_ok_and(|response| response.status().is_success()),
+        "value": api_url,
+    })];
     for name in [
         "TREEFOLD_SESSION_ID",
         "TREEFOLD_WORKSPACE_ID",
-        "AMUX_DAEMON",
+        "AMUX_SOCKET",
+        "AMUX_STATE_DIR",
         "AMUX_WORKSPACE",
-        "AMUX_PROCESS_ID",
     ] {
         let value = env::var(name).ok().filter(|value| !value.trim().is_empty());
-        checks.push(json!({"name":name.to_ascii_lowercase(), "ok":value.is_some(), "value":value}));
+        checks.push(
+            json!({"name": name.to_ascii_lowercase(), "ok": value.is_some(), "value": value}),
+        );
     }
-    let daemon = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .ok()
-        .and_then(|runtime| {
-            amux::config::Config::load()
-                .ok()
-                .map(|config| runtime.block_on(amux::client::Client::new(config).ready()))
-        })
-        .unwrap_or(false);
-    checks.push(json!({"name":"amux_daemon_connectivity", "ok":daemon, "value":env::var("AMUX_DAEMON").ok()}));
+    let amux_ok = Command::new("amux")
+        .args(["daemon", "status", "--json"])
+        .output()
+        .is_ok_and(|output| output.status.success());
+    checks.push(json!({"name": "amux_daemon_connectivity", "ok": amux_ok}));
     let ok = checks.iter().all(|check| check["ok"] == true);
-    let value = json!({"ok":ok, "checks":checks});
+    let value = json!({"ok": ok, "checks": checks});
     if json_output {
-        print_json(&value);
+        print_json(&value)
     } else {
         for check in value["checks"].as_array().into_iter().flatten() {
             println!(
@@ -279,6 +237,24 @@ fn run_doctor(json_output: bool) -> Result<(), CliError> {
     }
 }
 
+fn api_url() -> String {
+    env::var("TREEFOLD_API_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            let home = env::var_os("TREEFOLD_HOME")
+                .map(PathBuf::from)
+                .or_else(|| {
+                    env::var_os("HOME").map(|home| PathBuf::from(home).join(".treefold"))
+                })?;
+            std::fs::read_to_string(home.join("runtime/api-url"))
+                .ok()
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+        })
+        .unwrap_or_else(|| "http://127.0.0.1:15001".into())
+}
+
 fn open_app(path: Option<PathBuf>) -> Result<(), CliError> {
     #[cfg(target_os = "macos")]
     {
@@ -287,13 +263,15 @@ fn open_app(path: Option<PathBuf>) -> Result<(), CliError> {
         if let Some(path) = path {
             command.arg(path);
         }
-        let status = command
+        if command
             .status()
-            .map_err(|error| CliError::unavailable(format!("open Treefold: {error}")))?;
-        if !status.success() {
-            return Err(CliError::unavailable("open Treefold failed"));
+            .map_err(|error| CliError::unavailable(format!("open Treefold: {error}")))?
+            .success()
+        {
+            Ok(())
+        } else {
+            Err(CliError::unavailable("open Treefold failed"))
         }
-        Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -309,7 +287,6 @@ struct ApiClient {
     base_url: String,
     token: String,
 }
-
 impl ApiClient {
     fn from_env() -> Result<Self, CliError> {
         let token = env::var("TREEFOLD_API_TOKEN")
@@ -325,7 +302,6 @@ impl ApiClient {
             token,
         })
     }
-
     fn request(&self, method: Method, path: &str, body: Option<&Value>) -> Result<Value, CliError> {
         let mut request = self
             .client
@@ -342,38 +318,38 @@ impl ApiClient {
         })?;
         let status = response.status();
         let value = response.json::<Value>().unwrap_or_else(|_| json!({}));
-        if !status.is_success() {
+        if status.is_success() {
+            Ok(value)
+        } else {
             let code = value["error"]["code"].as_str().unwrap_or("API_ERROR");
             let message = value["error"]["message"]
                 .as_str()
                 .unwrap_or("Treefold API request failed");
-            return Err(CliError::api(status, format!("{code}: {message}")));
+            Err(CliError::api(status, format!("{code}: {message}")))
         }
-        Ok(value)
     }
 }
 
 #[derive(Clone, Copy)]
-enum HumanOutput {
+enum Output {
     Current,
     TodoList,
     Todo,
     Removed,
 }
-
-fn print_value(value: &Value, json_output: bool, output: HumanOutput) {
+fn print_value(value: &Value, json_output: bool, output: Output) {
     if json_output {
         print_json(value);
         return;
     }
     match output {
-        HumanOutput::Current => {
+        Output::Current => {
             println!(
                 "Project:    {}",
                 value["project"]["name"].as_str().unwrap_or("unknown")
             );
             println!(
-                "Workspace: {}",
+                "Workspace:  {}",
                 value["workspace"]["name"].as_str().unwrap_or("unknown")
             );
             println!(
@@ -381,21 +357,15 @@ fn print_value(value: &Value, json_output: bool, output: HumanOutput) {
                 value["session"]["id"].as_str().unwrap_or("unknown")
             );
             println!(
-                "Workspace:  {}",
+                "Path:       {}",
                 value["workspace"]["path"].as_str().unwrap_or("unknown")
-            );
-            println!(
-                "Branch:     {}",
-                value["workspace"]["git"]["observed_branch"]
-                    .as_str()
-                    .unwrap_or("-")
             );
             println!(
                 "amux:       {}",
                 value["runtime"]["workspace"].as_str().unwrap_or("unknown")
             );
         }
-        HumanOutput::TodoList => {
+        Output::TodoList => {
             println!("STATUS\tID\tCONTENT");
             for todo in value.as_array().into_iter().flatten() {
                 println!(
@@ -406,45 +376,36 @@ fn print_value(value: &Value, json_output: bool, output: HumanOutput) {
                 );
             }
         }
-        HumanOutput::Todo => {
-            println!(
-                "{}\t{}\t{}",
-                value["status"].as_str().unwrap_or("unknown"),
-                value["id"].as_str().unwrap_or("unknown"),
-                value["content"].as_str().unwrap_or("")
-            );
-        }
-        HumanOutput::Removed => println!("removed"),
+        Output::Todo => println!(
+            "{}\t{}\t{}",
+            value["status"].as_str().unwrap_or("unknown"),
+            value["id"].as_str().unwrap_or("unknown"),
+            value["content"].as_str().unwrap_or("")
+        ),
+        Output::Removed => println!("removed"),
     }
 }
-
 fn print_json(value: &Value) {
     println!(
         "{}",
-        serde_json::to_string_pretty(value).expect("JSON value serialization cannot fail")
+        serde_json::to_string_pretty(value).expect("JSON serialization cannot fail")
     );
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, CliCommand, Parser, TodoCommand};
-
+    use super::*;
     #[test]
-    fn parses_todo_block() {
-        let cli =
-            Cli::try_parse_from(["treefold", "todo", "block", "todo-1", "--reason", "waiting"])
-                .unwrap();
-        assert!(matches!(
-            cli.command,
-            Some(CliCommand::Todo {
-                command: TodoCommand::Block { id, reason }
-            }) if id == "todo-1" && reason == "waiting"
-        ));
+    fn no_command_is_valid_and_displays_help() {
+        assert!(Cli::try_parse_from(["treefold"]).unwrap().command.is_none());
     }
-
     #[test]
-    fn no_command_launches_the_app() {
-        let cli = Cli::try_parse_from(["treefold"]).unwrap();
-        assert!(cli.command.is_none());
+    fn parses_explicit_open() {
+        assert!(matches!(
+            Cli::try_parse_from(["treefold", "open", "."])
+                .unwrap()
+                .command,
+            Some(CliCommand::Open { .. })
+        ));
     }
 }

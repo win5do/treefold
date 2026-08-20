@@ -19,7 +19,8 @@ Treefold 不包装 `amux run/logs/restart`，也不实现第二套子 Agent 编�
 
 ## `treefold` CLI
 
-桌面 App 与 CLI 共用 `treefold` 可执行文件。无参数运行时启动 App：
+桌面 App 使用内部可执行文件 `treefold-app`；用户 CLI 是不链接 Tauri 的独立
+`treefold-cli` package，产物名为 `treefold`。无参数时显示帮助，打开 App 必须显式执行：
 
 ```text
 treefold
@@ -41,6 +42,22 @@ CLI 约束：
 - CLI 不直接读取 SQLite；
 - `remove` 是永久删除，Skill 只在用户明确要求时使用；
 - 不提供 `treefold report`、`treefold service`、`treefold logs` 或 Agent spawn 命令。
+
+## 安装、更新与所有权
+
+App bundle 是集成资源的唯一版本源，manifest 记录 schema、bundle、protocol、CLI
+和 Skill 版本。App 启动时只读检查；缺失、过期、不完整或冲突时，在单次 App
+进程内提示一次，并持续显示左下角异常状态。只有用户点击“安装集成/同步”才修改：
+
+```text
+~/.local/bin/treefold
+~/.agents/skills/treefold
+~/.agents/skills/amux
+```
+
+三个路径都是指向当前 App bundle 的软链接。`amux` CLI 是 Session 私有资源，不创建
+`~/.local/bin/amux`。receipt 位于 `$TREEFOLD_HOME/data/agent-integration.json`；更新只
+替换 receipt 所有的旧链接，冲突路径不覆盖。卸载只移除仍匹配 receipt 的链接。
 
 退出码：
 
@@ -119,7 +136,7 @@ Treefold 使用独占配置，不与用户默认 amuxd 冲突：
 
 ```text
 state:  $TREEFOLD_HOME/data/amux
-socket: /tmp/treefold-amux-<TREEFOLD_HOME hash>/amuxd.sock
+socket: $TMPDIR/amux-<uid>-<daemon hash>.sock
 ```
 
 一个唯一的物理 workspace root 对应一个 amux workspace。Git 项目中通常就是一个 Git worktree：
@@ -139,11 +156,14 @@ TREEFOLD_API_TOKEN
 TREEFOLD_PROJECT_ID
 TREEFOLD_WORKSPACE_ID
 TREEFOLD_SESSION_ID
+TREEFOLD_HOME
+TREEFOLD_INTEGRATION_VERSION
 AMUX_STATE_DIR
 AMUX_SOCKET
 AMUX_WORKSPACE
 AMUX_WORKSPACE_ID
 AMUX_PROCESS_ID
+PATH=<Treefold.app bundled binaries>:<inherited PATH>
 ```
 
 因此 Agent 可直接通过 amux Skill 执行：
@@ -177,7 +197,7 @@ amux Skill：
 
 ## MVP 验收标准
 
-- `treefold` 无参数能启动桌面 App；
+- `treefold` 无参数显示帮助，`treefold open` 显式启动桌面 App；
 - managed Session 中 `treefold current --json` 返回完整、来源明确的当前快照；
 - Agent 只能读写当前 Workspace 的 Todo；
 - 两个 Session 同时 claim 同一 Todo 时只有一个成功；

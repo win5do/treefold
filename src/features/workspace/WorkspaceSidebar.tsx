@@ -51,6 +51,7 @@ import type {
   WorkspaceRepository,
 } from "@/domain/types";
 import { AmuxResourcesPopover } from "@/features/resources/AmuxResourcesPopover";
+import { AgentIntegrationPopover } from "@/features/integration/AgentIntegrationPopover";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 
@@ -450,6 +451,7 @@ export function WorkspaceSidebar({
           <Settings data-icon="inline-start" />
         </Button>
         <AmuxResourcesPopover />
+        <AgentIntegrationPopover />
       </div>
       <div
         data-testid="sidebar-resize-handle"

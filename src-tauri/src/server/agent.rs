@@ -26,6 +26,40 @@ pub(super) async fn stop_amux(State(state): State<AppState>) -> Result<StatusCod
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub(super) async fn agent_integration_status(
+    State(state): State<AppState>,
+) -> Result<Json<crate::integration::IntegrationStatus>> {
+    Ok(Json(state.integration.status()?))
+}
+
+pub(super) async fn sync_agent_integration(
+    State(state): State<AppState>,
+) -> Result<Json<crate::integration::IntegrationStatus>> {
+    match state.integration.sync() {
+        Ok(status) => Ok(Json(status)),
+        Err(crate::integration::IntegrationError::Conflict(path)) => Err(AppError::api(
+            StatusCode::CONFLICT,
+            "AGENT_INTEGRATION_CONFLICT",
+            format!(
+                "Existing path is not managed by Treefold: {}",
+                path.display()
+            ),
+        )),
+        Err(crate::integration::IntegrationError::Unavailable(path)) => Err(AppError::api(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "AGENT_INTEGRATION_UNAVAILABLE",
+            format!("Bundled resource is missing: {}", path.display()),
+        )),
+        Err(crate::integration::IntegrationError::Other(error)) => Err(error.into()),
+    }
+}
+
+pub(super) async fn uninstall_agent_integration(
+    State(state): State<AppState>,
+) -> Result<Json<crate::integration::IntegrationStatus>> {
+    Ok(Json(state.integration.uninstall()?))
+}
+
 pub(super) struct AgentContext {
     session: Session,
     workspace: Workspace,

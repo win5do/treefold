@@ -73,15 +73,14 @@ just build
 
 ## CLI and Agent Skill
 
-The packaged `treefold` executable is both the desktop entry point and a thin
-CLI for Treefold-managed Sessions:
+The desktop entry point is `treefold-app`. The separately built, lightweight
+`treefold` CLI is bundled beside it for Treefold-managed Sessions:
 
 ```bash
-treefold
+treefold                  # top-level help
+treefold open [path]      # explicitly open the App
 treefold current --json
 treefold todo list --json
-treefold todo claim <todo-id>
-treefold todo done <todo-id>
 treefold doctor
 ```
 
@@ -89,10 +88,19 @@ Treefold manages workspace identity and Todos. It intentionally does not store
 per-turn Agent reports or wrap process commands. Persistent processes, TTYs,
 logs, and restarts use the independent `amux` CLI and Skill.
 
-The distributable Codex Skill lives at [`skills/treefold`](skills/treefold).
-Install or link that directory as `treefold` in the active Codex skills home.
-The Skill expects managed Sessions to provide the `TREEFOLD_*` and `AMUX_*`
-environment variables injected by the App.
+At startup the App checks, without modifying the filesystem, whether the
+bundled CLI and Skills are integrated. The lower-left Agent Integration panel
+can create or synchronize these managed links:
+
+```text
+~/.local/bin/treefold          -> Treefold.app bundled CLI
+~/.agents/skills/treefold      -> Treefold.app bundled Treefold Skill
+~/.agents/skills/amux          -> Treefold.app bundled amux Skill
+```
+
+Treefold never overwrites an unmanaged path. The private bundled `amux` CLI is
+not linked globally; managed Sessions receive the App's bundled binary directory
+first on `PATH`, together with the explicit `TREEFOLD_*` and `AMUX_*` context.
 
 Treefold stores its files under `~/.treefold` by default:
 
@@ -139,9 +147,15 @@ Tauri macOS process
 ```
 
 The amux control plane runs inside Treefold, while detached amux shims own the PTY
-process groups. The Treefold executable exposes the shim as a hidden entry point,
-so no separately installed sidecar is required. Frontend routes use hash history
-so deep links work from both Vite and packaged assets.
+process groups. The GUI keeps private daemon/shim entry points, while the
+user-facing `treefold` CLI and private `amux` CLI are separate bundled sidecars.
+Frontend routes use hash history so deep links work from both Vite and packaged
+assets.
+
+Create a release bundle with `npm run bundle:desktop`. It builds the pinned CLI
+sidecars before applying `src-tauri/tauri.bundle.conf.json`. The default
+co-workspace layout expects the amux repository at `../amux`; set
+`TREEFOLD_AMUX_MANIFEST` when its `Cargo.toml` lives elsewhere.
 
 ## Product documentation
 

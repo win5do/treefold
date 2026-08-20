@@ -449,6 +449,32 @@ export type AmuxStatus = {
   active_processes: number;
 };
 
+export type AgentIntegrationState =
+  | "ready"
+  | "not_installed"
+  | "outdated"
+  | "partial"
+  | "conflict"
+  | "unavailable";
+
+export type AgentIntegrationComponent = {
+  id: "treefold_cli" | "amux_cli" | "treefold_skill" | "amux_skill";
+  version: string;
+  source_path: string;
+  install_path?: string;
+  state: AgentIntegrationState;
+  detail?: string;
+};
+
+export type AgentIntegrationStatus = {
+  state: AgentIntegrationState;
+  app_version: string;
+  bundle_version: string;
+  protocol_version: string;
+  bundle_path: string;
+  components: AgentIntegrationComponent[];
+};
+
 export type BackgroundProcess = {
   id: string;
   workspace_id: string;

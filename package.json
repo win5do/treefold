@@ -12,6 +12,8 @@
     "dev": "vite --host 127.0.0.1",
     "dev:desktop": "node scripts/dev.mjs",
     "build": "vite build",
+    "prepare:sidecars": "node scripts/prepare-sidecars.mjs",
+    "bundle:desktop": "npm run prepare:sidecars && tauri build --config src-tauri/tauri.bundle.conf.json",
     "test:ui": "node tests/ui/run.mjs",
     "test:ui:tauri": "TREEFOLD_UI_TRANSPORT=tauri node tests/ui/run.mjs",
     "typecheck": "tsc --noEmit",

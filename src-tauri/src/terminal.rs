@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -46,6 +47,10 @@ pub struct TerminalManager {
     snapshot_events: tokio::sync::broadcast::Sender<()>,
     process_state: ProcessStateMap,
     api_url: Arc<String>,
+    amux_state_dir: Arc<PathBuf>,
+    amux_socket: Arc<PathBuf>,
+    treefold_home: Arc<Option<PathBuf>>,
+    bundled_bin_dir: Arc<Option<PathBuf>>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +109,8 @@ impl TerminalManager {
         let (process_events, _) = tokio::sync::broadcast::channel(1024);
         let (snapshot_events, _) = tokio::sync::broadcast::channel(16);
         Self {
+            amux_state_dir: Arc::new(config.state_dir.clone()),
+            amux_socket: Arc::new(config.socket.clone()),
             client: Client::named(config, &daemon_name),
             daemon_name: Arc::new(daemon_name),
             daemon_start: Arc::new(Mutex::new(())),
@@ -113,11 +120,23 @@ impl TerminalManager {
             snapshot_events,
             process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
             api_url: Arc::new(DEFAULT_API_URL.into()),
+            treefold_home: Arc::new(None),
+            bundled_bin_dir: Arc::new(None),
         }
     }
 
     pub fn with_api_url(mut self, api_url: String) -> Self {
         self.api_url = Arc::new(api_url);
+        self
+    }
+
+    pub fn with_treefold_home(mut self, home: PathBuf) -> Self {
+        self.treefold_home = Arc::new(Some(home));
+        self
+    }
+
+    pub fn with_bundled_bin_dir(mut self, bin_dir: Option<PathBuf>) -> Self {
+        self.bundled_bin_dir = Arc::new(bin_dir);
         self
     }
 
@@ -314,7 +333,29 @@ impl TerminalManager {
             ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
             ("AMUX_DAEMON".into(), self.daemon_name.as_ref().clone()),
             ("AMUX_WORKSPACE".into(), workspace.clone()),
+            (
+                "AMUX_STATE_DIR".into(),
+                self.amux_state_dir.to_string_lossy().into_owned(),
+            ),
+            (
+                "AMUX_SOCKET".into(),
+                self.amux_socket.to_string_lossy().into_owned(),
+            ),
+            (
+                "TREEFOLD_INTEGRATION_VERSION".into(),
+                env!("CARGO_PKG_VERSION").into(),
+            ),
         ]);
+        if let Some(home) = self.treefold_home.as_ref() {
+            env.insert("TREEFOLD_HOME".into(), home.to_string_lossy().into_owned());
+        }
+        if let Some(bin_dir) = self.bundled_bin_dir.as_ref() {
+            let inherited = std::env::var("PATH").unwrap_or_default();
+            env.insert(
+                "PATH".into(),
+                format!("{}:{inherited}", bin_dir.to_string_lossy()),
+            );
+        }
         if session.kind != "command" {
             env.insert("TREEFOLD_SESSION_ID".into(), session.id.clone());
             env.insert("TREEFOLD_API_TOKEN".into(), session.id.clone());
@@ -548,6 +589,10 @@ impl Default for TerminalManager {
             snapshot_events: tokio::sync::broadcast::channel(16).0,
             process_state: Arc::new(tokio::sync::RwLock::new(BTreeMap::new())),
             api_url: Arc::new(DEFAULT_API_URL.into()),
+            amux_state_dir: Arc::new(root.join("state")),
+            amux_socket: Arc::new(root.join("amuxd.sock")),
+            treefold_home: Arc::new(None),
+            bundled_bin_dir: Arc::new(None),
         }
     }
 }

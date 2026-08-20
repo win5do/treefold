@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "bundle_version": "0.1.0",
+  "protocol_version": "1",
+  "components": {
+    "treefold_cli": "0.1.0",
+    "amux_cli": "0.1.0-alpha.1",
+    "treefold_skill": "1.0.0",
+    "amux_skill": "1.0.0"
+  }
+}

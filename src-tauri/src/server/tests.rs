@@ -41,6 +41,7 @@ mod current_workspace_tests {
             settings: SettingsStore::open(&home).expect("open test Settings"),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
+            integration: crate::integration::IntegrationManager::test(&home),
         }
     }
 
@@ -1171,6 +1172,7 @@ mod current_workspace_tests {
             settings: SettingsStore::open(&root.join("home")).expect("reopen Settings"),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
+            integration: crate::integration::IntegrationManager::test(&root.join("home")),
         };
         let recovered =
             reconcile_parent_operation(&restarted, &conflicted).expect("reconcile after restart");
@@ -2190,6 +2192,7 @@ mod tests {
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
+            integration: crate::integration::IntegrationManager::test(&home),
         };
         let (_, Json(project)) = create_project(
             State(state.clone()),
@@ -2446,6 +2449,7 @@ mod tests {
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
+            integration: crate::integration::IntegrationManager::test(&home),
         };
         let (_, Json(project)) = create_project(
             State(state.clone()),
@@ -2634,6 +2638,7 @@ mod tests {
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
+            integration: crate::integration::IntegrationManager::test(&home),
         };
         let (_, Json(project)) = create_project(
             State(state.clone()),
@@ -2938,6 +2943,7 @@ mod tests {
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
+            integration: crate::integration::IntegrationManager::test(&home),
         };
         state
             .settings
