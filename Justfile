@@ -26,6 +26,10 @@ check:
 build:
     npm run tauri build
 
+# Build an ad-hoc signed, timestamped App + DMG and install the App in /Applications.
+package-install-adhoc:
+    node scripts/package-install-adhoc.mjs
+
 clean:
     cargo clean --manifest-path src-tauri/Cargo.toml
     rm -rf dist

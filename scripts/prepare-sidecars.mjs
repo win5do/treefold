@@ -12,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const buildVersion = process.env.TREEFOLD_BUILD_VERSION;
 const host = execFileSync("rustc", ["-vV"], { encoding: "utf8" })
   .match(/^host: (.+)$/m)?.[1];
 if (!host) throw new Error("Could not determine the Rust host target");
@@ -69,6 +70,10 @@ cpSync(amuxSkill, stagedAmuxSkill, { recursive: true });
 const integrationManifest = JSON.parse(
   readFileSync(path.join(integrationSource, "manifest.json"), "utf8"),
 );
+if (buildVersion) {
+  integrationManifest.bundle_version = buildVersion;
+  integrationManifest.components.treefold_cli = buildVersion;
+}
 integrationManifest.components.amux_cli = amuxVersion;
 integrationManifest.components.amux_skill = amuxVersion;
 writeFileSync(

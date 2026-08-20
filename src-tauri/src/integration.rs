@@ -266,7 +266,7 @@ impl IntegrationManager {
         };
         Ok(IntegrationStatus {
             state,
-            app_version: env!("CARGO_PKG_VERSION").into(),
+            app_version: crate::BUILD_VERSION.into(),
             bundle_version: manifest.bundle_version,
             protocol_version: manifest.protocol_version,
             bundle_path: self.inner.bundle_root.to_string_lossy().into_owned(),

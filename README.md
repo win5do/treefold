@@ -164,6 +164,18 @@ the amux package version and stages `skills/amux` from that same module, so its
 CLI and Skill stay one release unit. Development runs can override Skill
 discovery with `TREEFOLD_AMUX_SKILL_DIR`.
 
+For a private local installation, build an ad-hoc signed App and DMG with a
+SemVer-compatible timestamp such as `0.1.0-alpha.20260821153045`, then replace
+`/Applications/Treefold.app` in one step:
+
+```bash
+just package-install-adhoc
+```
+
+Quit an installed Treefold instance before running the recipe. Set
+`TREEFOLD_BUILD_VERSION` to a valid SemVer value to make a build reproducible,
+or `TREEFOLD_INSTALL_DIR` to install somewhere other than `/Applications`.
+
 ## Product documentation
 
 - [Product direction](docs/product-strategy.md)

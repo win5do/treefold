@@ -343,7 +343,7 @@ impl TerminalManager {
             ),
             (
                 "TREEFOLD_INTEGRATION_VERSION".into(),
-                env!("CARGO_PKG_VERSION").into(),
+                crate::BUILD_VERSION.into(),
             ),
         ]);
         if let Some(home) = self.treefold_home.as_ref() {

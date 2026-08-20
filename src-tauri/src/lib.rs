@@ -8,6 +8,10 @@ mod store;
 mod terminal;
 
 pub const DEFAULT_API_URL: &str = "http://127.0.0.1:15001";
+pub const BUILD_VERSION: &str = match option_env!("TREEFOLD_BUILD_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
 use anyhow::Context;
 use sha2::{Digest, Sha256};

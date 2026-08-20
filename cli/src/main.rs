@@ -4,10 +4,15 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use reqwest::{Method, StatusCode, blocking::Client};
 use serde_json::{Value, json};
 
+const BUILD_VERSION: &str = match option_env!("TREEFOLD_BUILD_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 #[derive(Debug, Parser)]
 #[command(
     name = "treefold",
-    version,
+    version = BUILD_VERSION,
     about = "Treefold workspace and Todo management"
 )]
 struct Cli {
@@ -130,11 +135,11 @@ fn run(cli: Cli) -> Result<(), CliError> {
         CliCommand::Todo { command } => run_todo(command, cli.json),
         CliCommand::Doctor => run_doctor(cli.json),
         CliCommand::Version => {
-            let value = json!({"version": env!("CARGO_PKG_VERSION")});
+            let value = json!({"version": BUILD_VERSION});
             if cli.json {
                 print_json(&value)
             } else {
-                println!("treefold {}", env!("CARGO_PKG_VERSION"))
+                println!("treefold {BUILD_VERSION}")
             }
             Ok(())
         }
