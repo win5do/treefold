@@ -8,8 +8,8 @@ use super::{Store, now};
 use super::{
     sessions::{SESSION_COLUMNS, session_row},
     workspaces::{
-        WORKSPACE_COLUMNS, WORKSPACE_DIRECTORY_COLUMNS, WORKSPACE_LOCATION_COLUMNS,
-        hydrate_workspace_compat, workspace_directory_row, workspace_location_row, workspace_row,
+        WORKSPACE_COLUMNS, WORKSPACE_DIRECTORY_COLUMNS, WORKSPACE_REPOSITORY_COLUMNS,
+        hydrate_workspace_compat, workspace_directory_row, workspace_repository_row, workspace_row,
     },
 };
 use crate::{
@@ -452,7 +452,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn refresh_project_location(&self, directory: &ProjectLocation) -> Result<()> {
+    pub fn refresh_project_directory(&self, directory: &Directory) -> Result<()> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         let repository_id: Option<String> = tx.query_row(
@@ -479,25 +479,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn reattach_project_location(
-        &self,
-        id: &str,
-        path: &str,
-        git_common_dir: &str,
-        repository_url: Option<&str>,
-        preferred_remote_name: Option<&str>,
-    ) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=(SELECT repository_id FROM project_directories WHERE id=?)",
-            params![path,git_common_dir,repository_url,preferred_remote_name,now(),now(),id],
-        )?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
-        }
-        Ok(())
-    }
-
-    pub fn delete_project_location(&self, id: &str) -> Result<()> {
+    pub fn delete_project_directory(&self, id: &str) -> Result<()> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
         let (project_id, repository_id, is_default): (String, Option<String>, bool) = tx.query_row(
@@ -667,10 +649,10 @@ fn sidebar_on(db: &Connection) -> Result<SidebarData> {
                 .query_map([&workspace.id], session_row)?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut repository_statement = transaction.prepare(&format!(
-                "SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories WHERE workspace_id=? ORDER BY repository_name"
+                "SELECT {WORKSPACE_REPOSITORY_COLUMNS} FROM workspace_repositories WHERE workspace_id=? ORDER BY repository_name"
             ))?;
             let workspace_repositories = repository_statement
-                .query_map([&workspace.id], workspace_location_row)?
+                .query_map([&workspace.id], workspace_repository_row)?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut directory_statement = transaction.prepare(&format!(
                 "SELECT {WORKSPACE_DIRECTORY_COLUMNS} FROM workspace_directories wd LEFT JOIN workspace_repositories wr ON wr.id=wd.workspace_repository_id WHERE wd.workspace_id=? ORDER BY wd.name"

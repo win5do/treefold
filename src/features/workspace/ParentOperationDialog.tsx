@@ -41,7 +41,7 @@ export function ParentOperationDialog({
 }) {
   const repositories = useMemo(
     () =>
-      (workspace?.locations ?? []).filter(
+      (workspace?.repositories ?? []).filter(
         (location) => location.access_mode === "read_write" && location.git_status === "ready",
       ),
     [workspace],
@@ -154,7 +154,7 @@ export function ParentOperationDialog({
             >
               {repositories.map((repository) => (
                 <NativeSelectOption key={repository.id} value={repository.id}>
-                  {repository.location_name}
+                  {repository.repository_name}
                 </NativeSelectOption>
               ))}
             </NativeSelect>

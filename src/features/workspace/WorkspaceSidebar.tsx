@@ -48,7 +48,7 @@ import type {
   Session,
   SessionMenuState,
   Workspace,
-  WorkspaceLocation,
+  WorkspaceRepository,
 } from "@/domain/types";
 import { AmuxResourcesPopover } from "@/features/resources/AmuxResourcesPopover";
 import { cn } from "@/lib/utils";
@@ -80,9 +80,9 @@ export function WorkspaceSidebar({
   onCreateBaseCodex,
   onOpenInFinder,
   onSyncProject,
-  onSyncProjectLocation,
+  onSyncDirectory,
   onSyncWorkspace,
-  onSyncWorkspaceLocation,
+  onSyncWorkspaceRepository,
   onFinishWorkspace,
   onParentOperation,
   onRenameProject,
@@ -121,13 +121,13 @@ export function WorkspaceSidebar({
   onCreateBaseCodex: (project: ProjectDetail, directory?: Directory) => void;
   onOpenInFinder: (project: ProjectDetail, stream?: Workspace) => void;
   onSyncProject: (project: ProjectDetail, action: "pull" | "push") => void;
-  onSyncProjectLocation: (
+  onSyncDirectory: (
     repository: ProjectRepository,
     action: "pull" | "push",
   ) => void;
   onSyncWorkspace: (stream: Workspace, action: "pull" | "push") => void;
-  onSyncWorkspaceLocation: (
-    location: WorkspaceLocation,
+  onSyncWorkspaceRepository: (
+    location: WorkspaceRepository,
     action: "pull" | "push",
   ) => void;
   onFinishWorkspace: (stream: Workspace) => void;
@@ -196,13 +196,13 @@ export function WorkspaceSidebar({
             (item) => item.id === targetId,
           );
           repository
-            ? onSyncProjectLocation(repository, action)
+            ? onSyncDirectory(repository, action)
             : onSyncProject(project, action);
           return;
         }
-        const location = stream.locations?.find((item) => item.id === targetId);
-        location
-          ? onSyncWorkspaceLocation(location, action)
+        const repository = stream.repositories?.find((item) => item.id === targetId);
+        repository
+          ? onSyncWorkspaceRepository(repository, action)
           : onSyncWorkspace(stream, action);
       }}
       onRename={() =>
@@ -479,7 +479,7 @@ export function WorkspaceSidebar({
 export type SidebarStream = Workspace & {
   sessions?: Session[];
   directories?: Directory[];
-  locations?: WorkspaceLocation[];
+  repositories?: WorkspaceRepository[];
   forks?: Workspace[];
 };
 export type SessionDropPosition = "before" | "after";
@@ -634,7 +634,7 @@ function SidebarOwnerContextMenu({
         .filter((repository) => repository.git_status === "ready")
         .map((repository) => ({ id: repository.id, name: repository.name }))
     : stream.kind === "workspace"
-      ? (stream.locations ?? [])
+      ? (stream.repositories ?? [])
           .filter(
             (location) =>
               location.access_mode === "read_write" &&
@@ -642,7 +642,7 @@ function SidebarOwnerContextMenu({
           )
           .map((location) => ({
             id: location.id,
-            name: location.location_name,
+            name: location.repository_name,
           }))
       : null;
   return (

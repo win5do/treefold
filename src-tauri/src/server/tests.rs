@@ -15,16 +15,17 @@ mod current_workspace_tests {
     use super::{
         ApiJson, AppState, CloneProjectRepository, CreateDeliveryPreflight, CreateDirectory,
         CreateFork, CreateProject, CreateSession, CreateWorkspace, FinishWorkspace, RuntimeDomain,
-        RuntimeHub, UpdateProject, UpdateWorkspaceLocation, abort_parent_operation_impl, app,
+        RuntimeHub, UpdateProject, UpdateWorkspaceRepository, abort_parent_operation_impl, app,
         clone_project_repository_impl, close_session, command_output,
         create_delivery_preflight_impl, create_directory, create_fork, create_project,
         create_project_session, create_session, create_workspace,
-        create_workspace_location_preflight_impl, delete_project_location, finish_workspace_impl,
-        finish_workspace_location_impl, get_project, git_head, git_is_ancestor, git_worktrees,
-        managed_repository_source_path, managed_worktree_path, normalized_path, pull_workspace,
-        push_workspace, reconcile_parent_operation, reconcile_process, refresh_project_location,
-        repository_name_from_url, repository_slug, start_parent_operation_impl, stop_amux,
-        stop_session, undo_parent_operation_impl, update_project, update_workspace_location,
+        create_workspace_repository_preflight_impl, delete_project_directory,
+        finish_workspace_impl, finish_workspace_repository_impl, get_project, git_head,
+        git_is_ancestor, git_worktrees, managed_repository_source_path, managed_worktree_path,
+        normalized_path, pull_workspace, push_workspace, reconcile_parent_operation,
+        reconcile_process, refresh_project_directory, repository_name_from_url, repository_slug,
+        start_parent_operation_impl, stop_amux, stop_session, undo_parent_operation_impl,
+        update_project, update_workspace_repository,
     };
     use crate::{
         model::{Session, Todo},
@@ -641,7 +642,7 @@ mod current_workspace_tests {
                 primary.delivery_mode.as_deref(),
             )
             .unwrap();
-        let Json(refreshed) = refresh_project_location(
+        let Json(refreshed) = refresh_project_directory(
             State(state.clone()),
             axum::extract::Path(primary.id.clone()),
         )
@@ -690,7 +691,7 @@ mod current_workspace_tests {
             error.to_string(),
             "primary location must be a ready Git repository"
         );
-        let error = delete_project_location(State(state.clone()), axum::extract::Path(primary.id))
+        let error = delete_project_directory(State(state.clone()), axum::extract::Path(primary.id))
             .await
             .expect_err("primary cannot be deleted while other locations remain");
         assert_eq!(
@@ -900,13 +901,13 @@ mod current_workspace_tests {
         );
         let fork_location = state
             .store
-            .default_workspace_location(&fork.id)
+            .default_workspace_repository(&fork.id)
             .expect("get Fork location");
         assert!(
-            update_workspace_location(
+            update_workspace_repository(
                 State(state.clone()),
                 axum::extract::Path(fork_location.id),
-                ApiJson(UpdateWorkspaceLocation {
+                ApiJson(UpdateWorkspaceRepository {
                     remote_name: None,
                     remote_branch: None,
                 }),
@@ -1076,7 +1077,7 @@ mod current_workspace_tests {
         .expect("create Fork");
         let fork_location = state
             .store
-            .default_workspace_location(&fork.id)
+            .default_workspace_repository(&fork.id)
             .expect("Fork Repository");
 
         let commit = |path: &str, name: &str, contents: &str, message: &str| {
@@ -1181,14 +1182,14 @@ mod current_workspace_tests {
             conflicted.before_head
         );
 
-        let workspace_location = state
+        let workspace_repository = state
             .store
-            .default_workspace_location(&workspace.id)
+            .default_workspace_repository(&workspace.id)
             .expect("root Workspace Repository");
         let project_before = git_head(repository.to_str().unwrap()).unwrap();
         let root_integration = start_parent_operation_impl(
             &state,
-            &workspace_location.id,
+            &workspace_repository.id,
             "integrate",
             "merge",
             "standalone",
@@ -1261,7 +1262,7 @@ mod current_workspace_tests {
         )
         .await
         .unwrap();
-        let fork_location = state.store.default_workspace_location(&fork.id).unwrap();
+        let fork_location = state.store.default_workspace_repository(&fork.id).unwrap();
         for (path, contents, message) in [
             (&fork.checkout_path, "child\n", "child conflict"),
             (&workspace.checkout_path, "parent\n", "parent conflict"),
@@ -1270,7 +1271,7 @@ mod current_workspace_tests {
             command_output(Path::new(path), "git", &["add", "shared.txt"]).unwrap();
             command_output(Path::new(path), "git", &["commit", "-m", message]).unwrap();
         }
-        let (_, Json(preflight)) = create_workspace_location_preflight_impl(
+        let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
             state.clone(),
             fork_location.id.clone(),
             CreateDeliveryPreflight {
@@ -1289,9 +1290,12 @@ mod current_workspace_tests {
             preflight_id: Some(preflight.id),
             resume_finish: false,
         };
-        let Json(paused) =
-            finish_workspace_location_impl(state.clone(), fork_location.id.clone(), input.clone())
-                .expect("pause Finish on conflict");
+        let Json(paused) = finish_workspace_repository_impl(
+            state.clone(),
+            fork_location.id.clone(),
+            input.clone(),
+        )
+        .expect("pause Finish on conflict");
         assert_eq!(paused.status, "paused");
         let operation = paused.operation.expect("linked integration");
         assert_eq!(operation.status, "conflicted");
@@ -1317,17 +1321,20 @@ mod current_workspace_tests {
         assert_eq!(completed.status, "completed");
         assert!(completed.undo_available);
 
-        let Json(awaiting) =
-            finish_workspace_location_impl(state.clone(), fork_location.id.clone(), input.clone())
-                .expect("wait for explicit Resume Finish");
+        let Json(awaiting) = finish_workspace_repository_impl(
+            state.clone(),
+            fork_location.id.clone(),
+            input.clone(),
+        )
+        .expect("wait for explicit Resume Finish");
         assert_eq!(awaiting.status, "awaiting_resume");
         let mut resume = input;
         resume.resume_finish = true;
         let Json(finished) =
-            finish_workspace_location_impl(state.clone(), fork_location.id, resume)
+            finish_workspace_repository_impl(state.clone(), fork_location.id, resume)
                 .expect("resume Finish");
         assert_eq!(finished.status, "finished");
-        assert_eq!(finished.location.delivery_status, "delivered");
+        assert_eq!(finished.repository.delivery_status, "delivered");
         assert!(
             !state
                 .store
@@ -1385,9 +1392,9 @@ mod current_workspace_tests {
         .unwrap();
         let location = state
             .store
-            .default_workspace_location(&workspace.id)
+            .default_workspace_repository(&workspace.id)
             .unwrap();
-        let (_, Json(preflight)) = create_workspace_location_preflight_impl(
+        let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
             state.clone(),
             location.id.clone(),
             CreateDeliveryPreflight {
@@ -1401,7 +1408,7 @@ mod current_workspace_tests {
                 .iter()
                 .any(|item| item.contains("uncommitted changes"))
         );
-        let error = finish_workspace_location_impl(
+        let error = finish_workspace_repository_impl(
             state.clone(),
             location.id,
             FinishWorkspace {
@@ -1477,9 +1484,9 @@ mod current_workspace_tests {
         .unwrap();
         let location = state
             .store
-            .default_workspace_location(&workspace.id)
+            .default_workspace_repository(&workspace.id)
             .unwrap();
-        let (_, Json(preflight)) = create_workspace_location_preflight_impl(
+        let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
             state.clone(),
             location.id.clone(),
             CreateDeliveryPreflight {
@@ -1488,7 +1495,7 @@ mod current_workspace_tests {
         )
         .unwrap();
         assert!(preflight.blockers.is_empty(), "{:#?}", preflight.blockers);
-        let Json(finished) = finish_workspace_location_impl(
+        let Json(finished) = finish_workspace_repository_impl(
             state.clone(),
             location.id.clone(),
             FinishWorkspace {
@@ -1504,9 +1511,9 @@ mod current_workspace_tests {
             },
         )
         .unwrap();
-        assert_eq!(finished.location.delivery_status, "pushed");
+        assert_eq!(finished.repository.delivery_status, "pushed");
         assert_eq!(
-            finished.location.close_outcome.as_deref(),
+            finished.repository.close_outcome.as_deref(),
             Some("push_branch")
         );
         let remote_head = command_output(
@@ -1613,7 +1620,7 @@ mod current_workspace_tests {
         .expect("create multi-location Workspace");
         let repositories = state
             .store
-            .workspace_locations(&workspace.id)
+            .workspace_repositories(&workspace.id)
             .expect("list Workspace repositories");
         assert_eq!(repositories.len(), 2);
         assert!(
@@ -1685,18 +1692,18 @@ mod current_workspace_tests {
         assert!(repositories.iter().all(|location| {
             associated_worktrees
                 .iter()
-                .any(|worktree| worktree.project_location_id == location.project_location_id)
+                .any(|worktree| worktree.project_repository_id == location.project_repository_id)
         }));
-        let Json(updated_location) = update_workspace_location(
+        let Json(updated_location) = update_workspace_repository(
             State(state.clone()),
             axum::extract::Path(repositories[0].id.clone()),
-            ApiJson(UpdateWorkspaceLocation {
+            ApiJson(UpdateWorkspaceRepository {
                 remote_name: None,
                 remote_branch: None,
             }),
         )
         .await
-        .expect("clear Workspace location upstream");
+        .expect("clear Workspace Repository upstream");
         assert_eq!(updated_location.delivery_mode, "local_merge");
         assert!(updated_location.remote_name.is_none());
         assert!(updated_location.remote_branch.is_none());
@@ -1712,7 +1719,7 @@ mod current_workspace_tests {
         command_output(&context, "git", &["add", "."]).unwrap();
         command_output(&context, "git", &["commit", "-m", "initial"]).unwrap();
         let Json(refreshed) =
-            refresh_project_location(State(state.clone()), axum::extract::Path(ids[2].clone()))
+            refresh_project_directory(State(state.clone()), axum::extract::Path(ids[2].clone()))
                 .await
                 .expect("refresh promoted location");
         assert_eq!(refreshed.git_status, "ready");
@@ -1818,11 +1825,11 @@ mod current_workspace_tests {
             setup_shell.cwd,
             state
                 .store
-                .workspace_locations(&workspace.id)
+                .workspace_repositories(&workspace.id)
                 .unwrap()
                 .into_iter()
                 .find(|location| {
-                    location.project_location_id
+                    location.project_repository_id
                         == state
                             .store
                             .directory_record(&second_location.id)
@@ -1840,11 +1847,11 @@ mod current_workspace_tests {
         let _ = close_session(State(state.clone()), axum::extract::Path(setup_shell.id))
             .await
             .expect("close setup Shell");
-        for location in state.store.workspace_locations(&workspace.id).unwrap() {
+        for location in state.store.workspace_repositories(&workspace.id).unwrap() {
             if let Some(checkout_path) = location.checkout_path {
                 let repository = state
                     .store
-                    .repository(&location.project_location_id)
+                    .repository(&location.project_repository_id)
                     .unwrap()
                     .source_root;
                 command_output(
@@ -1939,10 +1946,10 @@ mod current_workspace_tests {
             .unwrap()
             .repository_id
             .unwrap();
-        let repositories = state.store.workspace_locations(&workspace.id).unwrap();
+        let repositories = state.store.workspace_repositories(&workspace.id).unwrap();
         let failed = repositories
             .iter()
-            .find(|repository| repository.project_location_id == second_repository_id)
+            .find(|repository| repository.project_repository_id == second_repository_id)
             .unwrap();
         assert_eq!(failed.git_status, "failed");
         assert_eq!(failed.delivery_status, "discarded");
@@ -2006,7 +2013,7 @@ mod current_workspace_tests {
         )
         .await
         .expect("retain the same partial location set in a Fork");
-        let fork_locations = state.store.workspace_locations(&fork.id).unwrap();
+        let fork_locations = state.store.workspace_repositories(&fork.id).unwrap();
         assert_eq!(
             fork_locations
                 .iter()

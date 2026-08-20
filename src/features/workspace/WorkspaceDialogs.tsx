@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { ProjectDetail, WorkspaceLocation } from "@/domain/types";
+import type { ProjectDetail, WorkspaceRepository } from "@/domain/types";
 
 export function CreateWorkspaceDialog({
   project,
@@ -81,13 +81,13 @@ export function CreateWorkspaceDialog({
     </Dialog>
   );
 }
-export function ConfigureWorkspaceLocationDialog({
+export function ConfigureWorkspaceRepositoryDialog({
   location,
   busy,
   onOpenChange,
   onSubmit,
 }: {
-  location: WorkspaceLocation | null;
+  location: WorkspaceRepository | null;
   busy: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -99,7 +99,7 @@ export function ConfigureWorkspaceLocationDialog({
           {location?.remote_branch ? "Change" : "Set"} upstream
         </DialogTitle>
         <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          Configure the remote feature branch for {location?.location_name}.
+          Configure the remote feature branch for {location?.repository_name}.
           Base branch and delivery mode remain inherited from its Project
           repository.
         </DialogDescription>

@@ -114,7 +114,7 @@ mod tests {
             .update_directory("original", "Renamed", "Purpose", "", None, None)
             .unwrap();
         assert_eq!(store.directory("original").unwrap().name, "Renamed");
-        store.delete_project_location("original").unwrap();
+        store.delete_project_directory("original").unwrap();
         assert!(store.directory("original").is_err());
         store.create_directory(&directory("replacement")).unwrap();
         assert_eq!(store.directories("project").unwrap()[0].id, "original");

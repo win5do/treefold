@@ -21,7 +21,7 @@ pub struct SidebarWorkspace {
     #[serde(flatten)]
     pub workspace: Workspace,
     pub sessions: Vec<Session>,
-    pub repositories: Vec<WorkspaceLocation>,
+    pub repositories: Vec<WorkspaceRepository>,
     pub directories: Vec<WorkspaceDirectory>,
 }
 
@@ -74,12 +74,12 @@ pub struct Workspace {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WorkspaceLocation {
+pub struct WorkspaceRepository {
     pub id: String,
     pub workspace_id: String,
-    pub project_location_id: String,
-    pub location_name: String,
-    pub source_path: String,
+    pub project_repository_id: String,
+    pub repository_name: String,
+    pub source_root: String,
     pub access_mode: String,
     pub git_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -184,7 +184,7 @@ pub struct WorkspaceDetail {
     #[serde(flatten)]
     pub workspace: Workspace,
     pub project: Project,
-    pub repositories: Vec<WorkspaceLocation>,
+    pub repositories: Vec<WorkspaceRepository>,
     pub directories: Vec<WorkspaceDirectory>,
     pub sessions: Vec<Session>,
     pub todos: Vec<Todo>,

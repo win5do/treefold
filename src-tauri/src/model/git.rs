@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize)]
 pub struct GitWorktree {
-    pub project_location_id: String,
-    pub location_name: String,
+    pub project_repository_id: String,
+    pub repository_name: String,
     pub path: String,
     pub branch: String,
     pub head_commit: String,
@@ -137,10 +137,10 @@ pub struct GitSyncResult {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GitSyncItemResult {
-    pub project_location_id: String,
+    pub project_repository_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub workspace_location_id: Option<String>,
-    pub location_name: String,
+    pub workspace_repository_id: Option<String>,
+    pub repository_name: String,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result: Option<GitSyncResult>,

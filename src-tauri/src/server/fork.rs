@@ -161,7 +161,7 @@ pub(super) fn create_fork_impl(
                 .into(),
         ));
     }
-    let parent_locations = state.store.workspace_locations(&parent_id)?;
+    let parent_locations = state.store.workspace_repositories(&parent_id)?;
     let project = state.store.project(&parent.project_id)?;
     if project.status != "active" {
         return Err(AppError::BadRequest(
@@ -170,14 +170,14 @@ pub(super) fn create_fork_impl(
     }
     let fork_id = id();
     let project_directories = state.store.project_directories(&project.id)?;
-    let project_locations = state
+    let project_repositorys = state
         .store
         .repositories(&project.id)?
         .iter()
         .map(|repository| state.store.repository_as_directory(&repository.id))
         .collect::<Result<Vec<_>>>()?;
     let branch = choose_shared_branch(
-        &project_locations,
+        &project_repositorys,
         None,
         &format!("f-{}", input.name.trim()),
     )?;
@@ -185,17 +185,17 @@ pub(super) fn create_fork_impl(
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
     for parent_location in &parent_locations {
-        let project_location = state
+        let project_repository = state
             .store
-            .repository_as_directory(&parent_location.project_location_id)?;
+            .repository_as_directory(&parent_location.project_repository_id)?;
         let checkout_path =
-            managed_worktree_path(&state.settings, &fork_id, &parent_location.location_name)
+            managed_worktree_path(&state.settings, &fork_id, &parent_location.repository_name)
                 .to_string_lossy()
                 .into_owned();
         let base_branch = parent_location.branch.clone().unwrap_or_default();
-        let mut snapshot = git_workspace_location(
+        let mut snapshot = git_workspace_repository(
             &fork_id,
-            &project_location,
+            &project_repository,
             &timestamp,
             checkout_path.clone(),
             branch.clone(),
@@ -215,7 +215,7 @@ pub(super) fn create_fork_impl(
             snapshot.delivery_status = "discarded".into();
             snapshot.creation_error = Some(format!(
                 "parent location '{}' has no worktree{}",
-                parent_location.location_name,
+                parent_location.repository_name,
                 parent_location
                     .creation_error
                     .as_deref()
@@ -225,7 +225,7 @@ pub(super) fn create_fork_impl(
             snapshots.push(snapshot);
             continue;
         };
-        if let Err(error) = ensure_clean_workspace(parent_path, "parent Workspace location") {
+        if let Err(error) = ensure_clean_workspace(parent_path, "parent Workspace Repository") {
             snapshot.git_status = "failed".into();
             snapshot.checkout_path = None;
             snapshot.delivery_status = "discarded".into();
@@ -246,21 +246,22 @@ pub(super) fn create_fork_impl(
         };
         snapshot.forked_from_commit = Some(start_commit.clone());
         plans.push(WorkspaceWorktreePlan {
-            location: project_location,
-            workspace_location_id: snapshot.id.clone(),
+            location: project_repository,
+            workspace_repository_id: snapshot.id.clone(),
             checkout_path,
             branch: branch.clone(),
             start_ref: start_commit,
             setup_directory_id: project_directories
                 .iter()
                 .find(|directory| {
-                    directory.repository_id.as_deref() == Some(&parent_location.project_location_id)
+                    directory.repository_id.as_deref()
+                        == Some(&parent_location.project_repository_id)
                 })
                 .map(|directory| directory.id.clone())
                 .unwrap_or_default(),
             setup_workdir: state
                 .store
-                .repository(&parent_location.project_location_id)?
+                .repository(&parent_location.project_repository_id)?
                 .setup_workdir,
         });
         snapshots.push(snapshot);
@@ -296,7 +297,7 @@ pub(super) fn create_fork_impl(
     };
     state
         .store
-        .create_workspace_with_locations(&fork, &snapshots)?;
+        .create_workspace_with_repositories(&fork, &snapshots)?;
 
     let outcomes = create_workspace_worktrees(plans);
     let setup_shells = record_workspace_worktree_outcomes(&state.store, outcomes)?;

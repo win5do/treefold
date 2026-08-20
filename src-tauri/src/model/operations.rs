@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use super::{GitCommit, WorkspaceLocation};
+use super::{GitCommit, WorkspaceRepository};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeliveryPreflight {
     pub id: String,
-    pub workspace_location_id: String,
+    pub workspace_repository_id: String,
     #[serde(skip)]
     pub workspace_id: String,
     pub code_action: String,
@@ -27,7 +27,7 @@ pub struct DeliveryPreflight {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeliveryOperation {
-    pub workspace_location_id: String,
+    pub workspace_repository_id: String,
     pub workspace_id: String,
     pub phase: String,
     pub code_action: String,
@@ -101,7 +101,7 @@ pub struct ParentOperationPreview {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinishProgress {
     pub status: String,
-    pub location: WorkspaceLocation,
+    pub repository: WorkspaceRepository,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation: Option<ParentOperation>,
 }

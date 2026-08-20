@@ -749,7 +749,7 @@ try {
     "Workspace breadcrumb must not invent a Fork level",
   );
   let baseSection = await browser.$(
-    '[data-testid="workspace-locations-section"]',
+    '[data-testid="workspace-repositories-section"]',
   );
   await baseSection.waitForDisplayed({ timeout: 3_000 });
   assert.equal(
@@ -785,10 +785,10 @@ try {
     await workspaceContextDirectories.getText(),
     /fixture-documentation[\s\S]*read only/,
   );
-  const primaryWorkspaceLocation = await baseSection.$(
+  const primaryWorkspaceRepository = await baseSection.$(
     `[data-testid="workspace-location-${FIXTURE_IDS.workspacePrimaryLocation}"]`,
   );
-  const primaryWorkspaceActionsTrigger = await primaryWorkspaceLocation.$(
+  const primaryWorkspaceActionsTrigger = await primaryWorkspaceRepository.$(
     `[data-testid="workspace-location-actions-${FIXTURE_IDS.workspacePrimaryLocation}-trigger"]`,
   );
   await clickUiElement(browser, primaryWorkspaceActionsTrigger);
@@ -824,7 +824,7 @@ try {
   await upstreamDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   await browser.waitUntil(
     async () =>
-      (await primaryWorkspaceLocation.getText()).includes(
+      (await primaryWorkspaceRepository.getText()).includes(
         "origin/feature/updated-fixture",
       ),
     {
@@ -848,7 +848,7 @@ try {
     )
   ).click();
   await browser.waitUntil(
-    async () => /upstream\s+—/.test(await primaryWorkspaceLocation.getText()),
+    async () => /upstream\s+—/.test(await primaryWorkspaceRepository.getText()),
     {
       timeout: 3_000,
       timeoutMsg: "cleared repository upstream did not refresh",
@@ -1201,7 +1201,7 @@ try {
     },
   );
   await createdCodexSidebarRow.waitForExist({ reverse: true, timeout: 3_000 });
-  baseSection = await browser.$('[data-testid="workspace-locations-section"]');
+  baseSection = await browser.$('[data-testid="workspace-repositories-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
 
   await createSessionFromSidebar(
@@ -1258,7 +1258,7 @@ try {
       timeoutMsg: "closing a Workspace Shell did not return to the Workspace",
     },
   );
-  baseSection = await browser.$('[data-testid="workspace-locations-section"]');
+  baseSection = await browser.$('[data-testid="workspace-repositories-section"]');
   await baseSection.waitForDisplayed({ timeout: 3_000 });
   await browser.waitUntil(
     async () =>
@@ -2269,8 +2269,8 @@ try {
   );
   harness.setNextBulkSyncResults([
     {
-      project_location_id: FIXTURE_IDS.primaryRepository,
-      location_name: "fixture-repository",
+      project_repository_id: FIXTURE_IDS.primaryRepository,
+      repository_name: "fixture-repository",
       status: "failed",
       error: "remote rejected the update",
     },
@@ -2436,7 +2436,7 @@ try {
 
   await browser.url(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.fork}`);
   await browser
-    .$('[data-testid="workspace-locations-section"]')
+    .$('[data-testid="workspace-repositories-section"]')
     .waitForDisplayed({ timeout: 3_000 });
   assert.equal(
     await (await browser.$('[data-testid="breadcrumb-project"]')).getText(),

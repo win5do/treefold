@@ -15,7 +15,7 @@ import type {
   Session,
   Workspace,
   WorkspaceDetail,
-  WorkspaceLocation,
+  WorkspaceRepository,
 } from "@/domain/types";
 
 export const workspacesApi = {
@@ -49,16 +49,16 @@ export const workspacesApi = {
     request<GitSyncItemResult[]>(`/api/workspaces/${id}/git/${action}-all`, {
       method: "POST",
     }),
-  updateLocation: (id: string, json: unknown) =>
-    request<WorkspaceLocation>(`/api/workspace-repositories/${id}`, {
+  updateRepository: (id: string, json: unknown) =>
+    request<WorkspaceRepository>(`/api/workspace-repositories/${id}`, {
       method: "PATCH",
       json,
     }),
-  syncLocation: (id: string, action: "pull" | "push") =>
+  syncRepository: (id: string, action: "pull" | "push") =>
     request(`/api/workspace-repositories/${id}/git/${action}`, {
       method: "POST",
     }),
-  finishLocation: (id: string, json: unknown) =>
+  finishRepository: (id: string, json: unknown) =>
     request<FinishProgress>(`/api/workspace-repositories/${id}/finish`, {
       method: "POST",
       json,
@@ -100,11 +100,11 @@ export const workspacesApi = {
       `/api/workspace-repositories/${id}/delivery-preflight`,
       { method: "POST", json: { code_action: codeAction }, signal },
     ),
-  locationHistory: (id: string, signal?: AbortSignal) =>
+  repositoryHistory: (id: string, signal?: AbortSignal) =>
     request<GitHistory>(`/api/workspace-repositories/${id}/git-history`, {
       signal,
     }),
-  compareLocation: (
+  compareRepository: (
     id: string,
     input: { start_commit: string; end_commit: string; commit_count: number },
     signal?: AbortSignal,

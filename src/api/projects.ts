@@ -12,7 +12,7 @@ import type {
   WorktreeDeleteOperation,
   Project,
   ProjectDetail,
-  ProjectLocationInspection,
+  ProjectDirectoryInspection,
   ProjectRepository,
   ProjectSummary,
   Session,
@@ -52,12 +52,12 @@ export const projectsApi = {
       json,
     }),
   inspectLocation: (path: string, projectId?: string, signal?: AbortSignal) =>
-    request<ProjectLocationInspection>("/api/project-directories/inspect", {
+    request<ProjectDirectoryInspection>("/api/project-directories/inspect", {
       method: "POST",
       json: { path, project_id: projectId },
       signal,
     }),
-  updateLocation: (id: string, json: unknown) =>
+  updateDirectory: (id: string, json: unknown) =>
     request<Directory>(`/api/project-directories/${id}`, {
       method: "PATCH",
       json,
@@ -137,7 +137,7 @@ export const projectsApi = {
     request<GitSyncItemResult[]>(`/api/projects/${id}/git/${action}-all`, {
       method: "POST",
     }),
-  syncLocation: (id: string, action: "pull" | "push") =>
+  syncRepository: (id: string, action: "pull" | "push") =>
     request(`/api/project-repositories/${id}/git/${action}`, {
       method: "POST",
     }),

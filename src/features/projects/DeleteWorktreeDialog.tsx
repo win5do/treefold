@@ -53,7 +53,7 @@ export function DeleteWorktreeDialog({
     setError("");
     void projectsApi
       .precheckWorktreeDeletion(
-        target.project_location_id,
+        target.project_repository_id,
         target,
         controller.signal,
       )

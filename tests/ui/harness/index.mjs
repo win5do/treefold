@@ -362,7 +362,7 @@ async function startFixtureApi() {
         return;
       }
       const location = {
-        id: `location-added-${detail.locations.length}`,
+        id: `location-added-${detail.directories.length}`,
         project_id: projectLocationsMatch[1],
         name,
         description: input.description ?? "",
@@ -402,7 +402,7 @@ async function startFixtureApi() {
       } else {
         location.external_path = cleanPath;
       }
-      detail.locations.push(location);
+      detail.directories.push(location);
       locationRequests.push({
         projectId: projectLocationsMatch[1],
         path: cleanPath,
@@ -637,7 +637,7 @@ async function startFixtureApi() {
     if (request.method === "POST" && projectLocationSyncMatch) {
       syncRequests.push(pathname);
       sendJson(response, 200, {
-        scope: "project_location",
+        scope: "project_repository",
         action: projectLocationSyncMatch[2],
         branch: "main",
         remote: "origin",
@@ -654,7 +654,7 @@ async function startFixtureApi() {
     if (request.method === "POST" && workspaceLocationSyncMatch) {
       syncRequests.push(pathname);
       sendJson(response, 200, {
-        scope: "workspace_location",
+        scope: "workspace_repository",
         action: workspaceLocationSyncMatch[2],
         branch: "treefold/w-ui-fixture",
         remote: "origin",
@@ -671,11 +671,11 @@ async function startFixtureApi() {
     if (request.method === "PATCH" && workspaceLocationMatch) {
       const input = await readJson(request);
       const location = Object.values(fixture.workspaceDetails)
-        .flatMap((detail) => detail.repositories ?? detail.locations)
+        .flatMap((detail) => detail.repositories)
         .find((item) => item.id === workspaceLocationMatch[1]);
       if (!location)
         return sendJson(response, 404, {
-          error: "Workspace location not found",
+          error: "Workspace Repository not found",
         });
       location.remote_name = input.remote_name || undefined;
       location.remote_branch = input.remote_branch || undefined;
@@ -701,15 +701,15 @@ async function startFixtureApi() {
       }
       sendJson(response, 200, [
         {
-          project_location_id:
+          project_repository_id:
             fixture.projectDetails[FIXTURE_IDS.project].default_location_id,
-          location_name: "fixture-repository",
+          repository_name: "fixture-repository",
           status: "success",
           result: {
             scope:
               syncMatch[1] === "projects"
-                ? "project_location"
-                : "workspace_location",
+                ? "project_repository"
+                : "workspace_repository",
             action: syncMatch[3],
             branch: "main",
             remote: "origin",
@@ -727,7 +727,7 @@ async function startFixtureApi() {
     );
     if (request.method === "POST" && locationRefreshMatch) {
       const location = Object.values(fixture.projectDetails)
-        .flatMap((detail) => detail.locations)
+        .flatMap((detail) => detail.directories)
         .find((item) => item.id === locationRefreshMatch[1]);
       if (!location)
         return sendJson(response, 404, { error: "Location not found" });

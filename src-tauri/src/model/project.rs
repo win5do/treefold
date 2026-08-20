@@ -29,7 +29,7 @@ pub struct Project {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProjectLocation {
+pub struct Directory {
     pub id: String,
     pub project_id: String,
     pub name: String,
@@ -68,8 +68,6 @@ pub struct ProjectLocation {
     #[serde(skip)]
     pub dirty: bool,
 }
-
-pub type Directory = ProjectLocation;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProjectRepository {

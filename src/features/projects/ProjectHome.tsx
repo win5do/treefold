@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { RecordActionMenu } from "@/features/app/RecordActions";
 import {
-  ProjectLocationTreeRow,
+  DirectoryTreeRow,
   ProjectRepositoryTreeRow,
 } from "@/features/projects/ProjectRepositoryTree";
 import { Badge } from "@/components/ui/badge";
@@ -121,7 +121,7 @@ export function ProjectHome({
                   repository={repository}
                   directories={scopes}
                   worktrees={project.worktrees.filter(
-                    (item) => item.project_location_id === repository.id,
+                    (item) => item.project_repository_id === repository.id,
                   )}
                   busy={busy}
                   readOnly={project.status === "archived"}
@@ -155,7 +155,7 @@ export function ProjectHome({
             </p>
             <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
               {contextDirectories.map((directory) => (
-                <ProjectLocationTreeRow
+                <DirectoryTreeRow
                   key={directory.id}
                   directory={directory}
                   worktrees={[]}

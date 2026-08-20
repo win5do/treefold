@@ -41,13 +41,13 @@ pub(super) fn sync_project_session_workspace(
             "Project has no location for a Session".into(),
         ));
     }
-    let mut project_locations = state
+    let mut project_repositorys = state
         .store
         .repositories(project_id)?
         .iter()
         .map(|repository| state.store.repository_as_directory(&repository.id))
         .collect::<Result<Vec<_>>>()?;
-    for location in &mut project_locations {
+    for location in &mut project_repositorys {
         refresh_location_observation(location)?;
     }
     let timestamp = now();
@@ -83,7 +83,7 @@ pub(super) fn sync_project_session_workspace(
         integrated_commit: None,
         closed_at: None,
     };
-    let locations = project_locations
+    let locations = project_repositorys
         .iter()
         .map(|location| project_session_location(&workspace.id, location, &timestamp))
         .collect::<Vec<_>>();
@@ -95,16 +95,16 @@ pub(super) fn sync_project_session_workspace(
 
 pub(super) fn project_session_location(
     workspace_id: &str,
-    location: &ProjectLocation,
+    location: &Directory,
     timestamp: &str,
-) -> WorkspaceLocation {
+) -> WorkspaceRepository {
     let tracked_git = location.git_common_dir.is_some();
-    WorkspaceLocation {
+    WorkspaceRepository {
         id: format!("{workspace_id}-{}", location.id),
         workspace_id: workspace_id.into(),
-        project_location_id: location.id.clone(),
-        location_name: location.name.clone(),
-        source_path: location.path.clone(),
+        project_repository_id: location.id.clone(),
+        repository_name: location.name.clone(),
+        source_root: location.path.clone(),
         access_mode: if tracked_git {
             "read_write"
         } else {
@@ -249,7 +249,7 @@ pub(super) async fn create_session_for_workspace(
     {
         return Err(AppError::BadRequest(format!(
             "Workspace Repository '{}' is unavailable: {}",
-            repository.location_name,
+            repository.repository_name,
             repository
                 .creation_error
                 .as_deref()
@@ -276,7 +276,7 @@ pub(super) async fn create_session_for_workspace(
         let root = repository
             .checkout_path
             .clone()
-            .unwrap_or_else(|| repository.source_path.clone());
+            .unwrap_or_else(|| repository.source_root.clone());
         if repository.git_status == "ready"
             && seen_repository_roots.insert(normalized_path(&root))
             && normalized_path(&root) != normalized_path(&cwd)
@@ -426,7 +426,7 @@ pub(super) async fn restart_session(
     if session.kind == "codex" {
         session.additional_directories = state
             .store
-            .workspace_locations(&workspace.id)?
+            .workspace_repositories(&workspace.id)?
             .into_iter()
             .filter(|location| {
                 location.access_mode == "read_write"
@@ -435,10 +435,10 @@ pub(super) async fn restart_session(
                         location
                             .checkout_path
                             .as_deref()
-                            .unwrap_or(&location.source_path),
+                            .unwrap_or(&location.source_root),
                     ) != normalized_path(&session.cwd)
             })
-            .map(|location| location.checkout_path.unwrap_or(location.source_path))
+            .map(|location| location.checkout_path.unwrap_or(location.source_root))
             .collect();
         state
             .store

@@ -14,8 +14,8 @@ pub(super) struct StartParentOperation {
 #[derive(Clone)]
 pub(super) struct ParentOperationContext {
     workspace: Workspace,
-    location: WorkspaceLocation,
-    repository: ProjectLocation,
+    location: WorkspaceRepository,
+    repository: Directory,
     source_path: String,
     source_branch: String,
     source_head: String,
@@ -34,7 +34,7 @@ pub(super) async fn get_parent_operation_preview(
     validate_parent_direction(&query.direction)?;
     let common = state
         .store
-        .repository(&state.store.workspace_location(&id)?.project_location_id)?
+        .repository(&state.store.workspace_repository(&id)?.project_repository_id)?
         .git_common_dir;
     blocking_git_operation_for(common, move || {
         parent_operation_preview_impl(&state, &id, &query.direction).map(Json)
@@ -59,7 +59,7 @@ pub(super) async fn start_parent_operation(
     validate_parent_strategy(&query.direction, &strategy)?;
     let common = state
         .store
-        .repository(&state.store.workspace_location(&id)?.project_location_id)?
+        .repository(&state.store.workspace_repository(&id)?.project_repository_id)?
         .git_common_dir;
     blocking_git_operation_for(common, move || {
         start_parent_operation_impl(&state, &id, &query.direction, &strategy, "standalone", None)
@@ -116,9 +116,9 @@ pub(super) async fn resolve_parent_operation_with_codex(
                 .is_some_and(|repository_id| {
                     state
                         .store
-                        .workspace_location(repository_id)
+                        .workspace_repository(repository_id)
                         .is_ok_and(|location| {
-                            location.project_location_id == operation.source_repository_id
+                            location.project_repository_id == operation.source_repository_id
                         })
                 })
         })
@@ -232,7 +232,7 @@ pub(super) fn parent_operation_context(
     direction: &str,
 ) -> Result<ParentOperationContext> {
     validate_parent_direction(direction)?;
-    let location = state.store.workspace_location(id)?;
+    let location = state.store.workspace_repository(id)?;
     let workspace = state.store.workspace(&location.workspace_id)?;
     if workspace.status != "active"
         || location.access_mode != "read_write"
@@ -244,15 +244,15 @@ pub(super) fn parent_operation_context(
     }
     let repository = state
         .store
-        .repository_as_directory(&location.project_location_id)?;
-    let source_path = workspace_location_git_path(&location)?.to_owned();
+        .repository_as_directory(&location.project_repository_id)?;
+    let source_path = workspace_repository_git_path(&location)?.to_owned();
     let source_branch = location
         .branch
         .clone()
         .ok_or_else(|| AppError::BadRequest("Workspace Repository has no branch".into()))?;
     let source_head = git_head(&source_path)?;
     let (parent_path, parent_branch) =
-        workspace_location_delivery_target(state, &workspace, &location)?;
+        workspace_repository_delivery_target(state, &workspace, &location)?;
     let parent_head = git_head(&parent_path)?;
     let (target_scope, target_workspace_id) = if direction == "update" {
         (
@@ -318,7 +318,7 @@ pub(super) fn parent_operation_preview_impl(
         blockers.push("Parent target already has a Git operation in progress".into());
     }
     if let Some(active) = state.store.active_parent_operation_for_target(
-        &context.location.project_location_id,
+        &context.location.project_repository_id,
         &context.target_path,
     )? && operation
         .as_ref()
@@ -348,7 +348,7 @@ pub(super) fn parent_operation_preview_impl(
     )?;
     Ok(ParentOperationPreview {
         direction: direction.into(),
-        repository_name: context.location.location_name,
+        repository_name: context.location.repository_name,
         source_path: context.source_path,
         source_branch: context.source_branch,
         target_scope: context.target_scope,
@@ -406,7 +406,7 @@ pub(super) fn start_parent_operation_impl(
         ));
     }
     if let Some(active) = state.store.active_parent_operation_for_target(
-        &context.location.project_location_id,
+        &context.location.project_repository_id,
         &context.target_path,
     )? {
         return Err(AppError::BadRequest(format!(
@@ -437,7 +437,7 @@ pub(super) fn start_parent_operation_impl(
         direction: direction.into(),
         strategy: strategy.into(),
         origin: origin.into(),
-        source_repository_id: context.location.project_location_id,
+        source_repository_id: context.location.project_repository_id,
         source_path: context.source_path,
         source_branch: context.source_branch,
         target_scope: context.target_scope,

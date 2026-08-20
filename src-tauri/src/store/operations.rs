@@ -21,7 +21,7 @@ pub(crate) struct ParentOperationUpdate<'a> {
 
 impl Store {
     pub fn set_delivery_status(&self, id: &str, status: &str) -> Result<()> {
-        let location_id = self.resolve_workspace_location_id(id)?;
+        let location_id = self.resolve_workspace_repository_id(id)?;
         self.0.lock().execute(
             "UPDATE workspace_repositories SET delivery_status=?,updated_at=? WHERE id=?",
             params![status, now(), location_id],
@@ -36,7 +36,7 @@ impl Store {
         remote_branch: Option<&str>,
         delivery_mode: &str,
     ) -> Result<()> {
-        let location_id = self.resolve_workspace_location_id(id)?;
+        let location_id = self.resolve_workspace_repository_id(id)?;
         let changed = self.0.lock().execute("UPDATE workspace_repositories SET remote_name=?,remote_branch=?,delivery_mode=?,updated_at=? WHERE id=?", params![remote_name,remote_branch,delivery_mode,now(),location_id])?;
         if changed == 0 {
             return Err(AppError::NotFound);
@@ -45,12 +45,12 @@ impl Store {
     }
 
     pub fn delivery_operation(&self, workspace_id: &str) -> Result<Option<DeliveryOperation>> {
-        let location_id = self.resolve_workspace_location_id(workspace_id)?;
+        let location_id = self.resolve_workspace_repository_id(workspace_id)?;
         let db = self.0.lock();
         Ok(db
             .query_row(
                 &format!(
-                    "SELECT {SETTLEMENT_OPERATION_COLUMNS} FROM delivery_operations WHERE workspace_repository_id=?"
+                    "SELECT {DELIVERY_OPERATION_COLUMNS} FROM delivery_operations WHERE workspace_repository_id=?"
                 ),
                 [location_id],
                 delivery_operation_row,
@@ -61,9 +61,9 @@ impl Store {
     pub fn create_delivery_operation(&self, operation: &DeliveryOperation) -> Result<()> {
         self.0.lock().execute(
             "INSERT INTO delivery_operations(workspace_repository_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at)
-             VALUES(:workspace_location_id,:phase,:code_action,:todo_action,:push_after_merge,:keep_session_history,:delete_worktree,:delete_branch,:commit_message,:before_head,:source_head,:target_head,:integrated_commit,:error,:started_at,:updated_at)",
+             VALUES(:workspace_repository_id,:phase,:code_action,:todo_action,:push_after_merge,:keep_session_history,:delete_worktree,:delete_branch,:commit_message,:before_head,:source_head,:target_head,:integrated_commit,:error,:started_at,:updated_at)",
             named_params! {
-                ":workspace_location_id": operation.workspace_location_id,
+                ":workspace_repository_id": operation.workspace_repository_id,
                 ":phase": operation.phase,
                 ":code_action": operation.code_action,
                 ":todo_action": operation.todo_action,
@@ -92,7 +92,7 @@ impl Store {
         target_head: Option<&str>,
         integrated_commit: Option<&str>,
     ) -> Result<()> {
-        let location_id = self.resolve_workspace_location_id(workspace_id)?;
+        let location_id = self.resolve_workspace_repository_id(workspace_id)?;
         self.0.lock().execute(
             "UPDATE delivery_operations SET phase=?,source_head=COALESCE(?,source_head),target_head=COALESCE(?,target_head),integrated_commit=COALESCE(?,integrated_commit),error='',updated_at=? WHERE workspace_repository_id=?",
             params![phase, source_head, target_head, integrated_commit, now(), location_id],
@@ -101,7 +101,7 @@ impl Store {
     }
 
     pub fn set_delivery_error(&self, workspace_id: &str, error: &str) -> Result<()> {
-        let location_id = self.resolve_workspace_location_id(workspace_id)?;
+        let location_id = self.resolve_workspace_repository_id(workspace_id)?;
         self.0.lock().execute(
             "UPDATE delivery_operations SET error=?,updated_at=? WHERE workspace_repository_id=?",
             params![error, now(), location_id],
@@ -247,10 +247,10 @@ impl Store {
     pub fn create_delivery_preflight(&self, preflight: &DeliveryPreflight) -> Result<()> {
         self.0.lock().execute(
             "INSERT INTO delivery_preflights(id,workspace_repository_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at)
-             VALUES(:id,:workspace_location_id,:code_action,:source_head,:target_head,:target_branch,:source_status,:source_dirty,:target_dirty,:ahead,:behind,:changed_files,:commits,:diff_stat,:blockers,:warnings,:created_at)",
+             VALUES(:id,:workspace_repository_id,:code_action,:source_head,:target_head,:target_branch,:source_status,:source_dirty,:target_dirty,:ahead,:behind,:changed_files,:commits,:diff_stat,:blockers,:warnings,:created_at)",
             named_params! {
                 ":id": preflight.id,
-                ":workspace_location_id": preflight.workspace_location_id,
+                ":workspace_repository_id": preflight.workspace_repository_id,
                 ":code_action": preflight.code_action,
                 ":source_head": preflight.source_head,
                 ":target_head": preflight.target_head,
@@ -274,19 +274,19 @@ impl Store {
     pub fn delivery_preflight(&self, id: &str) -> Result<DeliveryPreflight> {
         let db = self.0.lock();
         Ok(db.query_row(
-            "SELECT id,workspace_repository_id AS workspace_location_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at FROM delivery_preflights WHERE id=?",
+            "SELECT id,workspace_repository_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at FROM delivery_preflights WHERE id=?",
             [id],
             delivery_preflight_row,
         )?)
     }
 }
 
-const SETTLEMENT_OPERATION_COLUMNS: &str = "workspace_repository_id AS workspace_location_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
+const DELIVERY_OPERATION_COLUMNS: &str = "workspace_repository_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
 
 fn delivery_operation_row(r: &Row<'_>) -> rusqlite::Result<DeliveryOperation> {
     Ok(DeliveryOperation {
-        workspace_location_id: r.get("workspace_location_id")?,
-        workspace_id: r.get("workspace_location_id")?,
+        workspace_repository_id: r.get("workspace_repository_id")?,
+        workspace_id: r.get("workspace_repository_id")?,
         phase: r.get("phase")?,
         code_action: r.get("code_action")?,
         todo_action: r.get("todo_action")?,
@@ -342,8 +342,8 @@ fn parent_operation_row(r: &Row<'_>) -> rusqlite::Result<ParentOperation> {
 fn delivery_preflight_row(r: &Row<'_>) -> rusqlite::Result<DeliveryPreflight> {
     Ok(DeliveryPreflight {
         id: r.get("id")?,
-        workspace_location_id: r.get("workspace_location_id")?,
-        workspace_id: r.get("workspace_location_id")?,
+        workspace_repository_id: r.get("workspace_repository_id")?,
+        workspace_id: r.get("workspace_repository_id")?,
         code_action: r.get("code_action")?,
         source_head: r.get("source_head")?,
         target_head: r.get("target_head")?,

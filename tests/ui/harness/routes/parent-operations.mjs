@@ -20,14 +20,14 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }) {
         ).searchParams.get("direction");
         const locationId = previewMatch[1];
         const location = Object.values(fixture.workspaceDetails)
-          .flatMap((detail) => detail.repositories ?? detail.locations)
+          .flatMap((detail) => detail.repositories)
           .find((item) => item.id === locationId);
         const operation = operations.get(`${locationId}:${direction}`);
         if (request.method === "GET") {
           requests.push(`GET ${locationId}:${direction}`);
           sendJson(response, 200, {
             direction,
-            repository_name: location?.location_name ?? "fixture-repository",
+            repository_name: location?.repository_name ?? "fixture-repository",
             source_path: location?.checkout_path ?? "/tmp/source",
             source_branch: location?.branch ?? "feature/ui-fixture",
             target_scope:

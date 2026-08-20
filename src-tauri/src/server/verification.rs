@@ -1,14 +1,15 @@
 use super::*;
 
-pub(super) async fn create_workspace_location_preflight(
+pub(super) async fn create_workspace_repository_preflight(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDeliveryPreflight>,
 ) -> Result<(StatusCode, Json<DeliveryPreflight>)> {
-    blocking_git_operation(move || create_workspace_location_preflight_impl(state, id, input)).await
+    blocking_git_operation(move || create_workspace_repository_preflight_impl(state, id, input))
+        .await
 }
 
-pub(super) fn create_workspace_location_preflight_impl(
+pub(super) fn create_workspace_repository_preflight_impl(
     state: AppState,
     id: String,
     input: CreateDeliveryPreflight,
@@ -16,7 +17,7 @@ pub(super) fn create_workspace_location_preflight_impl(
     if !["local_merge", "push_branch", "keep"].contains(&input.code_action.as_str()) {
         return Err(AppError::BadRequest("invalid code action".into()));
     }
-    let location = state.store.workspace_location(&id)?;
+    let location = state.store.workspace_repository(&id)?;
     let workspace = state.store.workspace(&location.workspace_id)?;
     if workspace.kind == "fork" && input.code_action == "push_branch" {
         return Err(AppError::BadRequest(
@@ -24,17 +25,17 @@ pub(super) fn create_workspace_location_preflight_impl(
                 .into(),
         ));
     }
-    let source_path = workspace_location_git_path(&location)?;
+    let source_path = workspace_repository_git_path(&location)?;
     let source_branch = location
         .branch
         .as_deref()
-        .ok_or_else(|| AppError::BadRequest("Workspace location has no branch".into()))?;
-    ensure_checked_out_branch(source_path, source_branch, "Workspace location")?;
+        .ok_or_else(|| AppError::BadRequest("Workspace Repository has no branch".into()))?;
+    ensure_checked_out_branch(source_path, source_branch, "Workspace Repository")?;
     let source_head = git_head(source_path)?;
     let source_status = command_output(Path::new(source_path), "git", &["status", "--porcelain"])
         .map_err(AppError::BadRequest)?;
     let (target_path, local_target_branch) =
-        workspace_location_delivery_target(&state, &workspace, &location)?;
+        workspace_repository_delivery_target(&state, &workspace, &location)?;
     let local_target_head = command_output(
         Path::new(&target_path),
         "git",
@@ -43,10 +44,10 @@ pub(super) fn create_workspace_location_preflight_impl(
     .map_err(AppError::BadRequest)?;
     let (target_head, target_branch, comparison_head) = if input.code_action == "push_branch" {
         let remote = location.remote_name.as_deref().ok_or_else(|| {
-            AppError::BadRequest("Workspace location has no remote configured".into())
+            AppError::BadRequest("Workspace Repository has no remote configured".into())
         })?;
         let remote_branch = location.remote_branch.as_deref().ok_or_else(|| {
-            AppError::BadRequest("Workspace location has no remote branch configured".into())
+            AppError::BadRequest("Workspace Repository has no remote branch configured".into())
         })?;
         let remote_head = remote_branch_head(source_path, remote, remote_branch)?;
         if remote_head.is_some() {
@@ -154,7 +155,7 @@ pub(super) fn create_workspace_location_preflight_impl(
     let target_dirty = !target_status.is_empty();
     let preflight = DeliveryPreflight {
         id: id_for_operation(),
-        workspace_location_id: location.id.clone(),
+        workspace_repository_id: location.id.clone(),
         workspace_id: workspace.id,
         code_action: input.code_action,
         source_head,
@@ -210,9 +211,9 @@ pub(super) fn create_delivery_preflight_impl(
     id: &str,
     input: &CreateDeliveryPreflight,
 ) -> Result<DeliveryPreflight> {
-    let location = state.store.default_workspace_location(id)?;
+    let location = state.store.default_workspace_repository(id)?;
     let (_, Json(preflight)) =
-        create_workspace_location_preflight_impl(state.clone(), location.id, input.clone())?;
+        create_workspace_repository_preflight_impl(state.clone(), location.id, input.clone())?;
     Ok(preflight)
 }
 
@@ -227,8 +228,8 @@ pub(super) async fn validate_preflight_snapshot(
         AppError::BadRequest("run delivery preflight before closing this Workspace".into())
     })?;
     let preflight = state.store.delivery_preflight(preflight_id)?;
-    let default_location_id = state.store.default_workspace_location(&workspace.id)?.id;
-    if preflight.workspace_location_id != default_location_id
+    let default_location_id = state.store.default_workspace_repository(&workspace.id)?.id;
+    if preflight.workspace_repository_id != default_location_id
         || preflight.code_action != input.code_action
     {
         return Err(AppError::BadRequest(

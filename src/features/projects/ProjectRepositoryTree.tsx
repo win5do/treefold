@@ -43,7 +43,7 @@ function deliveryStrategyLabel(mode?: ProjectRepository["delivery_mode"]) {
   return "push feature branch";
 }
 
-export function ProjectLocationTreeRow({
+export function DirectoryTreeRow({
   directory,
   scopes = [],
   worktrees,
@@ -296,7 +296,7 @@ export function ProjectLocationTreeRow({
             <div className="ml-5 divide-y divide-border border-l border-border">
               {orderedWorktrees.map((item) => (
                 <div
-                  key={`${item.project_location_id}:${item.path}`}
+                  key={`${item.project_repository_id}:${item.path}`}
                   data-testid="project-worktree-row"
                   data-project-location-id={directory.id}
                   className="flex min-w-0 items-center gap-3 py-3 pl-5"

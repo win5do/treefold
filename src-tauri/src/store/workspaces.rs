@@ -29,7 +29,7 @@ impl Store {
     pub fn sync_project_session_workspace(
         &self,
         workspace: &Workspace,
-        repositories: &[WorkspaceLocation],
+        repositories: &[WorkspaceRepository],
     ) -> Result<()> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
@@ -83,10 +83,10 @@ impl Store {
         Ok(workspace)
     }
 
-    pub fn create_workspace_with_locations(
+    pub fn create_workspace_with_repositories(
         &self,
         workspace: &Workspace,
-        repositories: &[WorkspaceLocation],
+        repositories: &[WorkspaceRepository],
     ) -> Result<()> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
@@ -129,19 +129,15 @@ impl Store {
         Ok(())
     }
 
-    pub fn workspace_locations(&self, workspace_id: &str) -> Result<Vec<WorkspaceLocation>> {
+    pub fn workspace_repositories(&self, workspace_id: &str) -> Result<Vec<WorkspaceRepository>> {
         let db = self.0.lock();
         let mut statement = db.prepare(&format!(
-            "SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories WHERE workspace_id=? ORDER BY repository_name"
+            "SELECT {WORKSPACE_REPOSITORY_COLUMNS} FROM workspace_repositories WHERE workspace_id=? ORDER BY repository_name"
         ))?;
         let values = statement
-            .query_map([workspace_id], workspace_location_row)?
+            .query_map([workspace_id], workspace_repository_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
-    }
-
-    pub fn workspace_repositories(&self, workspace_id: &str) -> Result<Vec<WorkspaceLocation>> {
-        self.workspace_locations(workspace_id)
     }
 
     pub fn workspace_directories(&self, workspace_id: &str) -> Result<Vec<WorkspaceDirectory>> {
@@ -157,20 +153,18 @@ impl Store {
         Ok(values)
     }
 
-    pub fn workspace_location(&self, id: &str) -> Result<WorkspaceLocation> {
+    pub fn workspace_repository(&self, id: &str) -> Result<WorkspaceRepository> {
         let db = self.0.lock();
         Ok(db.query_row(
-            &format!("SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories WHERE id=?"),
+            &format!(
+                "SELECT {WORKSPACE_REPOSITORY_COLUMNS} FROM workspace_repositories WHERE id=?"
+            ),
             [id],
-            workspace_location_row,
+            workspace_repository_row,
         )?)
     }
 
-    pub fn workspace_repository(&self, id: &str) -> Result<WorkspaceLocation> {
-        self.workspace_location(id)
-    }
-
-    pub fn set_workspace_location_creation_result(
+    pub fn set_workspace_repository_creation_result(
         &self,
         id: &str,
         git_status: &str,
@@ -193,7 +187,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn set_workspace_location_creation_error(&self, id: &str, error: &str) -> Result<()> {
+    pub fn set_workspace_repository_creation_error(&self, id: &str, error: &str) -> Result<()> {
         let changed = self.0.lock().execute(
             "UPDATE workspace_repositories SET creation_error=?,updated_at=? WHERE id=?",
             params![error, now(), id],
@@ -204,10 +198,10 @@ impl Store {
         Ok(())
     }
 
-    pub fn workspace_locations_for_project_location(
+    pub fn workspace_repositories_for_project_repository(
         &self,
         project_id: &str,
-    ) -> Result<Vec<WorkspaceLocation>> {
+    ) -> Result<Vec<WorkspaceRepository>> {
         let db = self.0.lock();
         let repository_id: Option<String> = db
             .query_row(
@@ -222,25 +216,25 @@ impl Store {
             return Ok(Vec::new());
         };
         let mut statement = db.prepare(&format!(
-            "SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories WHERE project_repository_id=? AND workspace_id IN (SELECT id FROM workspaces WHERE status='active') ORDER BY created_at"
+            "SELECT {WORKSPACE_REPOSITORY_COLUMNS} FROM workspace_repositories WHERE project_repository_id=? AND workspace_id IN (SELECT id FROM workspaces WHERE status='active') ORDER BY created_at"
         ))?;
         let values = statement
-            .query_map([repository_id], workspace_location_row)?
+            .query_map([repository_id], workspace_repository_row)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(values)
     }
 
-    pub fn default_workspace_location(&self, workspace_id: &str) -> Result<WorkspaceLocation> {
+    pub fn default_workspace_repository(&self, workspace_id: &str) -> Result<WorkspaceRepository> {
         let db = self.0.lock();
         Ok(db.query_row(
-            &format!("SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories
+            &format!("SELECT {WORKSPACE_REPOSITORY_COLUMNS} FROM workspace_repositories
              WHERE workspace_id=? ORDER BY git_status='ready' DESC,
              project_repository_id=(SELECT d.repository_id FROM workspaces w JOIN projects p ON p.id=w.project_id LEFT JOIN project_directories d ON d.id=p.default_directory_id WHERE w.id=workspace_repositories.workspace_id) DESC LIMIT 1"),
-            [workspace_id], workspace_location_row,
+            [workspace_id], workspace_repository_row,
         )?)
     }
 
-    pub(super) fn resolve_workspace_location_id(
+    pub(super) fn resolve_workspace_repository_id(
         &self,
         workspace_or_repository_id: &str,
     ) -> Result<String> {
@@ -293,7 +287,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn finish_workspace_location(
+    pub fn finish_workspace_repository(
         &self,
         id: &str,
         delivery_status: &str,
@@ -385,16 +379,16 @@ pub(super) fn workspace_row(row: &Row<'_>) -> rusqlite::Result<Workspace> {
     })
 }
 
-pub(super) const WORKSPACE_LOCATION_COLUMNS: &str = "id,workspace_id,project_repository_id AS project_location_id,repository_name AS location_name,source_root AS source_path,'read_write' AS access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
+pub(super) const WORKSPACE_REPOSITORY_COLUMNS: &str = "id,workspace_id,project_repository_id,repository_name,source_root,'read_write' AS access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_mode,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
 pub(super) const WORKSPACE_DIRECTORY_COLUMNS: &str = "wd.id,wd.workspace_id,wd.project_directory_id,wd.workspace_repository_id,wd.name,wd.description,wd.relative_path,wd.external_path,wd.access_mode,wd.status,wd.created_at,wd.updated_at,wr.checkout_path,wr.source_root,(SELECT kind FROM workspaces WHERE id=wd.workspace_id) AS workspace_kind";
 
-pub(super) fn workspace_location_row(row: &Row<'_>) -> rusqlite::Result<WorkspaceLocation> {
-    Ok(WorkspaceLocation {
+pub(super) fn workspace_repository_row(row: &Row<'_>) -> rusqlite::Result<WorkspaceRepository> {
+    Ok(WorkspaceRepository {
         id: row.get("id")?,
         workspace_id: row.get("workspace_id")?,
-        project_location_id: row.get("project_location_id")?,
-        location_name: row.get("location_name")?,
-        source_path: row.get("source_path")?,
+        project_repository_id: row.get("project_repository_id")?,
+        repository_name: row.get("repository_name")?,
+        source_root: row.get("source_root")?,
         access_mode: row.get("access_mode")?,
         git_status: row.get("git_status")?,
         creation_error: row.get("creation_error")?,
@@ -463,10 +457,10 @@ pub(super) fn hydrate_workspace_compat(
         workspace.branch_ownership = "user".into();
     }
     let repository = db.query_row(
-        &format!("SELECT {WORKSPACE_LOCATION_COLUMNS} FROM workspace_repositories
+        &format!("SELECT {WORKSPACE_REPOSITORY_COLUMNS} FROM workspace_repositories
          WHERE workspace_id=? ORDER BY git_status='ready' DESC,
          project_repository_id=(SELECT d.repository_id FROM workspaces w JOIN projects p ON p.id=w.project_id LEFT JOIN project_directories d ON d.id=p.default_directory_id WHERE w.id=workspace_repositories.workspace_id) DESC LIMIT 1"),
-        [&workspace.id], workspace_location_row,
+        [&workspace.id], workspace_repository_row,
     ).optional()?;
     if let Some(repository) = repository {
         let default_directory: Option<String> = db
@@ -481,7 +475,7 @@ pub(super) fn hydrate_workspace_compat(
         workspace.worktree_id = repository.worktree_id;
         workspace.checkout_path = repository
             .checkout_path
-            .unwrap_or_else(|| repository.source_path.clone());
+            .unwrap_or_else(|| repository.source_root.clone());
         workspace.target_branch = repository.base_branch.unwrap_or_default();
         workspace.start_commit = repository.start_commit.unwrap_or_default();
         workspace.branch = repository.branch.unwrap_or_default();
@@ -506,13 +500,13 @@ pub(super) fn hydrate_workspace_compat(
 fn insert_workspace_repositories(
     tx: &rusqlite::Transaction<'_>,
     workspace: &Workspace,
-    values: &[WorkspaceLocation],
+    values: &[WorkspaceRepository],
 ) -> rusqlite::Result<()> {
     for value in values {
         let project_repository_id: Option<String> = tx
             .query_row(
                 "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
-                [&value.project_location_id],
+                [&value.project_repository_id],
                 |row| row.get(0),
             )
             .optional()?
@@ -520,7 +514,7 @@ fn insert_workspace_repositories(
             .or_else(|| {
                 tx.query_row(
                     "SELECT id FROM project_repositories WHERE id=? AND deleted_at IS NULL",
-                    [&value.project_location_id],
+                    [&value.project_repository_id],
                     |row| row.get(0),
                 )
                 .optional()

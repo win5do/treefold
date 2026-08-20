@@ -58,7 +58,7 @@ export function FinishWorkspaceDialog({
   onOpenShell: (locationId: string) => void;
   onReviewChanges: (locationId: string) => void;
 }) {
-  const finishable = workspace?.locations.filter(
+  const finishable = workspace?.repositories.filter(
     (location) =>
       location.access_mode === "read_write" &&
       ["active", "failed", "conflicted", "published"].includes(
@@ -80,7 +80,7 @@ export function FinishWorkspaceDialog({
 
   useEffect(() => {
     if (!workspace) return;
-    const locations = workspace.locations.filter(
+    const locations = workspace.repositories.filter(
       (item) =>
         item.access_mode === "read_write" &&
         ["active", "failed", "conflicted", "published"].includes(
@@ -196,7 +196,7 @@ export function FinishWorkspaceDialog({
             >
               {finishable.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.location_name} · {item.delivery_status}
+                  {item.repository_name} · {item.delivery_status}
                 </option>
               ))}
             </Select>
@@ -207,7 +207,7 @@ export function FinishWorkspaceDialog({
           >
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-xs font-semibold">
-                Delivery preflight · {location?.location_name}
+                Delivery preflight · {location?.repository_name}
               </h3>
               <Badge
                 variant={preflight && !preflight.blockers.length ? "success" : "neutral"}
@@ -380,7 +380,7 @@ export function FinishWorkspaceDialog({
               if (location && nextPayload) onSubmit(location.id, nextPayload);
             }}
           >
-            {busy ? "Finishing…" : `Finish ${location?.location_name ?? "location"}`}
+            {busy ? "Finishing…" : `Finish ${location?.repository_name ?? "location"}`}
           </Button>
         </div>
       </DialogContent>

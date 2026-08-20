@@ -1,32 +1,32 @@
 use super::*;
 
-pub(super) async fn finish_workspace_location(
+pub(super) async fn finish_workspace_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<FinishWorkspace>,
 ) -> Result<Json<FinishProgress>> {
-    let location = state.store.workspace_location(&id)?;
+    let location = state.store.workspace_repository(&id)?;
     let workspace = state.store.workspace(&location.workspace_id)?;
     let project_id = workspace.project_id;
     let common = state
         .store
-        .repository(&location.project_location_id)?
+        .repository(&location.project_repository_id)?
         .git_common_dir;
     let result = blocking_git_operation_for(common, move || {
-        finish_workspace_location_impl(state, id, input)
+        finish_workspace_repository_impl(state, id, input)
     })
     .await;
     project_worktrees_cache().invalidate(&project_id).await;
     result
 }
 
-pub(super) fn finish_workspace_location_impl(
+pub(super) fn finish_workspace_repository_impl(
     state: AppState,
     id: String,
     input: FinishWorkspace,
 ) -> Result<Json<FinishProgress>> {
     validate_delivery_input(&input)?;
-    let location = state.store.workspace_location(&id)?;
+    let location = state.store.workspace_repository(&id)?;
     let workspace = state.store.workspace(&location.workspace_id)?;
     if location.access_mode != "read_write" {
         return Err(AppError::BadRequest(
@@ -39,7 +39,7 @@ pub(super) fn finish_workspace_location_impl(
     ) {
         return Ok(Json(FinishProgress {
             status: "finished".into(),
-            location,
+            repository: location,
             operation: None,
         }));
     }
@@ -51,14 +51,15 @@ pub(super) fn finish_workspace_location_impl(
     }
     let preflight_id = input.preflight_id.as_deref().ok_or_else(|| {
         AppError::BadRequest(
-            "run delivery preflight before finishing this Workspace location".into(),
+            "run delivery preflight before finishing this Workspace Repository".into(),
         )
     })?;
     let preflight = state.store.delivery_preflight(preflight_id)?;
-    if preflight.workspace_location_id != location.id || preflight.code_action != input.code_action
+    if preflight.workspace_repository_id != location.id
+        || preflight.code_action != input.code_action
     {
         return Err(AppError::BadRequest(
-            "preflight does not match this Workspace location".into(),
+            "preflight does not match this Workspace Repository".into(),
         ));
     }
     if !preflight.blockers.is_empty() {
@@ -67,13 +68,13 @@ pub(super) fn finish_workspace_location_impl(
             preflight.blockers.join("; ")
         )));
     }
-    let source_path = workspace_location_git_path(&location)?.to_owned();
+    let source_path = workspace_repository_git_path(&location)?.to_owned();
     let branch = location
         .branch
         .as_deref()
-        .ok_or_else(|| AppError::BadRequest("Workspace location has no branch".into()))?
+        .ok_or_else(|| AppError::BadRequest("Workspace Repository has no branch".into()))?
         .to_owned();
-    ensure_checked_out_branch(&source_path, &branch, "Workspace location")?;
+    ensure_checked_out_branch(&source_path, &branch, "Workspace Repository")?;
     let source_status = command_output(Path::new(&source_path), "git", &["status", "--porcelain"])
         .map_err(AppError::BadRequest)?;
     let source_head = git_head(&source_path)?;
@@ -97,7 +98,7 @@ pub(super) fn finish_workspace_location_impl(
             .is_some_and(|operation| operation.status == "completed")
         {
             let (target_path, target_branch) =
-                workspace_location_delivery_target(&state, &workspace, &location)?;
+                workspace_repository_delivery_target(&state, &workspace, &location)?;
             let target_head = command_output(
                 Path::new(&target_path),
                 "git",
@@ -113,10 +114,10 @@ pub(super) fn finish_workspace_location_impl(
     }
     if input.code_action == "push_branch" {
         let remote = location.remote_name.as_deref().ok_or_else(|| {
-            AppError::BadRequest("Workspace location has no remote configured".into())
+            AppError::BadRequest("Workspace Repository has no remote configured".into())
         })?;
         let remote_branch = location.remote_branch.as_deref().ok_or_else(|| {
-            AppError::BadRequest("Workspace location has no remote branch configured".into())
+            AppError::BadRequest("Workspace Repository has no remote branch configured".into())
         })?;
         let remote_head =
             remote_branch_head(&source_path, remote, remote_branch)?.unwrap_or_default();
@@ -149,7 +150,7 @@ pub(super) fn finish_workspace_location_impl(
                     .set_delivery_status(&location.id, "conflicted")?;
                 return Ok(Json(FinishProgress {
                     status: "paused".into(),
-                    location: state.store.workspace_location(&location.id)?,
+                    repository: state.store.workspace_repository(&location.id)?,
                     operation: Some(operation),
                 }));
             }
@@ -165,7 +166,7 @@ pub(super) fn finish_workspace_location_impl(
             if resumed && !input.resume_finish {
                 return Ok(Json(FinishProgress {
                     status: "awaiting_resume".into(),
-                    location: state.store.workspace_location(&location.id)?,
+                    repository: state.store.workspace_repository(&location.id)?,
                     operation: Some(operation),
                 }));
             }
@@ -177,10 +178,10 @@ pub(super) fn finish_workspace_location_impl(
         }
         "push_branch" => {
             let remote = location.remote_name.as_deref().ok_or_else(|| {
-                AppError::BadRequest("Workspace location has no remote configured".into())
+                AppError::BadRequest("Workspace Repository has no remote configured".into())
             })?;
             let remote_branch = location.remote_branch.as_deref().ok_or_else(|| {
-                AppError::BadRequest("Workspace location has no remote branch configured".into())
+                AppError::BadRequest("Workspace Repository has no remote branch configured".into())
             })?;
             command_output(
                 Path::new(&source_path),
@@ -203,22 +204,22 @@ pub(super) fn finish_workspace_location_impl(
         consume_parent_operation(&state, operation)?;
     }
     if input.delete_worktree {
-        let project_location = state
+        let project_repository = state
             .store
-            .repository_as_directory(&location.project_location_id)?;
-        remove_worktree_if_present(&project_location.path, &source_path, false)?;
+            .repository_as_directory(&location.project_repository_id)?;
+        remove_worktree_if_present(&project_repository.path, &source_path, false)?;
         if input.delete_branch {
             let (target, require_merged) = match input.code_action.as_str() {
                 "local_merge" => {
                     let (_, target_branch) =
-                        workspace_location_delivery_target(&state, &workspace, &location)?;
+                        workspace_repository_delivery_target(&state, &workspace, &location)?;
                     (target_branch, true)
                 }
                 "push_branch" => ("FETCH_HEAD".to_owned(), true),
                 _ => ("HEAD".to_owned(), false),
             };
             delete_delivered_branch_if_present(
-                &project_location.path,
+                &project_repository.path,
                 &branch,
                 &target,
                 &source_head,
@@ -227,7 +228,7 @@ pub(super) fn finish_workspace_location_impl(
         }
     }
     let timestamp = now();
-    state.store.finish_workspace_location(
+    state.store.finish_workspace_repository(
         &location.id,
         status,
         outcome,
@@ -237,7 +238,7 @@ pub(super) fn finish_workspace_location_impl(
     if workspace.kind == "fork" && outcome == "local_merge" {
         let all_delivered = state
             .store
-            .workspace_locations(&workspace.id)?
+            .workspace_repositories(&workspace.id)?
             .iter()
             .filter(|item| item.access_mode == "read_write")
             .all(|item| item.delivery_status == "delivered");
@@ -247,40 +248,39 @@ pub(super) fn finish_workspace_location_impl(
     }
     Ok(Json(FinishProgress {
         status: "finished".into(),
-        location: state.store.workspace_location(&location.id)?,
+        repository: state.store.workspace_repository(&location.id)?,
         operation: linked_operation,
     }))
 }
 
-pub(super) fn workspace_location_delivery_target(
+pub(super) fn workspace_repository_delivery_target(
     state: &AppState,
     workspace: &Workspace,
-    location: &WorkspaceLocation,
+    location: &WorkspaceRepository,
 ) -> Result<(String, String)> {
     if let Some(parent_id) = workspace.parent_workspace_id.as_deref() {
         let parent = state
             .store
-            .workspace_locations(parent_id)?
+            .workspace_repositories(parent_id)?
             .into_iter()
-            .find(|item| item.project_location_id == location.project_location_id)
+            .find(|item| item.project_repository_id == location.project_repository_id)
             .ok_or_else(|| {
                 AppError::BadRequest("parent Workspace does not contain this location".into())
             })?;
         return Ok((
-            workspace_location_git_path(&parent)?.into(),
+            workspace_repository_git_path(&parent)?.into(),
             parent.branch.unwrap_or_default(),
         ));
     }
-    let project_location = state
+    let project_repository = state
         .store
-        .repository_as_directory(&location.project_location_id)?;
-    ensure_location_ready(&project_location)?;
+        .repository_as_directory(&location.project_repository_id)?;
+    ensure_location_ready(&project_repository)?;
     Ok((
-        project_location.path,
-        location
-            .base_branch
-            .clone()
-            .ok_or_else(|| AppError::BadRequest("Workspace location has no base branch".into()))?,
+        project_repository.path,
+        location.base_branch.clone().ok_or_else(|| {
+            AppError::BadRequest("Workspace Repository has no base branch".into())
+        })?,
     ))
 }
 
@@ -529,7 +529,7 @@ pub(super) async fn finish_workspace_steps(
             let timestamp = now();
             let operation = DeliveryOperation {
                 workspace_id: id.to_owned(),
-                workspace_location_id: state.store.default_workspace_location(id)?.id,
+                workspace_repository_id: state.store.default_workspace_repository(id)?.id,
                 phase: "preflight_passed".into(),
                 code_action: input.code_action.clone(),
                 todo_action: input.todo_action.clone(),

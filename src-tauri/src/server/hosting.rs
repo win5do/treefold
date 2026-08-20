@@ -6,18 +6,18 @@ pub(super) fn treefold_runtime_snapshot(
     workspace: &Workspace,
 ) -> Result<Value> {
     let project = state.store.project(&workspace.project_id)?;
-    let locations = state.store.workspace_locations(&workspace.id)?;
+    let locations = state.store.workspace_repositories(&workspace.id)?;
     let directory_snapshots = locations
         .iter()
         .map(|location| {
             let path = location
                 .checkout_path
                 .as_deref()
-                .unwrap_or(&location.source_path);
+                .unwrap_or(&location.source_root);
             json!({
                 "id": location.id,
-                "project_location_id": location.project_location_id,
-                "name": location.location_name,
+                "project_repository_id": location.project_repository_id,
+                "name": location.repository_name,
                 "path": path,
                 "access_mode": location.access_mode,
                 "is_session_cwd": normalized_path(path) == normalized_path(&session.cwd),

@@ -40,7 +40,7 @@ import type {
   Workspace,
   WorkspaceDetail,
   WorkspaceDirectory,
-  WorkspaceLocation,
+  WorkspaceRepository,
 } from "@/domain/types";
 import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 import { cn } from "@/lib/utils";
@@ -64,8 +64,8 @@ export function WorkspaceHome({
   onOpenFork: (fork: Workspace) => void;
   onDeleteFork: (fork: Workspace) => void;
   onDeleteForkBlocked: (fork: Workspace) => void;
-  onConfigureUpstream: (location: WorkspaceLocation) => void;
-  onClearUpstream: (location: WorkspaceLocation) => void;
+  onConfigureUpstream: (location: WorkspaceRepository) => void;
+  onClearUpstream: (location: WorkspaceRepository) => void;
   onResync: () => void;
   onTodosChanged: () => void;
   onTodoForkCreated: (fork: Workspace, session?: Session) => void;
@@ -145,7 +145,7 @@ export function WorkspaceHome({
             </p>
           </div>
         </div>
-        <section data-testid="workspace-locations-section" className="mt-8">
+        <section data-testid="workspace-repositories-section" className="mt-8">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-sm font-semibold">Workspace Repositories</h2>
@@ -167,8 +167,8 @@ export function WorkspaceHome({
             )}
           </div>
           <div className="mt-3 grid gap-3">
-            {detail.locations.map((location) => (
-              <WorkspaceLocationRow
+            {detail.repositories.map((location) => (
+              <WorkspaceRepositoryRow
                 key={location.id}
                 location={location}
                 scopes={detail.workspace_directories.filter(
@@ -666,7 +666,7 @@ export function WorkspaceHome({
   );
 }
 
-function WorkspaceLocationRow({
+function WorkspaceRepositoryRow({
   location,
   scopes,
   busy,
@@ -674,7 +674,7 @@ function WorkspaceLocationRow({
   onConfigureUpstream,
   onClearUpstream,
 }: {
-  location: WorkspaceLocation;
+  location: WorkspaceRepository;
   scopes: WorkspaceDirectory[];
   busy: boolean;
   actionsEnabled: boolean;
@@ -697,7 +697,7 @@ function WorkspaceLocationRow({
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
-              {location.location_name}
+              {location.repository_name}
             </h3>
             <Badge
               variant={
@@ -715,9 +715,9 @@ function WorkspaceLocationRow({
           </div>
           <code
             className="mt-2 block truncate text-[10px] text-muted-foreground"
-            title={location.checkout_path ?? location.source_path}
+            title={location.checkout_path ?? location.source_root}
           >
-            {location.checkout_path ?? location.source_path}
+            {location.checkout_path ?? location.source_root}
           </code>
           {location.creation_error && (
             <Alert
@@ -777,7 +777,7 @@ function WorkspaceLocationRow({
         {actionsEnabled && writableGit && (
           <div className="-mt-2 self-start">
             <ActionMenu
-              label={`Actions for ${location.location_name}`}
+              label={`Actions for ${location.repository_name}`}
               testId={`workspace-location-actions-${location.id}`}
               disabled={busy}
             >

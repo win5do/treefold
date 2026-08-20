@@ -31,7 +31,7 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
   const historyRepositories = workspace
     ? workspace.repositories
         .filter((repository) => repository.git_status === "ready")
-        .map((repository) => ({ id: repository.id, name: repository.location_name }))
+        .map((repository) => ({ id: repository.id, name: repository.repository_name }))
     : project.repositories
         .filter((repository) => repository.git_status === "ready")
         .map((repository) => ({ id: repository.id, name: repository.name }));
@@ -65,7 +65,7 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
     setHistoryError("");
     if (!activeHistoryRepositoryId) return () => controller.abort();
     const load = workspace
-      ? workspacesApi.locationHistory(activeHistoryRepositoryId, controller.signal)
+      ? workspacesApi.repositoryHistory(activeHistoryRepositoryId, controller.signal)
       : projectsApi.history(activeHistoryRepositoryId, controller.signal);
     void load.then((value) => {
       if (!controller.signal.aborted) setHistory(value);

@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) async fn get_project_location_git_history(
+pub(super) async fn get_project_repository_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
@@ -13,13 +13,13 @@ pub(super) async fn get_project_location_git_history(
     .await
 }
 
-pub(super) async fn get_workspace_location_git_history(
+pub(super) async fn get_workspace_repository_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
     blocking_git_operation(move || {
-        let location = state.store.workspace_location(&id)?;
-        let path = workspace_location_git_path(&location)?;
+        let location = state.store.workspace_repository(&id)?;
+        let path = workspace_repository_git_path(&location)?;
         Ok(Json(git_history(path)?))
     })
     .await
@@ -27,7 +27,7 @@ pub(super) async fn get_workspace_location_git_history(
 
 pub(super) const MAX_DIFF_PATCH_BYTES: usize = 8 * 1024 * 1024;
 
-pub(super) async fn compare_project_location_commits(
+pub(super) async fn compare_project_repository_commits(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffComparisonInput>,
@@ -46,17 +46,17 @@ pub(super) async fn compare_project_location_commits(
     .await
 }
 
-pub(super) async fn compare_workspace_location_commits(
+pub(super) async fn compare_workspace_repository_commits(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffComparisonInput>,
 ) -> Result<Json<GitDiffComparison>> {
     blocking_git_operation(move || {
-        let location = state.store.workspace_location(&id)?;
-        let path = workspace_location_git_path(&location)?;
+        let location = state.store.workspace_repository(&id)?;
+        let path = workspace_repository_git_path(&location)?;
         Ok(Json(compare_git_commits(
             path,
-            &location.location_name,
+            &location.repository_name,
             &input,
             MAX_DIFF_PATCH_BYTES,
         )?))
@@ -64,7 +64,7 @@ pub(super) async fn compare_workspace_location_commits(
     .await
 }
 
-pub(super) async fn get_project_location_git_status(
+pub(super) async fn get_project_repository_git_status(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitStatus>> {
@@ -77,18 +77,18 @@ pub(super) async fn get_project_location_git_status(
     .await
 }
 
-pub(super) async fn get_workspace_location_git_status(
+pub(super) async fn get_workspace_repository_git_status(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitStatus>> {
     blocking_git_operation(move || {
-        let location = state.store.workspace_location(&id)?;
-        Ok(Json(git_status(workspace_location_git_path(&location)?)?))
+        let location = state.store.workspace_repository(&id)?;
+        Ok(Json(git_status(workspace_repository_git_path(&location)?)?))
     })
     .await
 }
 
-pub(super) async fn project_location_git_diff(
+pub(super) async fn project_repository_git_diff(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffRequest>,
@@ -102,20 +102,20 @@ pub(super) async fn project_location_git_diff(
     .await
 }
 
-pub(super) async fn workspace_location_git_diff(
+pub(super) async fn workspace_repository_git_diff(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffRequest>,
 ) -> Result<Json<GitDiffComparison>> {
     blocking_git_operation(move || {
-        let location = state.store.workspace_location(&id)?;
-        let path = workspace_location_git_path(&location)?;
-        Ok(Json(git_diff(path, &location.location_name, &input)?))
+        let location = state.store.workspace_repository(&id)?;
+        let path = workspace_repository_git_path(&location)?;
+        Ok(Json(git_diff(path, &location.repository_name, &input)?))
     })
     .await
 }
 
-pub(super) async fn project_location_stage(
+pub(super) async fn project_repository_stage(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitPathsInput>,
@@ -123,7 +123,7 @@ pub(super) async fn project_location_stage(
     mutate_project_paths(state, id, input, true).await
 }
 
-pub(super) async fn project_location_unstage(
+pub(super) async fn project_repository_unstage(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitPathsInput>,
@@ -131,7 +131,7 @@ pub(super) async fn project_location_unstage(
     mutate_project_paths(state, id, input, false).await
 }
 
-pub(super) async fn workspace_location_stage(
+pub(super) async fn workspace_repository_stage(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitPathsInput>,
@@ -139,7 +139,7 @@ pub(super) async fn workspace_location_stage(
     mutate_workspace_paths(state, id, input, true).await
 }
 
-pub(super) async fn workspace_location_unstage(
+pub(super) async fn workspace_repository_unstage(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitPathsInput>,
@@ -147,7 +147,7 @@ pub(super) async fn workspace_location_unstage(
     mutate_workspace_paths(state, id, input, false).await
 }
 
-pub(super) async fn project_location_commit(
+pub(super) async fn project_repository_commit(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitCommitInput>,
@@ -163,21 +163,21 @@ pub(super) async fn project_location_commit(
     blocking_git_operation_for(common, move || commit_repository(&path, input)).await
 }
 
-pub(super) async fn workspace_location_commit(
+pub(super) async fn workspace_repository_commit(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitCommitInput>,
 ) -> Result<Json<GitCommitResult>> {
-    let location = state.store.workspace_location(&id)?;
-    let path = workspace_location_git_path(&location)?.to_owned();
+    let location = state.store.workspace_repository(&id)?;
+    let path = workspace_repository_git_path(&location)?.to_owned();
     let common = state
         .store
-        .repository(&location.project_location_id)?
+        .repository(&location.project_repository_id)?
         .git_common_dir;
     blocking_git_operation_for(common, move || commit_repository(&path, input)).await
 }
 
-pub(super) async fn project_location_revert_commit(
+pub(super) async fn project_repository_revert_commit(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitCommitTargetInput>,
@@ -185,7 +185,7 @@ pub(super) async fn project_location_revert_commit(
     mutate_project_history(state, id, input.commit, GitHistoryAction::Revert).await
 }
 
-pub(super) async fn workspace_location_revert_commit(
+pub(super) async fn workspace_repository_revert_commit(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitCommitTargetInput>,
@@ -193,7 +193,7 @@ pub(super) async fn workspace_location_revert_commit(
     mutate_workspace_history(state, id, input.commit, GitHistoryAction::Revert).await
 }
 
-pub(super) async fn project_location_reset_commit(
+pub(super) async fn project_repository_reset_commit(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitResetCommitInput>,
@@ -201,7 +201,7 @@ pub(super) async fn project_location_reset_commit(
     mutate_project_history(state, id, input.commit, GitHistoryAction::Reset(input.mode)).await
 }
 
-pub(super) async fn workspace_location_reset_commit(
+pub(super) async fn workspace_repository_reset_commit(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitResetCommitInput>,
@@ -241,11 +241,11 @@ async fn mutate_workspace_history(
     commit: String,
     action: GitHistoryAction,
 ) -> Result<Json<GitHistory>> {
-    let location = state.store.workspace_location(&id)?;
-    let path = workspace_location_git_path(&location)?.to_owned();
+    let location = state.store.workspace_repository(&id)?;
+    let path = workspace_repository_git_path(&location)?.to_owned();
     let common = state
         .store
-        .repository(&location.project_location_id)?
+        .repository(&location.project_repository_id)?
         .git_common_dir;
     blocking_git_operation_for(common, move || {
         mutate_git_history(&path, &commit, action)?;
@@ -316,11 +316,11 @@ async fn mutate_workspace_paths(
     input: GitPathsInput,
     stage: bool,
 ) -> Result<Json<GitStatus>> {
-    let location = state.store.workspace_location(&id)?;
-    let path = workspace_location_git_path(&location)?.to_owned();
+    let location = state.store.workspace_repository(&id)?;
+    let path = workspace_repository_git_path(&location)?.to_owned();
     let common = state
         .store
-        .repository(&location.project_location_id)?
+        .repository(&location.project_repository_id)?
         .git_common_dir;
     blocking_git_operation_for(common, move || {
         mutate_paths(&path, &input.paths, stage)?;
@@ -644,7 +644,7 @@ fn change_stats(
     (additions, deletions, binary)
 }
 
-pub(super) async fn pull_project_location(
+pub(super) async fn pull_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -657,13 +657,13 @@ pub(super) async fn pull_project_location(
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
     git::with_repository_lock(Path::new(&common), || async {
         Ok(Json(
-            sync_project_location(&location, &project, "pull").await?,
+            sync_project_repository(&location, &project, "pull").await?,
         ))
     })
     .await
 }
 
-pub(super) async fn push_project_location(
+pub(super) async fn push_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
@@ -676,40 +676,40 @@ pub(super) async fn push_project_location(
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
     git::with_repository_lock(Path::new(&common), || async {
         Ok(Json(
-            sync_project_location(&location, &project, "push").await?,
+            sync_project_repository(&location, &project, "push").await?,
         ))
     })
     .await
 }
 
-pub(super) async fn pull_workspace_location(
+pub(super) async fn pull_workspace_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.workspace_location(&id)?;
+    let location = state.store.workspace_repository(&id)?;
     ensure_active_workspace(&state.store.workspace(&location.workspace_id)?)?;
     let common = state
         .store
-        .repository(&location.project_location_id)?
+        .repository(&location.project_repository_id)?
         .git_common_dir;
     git::with_repository_lock(Path::new(&common), || async {
-        Ok(Json(sync_workspace_location(&location, "pull").await?))
+        Ok(Json(sync_workspace_repository(&location, "pull").await?))
     })
     .await
 }
 
-pub(super) async fn push_workspace_location(
+pub(super) async fn push_workspace_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.workspace_location(&id)?;
+    let location = state.store.workspace_repository(&id)?;
     ensure_active_workspace(&state.store.workspace(&location.workspace_id)?)?;
     let common = state
         .store
-        .repository(&location.project_location_id)?
+        .repository(&location.project_repository_id)?
         .git_common_dir;
     git::with_repository_lock(Path::new(&common), || async {
-        Ok(Json(sync_workspace_location(&location, "push").await?))
+        Ok(Json(sync_workspace_repository(&location, "push").await?))
     })
     .await
 }
@@ -718,15 +718,15 @@ pub(super) async fn pull_all_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    sync_all_project_locations(&state, &id, "pull").await
+    sync_all_project_repositories(&state, &id, "pull").await
 }
 pub(super) async fn push_all_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    sync_all_project_locations(&state, &id, "push").await
+    sync_all_project_repositories(&state, &id, "push").await
 }
-pub(super) async fn sync_all_project_locations(
+pub(super) async fn sync_all_project_repositories(
     state: &AppState,
     project_id: &str,
     action: &str,
@@ -738,9 +738,9 @@ pub(super) async fn sync_all_project_locations(
         let location = state.store.repository_as_directory(&repository.id)?;
         if location.git_status == "not_git" {
             results.push(GitSyncItemResult {
-                project_location_id: location.id,
-                workspace_location_id: None,
-                location_name: location.name,
+                project_repository_id: location.id,
+                workspace_repository_id: None,
+                repository_name: location.name,
                 status: "skipped".into(),
                 result: None,
                 error: None,
@@ -749,28 +749,28 @@ pub(super) async fn sync_all_project_locations(
         }
         if location.preferred_remote_name.is_none() {
             results.push(GitSyncItemResult {
-                project_location_id: location.id,
-                workspace_location_id: None,
-                location_name: location.name,
+                project_repository_id: location.id,
+                workspace_repository_id: None,
+                repository_name: location.name,
                 status: "skipped".into(),
                 result: None,
                 error: Some("remote is not configured".into()),
             });
             continue;
         }
-        match sync_project_location(&location, &project, action).await {
+        match sync_project_repository(&location, &project, action).await {
             Ok(result) => results.push(GitSyncItemResult {
-                project_location_id: location.id,
-                workspace_location_id: None,
-                location_name: location.name,
+                project_repository_id: location.id,
+                workspace_repository_id: None,
+                repository_name: location.name,
                 status: "success".into(),
                 result: Some(result),
                 error: None,
             }),
             Err(error) => results.push(GitSyncItemResult {
-                project_location_id: location.id,
-                workspace_location_id: None,
-                location_name: location.name,
+                project_repository_id: location.id,
+                workspace_repository_id: None,
+                repository_name: location.name,
                 status: "failed".into(),
                 result: None,
                 error: Some(error.to_string()),
@@ -784,27 +784,27 @@ pub(super) async fn pull_all_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    sync_all_workspace_locations(&state, &id, "pull").await
+    sync_all_workspace_repositories(&state, &id, "pull").await
 }
 pub(super) async fn push_all_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    sync_all_workspace_locations(&state, &id, "push").await
+    sync_all_workspace_repositories(&state, &id, "push").await
 }
-pub(super) async fn sync_all_workspace_locations(
+pub(super) async fn sync_all_workspace_repositories(
     state: &AppState,
     workspace_id: &str,
     action: &str,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
     ensure_active_workspace(&state.store.workspace(workspace_id)?)?;
     let mut results = Vec::new();
-    for location in state.store.workspace_locations(workspace_id)? {
+    for location in state.store.workspace_repositories(workspace_id)? {
         if location.access_mode != "read_write" {
             results.push(GitSyncItemResult {
-                project_location_id: location.project_location_id,
-                workspace_location_id: Some(location.id),
-                location_name: location.location_name,
+                project_repository_id: location.project_repository_id,
+                workspace_repository_id: Some(location.id),
+                repository_name: location.repository_name,
                 status: "skipped".into(),
                 result: None,
                 error: None,
@@ -813,28 +813,28 @@ pub(super) async fn sync_all_workspace_locations(
         }
         if location.remote_name.is_none() || location.remote_branch.is_none() {
             results.push(GitSyncItemResult {
-                project_location_id: location.project_location_id,
-                workspace_location_id: Some(location.id),
-                location_name: location.location_name,
+                project_repository_id: location.project_repository_id,
+                workspace_repository_id: Some(location.id),
+                repository_name: location.repository_name,
                 status: "skipped".into(),
                 result: None,
                 error: Some("upstream is not configured".into()),
             });
             continue;
         }
-        match sync_workspace_location(&location, action).await {
+        match sync_workspace_repository(&location, action).await {
             Ok(result) => results.push(GitSyncItemResult {
-                project_location_id: location.project_location_id,
-                workspace_location_id: Some(location.id),
-                location_name: location.location_name,
+                project_repository_id: location.project_repository_id,
+                workspace_repository_id: Some(location.id),
+                repository_name: location.repository_name,
                 status: "success".into(),
                 result: Some(result),
                 error: None,
             }),
             Err(error) => results.push(GitSyncItemResult {
-                project_location_id: location.project_location_id,
-                workspace_location_id: Some(location.id),
-                location_name: location.location_name,
+                project_repository_id: location.project_repository_id,
+                workspace_repository_id: Some(location.id),
+                repository_name: location.repository_name,
                 status: "failed".into(),
                 result: None,
                 error: Some(error.to_string()),
@@ -844,7 +844,7 @@ pub(super) async fn sync_all_workspace_locations(
     Ok(Json(results))
 }
 
-pub(super) fn ensure_location_ready(location: &ProjectLocation) -> Result<()> {
+pub(super) fn ensure_location_ready(location: &Directory) -> Result<()> {
     let mut observed = location.clone();
     refresh_location_observation(&mut observed)?;
     if observed.git_status != "ready" {
@@ -856,8 +856,8 @@ pub(super) fn ensure_location_ready(location: &ProjectLocation) -> Result<()> {
     Ok(())
 }
 
-pub(super) async fn sync_project_location(
-    location: &ProjectLocation,
+pub(super) async fn sync_project_repository(
+    location: &Directory,
     project: &Project,
     action: &str,
 ) -> Result<GitSyncResult> {
@@ -903,19 +903,19 @@ pub(super) async fn sync_project_location(
     ))
 }
 
-pub(super) fn workspace_location_git_path(location: &WorkspaceLocation) -> Result<&str> {
+pub(super) fn workspace_repository_git_path(location: &WorkspaceRepository) -> Result<&str> {
     if location.access_mode != "read_write" || location.git_status != "ready" {
         return Err(AppError::BadRequest(
-            "workspace location is not Git-enabled".into(),
+            "workspace repository is not Git-enabled".into(),
         ));
     }
     let path = location
         .checkout_path
         .as_deref()
-        .ok_or_else(|| AppError::BadRequest("workspace location has no worktree".into()))?;
+        .ok_or_else(|| AppError::BadRequest("workspace repository has no worktree".into()))?;
     if !Path::new(path).is_dir() {
         return Err(AppError::BadRequest(
-            "workspace location unavailable: worktree is missing".into(),
+            "workspace repository unavailable: worktree is missing".into(),
         ));
     }
     command_output(
@@ -924,34 +924,34 @@ pub(super) fn workspace_location_git_path(location: &WorkspaceLocation) -> Resul
         &["rev-parse", "--is-inside-work-tree"],
     )
     .map_err(|_| {
-        AppError::BadRequest("workspace location unavailable: Git metadata is broken".into())
+        AppError::BadRequest("workspace repository unavailable: Git metadata is broken".into())
     })?;
     Ok(path)
 }
 
-pub(super) async fn sync_workspace_location(
-    location: &WorkspaceLocation,
+pub(super) async fn sync_workspace_repository(
+    location: &WorkspaceRepository,
     action: &str,
 ) -> Result<GitSyncResult> {
-    let path = workspace_location_git_path(location)?;
+    let path = workspace_repository_git_path(location)?;
     let branch = location
         .branch
         .as_deref()
-        .ok_or_else(|| AppError::BadRequest("workspace location has no branch".into()))?;
+        .ok_or_else(|| AppError::BadRequest("workspace repository has no branch".into()))?;
     let remote = location.remote_name.as_deref().ok_or_else(|| {
-        AppError::BadRequest("workspace location has no remote configured".into())
+        AppError::BadRequest("workspace repository has no remote configured".into())
     })?;
     let remote_branch = location.remote_branch.as_deref().ok_or_else(|| {
-        AppError::BadRequest("workspace location has no remote branch configured".into())
+        AppError::BadRequest("workspace repository has no remote branch configured".into())
     })?;
-    ensure_checked_out_branch(path, branch, "Workspace location")?;
+    ensure_checked_out_branch(path, branch, "Workspace Repository")?;
     let before_head = git_head(path)?;
     if action == "pull" {
-        ensure_clean_workspace(path, "Workspace location")?;
+        ensure_clean_workspace(path, "Workspace Repository")?;
         fetch_remote_branch_async(path, remote, remote_branch).await?;
         if !git_is_ancestor_async(path, &before_head, "FETCH_HEAD").await? {
             return Err(AppError::BadRequest(
-                "Workspace location and upstream have diverged".into(),
+                "Workspace Repository and upstream have diverged".into(),
             ));
         }
         git::output_async(Path::new(path), &["merge", "--ff-only", "FETCH_HEAD"])
@@ -1220,7 +1220,7 @@ pub(super) fn inspect_path(value: &str) -> Result<(String, bool)> {
     Ok((string, is_git))
 }
 
-pub(super) fn refresh_location_observation(location: &mut ProjectLocation) -> Result<()> {
+pub(super) fn refresh_location_observation(location: &mut Directory) -> Result<()> {
     location.last_checked_at = Some(now());
     let path = Path::new(&location.path);
     if !path.exists() {
@@ -1669,7 +1669,7 @@ pub(super) fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
 pub(super) fn project_worktrees(
     directories: &[Directory],
     workspaces: &[Workspace],
-    workspace_locations: &[WorkspaceLocation],
+    workspace_repositories: &[WorkspaceRepository],
 ) -> Vec<GitWorktree> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();
@@ -1685,9 +1685,9 @@ pub(super) fn project_worktrees(
             let workspace = workspaces.iter().find(|stream| {
                 stream.kind != "base"
                     && stream.status == "active"
-                    && (workspace_locations.iter().any(|location| {
+                    && (workspace_repositories.iter().any(|location| {
                         location.workspace_id == stream.id
-                            && location.project_location_id == directory.id
+                            && location.project_repository_id == directory.id
                             && location
                                 .checkout_path
                                 .as_deref()
@@ -1695,8 +1695,8 @@ pub(super) fn project_worktrees(
                     }) || normalized_path(&stream.checkout_path) == path)
             });
             result.push(GitWorktree {
-                project_location_id: directory.id.clone(),
-                location_name: directory.name.clone(),
+                project_repository_id: directory.id.clone(),
+                repository_name: directory.name.clone(),
                 path: item.path,
                 branch: item.branch,
                 head_commit: item.head_commit,
@@ -1792,7 +1792,7 @@ pub(super) fn repository_slug(value: &str) -> String {
 }
 
 pub(super) fn choose_shared_branch(
-    locations: &[ProjectLocation],
+    locations: &[Directory],
     explicit: Option<&str>,
     label: &str,
 ) -> Result<String> {
@@ -1846,9 +1846,9 @@ pub(super) fn choose_shared_branch(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn git_workspace_location(
+pub(super) fn git_workspace_repository(
     workspace_id: &str,
-    location: &ProjectLocation,
+    location: &Directory,
     timestamp: &str,
     checkout_path: String,
     branch: String,
@@ -1858,13 +1858,13 @@ pub(super) fn git_workspace_location(
     remote_name: Option<String>,
     remote_branch: Option<String>,
     delivery_mode: String,
-) -> WorkspaceLocation {
-    WorkspaceLocation {
+) -> WorkspaceRepository {
+    WorkspaceRepository {
         id: id(),
         workspace_id: workspace_id.into(),
-        project_location_id: location.id.clone(),
-        location_name: location.name.clone(),
-        source_path: location.path.clone(),
+        project_repository_id: location.id.clone(),
+        repository_name: location.name.clone(),
+        source_root: location.path.clone(),
         access_mode: "read_write".into(),
         git_status: "ready".into(),
         creation_error: None,

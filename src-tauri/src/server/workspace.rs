@@ -79,7 +79,7 @@ pub(super) async fn create_project(
     };
     state.store.create_empty_project(&project)?;
     if let Some((path, is_git)) = inspected_path {
-        let mut location = ProjectLocation {
+        let mut location = Directory {
             id: id(),
             project_id: project_id.clone(),
             name: basename(&path),
@@ -233,9 +233,9 @@ pub(super) async fn get_project(
 ) -> Result<Json<ProjectDetail>> {
     let mut detail = state.store.project_detail(&id)?;
     let tracked_workspaces = state.store.workspaces(&id)?;
-    let mut tracked_workspace_locations = Vec::new();
+    let mut tracked_workspace_repositories = Vec::new();
     for workspace in &tracked_workspaces {
-        tracked_workspace_locations.extend(state.store.workspace_locations(&workspace.id)?);
+        tracked_workspace_repositories.extend(state.store.workspace_repositories(&workspace.id)?);
     }
     let cache_key = id.clone();
     let locations = state
@@ -250,7 +250,7 @@ pub(super) async fn get_project(
                 Ok(project_worktrees(
                     &locations,
                     &tracked_workspaces,
-                    &tracked_workspace_locations,
+                    &tracked_workspace_repositories,
                 ))
             })
             .await
@@ -586,13 +586,13 @@ pub(super) struct CreateDirectory {
 }
 
 #[derive(Deserialize)]
-pub(super) struct InspectProjectLocation {
+pub(super) struct InspectProjectDirectory {
     path: String,
     project_id: Option<String>,
 }
 
 #[derive(Serialize)]
-pub(super) struct ProjectLocationInspection {
+pub(super) struct ProjectDirectoryInspection {
     path: String,
     name: String,
     directory_type: String,
@@ -606,12 +606,12 @@ pub(super) struct ProjectLocationInspection {
     base_branch: Option<String>,
 }
 
-pub(super) async fn inspect_project_location(
+pub(super) async fn inspect_project_directory(
     State(state): State<AppState>,
-    ApiJson(input): ApiJson<InspectProjectLocation>,
-) -> Result<Json<ProjectLocationInspection>> {
+    ApiJson(input): ApiJson<InspectProjectDirectory>,
+) -> Result<Json<ProjectDirectoryInspection>> {
     let (path, is_git) = inspect_path(&input.path)?;
-    let mut location = ProjectLocation {
+    let mut location = Directory {
         id: String::new(),
         project_id: String::new(),
         name: basename(&path),
@@ -660,7 +660,7 @@ pub(super) async fn inspect_project_location(
                 })
         })
     });
-    Ok(Json(ProjectLocationInspection {
+    Ok(Json(ProjectDirectoryInspection {
         path: location.path,
         name: location.name,
         directory_type: if location.git_status == "ready" {
@@ -915,10 +915,10 @@ pub(super) async fn create_directory(
     Ok((StatusCode::CREATED, Json(directory)))
 }
 
-pub(super) async fn refresh_project_location(
+pub(super) async fn refresh_project_directory(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
-) -> Result<Json<ProjectLocation>> {
+) -> Result<Json<Directory>> {
     location_observations_cache().invalidate(&id).await;
     let mut location = state.store.directory(&id)?;
     ensure_active_project(&state.store.project(&location.project_id)?)?;
@@ -934,7 +934,7 @@ pub(super) async fn refresh_project_location(
         location.is_git = false;
     }
     location.updated_at = now();
-    state.store.refresh_project_location(&location)?;
+    state.store.refresh_project_directory(&location)?;
     location_observations_cache()
         .insert(id, location.clone())
         .await;
@@ -973,18 +973,18 @@ pub(super) async fn refresh_project_repository(
 }
 
 #[derive(Deserialize)]
-pub(super) struct ReattachProjectLocation {
+pub(super) struct ReattachProjectRepository {
     path: String,
     preferred_remote_name: Option<String>,
     #[serde(default)]
     confirm_unverified: bool,
 }
 
-pub(super) async fn reattach_project_location(
+pub(super) async fn reattach_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
-    ApiJson(input): ApiJson<ReattachProjectLocation>,
-) -> Result<Json<ProjectLocation>> {
+    ApiJson(input): ApiJson<ReattachProjectRepository>,
+) -> Result<Json<Directory>> {
     let current = state.store.repository_as_directory(&id)?;
     ensure_active_project(&state.store.project(&current.project_id)?)?;
     if current.git_common_dir.is_none() {
@@ -1048,7 +1048,9 @@ pub(super) async fn reattach_project_location(
             ));
         }
     }
-    let active_locations = state.store.workspace_locations_for_project_location(&id)?;
+    let active_locations = state
+        .store
+        .workspace_repositories_for_project_repository(&id)?;
     if !active_locations.is_empty() {
         let registered = git_worktrees(&candidate)?;
         for checkout in active_locations
@@ -1102,14 +1104,15 @@ pub(super) async fn resync_workspace(
     let mut failed = 0usize;
     for location in state.store.workspace_repositories(&id)? {
         let Some(checkout_path) = location.checkout_path.as_deref() else {
-            state
-                .store
-                .set_workspace_location_creation_error(&location.id, "checkout path is missing")?;
+            state.store.set_workspace_repository_creation_error(
+                &location.id,
+                "checkout path is missing",
+            )?;
             failed += 1;
             continue;
         };
         if !Path::new(checkout_path).is_dir() {
-            state.store.set_workspace_location_creation_result(
+            state.store.set_workspace_repository_creation_result(
                 &location.id,
                 "missing",
                 Some(checkout_path),
@@ -1119,10 +1122,10 @@ pub(super) async fn resync_workspace(
             failed += 1;
             continue;
         }
-        let repository = match state.store.repository(&location.project_location_id) {
+        let repository = match state.store.repository(&location.project_repository_id) {
             Ok(repository) => repository,
             Err(_) => {
-                state.store.set_workspace_location_creation_result(
+                state.store.set_workspace_repository_creation_result(
                     &location.id,
                     "broken",
                     Some(checkout_path),
@@ -1134,7 +1137,7 @@ pub(super) async fn resync_workspace(
             }
         };
         if !Path::new(&repository.source_root).is_dir() {
-            state.store.set_workspace_location_creation_result(
+            state.store.set_workspace_repository_creation_result(
                 &location.id,
                 "broken",
                 Some(checkout_path),
@@ -1147,7 +1150,7 @@ pub(super) async fn resync_workspace(
         let registered = match git_worktrees(&repository.source_root) {
             Ok(registered) => registered,
             Err(error) => {
-                state.store.set_workspace_location_creation_result(
+                state.store.set_workspace_repository_creation_result(
                     &location.id,
                     "broken",
                     Some(checkout_path),
@@ -1162,7 +1165,7 @@ pub(super) async fn resync_workspace(
             .iter()
             .any(|item| normalized_path(&item.path) == normalized_path(checkout_path))
         {
-            state.store.set_workspace_location_creation_result(
+            state.store.set_workspace_repository_creation_result(
                 &location.id,
                 "missing",
                 Some(checkout_path),
@@ -1177,7 +1180,7 @@ pub(super) async fn resync_workspace(
             "git",
             &["worktree", "repair", checkout_path],
         ) {
-            state.store.set_workspace_location_creation_result(
+            state.store.set_workspace_repository_creation_result(
                 &location.id,
                 "broken",
                 Some(checkout_path),
@@ -1190,7 +1193,7 @@ pub(super) async fn resync_workspace(
         let probe = command_output(Path::new(checkout_path), "git", &["rev-parse", "--git-dir"]);
         match probe {
             Ok(_) => {
-                state.store.set_workspace_location_creation_result(
+                state.store.set_workspace_repository_creation_result(
                     &location.id,
                     "ready",
                     Some(checkout_path),
@@ -1200,7 +1203,7 @@ pub(super) async fn resync_workspace(
                 succeeded += 1;
             }
             Err(error) => {
-                state.store.set_workspace_location_creation_result(
+                state.store.set_workspace_repository_creation_result(
                     &location.id,
                     "broken",
                     Some(checkout_path),
@@ -1234,14 +1237,14 @@ pub(super) async fn delete_project_repository(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub(super) async fn delete_project_location(
+pub(super) async fn delete_project_directory(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
     let location = state.store.directory(&id)?;
     let project = state.store.project(&location.project_id)?;
     ensure_active_project(&project)?;
-    state.store.delete_project_location(&id)?;
+    state.store.delete_project_directory(&id)?;
     location_observations_cache().invalidate(&id).await;
     project_worktrees_cache().invalidate(&project.id).await;
     Ok(StatusCode::NO_CONTENT)
@@ -1614,8 +1617,8 @@ pub(super) struct CreateWorkspace {
 
 #[derive(Clone)]
 pub(super) struct WorkspaceWorktreePlan {
-    pub(super) location: ProjectLocation,
-    pub(super) workspace_location_id: String,
+    pub(super) location: Directory,
+    pub(super) workspace_repository_id: String,
     pub(super) checkout_path: String,
     pub(super) branch: String,
     pub(super) start_ref: String,
@@ -1630,9 +1633,9 @@ pub(super) struct WorkspaceWorktreeOutcome {
 }
 
 pub(super) struct WorkspaceSetupShell {
-    workspace_location_id: String,
-    project_location_id: String,
-    location_name: String,
+    workspace_repository_id: String,
+    project_repository_id: String,
+    repository_name: String,
     command: String,
 }
 
@@ -1747,7 +1750,7 @@ pub(super) fn create_workspace_impl(
         } else {
             None
         };
-        let mut snapshot = git_workspace_location(
+        let mut snapshot = git_workspace_repository(
             &workspace_id,
             location,
             &timestamp,
@@ -1764,7 +1767,7 @@ pub(super) fn create_workspace_impl(
         snapshot.start_commit = None;
         plans.push(WorkspaceWorktreePlan {
             location: location.clone(),
-            workspace_location_id: snapshot.id.clone(),
+            workspace_repository_id: snapshot.id.clone(),
             checkout_path,
             branch: branch.clone(),
             start_ref: base_branch.clone(),
@@ -1812,7 +1815,7 @@ pub(super) fn create_workspace_impl(
     };
     state
         .store
-        .create_workspace_with_locations(&workspace, &snapshots)?;
+        .create_workspace_with_repositories(&workspace, &snapshots)?;
 
     let outcomes = create_workspace_worktrees(plans);
     let setup_shells = record_workspace_worktree_outcomes(&state.store, outcomes)?;
@@ -1940,8 +1943,8 @@ pub(super) fn record_workspace_worktree_outcomes(
     let mut setup_shells = Vec::new();
     for outcome in outcomes {
         if let Some(error) = outcome.error.as_deref() {
-            store.set_workspace_location_creation_result(
-                &outcome.plan.workspace_location_id,
+            store.set_workspace_repository_creation_result(
+                &outcome.plan.workspace_repository_id,
                 "failed",
                 None,
                 outcome.start_commit.as_deref(),
@@ -1949,8 +1952,8 @@ pub(super) fn record_workspace_worktree_outcomes(
             )?;
             continue;
         }
-        store.set_workspace_location_creation_result(
-            &outcome.plan.workspace_location_id,
+        store.set_workspace_repository_creation_result(
+            &outcome.plan.workspace_repository_id,
             "ready",
             Some(&outcome.plan.checkout_path),
             outcome.start_commit.as_deref(),
@@ -1965,9 +1968,9 @@ pub(super) fn record_workspace_worktree_outcomes(
                 shell_quote(&setup_path.to_string_lossy())
             );
             setup_shells.push(WorkspaceSetupShell {
-                workspace_location_id: outcome.plan.workspace_location_id,
-                project_location_id: outcome.plan.setup_directory_id,
-                location_name: outcome.plan.location.name,
+                workspace_repository_id: outcome.plan.workspace_repository_id,
+                project_repository_id: outcome.plan.setup_directory_id,
+                repository_name: outcome.plan.location.name,
                 command,
             });
         }
@@ -1985,9 +1988,9 @@ pub(super) async fn start_workspace_setup_shells(
             state,
             workspace.clone(),
             CreateSession {
-                name: Some(format!("setup · {}", setup.location_name)),
+                name: Some(format!("setup · {}", setup.repository_name)),
                 kind: Some("shell".into()),
-                project_directory_id: Some(setup.project_location_id),
+                project_directory_id: Some(setup.project_repository_id),
                 initial_prompt: Some(setup.command),
             },
         )
@@ -1996,7 +1999,7 @@ pub(super) async fn start_workspace_setup_shells(
             let message = format!("could not start setup shell: {error}");
             let _ = state
                 .store
-                .set_workspace_location_creation_error(&setup.workspace_location_id, &message);
+                .set_workspace_repository_creation_error(&setup.workspace_repository_id, &message);
             log::error!("{message}");
         }
     }
@@ -2025,7 +2028,7 @@ pub(super) async fn get_workspace(
             continue;
         }
         if location.access_mode == "read_only" {
-            location.git_status = if Path::new(&location.source_path).is_dir() {
+            location.git_status = if Path::new(&location.source_root).is_dir() {
                 "not_git"
             } else {
                 "missing"
@@ -2125,17 +2128,17 @@ pub(super) fn ensure_active_project(project: &Project) -> Result<()> {
 }
 
 #[derive(Deserialize)]
-pub(super) struct UpdateWorkspaceLocation {
+pub(super) struct UpdateWorkspaceRepository {
     pub(super) remote_name: Option<String>,
     pub(super) remote_branch: Option<String>,
 }
 
-pub(super) async fn update_workspace_location(
+pub(super) async fn update_workspace_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
-    ApiJson(input): ApiJson<UpdateWorkspaceLocation>,
-) -> Result<Json<WorkspaceLocation>> {
-    let location = state.store.workspace_location(&id)?;
+    ApiJson(input): ApiJson<UpdateWorkspaceRepository>,
+) -> Result<Json<WorkspaceRepository>> {
+    let location = state.store.workspace_repository(&id)?;
     let workspace = state.store.workspace(&location.workspace_id)?;
     ensure_active_workspace(&workspace)?;
     if workspace.kind != "workspace" {
@@ -2143,7 +2146,7 @@ pub(super) async fn update_workspace_location(
             "remote upstream settings are available only for a root Workspace".into(),
         ));
     }
-    let path = workspace_location_git_path(&location)?;
+    let path = workspace_repository_git_path(&location)?;
     let remote_name = trimmed(input.remote_name).filter(|value| !value.is_empty());
     let remote_branch = trimmed(input.remote_branch).filter(|value| !value.is_empty());
     if remote_name.is_some() != remote_branch.is_some() {
@@ -2155,7 +2158,7 @@ pub(super) async fn update_workspace_location(
         let remotes = git_remote_names(path)?;
         if !remotes.iter().any(|candidate| candidate == remote) {
             return Err(AppError::BadRequest(
-                "Workspace location remote was not found".into(),
+                "Workspace Repository remote was not found".into(),
             ));
         }
     }
@@ -2165,5 +2168,5 @@ pub(super) async fn update_workspace_location(
         remote_branch.as_deref(),
         &location.delivery_mode,
     )?;
-    Ok(Json(state.store.workspace_location(&id)?))
+    Ok(Json(state.store.workspace_repository(&id)?))
 }

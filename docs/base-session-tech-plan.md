@@ -1,7 +1,7 @@
 # Project Sessions
 
 Project pages create Shell and Codex Sessions in Treefold's Web terminal. They
-run directly in the selected ProjectLocation and use an internal `base`
+run directly in the selected Project Directory and use an internal `base`
 Workspace only as a process and persistence owner. That internal record is not
 shown as a development Workspace and never owns Todos or delivery state.
 

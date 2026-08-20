@@ -23,7 +23,6 @@ export const sidebarQuery = () =>
       return value.projects.map((project) => {
         const normalizedProject = normalizeProject({
           ...project,
-          locations: project.directories,
           worktrees: [],
         });
         const directories = normalizedProject.directories;
@@ -32,7 +31,6 @@ export const sidebarQuery = () =>
         );
         const streams = project.workspaces.map((workspace) => ({
           ...workspace,
-          locations: workspace.repositories,
           directories: workspace.directories.map((scope) => {
             const repository = scope.workspace_repository_id
               ? workspace.repositories.find(
@@ -68,7 +66,6 @@ export const sidebarQuery = () =>
         }));
         return normalizeProject({
           ...project,
-          locations: directories,
           directories,
           workspaces,
           worktrees: [],

@@ -44,7 +44,7 @@ import type {
   ThemePreference,
   Workspace,
   WorkspaceDetail,
-  WorkspaceLocation,
+  WorkspaceRepository,
   GitWorktree,
   GitSyncItemResult,
   WorktreeDeleteOperation,
@@ -79,7 +79,7 @@ import { DeleteWorktreeDialog } from "@/features/projects/DeleteWorktreeDialog";
 import { Overview } from "@/features/projects/Overview";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import {
-  ConfigureWorkspaceLocationDialog,
+  ConfigureWorkspaceRepositoryDialog,
   CreateWorkspaceDialog,
 } from "@/features/workspace/WorkspaceDialogs";
 import { WorkspaceHome } from "@/features/workspace/WorkspaceHome";
@@ -243,8 +243,8 @@ function Workspace() {
     useState<ProjectDetail | null>(null);
   const [createForkWorkspace, setCreateForkWorkspace] =
     useState<Workspace | null>(null);
-  const [configureWorkspaceLocation, setConfigureWorkspaceLocation] =
-    useState<WorkspaceLocation | null>(null);
+  const [configureWorkspaceRepository, setConfigureWorkspaceRepository] =
+    useState<WorkspaceRepository | null>(null);
   const [finishWorkspaceDialog, setFinishWorkspaceDialog] =
     useState<WorkspaceDetail | null>(null);
   const [finishParentOperation, setFinishParentOperation] =
@@ -519,7 +519,7 @@ function Workspace() {
             failures
               .map(
                 (item) =>
-                  `${item.location_name}: ${item.error ?? t("common.unavailable")}`,
+                  `${item.repository_name}: ${item.error ?? t("common.unavailable")}`,
               )
               .join("\n"),
           );
@@ -542,16 +542,16 @@ function Workspace() {
     else toast.info(feedback.skipped, options);
   }
 
-  async function gitSyncProjectLocation(id: string, action: "pull" | "push") {
+  async function gitSyncDirectory(id: string, action: "pull" | "push") {
     await act(
-      () => projectsApi.syncLocation(id, action),
+      () => projectsApi.syncRepository(id, action),
       gitSyncFeedback(action),
     );
   }
 
-  async function gitSyncWorkspaceLocation(id: string, action: "pull" | "push") {
+  async function gitSyncWorkspaceRepository(id: string, action: "pull" | "push") {
     await act(
-      () => workspacesApi.syncLocation(id, action),
+      () => workspacesApi.syncRepository(id, action),
       gitSyncFeedback(action),
     );
   }
@@ -564,9 +564,9 @@ function Workspace() {
     };
   }
 
-  async function clearWorkspaceLocationUpstream(location: WorkspaceLocation) {
+  async function clearWorkspaceRepositoryUpstream(location: WorkspaceRepository) {
     await act(() =>
-      workspacesApi.updateLocation(location.id, {
+      workspacesApi.updateRepository(location.id, {
         remote_name: "",
         remote_branch: "",
       }),
@@ -912,7 +912,7 @@ function Workspace() {
     const target = deleteWorktreeTarget;
     try {
       const operation = await projectsApi.removeWorktree(
-        target.project_location_id,
+        target.project_repository_id,
         target,
       );
       setDeletingWorktrees((current) => ({
@@ -1272,14 +1272,14 @@ function Workspace() {
           onSyncProject={(project, action) =>
             void gitSync("projects", project.id, action)
           }
-          onSyncProjectLocation={(location, action) =>
-            void gitSyncProjectLocation(location.id, action)
+          onSyncDirectory={(location, action) =>
+            void gitSyncDirectory(location.id, action)
           }
           onSyncWorkspace={(stream, action) =>
             void gitSync("workspaces", stream.id, action)
           }
-          onSyncWorkspaceLocation={(location, action) =>
-            void gitSyncWorkspaceLocation(location.id, action)
+          onSyncWorkspaceRepository={(location, action) =>
+            void gitSyncWorkspaceRepository(location.id, action)
           }
           onFinishWorkspace={(stream) => void openFinishWorkspace(stream)}
           onParentOperation={(stream, direction) =>
@@ -1405,9 +1405,9 @@ function Workspace() {
                       t("overview.deleteBlocked.fork", { name: fork.name }),
                     )
                   }
-                  onConfigureUpstream={setConfigureWorkspaceLocation}
+                  onConfigureUpstream={setConfigureWorkspaceRepository}
                   onClearUpstream={(location) =>
-                    void clearWorkspaceLocationUpstream(location)
+                    void clearWorkspaceRepositoryUpstream(location)
                   }
                   onResync={() => void resyncWorkspace(workspace)}
                   onTodosChanged={() => void refresh()}
@@ -1594,7 +1594,7 @@ function Workspace() {
           if (!editDirectory) return;
           const form = new FormData(event.currentTarget);
           const ok = await act(() =>
-            projectsApi.updateLocation(editDirectory.id, {
+            projectsApi.updateDirectory(editDirectory.id, {
               name: form.get("name"),
               description: form.get("description"),
             }),
@@ -1700,24 +1700,24 @@ function Workspace() {
           }
         }}
       />
-      <ConfigureWorkspaceLocationDialog
-        location={configureWorkspaceLocation}
+      <ConfigureWorkspaceRepositoryDialog
+        location={configureWorkspaceRepository}
         busy={busy}
         onOpenChange={(open) => {
-          if (!open) setConfigureWorkspaceLocation(null);
+          if (!open) setConfigureWorkspaceRepository(null);
         }}
         onSubmit={async (event) => {
           event.preventDefault();
-          if (!configureWorkspaceLocation) return;
-          const owner = configureWorkspaceLocation;
+          if (!configureWorkspaceRepository) return;
+          const owner = configureWorkspaceRepository;
           const form = new FormData(event.currentTarget);
           const ok = await act(() =>
-            workspacesApi.updateLocation(owner.id, {
+            workspacesApi.updateRepository(owner.id, {
               remote_name: form.get("remote_name"),
               remote_branch: form.get("remote_branch"),
             }),
           );
-          if (ok) setConfigureWorkspaceLocation(null);
+          if (ok) setConfigureWorkspaceRepository(null);
         }}
       />
       <FinishWorkspaceDialog
@@ -1736,11 +1736,11 @@ function Workspace() {
           const owner = finishWorkspaceDialog;
           let updated: WorkspaceDetail | null = null;
           const ok = await act(async () => {
-            const progress = await workspacesApi.finishLocation(locationId, payload);
+            const progress = await workspacesApi.finishRepository(locationId, payload);
             setFinishParentOperation(progress.operation ?? null);
             updated = normalizeWorkspace(await workspacesApi.detail(owner.id));
             if (
-              (updated as WorkspaceDetail).locations
+              (updated as WorkspaceDetail).repositories
                 .filter((item) => item.access_mode === "read_write")
                 .every((item) =>
                   ["delivered", "pushed", "kept", "discarded"].includes(
@@ -1753,7 +1753,7 @@ function Workspace() {
           if (
             ok &&
             updated &&
-            (updated as WorkspaceDetail).locations
+            (updated as WorkspaceDetail).repositories
               .filter((item) => item.access_mode === "read_write")
               .every((item) =>
                 ["delivered", "pushed", "kept", "discarded"].includes(
@@ -1781,9 +1781,9 @@ function Workspace() {
         onOpenShell={(locationId) => {
           if (!finishWorkspaceDialog) return;
           const owner = finishWorkspaceDialog;
-          const location = owner.locations.find((item) => item.id === locationId);
+          const location = owner.repositories.find((item) => item.id === locationId);
           const directory = owner.directories.find(
-            (item) => item.repository_id === location?.project_location_id,
+            (item) => item.repository_id === location?.project_repository_id,
           );
           setFinishWorkspaceDialog(null);
           setFinishParentOperation(null);
@@ -1800,7 +1800,7 @@ function Workspace() {
           const next = new URLSearchParams();
           next.set("view", "git-changes");
           next.set("repositoryId", repository.id);
-          next.set("repositoryName", repository.location_name);
+          next.set("repositoryName", repository.repository_name);
           next.set("scope", "working-tree");
           navigate(`/workspaces/${owner.id}?${next.toString()}`);
         }}

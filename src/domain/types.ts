@@ -130,12 +130,12 @@ export type Workspace = {
   updated_at: string;
 };
 
-export type WorkspaceLocation = {
+export type WorkspaceRepository = {
   id: string;
   workspace_id: string;
-  project_location_id: string;
-  location_name: string;
-  source_path: string;
+  project_repository_id: string;
+  repository_name: string;
+  source_root: string;
   access_mode: "read_write" | "read_only";
   git_status:
     | "creating"
@@ -157,8 +157,6 @@ export type WorkspaceLocation = {
   close_outcome?: string;
 };
 
-export type WorkspaceRepository = WorkspaceLocation;
-
 export type WorkspaceDirectory = {
   id: string;
   workspace_id: string;
@@ -177,7 +175,6 @@ export type WorkspaceDirectory = {
 
 export type ProjectDetail = Project & {
   repositories: ProjectRepository[];
-  locations: Directory[];
   directories: Directory[];
   sessions: Session[];
   workspaces: Workspace[];
@@ -200,12 +197,10 @@ export type SidebarWorkspace = Workspace & {
   sessions: Session[];
   repositories: WorkspaceRepository[];
   directories: WorkspaceDirectory[];
-  locations?: WorkspaceLocation[];
 };
 export type SidebarProject = Project & {
   repositories: ProjectRepository[];
   directories: Directory[];
-  locations?: Directory[];
   sessions: Session[];
   workspaces: SidebarWorkspace[];
 };
@@ -221,8 +216,8 @@ export type Todo = {
 };
 
 export type GitWorktree = {
-  project_location_id: string;
-  location_name: string;
+  project_repository_id: string;
+  repository_name: string;
   path: string;
   branch: string;
   head_commit: string;
@@ -259,9 +254,9 @@ export type GitCommit = {
 export type GitHistory = { branch: string; commits: GitCommit[] };
 
 export type GitSyncItemResult = {
-  project_location_id: string;
-  workspace_location_id?: string;
-  location_name: string;
+  project_repository_id: string;
+  workspace_repository_id?: string;
+  repository_name: string;
   status: "success" | "failed" | "skipped";
   error?: string;
 };
@@ -384,10 +379,10 @@ export type ParentOperationPreview = {
 
 export type FinishProgress = {
   status: "finished" | "paused" | "awaiting_resume";
-  location: WorkspaceLocation;
+  repository: WorkspaceRepository;
   operation?: ParentOperation;
 };
-export type ProjectLocationInspection = {
+export type ProjectDirectoryInspection = {
   path: string;
   name: string;
   directory_type: "git_scope" | "external";
@@ -409,7 +404,7 @@ export type LocationDraft = {
   worktree_setup_command: string;
   base_branch: string;
   delivery_mode: "push_branch" | "local_merge" | "keep";
-  inspection?: ProjectLocationInspection;
+  inspection?: ProjectDirectoryInspection;
   inspectionError?: string;
 };
 
@@ -417,7 +412,6 @@ export type WorkspaceDetail = Workspace & {
   project: Project;
   directories: Directory[];
   repositories: WorkspaceRepository[];
-  locations: WorkspaceLocation[];
   workspace_directories: WorkspaceDirectory[];
   sessions: Session[];
   todos: Todo[];

@@ -16,9 +16,7 @@ export function normalizeProject(value: ProjectDetail): ProjectDetail {
   const repositoryById = new Map(
     (value.repositories ?? []).map((repository) => [repository.id, repository]),
   );
-  const rawDirectories = (value.directories ??
-    value.locations ??
-    []) as Directory[];
+  const rawDirectories = (value.directories ?? []) as Directory[];
   const directories = rawDirectories.map((directory) => {
     const repository = directory.repository_id
       ? repositoryById.get(directory.repository_id)
@@ -68,7 +66,6 @@ export function normalizeProject(value: ProjectDetail): ProjectDetail {
     primary_directory_id: defaultDirectoryId ?? "",
     git_common_dir: primaryRepository?.git_common_dir ?? "",
     preferred_remote: primaryRepository?.preferred_remote_name,
-    locations: directories,
     directories,
     repositories: value.repositories ?? [],
     sessions: value.sessions ?? [],
@@ -78,9 +75,7 @@ export function normalizeProject(value: ProjectDetail): ProjectDetail {
 }
 
 export function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
-  const repositories = (value.repositories ??
-    value.locations ??
-    []) as WorkspaceRepository[];
+  const repositories = (value.repositories ?? []) as WorkspaceRepository[];
   const rawDirectories = (value.workspace_directories ??
     value.directories ??
     []) as unknown as WorkspaceDirectory[];
@@ -96,8 +91,8 @@ export function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
     return {
       id: directory.project_directory_id,
       project_id: value.project.id,
-      repository_id: repository?.project_location_id,
-      repository_name: repository?.location_name,
+      repository_id: repository?.project_repository_id,
+      repository_name: repository?.repository_name,
       name: directory.name,
       description: directory.description,
       relative_path: directory.relative_path,
@@ -130,7 +125,7 @@ export function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
     checkout_path:
       primaryDirectory?.path ??
       primary?.checkout_path ??
-      primary?.source_path ??
+      primary?.source_root ??
       "",
     target_branch: primary?.base_branch ?? "",
     start_commit: primary?.start_commit ?? "",
@@ -141,7 +136,6 @@ export function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
     delivery_mode:
       (primary?.delivery_mode as Workspace["delivery_mode"]) ?? "push_branch",
     delivery_status: primary?.delivery_status ?? "active",
-    locations: repositories,
     repositories,
     workspace_directories: rawDirectories,
     directories,

@@ -175,7 +175,7 @@ impl RuntimeHub {
 }
 
 static PROJECT_WORKTREES: OnceLock<Cache<String, Vec<GitWorktree>>> = OnceLock::new();
-static LOCATION_OBSERVATIONS: OnceLock<Cache<String, ProjectLocation>> = OnceLock::new();
+static LOCATION_OBSERVATIONS: OnceLock<Cache<String, Directory>> = OnceLock::new();
 
 fn project_worktrees_cache() -> &'static Cache<String, Vec<GitWorktree>> {
     PROJECT_WORKTREES.get_or_init(|| {
@@ -186,7 +186,7 @@ fn project_worktrees_cache() -> &'static Cache<String, Vec<GitWorktree>> {
     })
 }
 
-fn location_observations_cache() -> &'static Cache<String, ProjectLocation> {
+fn location_observations_cache() -> &'static Cache<String, Directory> {
     LOCATION_OBSERVATIONS.get_or_init(|| {
         Cache::builder()
             .max_capacity(256)
@@ -293,17 +293,17 @@ fn app(state: AppState) -> Router {
         )
         .route(
             "/api/project-directories/inspect",
-            post(inspect_project_location),
+            post(inspect_project_directory),
         )
         .route(
             "/api/project-directories/{id}",
             get(get_project_directory)
                 .patch(update_directory)
-                .delete(delete_project_location),
+                .delete(delete_project_directory),
         )
         .route(
             "/api/project-directories/{id}/refresh",
-            post(refresh_project_location),
+            post(refresh_project_directory),
         )
         .route(
             "/api/projects/{id}/repositories/clone",
@@ -325,51 +325,51 @@ fn app(state: AppState) -> Router {
         )
         .route(
             "/api/project-repositories/{id}/reattach",
-            post(reattach_project_location),
+            post(reattach_project_repository),
         )
         .route(
             "/api/project-repositories/{id}/git-history",
-            get(get_project_location_git_history),
+            get(get_project_repository_git_history),
         )
         .route(
             "/api/project-repositories/{id}/compare",
-            post(compare_project_location_commits),
+            post(compare_project_repository_commits),
         )
         .route(
             "/api/project-repositories/{id}/git-status",
-            get(get_project_location_git_status),
+            get(get_project_repository_git_status),
         )
         .route(
             "/api/project-repositories/{id}/git-diff",
-            post(project_location_git_diff),
+            post(project_repository_git_diff),
         )
         .route(
             "/api/project-repositories/{id}/git/stage",
-            post(project_location_stage),
+            post(project_repository_stage),
         )
         .route(
             "/api/project-repositories/{id}/git/unstage",
-            post(project_location_unstage),
+            post(project_repository_unstage),
         )
         .route(
             "/api/project-repositories/{id}/git/commit",
-            post(project_location_commit),
+            post(project_repository_commit),
         )
         .route(
             "/api/project-repositories/{id}/git/revert",
-            post(project_location_revert_commit),
+            post(project_repository_revert_commit),
         )
         .route(
             "/api/project-repositories/{id}/git/reset",
-            post(project_location_reset_commit),
+            post(project_repository_reset_commit),
         )
         .route(
             "/api/project-repositories/{id}/git/pull",
-            post(pull_project_location),
+            post(pull_project_repository),
         )
         .route(
             "/api/project-repositories/{id}/git/push",
-            post(push_project_location),
+            post(push_project_repository),
         )
         .route(
             "/api/project-repositories/{id}/branches",
@@ -410,55 +410,55 @@ fn app(state: AppState) -> Router {
         )
         .route(
             "/api/workspace-repositories/{id}/git-history",
-            get(get_workspace_location_git_history),
+            get(get_workspace_repository_git_history),
         )
         .route(
             "/api/workspace-repositories/{id}/compare",
-            post(compare_workspace_location_commits),
+            post(compare_workspace_repository_commits),
         )
         .route(
             "/api/workspace-repositories/{id}/git-status",
-            get(get_workspace_location_git_status),
+            get(get_workspace_repository_git_status),
         )
         .route(
             "/api/workspace-repositories/{id}/git-diff",
-            post(workspace_location_git_diff),
+            post(workspace_repository_git_diff),
         )
         .route(
             "/api/workspace-repositories/{id}/git/stage",
-            post(workspace_location_stage),
+            post(workspace_repository_stage),
         )
         .route(
             "/api/workspace-repositories/{id}/git/unstage",
-            post(workspace_location_unstage),
+            post(workspace_repository_unstage),
         )
         .route(
             "/api/workspace-repositories/{id}/git/commit",
-            post(workspace_location_commit),
+            post(workspace_repository_commit),
         )
         .route(
             "/api/workspace-repositories/{id}/git/revert",
-            post(workspace_location_revert_commit),
+            post(workspace_repository_revert_commit),
         )
         .route(
             "/api/workspace-repositories/{id}/git/reset",
-            post(workspace_location_reset_commit),
+            post(workspace_repository_reset_commit),
         )
         .route(
             "/api/workspace-repositories/{id}",
-            patch(update_workspace_location),
+            patch(update_workspace_repository),
         )
         .route(
             "/api/workspace-repositories/{id}/git/pull",
-            post(pull_workspace_location),
+            post(pull_workspace_repository),
         )
         .route(
             "/api/workspace-repositories/{id}/git/push",
-            post(push_workspace_location),
+            post(push_workspace_repository),
         )
         .route(
             "/api/workspace-repositories/{id}/delivery-preflight",
-            post(create_workspace_location_preflight),
+            post(create_workspace_repository_preflight),
         )
         .route(
             "/api/workspace-repositories/{id}/parent-operation",
@@ -479,7 +479,7 @@ fn app(state: AppState) -> Router {
         )
         .route(
             "/api/workspace-repositories/{id}/finish",
-            post(finish_workspace_location),
+            post(finish_workspace_repository),
         )
         .route("/api/workspaces/{id}/archive", post(archive_workspace))
         .route("/api/workspaces/{id}/reveal", post(reveal_workspace))
