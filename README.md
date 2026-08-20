@@ -88,6 +88,8 @@ Treefold manages workspace identity and Todos. It intentionally does not store
 per-turn Agent reports or wrap process commands. Persistent processes, TTYs,
 logs, and restarts use the independent `amux` CLI and Skill.
 
+The CLI-paired Agent Skills live under [`cli/skills`](cli/skills).
+
 At startup the App checks, without modifying the filesystem, whether the
 bundled CLI and Skills are integrated. The lower-left Agent Integration panel
 can create or synchronize these managed links:

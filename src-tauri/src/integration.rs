@@ -136,7 +136,7 @@ impl IntegrationManager {
         let bin_dir = std::env::var_os("TREEFOLD_BUNDLED_BIN_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| executable_dir.to_path_buf());
-        let development_skills = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        let development_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .expect("src-tauri has a parent")
             .to_path_buf();
@@ -144,12 +144,12 @@ impl IntegrationManager {
         let treefold_skill = if skill_root.join("treefold/SKILL.md").is_file() {
             skill_root.join("treefold")
         } else {
-            development_skills.join("skills/treefold")
+            development_root.join("cli/skills/treefold")
         };
         let amux_skill = if skill_root.join("amux/SKILL.md").is_file() {
             skill_root.join("amux")
         } else {
-            development_skills.join("bundled/skills/amux")
+            development_root.join("cli/skills/amux")
         };
         Ok(Self::from_parts(
             treefold_home,
