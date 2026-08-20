@@ -1193,6 +1193,20 @@ pub(super) fn basename(path: &str) -> String {
         .unwrap_or("workspace")
         .to_owned()
 }
+pub(super) fn repository_name_from_url(url: &str) -> String {
+    let path = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .trim_end_matches('/');
+    let segment = path.rsplit(['/', ':']).next().unwrap_or(path);
+    let name = segment.strip_suffix(".git").unwrap_or(segment);
+    if name.is_empty() {
+        "repository".into()
+    } else {
+        name.into()
+    }
+}
 pub(super) fn inspect_path(value: &str) -> Result<(String, bool)> {
     let path = std::fs::canonicalize(value)
         .map_err(|e| AppError::BadRequest(format!("invalid workspace path: {e}")))?;
@@ -1766,6 +1780,14 @@ pub(super) fn slug(value: &str) -> String {
         "workspace".into()
     } else {
         result.chars().take(32).collect()
+    }
+}
+
+pub(super) fn repository_slug(value: &str) -> String {
+    if value.chars().any(|c| c.is_ascii_alphanumeric()) {
+        slug(value)
+    } else {
+        "repository".into()
     }
 }
 

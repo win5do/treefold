@@ -188,14 +188,10 @@ pub(super) fn create_fork_impl(
         let project_location = state
             .store
             .repository_as_directory(&parent_location.project_location_id)?;
-        let checkout_path = managed_worktree_path(
-            &state.settings,
-            &project.id,
-            &parent_location.project_location_id,
-            &fork_id,
-        )
-        .to_string_lossy()
-        .into_owned();
+        let checkout_path =
+            managed_worktree_path(&state.settings, &fork_id, &parent_location.location_name)
+                .to_string_lossy()
+                .into_owned();
         let base_branch = parent_location.branch.clone().unwrap_or_default();
         let mut snapshot = git_workspace_location(
             &fork_id,

@@ -102,10 +102,9 @@ Treefold stores its files under `~/.treefold` by default:
 ├── data/
 │   ├── treefold.db
 │   └── amux/
-└── projects/
-    └── <project-id>/repos/<repository-id>/
-        ├── source/
-        └── worktrees/<workspace-id>/
+└── git/
+    ├── s/<project-id>/<repository-slug>/
+    └── w/<workspace-id>/<repository-slug>/
 ```
 
 Set `TREEFOLD_HOME` before starting the app to relocate this complete tree. The

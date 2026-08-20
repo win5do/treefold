@@ -13,15 +13,17 @@ mod current_workspace_tests {
     use tower::ServiceExt;
 
     use super::{
-        ApiJson, AppState, CreateDeliveryPreflight, CreateDirectory, CreateFork, CreateProject,
-        CreateSession, CreateWorkspace, FinishWorkspace, RuntimeDomain, RuntimeHub, UpdateProject,
-        UpdateWorkspaceLocation, abort_parent_operation_impl, app, close_session, command_output,
+        ApiJson, AppState, CloneProjectRepository, CreateDeliveryPreflight, CreateDirectory,
+        CreateFork, CreateProject, CreateSession, CreateWorkspace, FinishWorkspace, RuntimeDomain,
+        RuntimeHub, UpdateProject, UpdateWorkspaceLocation, abort_parent_operation_impl, app,
+        clone_project_repository_impl, close_session, command_output,
         create_delivery_preflight_impl, create_directory, create_fork, create_project,
         create_project_session, create_session, create_workspace,
         create_workspace_location_preflight_impl, delete_project_location, finish_workspace_impl,
         finish_workspace_location_impl, get_project, git_head, git_is_ancestor, git_worktrees,
-        normalized_path, pull_workspace, push_workspace, reconcile_parent_operation,
-        reconcile_process, refresh_project_location, start_parent_operation_impl, stop_amux,
+        managed_repository_source_path, managed_worktree_path, normalized_path, pull_workspace,
+        push_workspace, reconcile_parent_operation, reconcile_process, refresh_project_location,
+        repository_name_from_url, repository_slug, start_parent_operation_impl, stop_amux,
         stop_session, undo_parent_operation_impl, update_project, update_workspace_location,
     };
     use crate::{
@@ -2047,6 +2049,92 @@ mod current_workspace_tests {
         .expect("remove successful test worktree");
         drop(state);
         std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn managed_git_paths_are_short_and_ascii_safe() {
+        let root =
+            std::env::temp_dir().join(format!("treefold-path-test-{}", uuid::Uuid::new_v4()));
+        let home = root.join("home");
+        let settings = SettingsStore::open(&home).expect("open test Settings");
+        let expected_home = settings.treefold_home().to_path_buf();
+
+        assert_eq!(
+            managed_repository_source_path(&settings, "PROJECT-ID", "Repo 中文 @ Name"),
+            expected_home.join("git/s/project-id/repo-name")
+        );
+        assert_eq!(
+            managed_worktree_path(&settings, "WORKSPACE-ID", "Repo 中文 @ Name"),
+            expected_home.join("git/w/workspace-id/repo-name")
+        );
+        assert_eq!(repository_slug("中文仓库"), "repository");
+
+        drop(settings);
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn managed_repository_clone_uses_the_short_source_path() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-source-path-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let origin = root.join("origin");
+        initialize_repository(&origin);
+        let state = test_state(&root);
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Managed source".into()),
+                description: None,
+                path: None,
+                preferred_remote: None,
+                default_base_branch: Some("main".into()),
+                default_target_branch: None,
+                default_delivery_mode: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .expect("create empty Project");
+        let (_, Json(directory)) = clone_project_repository_impl(
+            state.clone(),
+            project.id.clone(),
+            CloneProjectRepository {
+                url: origin.to_string_lossy().into_owned(),
+                name: Some("Repo 中文 @ Name".into()),
+                preferred_remote_name: None,
+                delivery_mode: None,
+                setup_command: None,
+            },
+        )
+        .expect("clone managed Repository");
+
+        assert_eq!(
+            Path::new(&directory.path),
+            state
+                .settings
+                .treefold_home()
+                .join("git/s")
+                .join(&project.id)
+                .join("repo-name")
+        );
+
+        drop(state);
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn derives_repository_names_from_common_git_urls() {
+        assert_eq!(
+            repository_name_from_url("https://example.com/org/My-Repo.git"),
+            "My-Repo"
+        );
+        assert_eq!(
+            repository_name_from_url("git@example.com:org/My-Repo.git"),
+            "My-Repo"
+        );
     }
 }
 

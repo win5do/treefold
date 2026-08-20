@@ -736,7 +736,14 @@ pub(super) fn clone_project_repository_impl(
         ));
     }
     let repository_id = id();
-    let source = managed_repository_source_path(&state.settings, &project_id, &repository_id);
+    let repository_name = input
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| repository_name_from_url(url));
+    let source = managed_repository_source_path(&state.settings, &project_id, &repository_name);
     if source.exists() {
         return Err(AppError::api(
             StatusCode::CONFLICT,
@@ -769,13 +776,7 @@ pub(super) fn clone_project_repository_impl(
     let mut directory = Directory {
         id: id(),
         project_id: project_id.clone(),
-        name: input
-            .name
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-            .unwrap_or_else(|| basename(&source_string)),
+        name: repository_name,
         description: String::new(),
         worktree_setup_command: input.setup_command.unwrap_or_default(),
         path: source_string,
@@ -1731,10 +1732,9 @@ pub(super) fn create_workspace_impl(
             .delivery_mode
             .clone()
             .unwrap_or_else(|| "push_branch".into());
-        let checkout_path =
-            managed_worktree_path(&state.settings, &project.id, &location.id, &workspace_id)
-                .to_string_lossy()
-                .into_owned();
+        let checkout_path = managed_worktree_path(&state.settings, &workspace_id, &location.name)
+            .to_string_lossy()
+            .into_owned();
         let remote_name = if location.id == default_repository_id {
             trimmed(input.remote_name.clone())
                 .filter(|v| !v.is_empty())
@@ -1826,15 +1826,14 @@ pub(super) fn create_workspace_impl(
 pub(super) fn managed_repository_source_path(
     settings: &SettingsStore,
     project_id: &str,
-    repository_id: &str,
+    repository_name: &str,
 ) -> PathBuf {
     settings
         .treefold_home()
-        .join("projects")
-        .join(project_id)
-        .join("repos")
-        .join(repository_id)
-        .join("source")
+        .join("git")
+        .join("s")
+        .join(slug(project_id))
+        .join(repository_slug(repository_name))
 }
 
 /// Resolve the Repository root for a Project Directory scope.
@@ -1851,18 +1850,15 @@ pub(super) fn repository_root_for_directory(
 
 pub(super) fn managed_worktree_path(
     settings: &SettingsStore,
-    project_id: &str,
-    repository_id: &str,
     workspace_id: &str,
+    repository_name: &str,
 ) -> PathBuf {
     settings
         .treefold_home()
-        .join("projects")
-        .join(project_id)
-        .join("repos")
-        .join(repository_id)
-        .join("worktrees")
-        .join(workspace_id)
+        .join("git")
+        .join("w")
+        .join(slug(workspace_id))
+        .join(repository_slug(repository_name))
 }
 
 pub(super) fn create_workspace_worktrees(
