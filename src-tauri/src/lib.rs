@@ -20,6 +20,7 @@ use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
 };
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 #[derive(Clone)]
 struct ApiEndpoint(String);
@@ -61,6 +62,30 @@ fn remove_api_url(path: &std::path::Path, api_url: &str) {
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_OPEN_ID: &str = "tray-open";
 const TRAY_QUIT_ID: &str = "tray-quit";
+
+fn startup_error_message(error: &dyn std::fmt::Display) -> String {
+    format!(
+        "Treefold couldn't start.\n\n{error}\n\n\
+         Follow the instructions above, then reopen Treefold."
+    )
+}
+
+fn show_startup_error(app: &tauri::AppHandle, error: &dyn std::fmt::Display) {
+    log::error!("Treefold startup failed: {error}");
+
+    let mut dialog = app
+        .dialog()
+        .message(startup_error_message(error))
+        .title("Treefold couldn't start")
+        .kind(MessageDialogKind::Error)
+        .buttons(MessageDialogButtons::OkCustom("Exit Treefold".into()));
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        dialog = dialog.parent(&window);
+    }
+
+    let app = app.clone();
+    dialog.show(move |_| app.exit(1));
+}
 
 fn show_main_window(app: &tauri::AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) else {
@@ -173,77 +198,84 @@ pub fn run() {
             }
         })
         .setup(move |app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-            let user_home = app.path().home_dir()?;
-            let home = std::env::var_os("TREEFOLD_HOME")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|| user_home.join(".treefold"));
-            let settings = settings::SettingsStore::open(&home)?;
-            let executable_dir = std::env::current_exe()?
-                .parent()
-                .context("Treefold executable has no parent")?
-                .to_path_buf();
-            let integration = integration::IntegrationManager::new(
-                &home,
-                &user_home,
-                &app.path().resource_dir()?,
-                &executable_dir,
-            )?;
-            let open_item =
-                MenuItem::with_id(app, TRAY_OPEN_ID, "Open Treefold", true, None::<&str>)?;
-            let separator = PredefinedMenuItem::separator(app)?;
-            let quit_item =
-                MenuItem::with_id(app, TRAY_QUIT_ID, "Quit Treefold", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&open_item, &separator, &quit_item])?;
-            let mut tray = TrayIconBuilder::with_id("treefold")
-                .menu(&tray_menu)
-                .show_menu_on_left_click(true)
-                .tooltip("Treefold")
-                .on_menu_event(|app, event| match event.id() {
-                    id if id == TRAY_OPEN_ID => show_main_window(app),
-                    id if id == TRAY_QUIT_ID => app.exit(0),
-                    _ => {}
-                });
-            if let Some(icon) = app.default_window_icon().cloned() {
-                tray = tray.icon(icon);
-            }
-            tray.build(app)?;
-            let store = store::Store::open(&home.join("data/treefold.db"))
-                .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-            let (daemon_name, daemon_config) = amux_identity(&home)?;
-            let listener = tauri::async_runtime::block_on(server::bind())?;
-            let api_url = format!("http://{}", listener.local_addr()?);
-            let api_url_file = publish_api_url(&home, &api_url)?;
-            app.manage(ApiEndpoint(api_url.clone()));
-            let terminals = terminal::TerminalManager::new_named(daemon_config, daemon_name)
-                .with_treefold_home(home.clone())
-                .with_bundled_bin_dir(integration.bundled_bin_dir())
-                .with_api_url(api_url.clone());
-            *shutdown_state.lock().expect("lock shutdown state") = Some((
-                settings.clone(),
-                terminals.clone(),
-                store.clone(),
-                api_url_file,
-                api_url.clone(),
-            ));
-            let state = server::AppState {
-                store,
-                settings,
-                terminals,
-                runtime: server::RuntimeHub::default(),
-                integration,
-            };
-            tauri::async_runtime::spawn(async move {
-                if let Err(error) = server::serve(listener, state).await {
-                    log::error!("Rust API stopped: {error:#}");
+            let setup_result: anyhow::Result<()> = (|| {
+                if cfg!(debug_assertions) {
+                    app.handle().plugin(
+                        tauri_plugin_log::Builder::default()
+                            .level(log::LevelFilter::Info)
+                            .build(),
+                    )?;
                 }
-            });
+                let user_home = app.path().home_dir()?;
+                let home = std::env::var_os("TREEFOLD_HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| user_home.join(".treefold"));
+                let settings = settings::SettingsStore::open(&home)?;
+                let executable_dir = std::env::current_exe()?
+                    .parent()
+                    .context("Treefold executable has no parent")?
+                    .to_path_buf();
+                let integration = integration::IntegrationManager::new(
+                    &home,
+                    &user_home,
+                    &app.path().resource_dir()?,
+                    &executable_dir,
+                )?;
+                let open_item =
+                    MenuItem::with_id(app, TRAY_OPEN_ID, "Open Treefold", true, None::<&str>)?;
+                let separator = PredefinedMenuItem::separator(app)?;
+                let quit_item =
+                    MenuItem::with_id(app, TRAY_QUIT_ID, "Quit Treefold", true, None::<&str>)?;
+                let tray_menu = Menu::with_items(app, &[&open_item, &separator, &quit_item])?;
+                let mut tray = TrayIconBuilder::with_id("treefold")
+                    .menu(&tray_menu)
+                    .show_menu_on_left_click(true)
+                    .tooltip("Treefold")
+                    .on_menu_event(|app, event| match event.id() {
+                        id if id == TRAY_OPEN_ID => show_main_window(app),
+                        id if id == TRAY_QUIT_ID => app.exit(0),
+                        _ => {}
+                    });
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    tray = tray.icon(icon);
+                }
+                tray.build(app)?;
+                let store = store::Store::open(&home.join("data/treefold.db"))
+                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                let (daemon_name, daemon_config) = amux_identity(&home)?;
+                let listener = tauri::async_runtime::block_on(server::bind())?;
+                let api_url = format!("http://{}", listener.local_addr()?);
+                let api_url_file = publish_api_url(&home, &api_url)?;
+                app.manage(ApiEndpoint(api_url.clone()));
+                let terminals = terminal::TerminalManager::new_named(daemon_config, daemon_name)
+                    .with_treefold_home(home.clone())
+                    .with_bundled_bin_dir(integration.bundled_bin_dir())
+                    .with_api_url(api_url.clone());
+                *shutdown_state.lock().expect("lock shutdown state") = Some((
+                    settings.clone(),
+                    terminals.clone(),
+                    store.clone(),
+                    api_url_file,
+                    api_url.clone(),
+                ));
+                let state = server::AppState {
+                    store,
+                    settings,
+                    terminals,
+                    runtime: server::RuntimeHub::default(),
+                    integration,
+                };
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = server::serve(listener, state).await {
+                        log::error!("Rust API stopped: {error:#}");
+                    }
+                });
+                Ok(())
+            })();
+
+            if let Err(error) = setup_result {
+                show_startup_error(app.handle(), &error);
+            }
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -282,4 +314,17 @@ pub fn run() {
                 log::error!("failed to stop amux daemon during Treefold exit: {error:#}");
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::startup_error_message;
+
+    #[test]
+    fn startup_error_dialog_preserves_the_cause_and_next_step() {
+        let message = startup_error_message(&"database needs attention");
+
+        assert!(message.contains("database needs attention"));
+        assert!(message.contains("reopen Treefold"));
+    }
 }
