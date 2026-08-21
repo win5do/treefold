@@ -21,48 +21,30 @@ processes are managed by the local Rust `amux` runtime.
 
 ```bash
 npm install
-npm run dev:desktop
+just app-dev
 ```
 
-Development launches automatically choose an available API port in the
-`50001-59999` range and provide it to both the Rust API and browser-side Vite
-requests. Open the `[treefold dev] UI:` URL printed by the command in an
-external browser. To request a specific API port, set:
+`app-dev` starts the native App with hot reload and keeps its state in the
+repository-local `.treefold-dev/` directory. To develop against the normal
+`~/.treefold` data instead, use:
 
 ```bash
-TREEFOLD_API_PORT=55001 just app-default
+just app-default
 ```
 
-The available-port helper can also be called independently:
+Both recipes use UI port `15011` and automatically choose an available API
+port. Override either port when needed:
 
 ```bash
-node scripts/random-port.mjs
+TREEFOLD_UI_PORT=15012 TREEFOLD_API_PORT=55001 just app-dev
 ```
 
-Or from the repository root:
+Use `app-dev-no-watch` or `app-default-no-watch` when file watching is not
+needed. The development data directory can also be overridden:
 
 ```bash
-npm install
-just dev
+TREEFOLD_DEV_HOME=/tmp/treefold-dev just app-dev
 ```
-
-The `just dev` and `just dev-no-watch` recipes keep development state in the
-repository-local `.treefold-dev/` directory, separate from the normal
-`~/.treefold` installation. Development UI launches use loopback port `15011`
-for the Vite dev server. Development launches select the API port before Vite
-starts so the external browser and Rust backend share the same address. Packaged
-builds ask the operating system for a free loopback API port and inject the
-resulting URL into the WebView and Treefold-managed terminal sessions. Set
-`TREEFOLD_DEV_HOME` to use another development state directory:
-
-```bash
-TREEFOLD_DEV_HOME=/tmp/treefold-dev just dev
-```
-
-`tauri dev` starts Vite with hot reload, compiles the Rust backend, and opens
-the native macOS window. The selected backend URL is published at
-`$TREEFOLD_HOME/runtime/api-url` for local CLI discovery. Set
-`TREEFOLD_API_ADDR` to request a specific loopback bind address instead.
 
 Useful checks:
 
