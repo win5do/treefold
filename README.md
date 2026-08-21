@@ -42,7 +42,7 @@ node scripts/random-port.mjs
 Or from the repository root:
 
 ```bash
-just install
+npm install
 just dev
 ```
 
@@ -169,7 +169,7 @@ SemVer-compatible timestamp such as `0.1.0-alpha.20260821153045`, then replace
 `/Applications/Treefold.app` in one step:
 
 ```bash
-just package-install-adhoc
+just install-app-local
 ```
 
 Quit an installed Treefold instance before running the recipe. Set

@@ -16,7 +16,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const tauriConfigPath = path.join(root, "src-tauri", "tauri.conf.json");
 const bundleConfigPath = path.join(root, "src-tauri", "tauri.bundle.conf.json");
 const stagingRoot = path.join(root, "src-tauri", "bundle-staging");
-const generatedConfigPath = path.join(stagingRoot, "package-install-adhoc.conf.json");
+const generatedConfigPath = path.join(stagingRoot, "install-app-local.conf.json");
 const sourceApp = path.join(
   root,
   "src-tauri",

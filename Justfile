@@ -3,9 +3,6 @@ default: check
 default-home := env("HOME") + "/.treefold"
 dev-home := env("TREEFOLD_DEV_HOME", justfile_directory() + "/.treefold-dev")
 
-install:
-    npm install
-
 app-dev:
     TREEFOLD_HOME="{{ dev-home }}" npm run dev:desktop
 
@@ -27,8 +24,8 @@ build:
     npm run tauri build
 
 # Build an ad-hoc signed, timestamped App + DMG and install the App in /Applications.
-package-install-adhoc:
-    node scripts/package-install-adhoc.mjs
+install-app-local:
+    node scripts/install-app-local.mjs
 
 clean:
     cargo clean --manifest-path src-tauri/Cargo.toml
