@@ -1487,6 +1487,7 @@ pub(super) fn git_history(repository: &str) -> Result<GitHistory> {
         &[
             "log",
             "-100",
+            "--topo-order",
             "--date=iso-strict",
             "--pretty=format:%H%x1f%h%x1f%an%x1f%aI%x1f%s%x1e",
         ],
