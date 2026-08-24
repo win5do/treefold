@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="1024"
+  height="1024"
+  viewBox="0 0 1024 1024"
+  fill="none"
+>
+  <title>Treefold</title>
+  <defs>
+    <linearGradient id="background" x1="180" y1="96" x2="844" y2="928" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1C1E20" />
+      <stop offset="0.52" stop-color="#101112" />
+      <stop offset="1" stop-color="#08090A" />
+    </linearGradient>
+    <linearGradient id="edge" x1="512" y1="64" x2="512" y2="960" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4A4D50" />
+      <stop offset="0.28" stop-color="#2B2E30" />
+      <stop offset="1" stop-color="#111315" />
+    </linearGradient>
+  </defs>
+
+  <rect x="48" y="48" width="928" height="928" rx="216" fill="url(#background)" />
+  <rect
+    x="56"
+    y="56"
+    width="912"
+    height="912"
+    rx="208"
+    stroke="url(#edge)"
+    stroke-width="16"
+  />
+
+  <g
+    stroke="#FAFAF8"
+    stroke-width="58"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M430 790H196L512 190L828 790H594" />
+    <path d="M356 698L512 408L668 698" />
+    <path d="M454 686L512 584L570 686" />
+  </g>
+</svg>
