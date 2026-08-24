@@ -9,5 +9,5 @@ export const sessionsApi = {
   open: (id: string) => request<Session>(`/api/sessions/${id}/open`, { method: "POST" }),
   stop: (id: string) => request(`/api/sessions/${id}/stop`, { method: "POST" }),
   restart: (id: string) => request<Session>(`/api/sessions/${id}/restart`, { method: "POST" }),
-  terminalSocketUrl: (id: string) => websocketUrl(`/api/sessions/${id}/terminal?takeover=true`),
+  terminalSocketUrl: (id: string, inputClientId: string) => websocketUrl(`/api/sessions/${id}/terminal?input_client_id=${encodeURIComponent(inputClientId)}`),
 };

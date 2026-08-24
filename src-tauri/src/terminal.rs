@@ -501,17 +501,17 @@ impl TerminalManager {
         &self,
         workspace: &str,
         process: &str,
+        input_client_id: Option<&str>,
     ) -> anyhow::Result<Option<WebSocketStream<tokio::net::UnixStream>>> {
         if !self.client.ready().await {
             return Ok(None);
         }
-        Ok(Some(
-            self.client
-                .attach(&format!(
-                    "/v1/processes/{workspace}/{process}/attach?takeover=true&replay_bytes={REPLAY_BYTES}"
-                ))
-                .await?,
-        ))
+        let input = input_client_id
+            .map(|value| format!("&input_protocol=acked-v1&input_client_id={value}"))
+            .unwrap_or_default();
+        Ok(Some(self.client.attach(&format!(
+            "/v1/processes/{workspace}/{process}/attach?takeover=true&replay_bytes={REPLAY_BYTES}{input}"
+        )).await?))
     }
 }
 

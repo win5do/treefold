@@ -655,11 +655,23 @@ pub(super) async fn update_settings(
 pub(super) async fn terminal_socket(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
-    Query(_): Query<HashMap<String, String>>,
+    Query(query): Query<HashMap<String, String>>,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse> {
     state.store.session(&id)?;
-    Ok(ws.on_upgrade(move |socket| proxy_terminal(socket, state, id)))
+    let input_client_id = query.get("input_client_id").cloned();
+    if input_client_id.as_deref().is_some_and(|value| {
+        value.is_empty()
+            || value.len() > 128
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    }) {
+        return Err(AppError::BadRequest(
+            "invalid terminal input client id".into(),
+        ));
+    }
+    Ok(ws.on_upgrade(move |socket| proxy_terminal(socket, state, id, input_client_id)))
 }
 
 pub(super) fn apply_amux_process(session: &mut Session, process: amux::model::Process) {
@@ -887,13 +899,22 @@ pub(super) fn persist_amux_process(store: &Store, id: &str, session: &Session) -
     )
 }
 
-pub(super) async fn proxy_terminal(socket: WebSocket, state: AppState, id: String) {
+pub(super) async fn proxy_terminal(
+    socket: WebSocket,
+    state: AppState,
+    id: String,
+    input_client_id: Option<String>,
+) {
     let Ok(session) = state.store.session(&id) else {
         return;
     };
     let Ok(Some(amux_socket)) = state
         .terminals
-        .attach_existing(&session.amux_workspace_name, &session.amux_process_name)
+        .attach_existing(
+            &session.amux_workspace_name,
+            &session.amux_process_name,
+            input_client_id.as_deref(),
+        )
         .await
     else {
         return;
@@ -901,48 +922,44 @@ pub(super) async fn proxy_terminal(socket: WebSocket, state: AppState, id: Strin
     let _ = state.store.touch_session(&id);
     let (mut front_tx, mut front_rx) = socket.split();
     let (mut back_tx, mut back_rx) = amux_socket.split();
-    loop {
-        tokio::select! {
-            message = front_rx.next() => match message {
-                Some(Ok(Message::Binary(data))) => {
-                    if back_tx.send(tokio_tungstenite::tungstenite::Message::Binary(data)).await.is_err() { break; }
+    let front_to_back = async {
+        while let Some(message) = front_rx.next().await {
+            let message = match message {
+                Ok(Message::Binary(data)) => tokio_tungstenite::tungstenite::Message::Binary(data),
+                Ok(Message::Text(text)) => {
+                    tokio_tungstenite::tungstenite::Message::Text(text.to_string().into())
                 }
-                Some(Ok(Message::Text(text))) => {
-                    if back_tx.send(tokio_tungstenite::tungstenite::Message::Text(text.to_string().into())).await.is_err() { break; }
-                }
-                Some(Ok(Message::Ping(data))) => {
-                    if back_tx.send(tokio_tungstenite::tungstenite::Message::Ping(data)).await.is_err() { break; }
-                }
-                Some(Ok(Message::Pong(data))) => {
-                    if back_tx.send(tokio_tungstenite::tungstenite::Message::Pong(data)).await.is_err() { break; }
-                }
-                Some(Ok(Message::Close(_))) => {
-                    let _ = back_tx.send(tokio_tungstenite::tungstenite::Message::Close(None)).await;
-                    break;
-                }
-                None | Some(Err(_)) => break,
-            },
-            message = back_rx.next() => match message {
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(data))) => {
-                    if front_tx.send(Message::Binary(data)).await.is_err() { break; }
-                }
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) => {
-                    if front_tx.send(Message::Text(text.to_string().into())).await.is_err() { break; }
-                }
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Ping(data))) => {
-                    if front_tx.send(Message::Ping(data)).await.is_err() { break; }
-                }
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Pong(data))) => {
-                    if front_tx.send(Message::Pong(data)).await.is_err() { break; }
-                }
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) => {
-                    let _ = front_tx.send(Message::Close(None)).await;
-                    break;
-                }
-                Some(Ok(tokio_tungstenite::tungstenite::Message::Frame(_))) => {},
-                None | Some(Err(_)) => break,
+                Ok(Message::Ping(data)) => tokio_tungstenite::tungstenite::Message::Ping(data),
+                Ok(Message::Pong(data)) => tokio_tungstenite::tungstenite::Message::Pong(data),
+                Ok(Message::Close(_)) => tokio_tungstenite::tungstenite::Message::Close(None),
+                Err(_) => break,
+            };
+            if back_tx.send(message).await.is_err() {
+                break;
             }
         }
+    };
+    let back_to_front = async {
+        while let Some(message) = back_rx.next().await {
+            let message = match message {
+                Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => Message::Binary(data),
+                Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                    Message::Text(text.to_string().into())
+                }
+                Ok(tokio_tungstenite::tungstenite::Message::Ping(data)) => Message::Ping(data),
+                Ok(tokio_tungstenite::tungstenite::Message::Pong(data)) => Message::Pong(data),
+                Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => Message::Close(None),
+                Ok(tokio_tungstenite::tungstenite::Message::Frame(_)) => continue,
+                Err(_) => break,
+            };
+            if front_tx.send(message).await.is_err() {
+                break;
+            }
+        }
+    };
+    tokio::select! {
+        _ = front_to_back => {},
+        _ = back_to_front => {},
     }
     if let Ok(Some(process)) = state
         .terminals

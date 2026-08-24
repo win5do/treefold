@@ -10,7 +10,7 @@ import "@azurity/pure-nerd-font/pure-nerd-font.css";
 import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import type { Session } from "@/domain/types";
-import { prepareTerminalInput } from "@/features/terminal/inputQueue";
+import { ReliableTerminalInputQueue } from "@/features/terminal/inputQueue";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
@@ -68,8 +68,8 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     }).catch(() => { /* existing font fallbacks remain available */ });
     fit.fit();
     const socketHighWaterBytes = 256 * 1024;
-    const pendingInput: ArrayBuffer[] = [];
-    let pendingBytes = 0;
+    const inputClientId = crypto.randomUUID();
+    const inputQueue = new ReliableTerminalInputQueue();
     let inputPaused = false;
     let socket: WebSocket | null = null;
     let reconnectTimer = 0;
@@ -102,13 +102,19 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     const flushInput = () => {
       const candidate = socket;
       if (!candidate || candidate.readyState !== WebSocket.OPEN) return;
-      while (pendingInput.length > 0 && candidate.bufferedAmount < socketHighWaterBytes) {
-        const data = pendingInput.shift()!;
-        pendingBytes -= data.byteLength;
-        candidate.send(data);
+      while (inputQueue.hasUnsent && candidate.bufferedAmount < socketHighWaterBytes) {
+        const frame = inputQueue.takeUnsent();
+        if (!frame) break;
+        try {
+          candidate.send(frame.wire);
+        } catch {
+          inputQueue.reconnect();
+          candidate.close();
+          return;
+        }
       }
-      if (pendingInput.length > 0) scheduleFlush(flushInput);
-      else if (inputPaused) {
+      if (inputQueue.hasUnsent) scheduleFlush(flushInput);
+      else if (inputPaused && !inputQueue.shouldPauseStdin) {
         inputPaused = false;
         terminal.options.disableStdin = false;
       }
@@ -126,7 +132,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
 
     const connect = () => {
       if (disposed) return;
-      const candidate = new WebSocket(sessionsApi.terminalSocketUrl(session.id));
+      const candidate = new WebSocket(sessionsApi.terminalSocketUrl(session.id, inputClientId));
       const candidateGeneration = ++generation;
       let relinquished = false;
       socket = candidate;
@@ -135,6 +141,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
         if (disposed || socket !== candidate || generation !== candidateGeneration) return;
         reconnectAttempt = 0;
         controllerId = null;
+        inputQueue.reconnect();
         sendResize(candidate, true);
         flushInput();
         terminal.focus();
@@ -144,9 +151,25 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
         if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
         else if (typeof event.data === "string") {
           try {
-            const message = JSON.parse(event.data) as { type?: string; code?: string; controller?: number };
+            const message = JSON.parse(event.data) as { type?: string; code?: string; controller?: number; client_id?: string; sequence?: number };
             if (message.type === "exit") onExitRef.current();
             if (message.type === "error") terminal.writeln(`\r\n\x1b[31m${message.code || "terminal error"}\x1b[0m`);
+            if (message.type === "input_ack" && message.client_id === inputClientId && typeof message.sequence === "number") {
+              inputQueue.acknowledge(message.sequence);
+              flushInput();
+            }
+            if (message.type === "input_rejected" && message.code === "ownership_lost") {
+              relinquished = true;
+              inputPaused = true;
+              terminal.options.disableStdin = true;
+              terminal.writeln("\r\n\x1b[33mterminal control moved to another window\x1b[0m");
+              socket = null;
+              candidate.close();
+            }
+            if (message.type === "input_rejected" && message.code !== "ownership_lost") {
+              terminal.writeln(`\r\n\x1b[31mterminal input rejected: ${message.code || "protocol error"}; reconnecting\x1b[0m`);
+              candidate.close();
+            }
             if (message.type === "input_error") {
               terminal.writeln("\r\n\x1b[31mterminal input failed; reconnecting\x1b[0m");
               candidate.close();
@@ -167,12 +190,13 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       };
       candidate.onclose = () => {
         if (socket === candidate) socket = null;
+        inputQueue.reconnect();
         if (!relinquished && generation === candidateGeneration) scheduleReconnect(connect);
       };
       candidate.onerror = () => candidate.close();
     };
     const input = terminal.onData((data) => {
-      const prepared = prepareTerminalInput(data, pendingBytes);
+      const prepared = inputQueue.enqueue(data);
       if (!prepared.accepted && prepared.reason === "single-input-too-large") {
         terminal.writeln("\r\n\x1b[31mterminal input rejected: a single paste cannot exceed 1 MiB\x1b[0m");
         return;
@@ -185,9 +209,10 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
         }
         return;
       }
-      for (const frame of prepared.frames) {
-        pendingInput.push(frame);
-        pendingBytes += frame.byteLength;
+      if (prepared.pauseStdin && !inputPaused) {
+        inputPaused = true;
+        terminal.options.disableStdin = true;
+        terminal.writeln("\r\n\x1b[33mterminal input paused until queued input is acknowledged\x1b[0m");
       }
       flushInput();
     });
