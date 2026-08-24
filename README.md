@@ -138,13 +138,15 @@ user-facing `treefold` CLI and private `amux` CLI are separate bundled sidecars.
 Frontend routes use hash history so deep links work from both Vite and packaged
 assets.
 
-Create a release bundle with `npm run bundle:desktop`. It builds the pinned CLI
-sidecars before applying `src-tauri/tauri.bundle.conf.json`. The default
-co-workspace layout expects the amux repository at `../amux`; set
-`TREEFOLD_AMUX_MANIFEST` when its `Cargo.toml` lives elsewhere. The build reads
-the amux package version and stages `skills/amux` from that same module, so its
-CLI and Skill stay one release unit. Development runs can override Skill
-discovery with `TREEFOLD_AMUX_SKILL_DIR`.
+Create a release bundle with `npm run bundle:desktop`. Its thin Node entry point
+invokes `cargo xtask sidecars bundle` to build the pinned CLI sidecars before
+applying `src-tauri/tauri.bundle.conf.json`. The same Rust xtask prepares debug
+sidecars for `npm run dev:desktop`, keeping Cargo target, profile, source, and
+staging logic in one place. The default co-workspace layout expects the amux
+repository at `../amux`; set `TREEFOLD_AMUX_MANIFEST` when its `Cargo.toml` lives
+elsewhere. The xtask reads the amux package version and stages `skills/amux`
+from that same module, so its CLI and Skill stay one release unit. Development
+runs can override Skill discovery with `TREEFOLD_AMUX_SKILL_DIR`.
 
 For a private local installation, build an ad-hoc signed App and DMG with a
 SemVer-compatible timestamp such as `0.1.0-alpha.20260821153045`, then replace

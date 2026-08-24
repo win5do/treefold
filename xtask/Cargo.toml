@@ -1,0 +1,11 @@
+[package]
+name = "treefold-xtask"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+publish = false
+
+[dependencies]
+anyhow = "1"
+serde_json = "1"
+toml_edit = "0.25"
