@@ -2164,9 +2164,13 @@ try {
     await locationRows[0].$('input[aria-label="Location 1 path"]')
   ).setValue("/tmp/treefold-ui-fixture/new-api-repository");
   await (await locationRows[0].$("button=Check")).click();
-  await (
-    await locationRows[0].$('input[aria-label="Location 1 base branch"]')
-  ).waitForDisplayed({ timeout: 3_000 });
+  assert.equal(
+    await locationRows[0]
+      .$('input[aria-label="Location 1 base branch"]')
+      .isExisting(),
+    false,
+    "adding a Git location must defer base branch configuration",
+  );
   await (await addDirectoryDialog.$("button=Add another")).click();
   locationRows = await addDirectoryDialog.$$(
     '[data-testid="location-draft-row"]',
@@ -2190,13 +2194,13 @@ try {
   );
   assert.equal(
     (await addDirectoryDialog.$$('input[aria-label$="base branch"]')).length,
-    1,
-    "only Git rows may configure a base branch",
+    0,
+    "location creation must not expose base branch configuration",
   );
   assert.equal(
     (await addDirectoryDialog.$$('select[aria-label$="delivery mode"]')).length,
-    1,
-    "only Git rows may configure a delivery mode",
+    0,
+    "location creation must not expose delivery configuration",
   );
   await (await addDirectoryDialog.$("button=Add 2 locations")).click();
   await addDirectoryDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
@@ -2210,6 +2214,57 @@ try {
       timeoutMsg: "batch-added locations did not refresh the Project",
     },
   );
+  await projectCreateButton.click();
+  sessionMenu = await browser.$('[data-testid="sidebar-session-menu"]');
+  await sessionMenu.waitForDisplayed({ timeout: 3_000 });
+  await (
+    await sessionMenu.$('[data-testid="create-workspace-action"]')
+  ).click();
+  const deferredSetupDialog = await browser.$('[role="dialog"]');
+  await deferredSetupDialog.waitForDisplayed({ timeout: 3_000 });
+  const deferredBaseBranch = await deferredSetupDialog.$(
+    'select[name^="base_branch:"]',
+  );
+  await deferredBaseBranch.waitForEnabled({ timeout: 3_000 });
+  assert.match(
+    await deferredBaseBranch.getText(),
+    /main[\s\S]*release\/ui-fixture/,
+    "deferred base selection must list only local branches",
+  );
+  assert.equal(
+    await (
+      await deferredSetupDialog.$('select[name^="delivery_mode:"]')
+    ).isDisplayed(),
+    true,
+    "Workspace creation must collect missing Project delivery settings",
+  );
+  assert.match(
+    await (
+      await deferredSetupDialog.$('select[name^="base_remote:"]')
+    ).getText(),
+    /origin/,
+    "push delivery must select from repository remotes",
+  );
+  const sharedWorkspaceBranch = await deferredSetupDialog.$(
+    'input[name="branch"]',
+  );
+  const remoteWorkspaceBranch = await deferredSetupDialog.$(
+    'input[name="remote_branch"]',
+  );
+  await sharedWorkspaceBranch.setValue("feature/local-name");
+  assert.equal(
+    await remoteWorkspaceBranch.getValue(),
+    "feature/local-name",
+    "remote branch must default to the local Workspace branch name",
+  );
+  await remoteWorkspaceBranch.setValue("feature/custom-remote-name");
+  assert.equal(
+    await remoteWorkspaceBranch.getValue(),
+    "feature/custom-remote-name",
+    "remote branch must remain editable",
+  );
+  await pressUiEscape(browser);
+  await deferredSetupDialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
   const blockedWorktreeDeletes = await browser.$$(
     'button[data-worktree-delete-state="blocked"]',
   );

@@ -1560,7 +1560,6 @@ function Workspace() {
               if (location.source === "url") {
                 await projectsApi.cloneRepository(addDirectoryProject.id, {
                   url: location.path,
-                  delivery_mode: location.delivery_mode,
                   setup_command: location.worktree_setup_command,
                 });
               } else {
@@ -1568,14 +1567,6 @@ function Workspace() {
                   path: location.path,
                   description: location.description,
                   worktree_setup_command: location.worktree_setup_command,
-                  base_branch:
-                    location.inspection?.git_status === "ready"
-                      ? location.base_branch
-                      : undefined,
-                  delivery_mode:
-                    location.inspection?.git_status === "ready"
-                      ? location.delivery_mode
-                      : undefined,
                 });
               }
             }
@@ -1660,14 +1651,66 @@ function Workspace() {
           const form = new FormData(event.currentTarget);
           let created: Workspace | null = null;
           const ok = await act(async () => {
+            const setupRepositoryIds = form
+              .getAll("setup_repository_id")
+              .map(String);
+            for (const repositoryId of setupRepositoryIds) {
+              const baseBranch = String(
+                form.get(`base_branch:${repositoryId}`) || "",
+              );
+              const deliveryMode = String(
+                form.get(`delivery_mode:${repositoryId}`) || "",
+              );
+              const remote =
+                deliveryMode === "push_branch"
+                  ? String(form.get(`base_remote:${repositoryId}`) || "")
+                  : "";
+              await projectsApi.setBaseBranch(repositoryId, {
+                branch: baseBranch,
+                remote: remote || null,
+              });
+              await projectsApi.updateRepository(repositoryId, {
+                base_branch: baseBranch,
+                delivery_mode: deliveryMode,
+              });
+            }
+
+            const defaultDirectory = createWorkspaceProject.directories.find(
+              (directory) =>
+                directory.id === createWorkspaceProject.default_directory_id,
+            );
+            const defaultRepository = createWorkspaceProject.repositories.find(
+              (repository) =>
+                repository.id === defaultDirectory?.repository_id,
+            );
+            const configuredDefaultDelivery = defaultRepository
+              ? String(
+                  form.get(`delivery_mode:${defaultRepository.id}`) ||
+                    defaultRepository.delivery_mode ||
+                    "",
+                )
+              : "";
+            const configuredDefaultRemote = defaultRepository
+              ? String(
+                  form.get(`base_remote:${defaultRepository.id}`) ||
+                    defaultRepository.preferred_remote_name ||
+                    "",
+                )
+              : "";
             created = await projectsApi.createWorkspace(
               createWorkspaceProject.id,
               {
                 name: form.get("name"),
                 description: form.get("description"),
                 branch: form.get("branch"),
-                remote_name: form.get("remote_name"),
-                remote_branch: form.get("remote_branch"),
+                remote_name:
+                  configuredDefaultDelivery === "push_branch"
+                    ? configuredDefaultRemote
+                    : null,
+                remote_branch:
+                  configuredDefaultDelivery === "push_branch"
+                    ? form.get("remote_branch")
+                    : null,
               },
             );
           });

@@ -349,8 +349,6 @@ mod current_workspace_tests {
                 path: api.to_string_lossy().into_owned(),
                 description: None,
                 worktree_setup_command: None,
-                base_branch: None,
-                delivery_mode: None,
             }),
         )
         .await
@@ -599,8 +597,6 @@ mod current_workspace_tests {
                 description: None,
                 worktree_setup_command: None,
                 path: context.to_string_lossy().into_owned(),
-                base_branch: None,
-                delivery_mode: None,
             }),
         )
         .await
@@ -618,8 +614,6 @@ mod current_workspace_tests {
                 description: None,
                 worktree_setup_command: None,
                 path: repository.to_string_lossy().into_owned(),
-                base_branch: Some("main".into()),
-                delivery_mode: Some("local_merge".into()),
             }),
         )
         .await
@@ -631,6 +625,25 @@ mod current_workspace_tests {
                 .unwrap()
                 .default_location_id,
             Some(primary.id.clone())
+        );
+        assert!(primary.base_branch.is_none());
+        assert!(primary.delivery_mode.is_none());
+        let error = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Needs repository setup".into(),
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect_err("Workspace creation must wait for Project Repository configuration");
+        assert_eq!(
+            error.to_string(),
+            "default Repository delivery mode is not configured"
         );
         state
             .store
@@ -661,8 +674,6 @@ mod current_workspace_tests {
                 description: None,
                 worktree_setup_command: None,
                 path: context.to_string_lossy().into_owned(),
-                base_branch: None,
-                delivery_mode: None,
             }),
         )
         .await
@@ -1573,12 +1584,23 @@ mod current_workspace_tests {
                     description: None,
                     worktree_setup_command: None,
                     path: path.to_string_lossy().into_owned(),
-                    base_branch: path.join(".git").exists().then(|| "main".into()),
-                    delivery_mode: path.join(".git").exists().then(|| "local_merge".into()),
                 }),
             )
             .await
             .expect("create Project location");
+            if location.git_common_dir.is_some() {
+                state
+                    .store
+                    .update_directory(
+                        &location.id,
+                        &location.name,
+                        "",
+                        "",
+                        Some("main"),
+                        Some("local_merge"),
+                    )
+                    .expect("configure Project Repository");
+            }
             ids.push(location.id);
         }
         assert_eq!(
@@ -1774,12 +1796,21 @@ mod current_workspace_tests {
                 description: None,
                 worktree_setup_command: Some("exit 7".into()),
                 path: second.to_string_lossy().into_owned(),
-                base_branch: Some("main".into()),
-                delivery_mode: Some("local_merge".into()),
             }),
         )
         .await
         .unwrap();
+        state
+            .store
+            .update_directory(
+                &second_location.id,
+                &second_location.name,
+                "",
+                "exit 7",
+                Some("main"),
+                Some("local_merge"),
+            )
+            .expect("configure second Project Repository");
         let (_, Json(workspace)) = create_workspace(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
@@ -1902,8 +1933,6 @@ mod current_workspace_tests {
                 description: None,
                 worktree_setup_command: None,
                 path: second.to_string_lossy().into_owned(),
-                base_branch: Some("main".into()),
-                delivery_mode: Some("local_merge".into()),
             }),
         )
         .await
@@ -2114,7 +2143,6 @@ mod current_workspace_tests {
                 url: origin.to_string_lossy().into_owned(),
                 name: Some("Repo 中文 @ Name".into()),
                 preferred_remote_name: None,
-                delivery_mode: None,
                 setup_command: None,
             },
         )

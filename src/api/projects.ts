@@ -2,6 +2,7 @@ import { request } from "./client";
 import type {
   Directory,
   GitHistory,
+  GitBranches,
   GitSyncItemResult,
   GitDiffComparison,
   GitDiffRequest,
@@ -79,11 +80,7 @@ export const projectsApi = {
       json,
     }),
   repositoryBranches: (id: string, signal?: AbortSignal) =>
-    request<{
-      current: string;
-      local: string[];
-      remotes: { name: string; branches: string[] }[];
-    }>(`/api/project-repositories/${id}/branches`, { signal }),
+    request<GitBranches>(`/api/project-repositories/${id}/branches`, { signal }),
   deleteRepositoryBranch: (id: string, json: unknown) =>
     request<{
       current: string;

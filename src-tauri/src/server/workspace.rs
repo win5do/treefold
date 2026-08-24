@@ -581,8 +581,6 @@ pub(super) struct CreateDirectory {
     pub(super) description: Option<String>,
     pub(super) worktree_setup_command: Option<String>,
     pub(super) path: String,
-    pub(super) base_branch: Option<String>,
-    pub(super) delivery_mode: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -700,7 +698,6 @@ pub(super) struct CloneProjectRepository {
     pub(super) url: String,
     pub(super) name: Option<String>,
     pub(super) preferred_remote_name: Option<String>,
-    pub(super) delivery_mode: Option<String>,
     pub(super) setup_command: Option<String>,
 }
 
@@ -728,12 +725,6 @@ pub(super) fn clone_project_repository_impl(
     let url = input.url.trim();
     if url.is_empty() {
         return Err(AppError::BadRequest("Git URL is required".into()));
-    }
-    let delivery_mode = input.delivery_mode.as_deref().unwrap_or("push_branch");
-    if !["push_branch", "local_merge", "keep"].contains(&delivery_mode) {
-        return Err(AppError::BadRequest(
-            "delivery_mode must be push_branch, local_merge, or keep".into(),
-        ));
     }
     let repository_id = id();
     let repository_name = input
@@ -791,7 +782,7 @@ pub(super) fn clone_project_repository_impl(
                 .to_owned(),
         ),
         base_branch: None,
-        delivery_mode: Some(delivery_mode.to_owned()),
+        delivery_mode: None,
         git_common_dir: None,
         git_status: "creating".into(),
         last_checked_at: None,
@@ -807,6 +798,7 @@ pub(super) fn clone_project_repository_impl(
         created_at: timestamp,
     };
     refresh_location_observation(&mut directory)?;
+    directory.base_branch = None;
     if directory.git_status != "ready" || directory.git_common_dir.is_none() {
         let _ = std::fs::remove_dir_all(parent);
         return Err(AppError::BadRequest(
@@ -847,16 +839,6 @@ pub(super) async fn create_directory(
         ));
     }
     let name = basename(&path);
-    let requested_delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
-    if let Some(mode) = requested_delivery_mode.as_deref()
-        && mode != "push_branch"
-        && mode != "local_merge"
-        && mode != "keep"
-    {
-        return Err(AppError::BadRequest(
-            "delivery_mode must be push_branch, local_merge, or keep".into(),
-        ));
-    }
     let directory = Directory {
         id: id(),
         project_id,
@@ -866,16 +848,8 @@ pub(super) async fn create_directory(
         path,
         repository_url: None,
         preferred_remote_name: None,
-        base_branch: if is_git {
-            trimmed(input.base_branch).filter(|value| !value.is_empty())
-        } else {
-            None
-        },
-        delivery_mode: if is_git {
-            Some(requested_delivery_mode.unwrap_or_else(|| "push_branch".into()))
-        } else {
-            None
-        },
+        base_branch: None,
+        delivery_mode: None,
         git_common_dir: None,
         git_status: if is_git {
             "ready".into()
@@ -896,13 +870,11 @@ pub(super) async fn create_directory(
     };
     let mut directory = directory;
     refresh_location_observation(&mut directory)?;
+    directory.base_branch = None;
     if project.default_location_id.is_none() && directory.git_status != "ready" {
         return Err(AppError::BadRequest(
             "a Project's first location must be a ready Git repository".into(),
         ));
-    }
-    if directory.git_status == "ready" && directory.delivery_mode.is_none() {
-        directory.delivery_mode = Some("push_branch".into());
     }
     let directory_id = state.store.create_directory(&directory)?;
     let directory = state.store.directory(&directory_id)?;
@@ -1326,10 +1298,12 @@ pub(super) async fn update_project_repository(
     ensure_active_project(&state.store.project(&current.project_id)?)?;
     let base_branch = trimmed(input.base_branch)
         .filter(|value| !value.is_empty())
-        .unwrap_or(current.base_branch);
+        .or(current.base_branch)
+        .ok_or_else(|| AppError::BadRequest("base branch is required".into()))?;
     let delivery_mode = trimmed(input.delivery_mode)
         .filter(|value| !value.is_empty())
-        .unwrap_or(current.delivery_mode);
+        .or(current.delivery_mode)
+        .ok_or_else(|| AppError::BadRequest("delivery mode is required".into()))?;
     if !["push_branch", "local_merge", "keep"].contains(&delivery_mode.as_str()) {
         return Err(AppError::BadRequest(
             "delivery_mode must be push_branch, local_merge, or keep".into(),
@@ -1722,19 +1696,31 @@ pub(super) fn create_workspace_impl(
         .iter()
         .find(|location| location.id == default_repository_id)
         .and_then(|location| location.delivery_mode.clone())
-        .unwrap_or_else(|| "push_branch".into());
+        .ok_or_else(|| {
+            AppError::BadRequest("default Repository delivery mode is not configured".into())
+        })?;
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
     for location in &locations {
-        let base_branch = location
-            .base_branch
-            .clone()
-            .unwrap_or_else(|| project.default_base_branch.clone());
-        let location_delivery_mode = location
-            .delivery_mode
-            .clone()
-            .unwrap_or_else(|| "push_branch".into());
+        let base_branch = location.base_branch.clone().ok_or_else(|| {
+            AppError::BadRequest(format!(
+                "Repository '{}' base branch is not configured",
+                location.name
+            ))
+        })?;
+        let location_delivery_mode = location.delivery_mode.clone().ok_or_else(|| {
+            AppError::BadRequest(format!(
+                "Repository '{}' delivery mode is not configured",
+                location.name
+            ))
+        })?;
+        if !["push_branch", "local_merge", "keep"].contains(&location_delivery_mode.as_str()) {
+            return Err(AppError::BadRequest(format!(
+                "Repository '{}' has an invalid delivery mode",
+                location.name
+            )));
+        }
         let checkout_path = managed_worktree_path(&state.settings, &workspace_id, &location.name)
             .to_string_lossy()
             .into_owned();
@@ -1745,8 +1731,16 @@ pub(super) fn create_workspace_impl(
         } else {
             location.preferred_remote_name.clone()
         };
-        let remote_branch = if location.id == default_repository_id {
-            trimmed(input.remote_branch.clone()).filter(|v| !v.is_empty())
+        let remote_branch = if location_delivery_mode == "push_branch" {
+            if remote_name.is_none() {
+                None
+            } else if location.id == default_repository_id {
+                trimmed(input.remote_branch.clone())
+                    .filter(|v| !v.is_empty())
+                    .or_else(|| Some(branch.clone()))
+            } else {
+                Some(branch.clone())
+            }
         } else {
             None
         };

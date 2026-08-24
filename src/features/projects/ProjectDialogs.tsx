@@ -201,8 +201,6 @@ function newLocationDraft(): LocationDraft {
     path: "",
     description: "",
     worktree_setup_command: "",
-    base_branch: "",
-    delivery_mode: "push_branch",
   };
 }
 
@@ -240,7 +238,6 @@ export function AddDirectoryDialog({
       update(key, {
         path: result.path,
         inspection: result,
-        base_branch: result.base_branch ?? "main",
         inspectionError: undefined,
       });
     } catch (cause) {
@@ -276,9 +273,7 @@ export function AddDirectoryDialog({
         location.path.trim() &&
         !location.inspectionError &&
         (location.source === "url" ||
-          (!duplicatePath.has(location.path.trim()) &&
-            (location.inspection?.git_status !== "ready" ||
-              location.base_branch.trim()))),
+          !duplicatePath.has(location.path.trim())),
     ) &&
     checkingKeys.size === 0;
   return (
@@ -470,42 +465,6 @@ export function AddDirectoryDialog({
                       </label>
                     </div>
                   )}
-                  {isGit && !existingRepository && (
-                    <div className="mt-3 grid gap-3 rounded-lg border border-border bg-card p-3 sm:grid-cols-2">
-                      <label className="text-[11px] text-muted-foreground">
-                        Base branch
-                        <Input
-                          className="mt-1 font-mono text-xs"
-                          aria-label={`Location ${index + 1} base branch`}
-                          value={location.base_branch}
-                          onChange={(event) =>
-                            update(location.key, {
-                              base_branch: event.target.value,
-                            })
-                          }
-                          required
-                        />
-                      </label>
-                      <label className="text-[11px] text-muted-foreground">
-                        Default Workspace finish strategy
-                        <Select
-                          className="mt-1"
-                          aria-label={`Location ${index + 1} delivery mode`}
-                          value={location.delivery_mode}
-                          onChange={(event) =>
-                            update(location.key, {
-                              delivery_mode: event.target
-                                .value as LocationDraft["delivery_mode"],
-                            })
-                          }
-                        >
-                          <option value="push_branch">Push feature branch</option>
-                          <option value="local_merge">Merge into local base</option>
-                          <option value="keep">Preserve without delivery</option>
-                        </Select>
-                      </label>
-                    </div>
-                  )}
                   {location.inspection?.git_status === "not_git" && (
                     <p className="mt-3 rounded-lg bg-card px-3 py-2 text-[11px] text-muted-foreground">
                       Read-only Workspace context · no Git branch or delivery
@@ -630,7 +589,7 @@ export function EditRepositoryDialog({
     const controller = new AbortController();
     setBranches(null);
     setBranchesError("");
-    setBaseBranch(repository.base_branch);
+    setBaseBranch(repository.base_branch || "");
     setBaseRemote(repository.preferred_remote_name || "");
     projectsApi
       .repositoryBranches(repository.id, controller.signal)
@@ -701,10 +660,11 @@ export function EditRepositoryDialog({
                     required
                   >
                     {!branches ? (
-                      <option value={repository.base_branch}>Loading…</option>
+                      <option value={repository.base_branch || ""}>Loading…</option>
                     ) : (
                       <>
-                        {!branches.local.includes(repository.base_branch) && (
+                        {repository.base_branch &&
+                          !branches.local.includes(repository.base_branch) && (
                           <option value={repository.base_branch} disabled>
                             {repository.base_branch} (not found)
                           </option>

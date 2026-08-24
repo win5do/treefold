@@ -60,8 +60,8 @@ export type ProjectRepository = {
   git_common_dir: string;
   repository_url?: string;
   preferred_remote_name?: string;
-  base_branch: string;
-  delivery_mode: "push_branch" | "local_merge" | "keep";
+  base_branch?: string;
+  delivery_mode?: "push_branch" | "local_merge" | "keep";
   setup_command: string;
   setup_workdir: string;
   git_status: Directory["git_status"];
@@ -402,10 +402,14 @@ export type LocationDraft = {
   path: string;
   description: string;
   worktree_setup_command: string;
-  base_branch: string;
-  delivery_mode: "push_branch" | "local_merge" | "keep";
   inspection?: ProjectDirectoryInspection;
   inspectionError?: string;
+};
+
+export type GitBranches = {
+  current: string;
+  local: string[];
+  remotes: { name: string; branches: string[] }[];
 };
 
 export type WorkspaceDetail = Workspace & {

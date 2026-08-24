@@ -352,7 +352,7 @@ async function startFixtureApi() {
       const input = await readJson(request);
       const cleanPath = String(input.path ?? "").replace(/\/+$/, "");
       const name = cleanPath.split("/").filter(Boolean).at(-1) || cleanPath;
-      const isGit = input.base_branch != null;
+      const isGit = !/docs|documentation|reference|context/i.test(cleanPath);
       const detail = fixture.projectDetails[projectLocationsMatch[1]];
       if (!detail.default_location_id && !isGit) {
         sendJson(response, 400, {
@@ -373,8 +373,8 @@ async function startFixtureApi() {
         path: cleanPath,
         repository_url: isGit ? `https://example.test/${name}.git` : undefined,
         preferred_remote_name: isGit ? "origin" : undefined,
-        base_branch: isGit ? input.base_branch : undefined,
-        delivery_mode: isGit ? input.delivery_mode : undefined,
+        base_branch: undefined,
+        delivery_mode: undefined,
         git_common_dir: isGit ? `${cleanPath}/.git` : undefined,
         git_status: isGit ? "ready" : "not_git",
         role: !detail.default_location_id && isGit ? "primary" : "attached",
@@ -391,8 +391,8 @@ async function startFixtureApi() {
           git_common_dir: `${cleanPath}/.git`,
           repository_url: `https://example.test/${name}.git`,
           preferred_remote_name: "origin",
-          base_branch: input.base_branch,
-          delivery_mode: input.delivery_mode,
+          base_branch: undefined,
+          delivery_mode: undefined,
           setup_command: input.worktree_setup_command ?? "",
           setup_workdir: ".",
           git_status: "ready",

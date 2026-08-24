@@ -24,6 +24,11 @@ common directory, remote, base branch, delivery mode, status, and one setup
 command with a repository-relative setup workdir. A Project cannot register the
 same Git common directory through another linked worktree.
 
+Adding or cloning a Repository records its Git identity before choosing branch
+policy. Base branch and delivery mode are configured from local branches and
+available remotes when the first Workspace needs them, then persist as Project
+Repository defaults for later Workspaces.
+
 A `ProjectDirectory` is only a working scope. A Git Directory stores a
 Repository id and a normalized relative path; a Non-Git Directory stores an
 external absolute path and is read-only context. Repository root is an ordinary

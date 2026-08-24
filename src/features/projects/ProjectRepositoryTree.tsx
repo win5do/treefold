@@ -40,7 +40,8 @@ function repositoryLabel(remote?: string) {
 function deliveryStrategyLabel(mode?: ProjectRepository["delivery_mode"]) {
   if (mode === "local_merge") return "merge into local base";
   if (mode === "keep") return "preserve";
-  return "push feature branch";
+  if (mode === "push_branch") return "push feature branch";
+  return "delivery not configured";
 }
 
 export function DirectoryTreeRow({
@@ -516,7 +517,7 @@ export function ProjectRepositoryTreeRow({
                 <span>
                   base{" "}
                   <strong className="font-medium text-foreground">
-                    {repository.base_branch}
+                    {repository.base_branch || "not configured"}
                   </strong>
                 </span>
                 <span>·</span>

@@ -80,8 +80,8 @@ pub struct ProjectRepository {
     pub repository_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preferred_remote_name: Option<String>,
-    pub base_branch: String,
-    pub delivery_mode: String,
+    pub base_branch: Option<String>,
+    pub delivery_mode: Option<String>,
     pub setup_command: String,
     pub setup_workdir: String,
     pub git_status: String,
