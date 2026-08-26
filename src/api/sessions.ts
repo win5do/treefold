@@ -9,5 +9,9 @@ export const sessionsApi = {
   open: (id: string) => request<Session>(`/api/sessions/${id}/open`, { method: "POST" }),
   stop: (id: string) => request(`/api/sessions/${id}/stop`, { method: "POST" }),
   restart: (id: string) => request<Session>(`/api/sessions/${id}/restart`, { method: "POST" }),
-  terminalSocketUrl: (id: string, inputClientId: string) => websocketUrl(`/api/sessions/${id}/terminal?input_client_id=${encodeURIComponent(inputClientId)}`),
+  terminalSocketUrl: (id: string, controllerClientId: string, inputClientId: string, afterOutputSequence: bigint | null) => {
+    const query = new URLSearchParams({ controller_client_id: controllerClientId, input_client_id: inputClientId });
+    if (afterOutputSequence !== null) query.set("after_output_sequence", afterOutputSequence.toString());
+    return websocketUrl(`/api/sessions/${id}/terminal?${query}`);
+  },
 };

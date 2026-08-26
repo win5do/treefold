@@ -501,7 +501,9 @@ impl TerminalManager {
         &self,
         workspace: &str,
         process: &str,
+        controller_client_id: Option<&str>,
         input_client_id: Option<&str>,
+        after_output_sequence: Option<u64>,
     ) -> anyhow::Result<Option<WebSocketStream<tokio::net::UnixStream>>> {
         if !self.client.ready().await {
             return Ok(None);
@@ -509,8 +511,19 @@ impl TerminalManager {
         let input = input_client_id
             .map(|value| format!("&input_protocol=acked-v1&input_client_id={value}"))
             .unwrap_or_default();
+        let control = controller_client_id
+            .map(|value| format!("&control=preferred&controller_client_id={value}"))
+            .unwrap_or_default();
+        let output = controller_client_id
+            .map(|_| {
+                let after = after_output_sequence
+                    .map(|value| format!("&after_output_sequence={value}"))
+                    .unwrap_or_default();
+                format!("&output_protocol=sequenced-v1{after}")
+            })
+            .unwrap_or_default();
         Ok(Some(self.client.attach(&format!(
-            "/v1/processes/{workspace}/{process}/attach?takeover=true&replay_bytes={REPLAY_BYTES}{input}"
+            "/v1/processes/{workspace}/{process}/attach?replay_bytes={REPLAY_BYTES}{control}{input}{output}"
         )).await?))
     }
 }

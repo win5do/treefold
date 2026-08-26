@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bot, PanelsTopLeft, RotateCcw, Square, TerminalSquare, X } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -10,7 +10,7 @@ import "@azurity/pure-nerd-font/pure-nerd-font.css";
 import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import type { Session } from "@/domain/types";
-import { ReliableTerminalInputQueue } from "@/features/terminal/inputQueue";
+import { acceptOutputSequence, createTerminalRuntime, decodeSequencedOutput, type TerminalOwnership, type TerminalRuntime } from "@/features/terminal/runtime";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
@@ -32,6 +32,9 @@ export function SessionWorkspace({ session, busy, onStop, onRestart, onClose, on
 function WebTerminal({ session, onExit }: { session: Session; onExit: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
+  const runtimeRef = useRef<TerminalRuntime | null>(null);
+  if (!runtimeRef.current) runtimeRef.current = createTerminalRuntime();
+  const [ownership, setOwnership] = useState<TerminalOwnership>(runtimeRef.current.ownership);
   useEffect(() => { onExitRef.current = onExit; }, [onExit]);
   useEffect(() => {
     const host = hostRef.current;
@@ -68,8 +71,11 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     }).catch(() => { /* existing font fallbacks remain available */ });
     fit.fit();
     const socketHighWaterBytes = 256 * 1024;
-    const inputClientId = crypto.randomUUID();
-    const inputQueue = new ReliableTerminalInputQueue();
+    const runtime = runtimeRef.current!;
+    const { inputClientId, inputQueue } = runtime;
+    runtime.ownership = "connecting";
+    setOwnership("connecting");
+    terminal.options.disableStdin = true;
     let inputPaused = false;
     let socket: WebSocket | null = null;
     let reconnectTimer = 0;
@@ -77,7 +83,6 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     let resizeFrame = 0;
     let reconnectAttempt = 0;
     let generation = 0;
-    let controllerId: number | null = null;
     let lastRows = 0;
     let lastCols = 0;
 
@@ -132,70 +137,78 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
 
     const connect = () => {
       if (disposed) return;
-      const candidate = new WebSocket(sessionsApi.terminalSocketUrl(session.id, inputClientId));
+      const candidate = new WebSocket(sessionsApi.terminalSocketUrl(
+        session.id,
+        runtime.controllerClientId,
+        inputClientId,
+        runtime.lastOutputSequence,
+      ));
       const candidateGeneration = ++generation;
-      let relinquished = false;
       socket = candidate;
       candidate.binaryType = "arraybuffer";
       candidate.onopen = () => {
         if (disposed || socket !== candidate || generation !== candidateGeneration) return;
         reconnectAttempt = 0;
-        controllerId = null;
         inputQueue.reconnect();
-        sendResize(candidate, true);
-        flushInput();
-        terminal.focus();
       };
       candidate.onmessage = (event) => {
         if (disposed || socket !== candidate || generation !== candidateGeneration) return;
-        if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
+        if (event.data instanceof ArrayBuffer) {
+          const output = decodeSequencedOutput(event.data);
+          if (output && acceptOutputSequence(runtime, output.sequence)) terminal.write(output.data);
+        }
         else if (typeof event.data === "string") {
           try {
-            const message = JSON.parse(event.data) as { type?: string; code?: string; controller?: number; client_id?: string; sequence?: number };
+            const message = JSON.parse(event.data) as { type?: string; state?: TerminalOwnership; code?: string; client_id?: string; sequence?: number | string };
             if (message.type === "exit") onExitRef.current();
             if (message.type === "error") terminal.writeln(`\r\n\x1b[31m${message.code || "terminal error"}\x1b[0m`);
             if (message.type === "input_ack" && message.client_id === inputClientId && typeof message.sequence === "number") {
               inputQueue.acknowledge(message.sequence);
               flushInput();
             }
-            if (message.type === "input_rejected" && message.code === "ownership_lost") {
-              relinquished = true;
+            if (message.type === "output_cursor" && typeof message.sequence === "string" && runtime.lastOutputSequence === null) {
+              runtime.lastOutputSequence = BigInt(message.sequence);
+            }
+            if (message.type === "output_gap" && !runtime.gapNotified) {
+              runtime.gapNotified = true;
+              terminal.writeln("\r\n\x1b[33mterminal output history has a gap; resumed from the earliest available output\x1b[0m");
+            }
+            if (message.type === "ownership_state" && message.state === "controller") {
+              runtime.ownership = "controller";
+              setOwnership("controller");
+              inputPaused = inputQueue.shouldPauseStdin;
+              terminal.options.disableStdin = inputPaused;
+              sendResize(candidate, true);
+              flushInput();
+              terminal.focus();
+            }
+            if (message.type === "ownership_state" && message.state === "readonly") {
+              runtime.ownership = "readonly";
+              setOwnership("readonly");
               inputPaused = true;
               terminal.options.disableStdin = true;
-              terminal.writeln("\r\n\x1b[33mterminal control moved to another window\x1b[0m");
-              socket = null;
-              candidate.close();
             }
             if (message.type === "input_rejected" && message.code !== "ownership_lost") {
               terminal.writeln(`\r\n\x1b[31mterminal input rejected: ${message.code || "protocol error"}; reconnecting\x1b[0m`);
               candidate.close();
             }
+            if (message.type === "input_rejected" && message.code === "ownership_lost") candidate.close();
             if (message.type === "input_error") {
               terminal.writeln("\r\n\x1b[31mterminal input failed; reconnecting\x1b[0m");
               candidate.close();
             }
-            if (message.type === "ownership_changed" && typeof message.controller === "number") {
-              if (controllerId === null) controllerId = message.controller;
-              else if (controllerId !== message.controller) {
-                relinquished = true;
-                inputPaused = true;
-                terminal.options.disableStdin = true;
-                terminal.writeln("\r\n\x1b[33mterminal control moved to another window\x1b[0m");
-                socket = null;
-                candidate.close();
-              }
-            }
-          } catch { terminal.write(event.data); }
+          } catch { /* protocol control frames are JSON */ }
         }
       };
       candidate.onclose = () => {
         if (socket === candidate) socket = null;
         inputQueue.reconnect();
-        if (!relinquished && generation === candidateGeneration) scheduleReconnect(connect);
+        if (generation === candidateGeneration) scheduleReconnect(connect);
       };
       candidate.onerror = () => candidate.close();
     };
     const input = terminal.onData((data) => {
+      if (runtime.ownership !== "controller") return;
       const prepared = inputQueue.enqueue(data);
       if (!prepared.accepted && prepared.reason === "single-input-too-large") {
         terminal.writeln("\r\n\x1b[31mterminal input rejected: a single paste cannot exceed 1 MiB\x1b[0m");
@@ -221,7 +234,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       resizeFrame = window.requestAnimationFrame(() => {
         resizeFrame = 0;
         const candidate = socket;
-        if (candidate) sendResize(candidate);
+        if (candidate && runtime.ownership === "controller") sendResize(candidate);
       });
     });
     resizeObserver.observe(host);
@@ -237,5 +250,8 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       terminal.dispose();
     };
   }, [session.id, session.status]);
-  return <div ref={hostRef} className="min-h-0 flex-1 p-2" />;
+  return <div className="relative min-h-0 flex-1">
+    {ownership === "readonly" ? <div data-testid="terminal-readonly-indicator" role="status" className="absolute right-4 top-3 z-10 rounded border border-amber-400/30 bg-[#191b1e]/95 px-2 py-1 text-[10px] font-medium text-amber-300">Read only</div> : null}
+    <div ref={hostRef} className="h-full min-h-0 p-2" />
+  </div>;
 }

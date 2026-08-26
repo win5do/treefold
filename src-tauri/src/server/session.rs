@@ -660,18 +660,37 @@ pub(super) async fn terminal_socket(
 ) -> Result<impl IntoResponse> {
     state.store.session(&id)?;
     let input_client_id = query.get("input_client_id").cloned();
-    if input_client_id.as_deref().is_some_and(|value| {
+    let controller_client_id = query.get("controller_client_id").cloned();
+    let valid_id = |value: &str| {
         value.is_empty()
             || value.len() > 128
             || !value
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-    }) {
+    };
+    if input_client_id.as_deref().is_some_and(valid_id)
+        || controller_client_id.as_deref().is_some_and(valid_id)
+        || input_client_id.is_some() != controller_client_id.is_some()
+    {
         return Err(AppError::BadRequest(
-            "invalid terminal input client id".into(),
+            "invalid terminal client identity".into(),
         ));
     }
-    Ok(ws.on_upgrade(move |socket| proxy_terminal(socket, state, id, input_client_id)))
+    let after_output_sequence = query
+        .get("after_output_sequence")
+        .map(|value| value.parse::<u64>())
+        .transpose()
+        .map_err(|_| AppError::BadRequest("invalid terminal output cursor".into()))?;
+    Ok(ws.on_upgrade(move |socket| {
+        proxy_terminal(
+            socket,
+            state,
+            id,
+            controller_client_id,
+            input_client_id,
+            after_output_sequence,
+        )
+    }))
 }
 
 pub(super) fn apply_amux_process(session: &mut Session, process: amux::model::Process) {
@@ -903,7 +922,9 @@ pub(super) async fn proxy_terminal(
     socket: WebSocket,
     state: AppState,
     id: String,
+    controller_client_id: Option<String>,
     input_client_id: Option<String>,
+    after_output_sequence: Option<u64>,
 ) {
     let Ok(session) = state.store.session(&id) else {
         return;
@@ -913,7 +934,9 @@ pub(super) async fn proxy_terminal(
         .attach_existing(
             &session.amux_workspace_name,
             &session.amux_process_name,
+            controller_client_id.as_deref(),
             input_client_id.as_deref(),
+            after_output_sequence,
         )
         .await
     else {
