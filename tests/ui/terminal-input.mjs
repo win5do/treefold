@@ -77,6 +77,149 @@ try {
   assert.equal(result.lastOutputSequence, "43");
 
   await browser.execute((workspaceId, sessionId) => {
+    window.__terminalInputFrames = [];
+    window.__terminalControllerReady = false;
+    class ControllerTerminalSocket extends EventTarget {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+      readyState = ControllerTerminalSocket.CONNECTING;
+      bufferedAmount = 0;
+      binaryType = "blob";
+      onopen = null;
+      onmessage = null;
+      onclose = null;
+      onerror = null;
+      constructor() {
+        super();
+        setTimeout(() => {
+          if (this.readyState !== ControllerTerminalSocket.CONNECTING) return;
+          this.readyState = ControllerTerminalSocket.OPEN;
+          this.onopen?.(new Event("open"));
+          this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "output_cursor", sequence: "0" }) }));
+          this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "ownership_state", state: "controller" }) }));
+          window.__terminalControllerReady = true;
+        }, 0);
+      }
+      send(data) {
+        if (typeof data !== "string") return;
+        let message;
+        try { message = JSON.parse(data); } catch { return; }
+        if (message.type !== "input") return;
+        window.__terminalInputFrames.push(message);
+        setTimeout(() => {
+          if (this.readyState !== ControllerTerminalSocket.OPEN) return;
+          this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "input_ack", client_id: message.client_id, sequence: message.sequence }) }));
+        }, 0);
+      }
+      close() {
+        if (this.readyState === ControllerTerminalSocket.CLOSED) return;
+        this.readyState = ControllerTerminalSocket.CLOSED;
+        this.onclose?.(new CloseEvent("close"));
+      }
+    }
+    window.WebSocket = ControllerTerminalSocket;
+    window.location.hash = `#/workspaces/${workspaceId}/sessions/${sessionId}`;
+  }, FIXTURE_IDS.workspace, FIXTURE_IDS.workspaceShell);
+
+  const helperTextarea = await browser.$(".xterm-helper-textarea");
+  await helperTextarea.waitForExist({ timeout: 3_000 });
+  await browser.waitUntil(async () => browser.execute(() => {
+    const textarea = document.querySelector(".xterm-helper-textarea");
+    return window.__terminalControllerReady === true && textarea instanceof HTMLTextAreaElement && !textarea.disabled;
+  }), { timeout: 3_000, timeoutMsg: "terminal controller did not enable stdin" });
+
+  const imeResult = await browser.executeAsync(async (done) => {
+    try {
+      const textarea = document.querySelector(".xterm-helper-textarea");
+      if (!(textarea instanceof HTMLTextAreaElement)) throw new Error("xterm helper textarea is missing");
+      const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+      const insert = (data) => {
+        textarea.value += data;
+        textarea.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          data,
+          inputType: "insertText",
+        }));
+      };
+      const key = (type, value, keyCode, isComposing = false) => {
+        const event = new KeyboardEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          key: value,
+          code: value.length === 1 && /[a-z]/i.test(value) ? `Key${value.toUpperCase()}` : value,
+        });
+        Object.defineProperty(event, "keyCode", { get: () => keyCode });
+        Object.defineProperty(event, "which", { get: () => keyCode });
+        Object.defineProperty(event, "isComposing", { get: () => isComposing });
+        textarea.dispatchEvent(event);
+      };
+      const decodedInput = () => window.__terminalInputFrames.map((frame) => {
+        const binary = atob(frame.data);
+        return new TextDecoder().decode(Uint8Array.from(binary, (character) => character.charCodeAt(0)));
+      }).join("");
+      const takeInput = async () => {
+        await sleep(40);
+        const value = decodedInput();
+        window.__terminalInputFrames = [];
+        return value;
+      };
+
+      insert("g");
+      key("keydown", "g", 229);
+      await sleep(30);
+      insert("i");
+      key("keydown", "i", 229);
+      insert("t");
+      key("keydown", "t", 229);
+      key("keyup", "g", 71);
+      key("keyup", "i", 73);
+      key("keyup", "t", 84);
+      const rollover = await takeInput();
+
+      key("keydown", "a", 229);
+      insert("a");
+      key("keyup", "a", 65);
+      const keydownFirst = await takeInput();
+
+      key("keydown", "Shift", 16);
+      insert("G");
+      key("keydown", "G", 229);
+      key("keyup", "G", 71);
+      key("keyup", "Shift", 16);
+      const modifierOverlap = await takeInput();
+
+      textarea.value = "";
+      textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, composed: true, data: "" }));
+      textarea.dispatchEvent(new CompositionEvent("compositionupdate", { bubbles: true, composed: true, data: "拼" }));
+      textarea.value = "拼";
+      textarea.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        data: "拼",
+        inputType: "insertCompositionText",
+        isComposing: true,
+      }));
+      textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, composed: true, data: "拼" }));
+      const composition = await takeInput();
+
+      done({ rollover, keydownFirst, modifierOverlap, composition });
+    } catch (error) {
+      done({ error: String(error) });
+    }
+  });
+  assert.equal(imeResult.error, undefined);
+  assert.equal(imeResult.rollover, "git", "IME key rollover must emit every character exactly once");
+  assert.equal(imeResult.keydownFirst, "a", "keydown-first IME delivery must retain native insertText");
+  assert.equal(imeResult.modifierOverlap, "G", "an overlapping modifier must replay only the input xterm dropped");
+  assert.equal(imeResult.composition, "拼", "real composition input must remain owned by xterm");
+
+  await browser.execute((workspaceId, sessionId) => {
     window.__terminalSocketUrls = [];
     window.__terminalSocketSends = [];
     class ReadonlyTerminalSocket extends EventTarget {
@@ -111,7 +254,7 @@ try {
     }
     window.WebSocket = ReadonlyTerminalSocket;
     window.location.hash = `#/workspaces/${workspaceId}/sessions/${sessionId}`;
-  }, FIXTURE_IDS.workspace, FIXTURE_IDS.workspaceShell);
+  }, FIXTURE_IDS.workspace, FIXTURE_IDS.sessionDevServer);
   const readonly = await browser.$('[data-testid="terminal-readonly-indicator"]');
   await readonly.waitForDisplayed({ timeout: 3_000 });
   assert.equal(await readonly.getText(), "Read only");

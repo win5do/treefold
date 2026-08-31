@@ -11,6 +11,7 @@ import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import type { Session } from "@/domain/types";
 import { acceptOutputSequence, createTerminalRuntime, decodeSequencedOutput, type TerminalOwnership, type TerminalRuntime } from "@/features/terminal/runtime";
+import { setupXtermIme229Workaround } from "@/features/terminal/xtermIme229Workaround";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
@@ -63,6 +64,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon());
     terminal.open(host);
+    const disposeIme229Workaround = setupXtermIme229Workaround({ terminal, host });
     try { terminal.loadAddon(new WebglAddon()); } catch { /* canvas renderer is fine */ }
     void document.fonts.load('13px "Pure Nerd Font"').then(() => {
       if (disposed) return;
@@ -245,6 +247,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       window.clearTimeout(flushTimer);
       window.cancelAnimationFrame(resizeFrame);
       resizeObserver.disconnect();
+      disposeIme229Workaround();
       input.dispose();
       socket?.close();
       terminal.dispose();
