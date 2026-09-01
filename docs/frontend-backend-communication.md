@@ -30,7 +30,7 @@ Desktop React ── Tauri IPC ──────────────→ └
 使用 HTTP API：
 
 - Project、Workspace；
-- Todo、Report 和执行状态；
+- Todo 和执行状态；
 - Session、Git/worktree、Rebase 和 Delivery；
 - Workstation 状态、能力发现和授权信息。
 

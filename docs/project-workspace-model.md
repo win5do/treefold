@@ -73,6 +73,20 @@ and delivery operate per Repository, not per Directory.
 
 ## Session access
 
+Project pages create Shell and Codex Sessions in the selected Project Directory.
+An internal `base` Workspace owns their process and persistence records but is
+not shown as a development Workspace and never owns Todos or delivery state.
+Project Codex Sessions are retained for resume; Shell Sessions are removed from
+the database when closed and completed Shells are pruned. Other ready Git
+Repositories are writable additional roots, while Non-Git Directories are
+read-only context. Because Project Sessions operate directly in source
+checkouts, the UI warns that they do not have Workspace worktree or delivery
+protection.
+
+Workspace and Fork Sessions use their owning worktrees. Shell Sessions have the
+same ephemeral lifecycle as Project Shells, while Codex Sessions retain their
+history for resume.
+
 Session creation continues to accept `project_directory_id`. Its cwd is the
 selected Directory scope. An Agent receives the complete owning Repository root
 as writable, plus deduplicated roots for other Git repositories. Non-Git

@@ -1,6 +1,6 @@
 # Agent Skill、CLI 与 amux 集成
 
-状态：MVP 已实现。
+状态：当前架构与运行合同。
 
 ## 决策摘要
 
@@ -31,8 +31,7 @@ treefold
 treefold open [path]
 treefold current [--json]
 
-treefold todo list|show|add|edit|remove
-treefold todo claim|release|done|block
+treefold todo list|show|add|edit|remove|block
 
 treefold doctor
 treefold version
@@ -72,7 +71,7 @@ App 启动时只读检查；缺失、过期、不完整或冲突时，在单次 
 | `2` | 参数或输入无效 |
 | `3` | Treefold App/API 不可用 |
 | `4` | Session 身份或权限无效 |
-| `5` | 状态冲突，例如 Todo 已被其他 Session 领取 |
+| `5` | 状态冲突，例如 Todo 已关联活动 Fork |
 | `10` | Treefold 内部错误 |
 
 ## 当前上下文
@@ -99,20 +98,25 @@ Git 信息是读取时快照。Agent 在破坏性或历史修改前仍需使用 
 
 ## Todo 模型
 
-MVP Todo 是管理事实，不是执行报告：
+Todo 是 Workspace 的工作项，不是执行报告：
 
 ```text
-pending → assigned → done
-   │          │
-   └──────────┴→ blocked
-assigned → pending   (release)
+pending ── create Fork ──→ in_progress ── finish with local merge ──→ done
+   └──────────────→ blocked
+
+in_progress / blocked ── archive Fork ──→ pending
 ```
 
-字段包括 title、description、status、Session 归属、可选阻塞原因及时间戳。不保存逐轮 progress、result、evidence、verification 或 handoff。
+字段包括 `content`、`status`、可选的 `fork_id`、可选阻塞原因及时间戳。
+`in_progress` 表示 Todo 已绑定活动 Fork，而不是某个 Agent Session 持有锁。Fork
+Fork 成功合并到父 Workspace 后 Todo 变为 `done`；归档未完成的 Fork 时回到
+`pending`。Agent
+可以把当前范围内的 Todo 标记为 `blocked`，但不直接 claim、release 或 done。
 
-`claim` 是服务端原子状态转换：未领取 Todo 只能由一个 Session 领取；同一 Session 重试幂等；其他 Session 收到冲突。`done` 和 `block` 不能覆盖其他 Session 已领取的 Todo。
-
-Todo 与 Codex Session ID 关联。需要理解工作过程时恢复真实 Codex Session，而不是读取 Treefold 生成的二手摘要。
+Todo 属于根 Workspace；由 Todo 创建的 Fork 通过 `fork_id` 关联该工作项。根
+Workspace Session 可见整个 Workspace 的 Todos，Fork Session 只看见与该 Fork
+关联的 Todo，Project Session 不拥有开发 Todo。需要理解工作过程时恢复真实 Codex
+Session，而不是读取 Treefold 生成的二手摘要。
 
 ## Agent API
 
@@ -125,13 +129,10 @@ POST   /api/v1/agent/todos
 GET    /api/v1/agent/todos/{id}
 PATCH  /api/v1/agent/todos/{id}
 DELETE /api/v1/agent/todos/{id}
-POST   /api/v1/agent/todos/{id}/claim
-POST   /api/v1/agent/todos/{id}/release
-POST   /api/v1/agent/todos/{id}/done
 POST   /api/v1/agent/todos/{id}/block
 ```
 
-接口要求 `Authorization: Bearer <TREEFOLD_API_TOKEN>`，并把能力限制到 token 绑定的当前 Session 和 Workspace。MVP 的本地 loopback capability 使用随机 Session ID；后续可以替换成独立短期 token，而不改变 CLI 协议。
+接口要求 `Authorization: Bearer <TREEFOLD_API_TOKEN>`，并把能力限制到 token 绑定的当前 Session 和 Workspace。当前 pre-release 的本地 loopback capability 使用随机 Session ID；后续可以替换成独立短期 token，而不改变 CLI 协议。
 
 Agent API 不暴露 Project/Workspace 创建删除、Session 控制、checkout、rebase、reset 或 delivery。
 
@@ -151,7 +152,8 @@ Project main worktree  ↔ amux workspace
 managed Workspace     ↔ amux workspace
 ```
 
-每个 Workspace 都拥有 managed worktree，并按规范化路径映射到稳定的 amux workspace。
+每个开发 Workspace/Fork 为各个 ready Repository 使用 managed worktree，并按规范化
+路径映射到稳定的 amux workspace。
 
 Treefold Session 注入：
 
@@ -187,7 +189,7 @@ Treefold Skill：
 
 1. 需要 Treefold 上下文时运行一次 `treefold current --json`；
 2. 按需 list/show/add/edit/remove Todo；
-3. 开始 Todo 时 claim，放弃时 release，完成时 done，真实阻塞时 block；
+3. 只在真实阻塞时 block；Todo 的 Fork 绑定与完成状态由 Treefold 生命周期管理；
 4. 不逐轮上报 progress，不生成 report 或 handoff；
 5. 进程操作切换到 `$amux` Skill；
 6. 不自行执行 Treefold 生命周期操作；
@@ -200,13 +202,14 @@ amux Skill：
 - 不停止、重启、kill 或删除当前 `AMUX_PROCESS_ID`；
 - 不作为第二套子 Agent orchestration。
 
-## MVP 验收标准
+## 运行合同
 
 - `treefold` 无参数显示帮助，`treefold open` 显式启动桌面 App；
 - managed Session 中 `treefold current --json` 返回完整、来源明确的当前快照；
-- Agent 只能读写当前 Workspace 的 Todo；
-- 两个 Session 同时 claim 同一 Todo 时只有一个成功；
-- Todo 支持 CRUD、claim、release、done 和带原因的 block；
+- 根 Workspace Agent 只能读写当前 Workspace 的 Todo，Fork Agent 只能访问其关联
+  Todo，Project Session 不能访问开发 Todo；
+- Agent Todo API 支持 Markdown content 的 CRUD 和带原因的 block；
+- `in_progress`、Fork 关联和完成状态由 Treefold 的 Todo-driven Fork 生命周期维护；
 - 每个实际 workspace root 使用稳定且隔离的 amux workspace；
 - Treefold Session 中的 amux CLI 连接专属 runtime，不连接用户默认 amuxd；
 - Treefold 与 amux Skill 均通过 Skill 结构校验；

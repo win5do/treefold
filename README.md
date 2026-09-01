@@ -162,10 +162,17 @@ or `TREEFOLD_INSTALL_DIR` to install somewhere other than `/Applications`.
 
 ## Product documentation
 
+Current product and architecture:
+
 - [Product direction](docs/product-strategy.md)
 - [Project and Workspace model](docs/project-workspace-model.md)
 - [Git worktree lifecycle](docs/git-worktree-lifecycle.md)
-- [Keymap configuration plan](docs/keymap-configuration-plan.md)
 - [Agent Skill, CLI, and App API architecture](docs/agent-skill-cli-api-architecture.md)
 - [Frontend and backend communication](docs/frontend-backend-communication.md)
 - [Positioning and messaging](docs/positioning-and-messaging.md)
+
+Deferred designs, which are not runtime contracts:
+
+- [Keymap configuration](docs/keymap-configuration-plan.md)
+- [Codex App Server integration](docs/codex-app-server-future-integration.md)
+- [Git History squash](docs/git-history-squash-design.md)
