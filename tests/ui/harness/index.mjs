@@ -83,8 +83,8 @@ async function startFixtureApi() {
       return;
     }
 
-    const pathname = new URL(request.url ?? "/", "http://fixture.test")
-      .pathname;
+    const requestUrl = new URL(request.url ?? "/", "http://fixture.test");
+    const pathname = requestUrl.pathname;
     if (await gitDiffRoutes.handle(request, response, pathname)) return;
     if (await parentOperationRoutes.handle(request, response, pathname)) return;
     if (await todoRoutes.handle(request, response, pathname)) return;
@@ -316,6 +316,35 @@ async function startFixtureApi() {
     }
 
     const projectMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
+    const projectDeletePrecheckMatch = pathname.match(
+      /^\/api\/projects\/([^/]+)\/delete-precheck$/,
+    );
+    if (
+      request.method === "GET" &&
+      projectDeletePrecheckMatch &&
+      fixture.projectDetails[projectDeletePrecheckMatch[1]]
+    ) {
+      sendJson(response, 200, {
+        status: "ready",
+        managed_sources: [
+          {
+            path: "/tmp/treefold/git/s/project/repository",
+            repository_name: "Repository",
+            project_repository_id: FIXTURE_IDS.primaryRepository,
+          },
+        ],
+        managed_worktrees: [
+          {
+            path: "/tmp/treefold/git/w/workspace/repository",
+            repository_name: "Repository",
+            project_repository_id: FIXTURE_IDS.primaryRepository,
+          },
+        ],
+        blockers: [],
+        warnings: [],
+      });
+      return;
+    }
     if (
       request.method === "GET" &&
       projectMatch &&
@@ -527,6 +556,12 @@ async function startFixtureApi() {
         });
         return;
       }
+      deleteRequests.push({
+        kind: "project",
+        id: projectMatch[1],
+        cleanupManaged:
+          requestUrl.searchParams.get("cleanup_managed") === "true",
+      });
       fixture.projects = fixture.projects.filter(
         (item) => item.id !== projectMatch[1],
       );

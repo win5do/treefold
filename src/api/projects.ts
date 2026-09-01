@@ -13,6 +13,7 @@ import type {
   WorktreeDeleteOperation,
   Project,
   ProjectDetail,
+  ProjectDeletePrecheck,
   ProjectDirectoryInspection,
   ProjectRepository,
   ProjectSummary,
@@ -32,7 +33,14 @@ export const projectsApi = {
     request<Project>("/api/projects", { method: "POST", json }),
   update: (id: string, json: unknown) =>
     request<Project>(`/api/projects/${id}`, { method: "PATCH", json }),
-  delete: (id: string) => request(`/api/projects/${id}`, { method: "DELETE" }),
+  delete: (id: string, cleanupManaged: boolean) =>
+    request(`/api/projects/${id}?cleanup_managed=${cleanupManaged}`, {
+      method: "DELETE",
+    }),
+  deletePrecheck: (id: string, signal?: AbortSignal) =>
+    request<ProjectDeletePrecheck>(`/api/projects/${id}/delete-precheck`, {
+      signal,
+    }),
   sessions: (id: string, signal?: AbortSignal) =>
     request<Session[]>(`/api/projects/${id}/sessions`, { signal }),
   createSession: (id: string, json: unknown) =>

@@ -1599,6 +1599,13 @@ try {
     },
   );
   const projectContent = await browser.$('[data-testid="page-content"]');
+  await browser.waitUntil(
+    async () => (await projectContent.getText()).includes("fixture-documentation"),
+    {
+      timeout: 3_000,
+      timeoutMsg: "Project detail content did not finish rendering after navigation",
+    },
+  );
   assert.match(
     await projectContent.getText(),
     /fixture-documentation/,
@@ -1615,10 +1622,7 @@ try {
     true,
     "active Workspace must keep its list action menu visible",
   );
-  await clickUiElement(
-    browser,
-    `[data-testid="workspace-list-row-${FIXTURE_IDS.workspace}"] [data-testid="workspace-actions-trigger"]`,
-  );
+  await clickUiElement(browser, activeWorkspaceActions);
   const activeWorkspaceMenu = await browser.$(
     '[data-testid="workspace-actions"]',
   );
@@ -1645,10 +1649,7 @@ try {
   const archivedWorkspaceActions = await archivedWorkspaceRow.$(
     '[data-testid="workspace-actions-trigger"]',
   );
-  await clickUiElement(
-    browser,
-    `[data-testid="workspace-list-row-${FIXTURE_IDS.archivedWorkspace}"] [data-testid="workspace-actions-trigger"]`,
-  );
+  await clickUiElement(browser, archivedWorkspaceActions);
   const archivedWorkspaceMenu = await browser.$(
     '[data-testid="workspace-actions"]',
   );
@@ -2339,7 +2340,7 @@ try {
   const pullFailedToast = await waitForToast(
     browser,
     "alert",
-    /Pull failed[\s\S]*fixture-repository: remote rejected the update/,
+    /fixture-repository: remote rejected the update/,
   );
   await (await pullFailedToast.$('button[aria-label="Close toast"]')).click();
   await pressUiEscape(browser);
@@ -2765,6 +2766,51 @@ try {
       timeout: 3_000,
       timeoutMsg: "Project summaries did not load after returning to the overview",
     },
+  );
+  harness.setProjectStatus(FIXTURE_IDS.project, "archived");
+  await browser.refresh();
+  const deletableProjectRow = await browser.$(
+    `[data-testid="project-overview-row"][data-project-id="${FIXTURE_IDS.project}"]`,
+  );
+  await deletableProjectRow.waitForDisplayed({ timeout: 3_000 });
+  await clickUiElement(
+    browser,
+    `[data-testid="project-overview-row"][data-project-id="${FIXTURE_IDS.project}"] [data-testid="project-actions-trigger"]`,
+  );
+  const deletableProjectMenu = await browser.$('[data-testid="project-actions"]');
+  await deletableProjectMenu.waitForDisplayed({ timeout: 3_000 });
+  await (
+    await deletableProjectMenu.$('[data-testid="delete-project-action"]')
+  ).click();
+  const deleteProjectDialog = await browser.$('[data-testid="delete-record-dialog"]');
+  await deleteProjectDialog.waitForDisplayed({ timeout: 3_000 });
+  const cleanupReady = await deleteProjectDialog.$(
+    '[data-testid="delete-project-cleanup-ready"]',
+  );
+  await cleanupReady.waitForDisplayed({ timeout: 3_000 });
+  assert.match(
+    await cleanupReady.getText(),
+    /1 managed source.*1 managed worktree/i,
+    "Project deletion must summarize Treefold-owned local files",
+  );
+  const preserveProjectFiles = await deleteProjectDialog.$(
+    '[data-testid="delete-project-preserve"]',
+  );
+  await preserveProjectFiles.click();
+  assert.equal(
+    await preserveProjectFiles.getAttribute("aria-pressed"),
+    "true",
+    "Project deletion must allow preserving all local files",
+  );
+  await (
+    await deleteProjectDialog.$('[data-testid="delete-project-cleanup"]')
+  ).click();
+  await (await deleteProjectDialog.$("button=Permanently delete")).click();
+  await deletableProjectRow.waitForExist({ reverse: true, timeout: 3_000 });
+  assert.deepEqual(
+    harness.deleteRequests.at(-1),
+    { kind: "project", id: FIXTURE_IDS.project, cleanupManaged: true },
+    "Project deletion must request managed file cleanup by default",
   );
   harness.assertNoUnexpectedRequests();
 

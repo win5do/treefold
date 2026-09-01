@@ -289,6 +289,10 @@ fn app(state: AppState) -> Router {
                 .patch(update_project)
                 .delete(delete_project),
         )
+        .route(
+            "/api/projects/{id}/delete-precheck",
+            get(precheck_delete_project),
+        )
         .route("/api/projects/{id}/git/pull-all", post(pull_all_project))
         .route("/api/projects/{id}/git/push-all", post(push_all_project))
         .route(

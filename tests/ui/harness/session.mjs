@@ -166,6 +166,8 @@ export async function selectUiOption(browser, element, value) {
 export async function clickUiElement(browser, target) {
   const element = typeof target === "string" ? await browser.$(target) : target;
   if (defaultConfig.transport !== "tauri") {
+    if ((await element.getAttribute("aria-haspopup")) === "menu")
+      await element.scrollIntoView({ block: "center" });
     await element.click();
     return;
   }

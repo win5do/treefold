@@ -58,6 +58,7 @@ export type ProjectRepository = {
   name: string;
   source_root: string;
   git_common_dir: string;
+  source_ownership: "managed" | "external";
   repository_url?: string;
   preferred_remote_name?: string;
   base_branch?: string;
@@ -68,6 +69,20 @@ export type ProjectRepository = {
   last_checked_at?: string;
   created_at: string;
   updated_at: string;
+};
+
+export type ProjectDeleteResource = {
+  path: string;
+  repository_name: string;
+  project_repository_id: string;
+};
+
+export type ProjectDeletePrecheck = {
+  status: "ready" | "blocked";
+  managed_sources: ProjectDeleteResource[];
+  managed_worktrees: ProjectDeleteResource[];
+  blockers: string[];
+  warnings: string[];
 };
 
 export type Session = {

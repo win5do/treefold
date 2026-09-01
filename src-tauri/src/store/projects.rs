@@ -120,7 +120,7 @@ impl Store {
     pub fn repositories(&self, project_id: &str) -> Result<Vec<ProjectRepository>> {
         let db = self.0.lock();
         let mut statement = db.prepare(
-            "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at
+            "SELECT id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at
              FROM project_repositories WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at,id",
         )?;
         let values = statement
@@ -132,7 +132,7 @@ impl Store {
     pub fn repository(&self, id: &str) -> Result<ProjectRepository> {
         let db = self.0.lock();
         Ok(db.query_row(
-            "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE id=? AND deleted_at IS NULL",
+            "SELECT id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE id=? AND deleted_at IS NULL",
             [id],
             project_repository_row,
         )?)
@@ -223,13 +223,14 @@ impl Store {
     }
 
     pub fn create_directory(&self, directory: &Directory) -> Result<String> {
-        self.create_directory_with_repository_id(directory, None)
+        self.create_directory_with_repository_id(directory, None, "external")
     }
 
     pub fn create_directory_with_repository_id(
         &self,
         directory: &Directory,
         forced_repository_id: Option<&str>,
+        source_ownership: &str,
     ) -> Result<String> {
         let mut db = self.0.lock();
         let tx = db.transaction()?;
@@ -255,8 +256,8 @@ impl Store {
                 }
                 if deleted_at.is_some() {
                     tx.execute(
-                        "UPDATE project_repositories SET name=?,source_root=?,repository_url=?,preferred_remote_name=?,git_status=?,last_checked_at=?,updated_at=?,deleted_at=NULL WHERE id=?",
-                        params![basename(source_root),source_root,directory.repository_url,directory.preferred_remote_name,directory.git_status,directory.last_checked_at,directory.updated_at,id],
+                        "UPDATE project_repositories SET name=?,source_root=?,source_ownership=?,repository_url=?,preferred_remote_name=?,git_status=?,last_checked_at=?,updated_at=?,deleted_at=NULL WHERE id=?",
+                        params![basename(source_root),source_root,source_ownership,directory.repository_url,directory.preferred_remote_name,directory.git_status,directory.last_checked_at,directory.updated_at,id],
                     )?;
                 }
                 id
@@ -265,14 +266,15 @@ impl Store {
                     .map(str::to_owned)
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                 tx.execute(
-                    "INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at)
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     params![
                         id,
                         directory.project_id,
                         basename(source_root),
                         source_root,
                         git_common_dir,
+                        source_ownership,
                         directory.repository_url,
                         directory.preferred_remote_name,
                         directory.base_branch,
@@ -443,7 +445,7 @@ impl Store {
         preferred_remote_name: Option<&str>,
     ) -> Result<()> {
         let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
+            "UPDATE project_repositories SET source_root=?,git_common_dir=?,source_ownership='external',repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
             params![source_root,git_common_dir,repository_url,preferred_remote_name,now(),now(),id],
         )?;
         if changed == 0 {
@@ -684,7 +686,7 @@ fn query_project_repositories(
     project_id: &str,
 ) -> rusqlite::Result<Vec<ProjectRepository>> {
     let mut statement = db.prepare(
-        "SELECT id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at,id",
+        "SELECT id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at,id",
     )?;
     let values = statement
         .query_map([project_id], project_repository_row)?
@@ -731,6 +733,7 @@ fn project_repository_row(row: &Row<'_>) -> rusqlite::Result<ProjectRepository> 
         name: row.get("name")?,
         source_root: row.get("source_root")?,
         git_common_dir: row.get("git_common_dir")?,
+        source_ownership: row.get("source_ownership")?,
         repository_url: row.get("repository_url")?,
         preferred_remote_name: row.get("preferred_remote_name")?,
         base_branch: row.get("base_branch")?,

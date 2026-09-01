@@ -78,6 +78,7 @@ import {
 } from "@/features/projects/ProjectDialogs";
 import { ProjectHome } from "@/features/projects/ProjectHome";
 import { DeleteWorktreeDialog } from "@/features/projects/DeleteWorktreeDialog";
+import { DeleteProjectDialog } from "@/features/projects/DeleteProjectDialog";
 import { Overview } from "@/features/projects/Overview";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import {
@@ -882,11 +883,11 @@ function Workspace() {
     setDeleteTarget({ kind: "project", value: project });
   }
 
-  async function permanentlyDeleteTarget() {
+  async function permanentlyDeleteTarget(cleanupManaged = false) {
     if (!deleteTarget) return;
     const ok = await act(() =>
       deleteTarget.kind === "project"
-        ? projectsApi.delete(deleteTarget.value.id)
+        ? projectsApi.delete(deleteTarget.value.id, cleanupManaged)
         : workspacesApi.delete(deleteTarget.value.id),
     );
     if (!ok) return;
@@ -1887,12 +1888,24 @@ function Workspace() {
         }
       />
       <DeleteRecordDialog
-        target={deleteTarget}
+        target={
+          deleteTarget?.kind === "project" ? null : deleteTarget
+        }
         busy={busy}
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
         onConfirm={() => void permanentlyDeleteTarget()}
+      />
+      <DeleteProjectDialog
+        target={deleteTarget?.kind === "project" ? deleteTarget.value : null}
+        busy={busy}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        onConfirm={(cleanupManaged) =>
+          void permanentlyDeleteTarget(cleanupManaged)
+        }
       />
       <DeleteWorktreeDialog
         target={deleteWorktreeTarget}

@@ -76,6 +76,7 @@ pub struct ProjectRepository {
     pub name: String,
     pub source_root: String,
     pub git_common_dir: String,
+    pub source_ownership: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

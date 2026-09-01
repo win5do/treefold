@@ -2,24 +2,24 @@ use super::*;
 
 #[cfg(test)]
 mod current_workspace_tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use axum::{
         Json,
         body::Body,
-        extract::State,
+        extract::{Query, State},
         http::{Request, StatusCode},
     };
     use tower::ServiceExt;
 
     use super::{
         ApiJson, AppState, CloneProjectRepository, CreateDeliveryPreflight, CreateDirectory,
-        CreateFork, CreateProject, CreateSession, CreateWorkspace, FinishWorkspace, RuntimeDomain,
-        RuntimeHub, UpdateProject, UpdateWorkspaceRepository, abort_parent_operation_impl, app,
-        clone_project_repository_impl, close_session, command_output,
-        create_delivery_preflight_impl, create_directory, create_fork, create_project,
-        create_project_session, create_session, create_workspace,
-        create_workspace_repository_preflight_impl, delete_project_directory,
+        CreateFork, CreateProject, CreateSession, CreateWorkspace, DeleteProject, FinishWorkspace,
+        RuntimeDomain, RuntimeHub, UpdateProject, UpdateWorkspaceRepository,
+        abort_parent_operation_impl, app, clone_project_repository_impl, close_session,
+        command_output, create_delivery_preflight_impl, create_directory, create_fork,
+        create_project, create_project_session, create_session, create_workspace,
+        create_workspace_repository_preflight_impl, delete_project, delete_project_directory,
         finish_workspace_impl, finish_workspace_repository_impl, get_project, git_head,
         git_is_ancestor, git_worktrees, managed_repository_source_path, managed_worktree_path,
         normalized_path, pull_workspace, push_workspace, reconcile_parent_operation,
@@ -2112,7 +2112,7 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
-    async fn managed_repository_clone_uses_the_short_source_path() {
+    async fn project_delete_cleans_managed_clone_and_worktree_but_preserves_external_origin() {
         let root = std::env::temp_dir().join(format!(
             "treefold-source-path-test-{}",
             uuid::Uuid::new_v4()
@@ -2157,6 +2157,55 @@ mod current_workspace_tests {
                 .join(&project.id)
                 .join("repo-name")
         );
+        let repository_id = state
+            .store
+            .directory_repository_id(&directory.id)
+            .expect("read cloned Repository id")
+            .expect("cloned Directory belongs to a Repository");
+        let repository = state.store.repository(&repository_id).unwrap();
+        assert_eq!(repository.source_ownership, "managed");
+        state
+            .store
+            .update_repository(&repository_id, "", ".", "main", "keep")
+            .expect("configure cloned Repository");
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateWorkspace {
+                name: "Managed checkout".into(),
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            }),
+        )
+        .await
+        .expect("create managed worktree");
+        let managed_source = PathBuf::from(&directory.path);
+        let managed_worktree = PathBuf::from(&workspace.checkout_path);
+        assert!(managed_source.exists());
+        assert!(managed_worktree.exists());
+        state
+            .store
+            .finish_workspace(&workspace.id, "kept", "kept", None, &now())
+            .expect("archive retained Workspace");
+        state
+            .store
+            .update_project_status(&project.id, "archived")
+            .expect("archive Project");
+        delete_project(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            Query(DeleteProject {
+                cleanup_managed: true,
+            }),
+        )
+        .await
+        .expect("delete Project with managed cleanup");
+
+        assert!(!managed_worktree.exists());
+        assert!(!managed_source.exists());
+        assert!(origin.exists(), "external clone origin must be preserved");
 
         drop(state);
         std::fs::remove_dir_all(root).expect("remove fixture");
@@ -2189,11 +2238,11 @@ mod tests {
 
     use super::{
         ApiJson, AppState, CreateDeliveryPreflight, CreateFork, CreateProject, CreateSession,
-        CreateTodo, CreateWorkspace, FinishWorkspace, ParsedGitWorktree, UpdateProject, app,
-        command_output, create_delivery_preflight_impl, create_fork, create_project,
-        create_project_session, create_session, create_todo, create_workspace, delete_project,
-        finish_workspace, finish_workspace_impl, git_head, git_is_ancestor, git_worktrees,
-        id_for_operation, normalized_path, parse_git_history, parse_git_worktrees,
+        CreateTodo, CreateWorkspace, DeleteProject, FinishWorkspace, ParsedGitWorktree,
+        UpdateProject, app, command_output, create_delivery_preflight_impl, create_fork,
+        create_project, create_project_session, create_session, create_todo, create_workspace,
+        delete_project, finish_workspace, finish_workspace_impl, git_head, git_is_ancestor,
+        git_worktrees, id_for_operation, normalized_path, parse_git_history, parse_git_worktrees,
         rebase_in_progress, reveal_in_file_manager, slug, treefold_developer_instructions,
         update_project,
     };
@@ -2598,7 +2647,10 @@ mod tests {
         assert!(
             delete_project(
                 State(state.clone()),
-                axum::extract::Path(project.id.clone())
+                axum::extract::Path(project.id.clone()),
+                Query(DeleteProject {
+                    cleanup_managed: false
+                }),
             )
             .await
             .is_err()
@@ -2618,9 +2670,15 @@ mod tests {
         )
         .await
         .expect("archive Project before delete");
-        delete_project(State(state.clone()), axum::extract::Path(project.id))
-            .await
-            .expect("delete archived Project");
+        delete_project(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            Query(DeleteProject {
+                cleanup_managed: false,
+            }),
+        )
+        .await
+        .expect("delete archived Project");
         assert!(state.store.projects().expect("list Projects").is_empty());
         drop(state);
         std::fs::remove_dir_all(root).expect("remove archive fixture");

@@ -553,9 +553,39 @@ fn inspect_delete_worktree(
     })
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ProjectDeleteResource {
+    path: String,
+    repository_name: String,
+    project_repository_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct ProjectDeletePrecheck {
+    status: String,
+    managed_sources: Vec<ProjectDeleteResource>,
+    managed_worktrees: Vec<ProjectDeleteResource>,
+    blockers: Vec<String>,
+    warnings: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct DeleteProject {
+    #[serde(default)]
+    pub(super) cleanup_managed: bool,
+}
+
+pub(super) async fn precheck_delete_project(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Result<Json<ProjectDeletePrecheck>> {
+    blocking_git_operation(move || inspect_project_deletion(&state, &id).map(Json)).await
+}
+
 pub(super) async fn delete_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
+    Query(input): Query<DeleteProject>,
 ) -> Result<StatusCode> {
     if state.store.project(&id)?.status != "archived" {
         return Err(AppError::BadRequest(
@@ -572,8 +602,222 @@ pub(super) async fn delete_project(
             "Finish active Workspaces and Forks before deleting this Project".into(),
         ));
     }
+    if input.cleanup_managed {
+        let cleanup_state = state.clone();
+        let cleanup_id = id.clone();
+        blocking_git_operation(move || cleanup_project_managed_paths(&cleanup_state, &cleanup_id))
+            .await?;
+    }
     state.store.delete_project(&id)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+fn inspect_project_deletion(state: &AppState, project_id: &str) -> Result<ProjectDeletePrecheck> {
+    let project = state.store.project(project_id)?;
+    let repositories = state.store.repositories(project_id)?;
+    let workspaces = state.store.workspaces(project_id)?;
+    let mut blockers = Vec::new();
+    let mut warnings = Vec::new();
+
+    if project.status != "archived" {
+        blockers.push("Archive the Project before permanently deleting it".into());
+    }
+    for workspace in &workspaces {
+        if workspace.kind != "base" && workspace.status == "active" {
+            blockers.push(format!(
+                "Finish active {} '{}' before deleting this Project",
+                workspace.kind, workspace.name
+            ));
+        }
+    }
+
+    let managed_source_root = state
+        .settings
+        .treefold_home()
+        .join("git")
+        .join("s")
+        .join(slug(project_id));
+    let managed_worktree_root = state.settings.treefold_home().join("git").join("w");
+    let mut managed_sources = Vec::new();
+    for repository in &repositories {
+        if repository.source_ownership != "managed" {
+            continue;
+        }
+        let source = Path::new(&repository.source_root);
+        if !normalized_path(source.to_string_lossy().as_ref()).starts_with(normalized_path(
+            managed_source_root.to_string_lossy().as_ref(),
+        )) {
+            blockers.push(format!(
+                "managed source is outside Treefold's Project source root: {}",
+                repository.source_root
+            ));
+            continue;
+        }
+        managed_sources.push(ProjectDeleteResource {
+            path: repository.source_root.clone(),
+            repository_name: repository.name.clone(),
+            project_repository_id: repository.id.clone(),
+        });
+        if !source.exists() {
+            warnings.push(format!(
+                "managed source is already missing: {}",
+                repository.source_root
+            ));
+            continue;
+        }
+        let (tracked, untracked) = worktree_change_counts(source)?;
+        if tracked + untracked > 0 {
+            blockers.push(format!(
+                "managed source '{}' has {tracked} tracked changes and {untracked} untracked files",
+                repository.name
+            ));
+        }
+        let unpublished = command_output(
+            source,
+            "git",
+            &["rev-list", "--count", "--branches", "--not", "--remotes"],
+        )
+        .map_err(|error| {
+            AppError::BadRequest(format!(
+                "check unpublished commits in managed source '{}': {error}",
+                repository.name
+            ))
+        })?
+        .parse::<usize>()
+        .unwrap_or(0);
+        if unpublished > 0 {
+            blockers.push(format!(
+                "managed source '{}' has {unpublished} commits not reachable from a remote",
+                repository.name
+            ));
+        }
+    }
+
+    let repository_by_id = repositories
+        .iter()
+        .map(|repository| (repository.id.as_str(), repository))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut seen_worktrees = std::collections::HashSet::new();
+    let mut managed_worktrees = Vec::new();
+    for workspace in &workspaces {
+        for snapshot in state.store.workspace_repositories(&workspace.id)? {
+            let Some(checkout_path) = snapshot.checkout_path.as_deref() else {
+                continue;
+            };
+            if !seen_worktrees.insert(checkout_path.to_owned()) {
+                continue;
+            }
+            if !normalized_path(checkout_path).starts_with(normalized_path(
+                managed_worktree_root.to_string_lossy().as_ref(),
+            )) {
+                warnings.push(format!(
+                    "checkout is outside Treefold's managed worktree root and will be preserved: {checkout_path}"
+                ));
+                continue;
+            }
+            managed_worktrees.push(ProjectDeleteResource {
+                path: checkout_path.to_owned(),
+                repository_name: snapshot.repository_name.clone(),
+                project_repository_id: snapshot.project_repository_id.clone(),
+            });
+            let checkout = Path::new(checkout_path);
+            if !checkout.exists() {
+                warnings.push(format!(
+                    "managed worktree is already missing: {checkout_path}"
+                ));
+                continue;
+            }
+            let Some(repository) = repository_by_id.get(snapshot.project_repository_id.as_str())
+            else {
+                blockers.push(format!(
+                    "managed worktree has no Project repository: {checkout_path}"
+                ));
+                continue;
+            };
+            let registered = git_worktrees(&repository.source_root)?
+                .iter()
+                .any(|worktree| normalized_path(&worktree.path) == normalized_path(checkout_path));
+            if !registered {
+                blockers.push(format!(
+                    "managed worktree is no longer registered with its source repository: {checkout_path}"
+                ));
+                continue;
+            }
+            let (tracked, untracked) = worktree_change_counts(checkout)?;
+            if tracked + untracked > 0 {
+                blockers.push(format!(
+                    "managed worktree '{}' has {tracked} tracked changes and {untracked} untracked files",
+                    workspace.name
+                ));
+            }
+        }
+    }
+
+    Ok(ProjectDeletePrecheck {
+        status: if blockers.is_empty() {
+            "ready".into()
+        } else {
+            "blocked".into()
+        },
+        managed_sources,
+        managed_worktrees,
+        blockers,
+        warnings,
+    })
+}
+
+fn worktree_change_counts(path: &Path) -> Result<(usize, usize)> {
+    let tracked = command_output(
+        path,
+        "git",
+        &["status", "--porcelain=v1", "--untracked-files=no"],
+    )
+    .map_err(|error| AppError::BadRequest(format!("check tracked changes: {error}")))?;
+    let untracked = command_output(path, "git", &["ls-files", "--others", "--exclude-standard"])
+        .map_err(|error| AppError::BadRequest(format!("check untracked files: {error}")))?;
+    Ok((
+        tracked.lines().filter(|line| !line.is_empty()).count(),
+        untracked.lines().filter(|line| !line.is_empty()).count(),
+    ))
+}
+
+fn cleanup_project_managed_paths(state: &AppState, project_id: &str) -> Result<()> {
+    let precheck = inspect_project_deletion(state, project_id)?;
+    if !precheck.blockers.is_empty() {
+        return Err(AppError::BadRequest(precheck.blockers.join("; ")));
+    }
+    let repositories = state.store.repositories(project_id)?;
+    let repository_by_id = repositories
+        .iter()
+        .map(|repository| (repository.id.as_str(), repository))
+        .collect::<std::collections::HashMap<_, _>>();
+    for worktree in &precheck.managed_worktrees {
+        let Some(repository) = repository_by_id.get(worktree.project_repository_id.as_str()) else {
+            return Err(AppError::BadRequest(format!(
+                "managed worktree has no Project repository: {}",
+                worktree.path
+            )));
+        };
+        remove_worktree_if_present(&repository.source_root, &worktree.path, false)?;
+    }
+    for source in &precheck.managed_sources {
+        let path = Path::new(&source.path);
+        if path.exists() {
+            std::fs::remove_dir_all(path).map_err(|error| {
+                AppError::BadRequest(format!("remove managed source '{}': {error}", source.path))
+            })?;
+        }
+    }
+    let project_source_root = state
+        .settings
+        .treefold_home()
+        .join("git")
+        .join("s")
+        .join(slug(project_id));
+    if project_source_root.exists() {
+        let _ = std::fs::remove_dir(project_source_root);
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -805,10 +1049,11 @@ pub(super) fn clone_project_repository_impl(
             "cloned source is not a ready Git repository".into(),
         ));
     }
-    let directory_id = match state
-        .store
-        .create_directory_with_repository_id(&directory, Some(&repository_id))
-    {
+    let directory_id = match state.store.create_directory_with_repository_id(
+        &directory,
+        Some(&repository_id),
+        "managed",
+    ) {
         Ok(id) => id,
         Err(error) => {
             let _ = std::fs::remove_dir_all(parent);

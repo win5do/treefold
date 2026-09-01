@@ -13,8 +13,6 @@ import {
 import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
 import type {
   Project,
-  ProjectDetail,
-  ProjectSummary,
   Workspace,
 } from "@/domain/types";
 
@@ -74,7 +72,6 @@ export function DeleteRecordDialog({
   onConfirm,
 }: {
   target:
-    | { kind: "project"; value: ProjectDetail | ProjectSummary }
     | { kind: "workspace" | "fork"; value: Workspace }
     | null;
   busy: boolean;
@@ -115,4 +112,3 @@ export function DeleteRecordDialog({
     </AlertDialog>
   );
 }
-
