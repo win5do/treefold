@@ -52,6 +52,57 @@ cross-domain implementation files.
   leave temporary duplicate implementations or compatibility shims without an
   explicit follow-up in the same task.
 
+## Development environment and commands
+
+Treefold development targets macOS and requires stable Rust, Node.js 24 or
+newer, Git, and Codex when exercising Codex Sessions. `just` is the preferred
+task runner but is optional.
+
+- Run `npm install` once to install frontend and desktop tooling.
+- Run `just app-dev` for hot reload with repository-local state under
+  `.treefold-dev/`; use `just app-default` only when intentionally developing
+  against `~/.treefold`.
+- `TREEFOLD_DEV_HOME` relocates development state. `TREEFOLD_UI_PORT` and
+  `TREEFOLD_API_PORT` override the default development ports `15011` and an
+  automatically selected API port.
+- Use `app-dev-no-watch` or `app-default-no-watch` when file watching is not
+  needed.
+- Run `just check` for the standard validation set and `just build` for a full
+  application build.
+
+### SQLx development workflow
+
+Install the SQLx 0.9 CLI with SQLite support before changing migrations or
+compile-time checked queries:
+
+```bash
+cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,rustls
+```
+
+- Run `cargo xtask database prepare` after changing a migration or SQLx query
+  macro and commit the resulting `src-tauri/.sqlx` metadata.
+- Run `cargo xtask database check` to verify migrations and offline metadata
+  against a disposable database. Normal builds must not require a developer
+  database or `DATABASE_URL`.
+- Prefer `query!` and `query_as!` for static SQL. Use runtime query APIs only
+  when the SQL shape is genuinely dynamic.
+- Name migrations with UTC `YYYYMMDDHHMMSS_description.sql` versions.
+
+### Desktop build and sidecars
+
+- `npm run bundle:desktop` invokes `cargo xtask sidecars bundle` before applying
+  the Tauri bundle configuration.
+- Development runs prepare debug sidecars through the same xtask workflow. The
+  default co-workspace layout resolves amux from `../amux`; override it with
+  `TREEFOLD_AMUX_MANIFEST` and override Skill discovery with
+  `TREEFOLD_AMUX_SKILL_DIR` only when necessary.
+- Stage the amux binary, version, and `skills/amux` from the same selected amux
+  source so they remain one release unit.
+- Run `just install-app-local` to build an ad-hoc signed App and DMG and replace
+  the local installation. Quit an installed Treefold instance first.
+  `TREEFOLD_BUILD_VERSION` supplies a reproducible SemVer build value and
+  `TREEFOLD_INSTALL_DIR` changes the destination from `/Applications`.
+
 ## Configuration and persistence ownership
 
 Keep user-authored configuration and application-owned state separated by a
@@ -87,8 +138,10 @@ hard storage boundary.
 - A major generation gets a new fixed database filename and independent
   migration directory. Create and validate the target in a unique temporary
   file, copy data through explicit generation conversion code, then atomically
-  rename it. Preserve the prior generation for rollback. Legacy `treefold.db`
-  files predate generation 1 and are ignored without being modified or removed.
+  rename it. Preserve the prior generation for rollback. The binary's fixed
+  generation constant selects the active file; do not introduce a manifest or
+  symlink. Legacy `treefold.db` files predate generation 1 and are ignored
+  without being modified or removed.
 - Temporary UI state may use SQLite or frontend local storage. Caches and
   derived data may use SQLite or a future cache directory, but neither is a
   source of truth for user preferences.

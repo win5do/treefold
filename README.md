@@ -3,197 +3,67 @@
 **Run agents in parallel. Fold the work back cleanly.**
 
 Treefold is a local-first macOS workspace for running Codex and Shell sessions
-in managed Git worktrees, with resume, rebase, recovery, merge, and cleanup.
-The UI is React + Vite inside Tauri's system WebView; projects, workspaces,
-SQLite data, and Git worktrees are managed by the Rust backend. Persistent PTY
-processes are managed by the local Rust `amux` runtime.
+in managed Git worktrees. It keeps parallel work isolated while providing one
+place to resume sessions, review progress, integrate changes, recover from
+conflicts, and clean up completed work.
 
-## Requirements
+## What Treefold provides
 
-- macOS
-- Rust stable
-- Node.js 24+
-- `git` on `PATH`
-- `codex` on `PATH` to create Codex sessions
-- `just` (optional)
+- Isolated Workspaces and Forks backed by Git worktrees.
+- Parallel Codex and Shell sessions that survive UI navigation and reconnects.
+- Guided update, rebase, merge, delivery, recovery, and cleanup workflows.
+- Project-level context directories and repository-aware agent authorization.
+- Workspace Todos that agents can claim, update, block, and complete.
+- A local CLI and Agent Skills for sharing Treefold context with coding agents.
+- Local-first storage that remains on the user's Mac.
 
-## Development
+## Core model
 
-```bash
-npm install
-just app-dev
-```
+A **Project** groups the repositories and context needed for a body of work. A
+**Workspace** creates an isolated branch and worktree set for one change. A
+**Fork** splits a Todo into parallel work that can later be folded back into its
+parent Workspace. Each Workspace or Fork can own multiple persistent **Sessions**
+and a shared Todo list.
 
-`app-dev` starts the native App with hot reload and keeps its state in the
-repository-local `.treefold-dev/` directory. To develop against the normal
-`~/.treefold` data instead, use:
+Treefold owns the lifecycle around those objects: worktree creation, delivery,
+rebase, recovery, and cleanup. Git remains visible and usable inside each
+Workspace, while Treefold coordinates the operations that affect its managed
+lifecycle.
 
-```bash
-just app-default
-```
+## CLI and agent collaboration
 
-Both recipes use UI port `15011` and automatically choose an available API
-port. Override either port when needed:
+The desktop App includes a lightweight `treefold` CLI and Treefold Agent Skill.
+Managed sessions receive their current Project, Workspace, repository, and Todo
+context automatically. Agents can inspect that context and collaborate through
+the Todo lifecycle without storing conversational reports in Treefold.
 
-```bash
-TREEFOLD_UI_PORT=15012 TREEFOLD_API_PORT=55001 just app-dev
-```
+Common entry points include:
 
-Use `app-dev-no-watch` or `app-default-no-watch` when file watching is not
-needed. The development data directory can also be overridden:
-
-```bash
-TREEFOLD_DEV_HOME=/tmp/treefold-dev just app-dev
-```
-
-Useful checks:
-
-```bash
-just check
-just build
-```
-
-## CLI and Agent Skill
-
-The desktop entry point is `treefold-app`. The separately built, lightweight
-`treefold` CLI is bundled beside it for Treefold-managed Sessions:
-
-```bash
-treefold                  # top-level help
-treefold open [path]      # explicitly open the App
+```text
+treefold open [path]
 treefold current --json
 treefold todo list --json
 treefold doctor
 ```
 
-Treefold manages workspace identity and Todos. It intentionally does not store
-per-turn Agent reports or wrap process commands. Persistent processes, TTYs,
-logs, and restarts use the independent `amux` CLI and Skill.
+Persistent processes and terminal sessions are managed by the companion `amux`
+runtime and Skill. Treefold only creates managed CLI and Skill links when they
+do not conflict with user-owned paths.
 
-The Treefold CLI Skill lives at [`cli/skills/treefold`](cli/skills/treefold).
-The amux module owns its independent CLI and Skill; release builds stage both
-from the selected amux source instead of keeping a Treefold copy.
-
-At startup the App checks, without modifying the filesystem, whether the
-bundled CLI and Skills are integrated. The lower-left Agent Integration panel
-can create or synchronize these managed links:
+## Local-first architecture
 
 ```text
-~/.local/bin/treefold          -> Treefold.app bundled CLI
-~/.agents/skills/treefold      -> Treefold.app bundled Treefold Skill
-~/.agents/skills/amux          -> Treefold.app bundled amux Skill
+Treefold macOS App
+├── Native desktop UI
+├── Local API and persistent terminal runtime
+├── Local SQLite project and session metadata
+├── Managed Git worktrees
+└── CLI and Agent Skills
 ```
 
-Treefold never overwrites an unmanaged path. The private bundled `amux` CLI is
-not linked globally; managed Sessions receive the App's bundled binary directory
-first on `PATH`, together with the explicit `TREEFOLD_*` and `AMUX_*` context.
-
-Treefold stores its files under `~/.treefold` by default:
-
-```text
-~/.treefold/
-├── config/settings.toml
-├── data/
-│   ├── treefold_1.sqlite
-│   └── amux/
-└── git/
-    ├── s/<project-id>/<repository-slug>/
-    └── w/<workspace-id>/<repository-slug>/
-```
-
-Set `TREEFOLD_HOME` before starting the app to relocate this complete tree. The
-settings file owns durable user preferences (`language` and agent launch
-defaults); SQLite owns Projects, Workspaces, Sessions, Todos, and
-operation records. Treefold creates `settings.toml` with `schema_version = 1` on
-first launch. Configuration changes made outside the app are picked up on the
-next settings read; invalid or unsupported schemas are reported instead of
-being rewritten. `extra_args` defaults to an empty list; to make new Codex
-Sessions default to bypassing approvals and sandboxing, configure:
-
-```toml
-schema_version = 1
-language = "system"
-
-[agents.codex]
-extra_args = ["--dangerously-bypass-approvals-and-sandbox"]
-```
-
-Clients update selected fields with `PATCH /api/settings`; fields omitted from
-the request and unknown keys already present in the file are preserved.
-
-## Architecture
-
-```text
-Tauri macOS process
-├── WKWebView: React + Vite + xterm.js
-├── Rust/Axum: loopback REST + terminal WebSocket
-├── Rust/SQLx: asynchronous local project and session metadata
-├── Rust/amux: persistent shell and Codex terminal processes
-└── Git CLI: isolated Workspace worktrees
-```
-
-The amux control plane runs inside Treefold, while detached amux shims own the PTY
-process groups. The GUI keeps private daemon/shim entry points, while the
-user-facing `treefold` CLI and private `amux` CLI are separate bundled sidecars.
-Frontend routes use hash history so deep links work from both Vite and packaged
-assets.
-
-### Database development
-
-Treefold's current database generation is `1`. SQLx applies the immutable UTC
-timestamped migrations in `src-tauri/migrations/g1` and uses
-`_sqlx_migrations` for changes within that generation; SQLite `user_version` is
-reserved for the generation number. All generation 1 domain tables use SQLite
-`STRICT` mode so storage types are enforced at the database boundary. The
-former `treefold.db` and its WAL/SHM files are intentionally neither imported
-nor removed.
-
-Persisted random entity IDs are time-ordered UUID v7 values encoded as
-lowercase 32-character `TEXT`. Stable composite IDs remain readable strings;
-all random entity ID creation goes through the shared Rust generator.
-
-Install the matching SQLx CLI before changing persistence queries:
-
-```sh
-cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,rustls
-cargo xtask database prepare
-cargo xtask database check
-```
-
-Name new migrations `YYYYMMDDHHMMSS_description.sql` using UTC. Once committed,
-a migration in a released generation is permanent and must never be edited or
-squashed. Static SQL should use SQLx's checked macros; `database prepare`
-rebuilds the committed `src-tauri/.sqlx` offline metadata using a disposable
-generation 1 database, and `database check` verifies it without depending on a
-developer database.
-
-A future generation 2 must use `data/treefold_2.sqlite` and
-`migrations/g2/`. It is built in a unique temporary file, populated by explicit
-`g1 -> g2` conversion code, validated, closed, and atomically renamed. The
-generation 1 file remains available for rollback; no manifest or symlink
-selects the active database.
-
-Create a release bundle with `npm run bundle:desktop`. Its thin Node entry point
-invokes `cargo xtask sidecars bundle` to build the pinned CLI sidecars before
-applying `src-tauri/tauri.bundle.conf.json`. The same Rust xtask prepares debug
-sidecars for `npm run dev:desktop`, keeping Cargo target, profile, source, and
-staging logic in one place. The default co-workspace layout expects the amux
-repository at `../amux`; set `TREEFOLD_AMUX_MANIFEST` when its `Cargo.toml` lives
-elsewhere. The xtask reads the amux package version and stages `skills/amux`
-from that same module, so its CLI and Skill stay one release unit. Development
-runs can override Skill discovery with `TREEFOLD_AMUX_SKILL_DIR`.
-
-For a private local installation, build an ad-hoc signed App and DMG with a
-SemVer-compatible timestamp such as `0.1.0-alpha.20260821153045`, then replace
-`/Applications/Treefold.app` in one step:
-
-```bash
-just install-app-local
-```
-
-Quit an installed Treefold instance before running the recipe. Set
-`TREEFOLD_BUILD_VERSION` to a valid SemVer value to make a build reproducible,
-or `TREEFOLD_INSTALL_DIR` to install somewhere other than `/Applications`.
+Projects, Workspaces, Sessions, Todos, settings, and worktrees remain on the
+local machine. Treefold does not require a hosted control plane for its core
+workflow.
 
 ## Product documentation
 
