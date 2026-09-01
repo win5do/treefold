@@ -463,10 +463,7 @@ function Workspace() {
       if (feedback?.success) toast.success(feedback.success);
       return true;
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "操作失败";
-      if (feedback?.error)
-        toast.error(feedback.error, { description: message });
-      else toast.error(message);
+      toast.errorFrom(cause, feedback?.error ?? "操作失败");
       return false;
     } finally {
       setBusy(false);
@@ -588,7 +585,7 @@ function Workspace() {
         normalizeWorkspace(await workspacesApi.detail(stream.id)),
       );
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Workspace 加载失败");
+      toast.errorFrom(cause, "Workspace 加载失败");
     } finally {
       setBusy(false);
     }
@@ -606,7 +603,7 @@ function Workspace() {
           : normalizeWorkspace(await workspacesApi.detail(stream.id));
       setParentOperationDialog({ workspace: detail, direction });
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Workspace failed to load");
+      toast.errorFrom(cause, "Workspace failed to load");
     } finally {
       setBusy(false);
     }
@@ -646,7 +643,7 @@ function Workspace() {
       );
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Shell 创建失败");
+      toast.errorFrom(cause, "Shell 创建失败");
     } finally {
       setBusy(false);
     }
@@ -686,7 +683,7 @@ function Workspace() {
       );
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Codex 创建失败");
+      toast.errorFrom(cause, "Codex 创建失败");
     } finally {
       setBusy(false);
     }
@@ -709,7 +706,7 @@ function Workspace() {
       );
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Shell 创建失败");
+      toast.errorFrom(cause, "Shell 创建失败");
     } finally {
       setBusy(false);
     }
@@ -732,7 +729,7 @@ function Workspace() {
       );
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "Codex 创建失败");
+      toast.errorFrom(cause, "Codex 创建失败");
     } finally {
       setBusy(false);
     }
@@ -838,7 +835,7 @@ function Workspace() {
           queryKey: workspaceKeys.sessions(stream.id),
         }),
       ]);
-      toast.error(cause instanceof Error ? cause.message : "Session 排序失败");
+      toast.errorFrom(cause, "Session 排序失败");
     }
   }
 
@@ -925,9 +922,7 @@ function Workspace() {
       });
       return true;
     } catch (cause) {
-      toast.error(
-        cause instanceof Error ? cause.message : "Could not start worktree deletion",
-      );
+      toast.errorFrom(cause, "Could not start worktree deletion");
       return false;
     }
   }
@@ -994,7 +989,7 @@ function Workspace() {
       await queryClient.invalidateQueries({
         queryKey: workspaceKeys.sessions(stream.id),
       });
-      toast.error(cause instanceof Error ? cause.message : "关闭 Session 失败");
+      toast.errorFrom(cause, "关闭 Session 失败");
     } finally {
       if (session.kind !== "codex") {
         queryClient.setQueryData<Session[]>(
@@ -1025,7 +1020,7 @@ function Workspace() {
       await queryClient.invalidateQueries({
         queryKey: projectKeys.sessions(project.id),
       });
-      toast.error(cause instanceof Error ? cause.message : "关闭 Session 失败");
+      toast.errorFrom(cause, "关闭 Session 失败");
     } finally {
       if (session.kind !== "codex") {
         queryClient.setQueryData<Session[]>(

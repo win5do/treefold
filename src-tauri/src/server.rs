@@ -268,6 +268,7 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/v1/agent/todos/{id}/block", post(agent_block_todo))
         .route("/api/system", get(system_status))
+        .route("/api/system/logs/reveal", post(reveal_runtime_logs))
         .route("/api/amux", get(amux_status))
         .route("/api/amux/stop", post(stop_amux))
         .route(

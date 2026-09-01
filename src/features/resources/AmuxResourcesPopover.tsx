@@ -50,7 +50,7 @@ export function AmuxResourcesPopover() {
       await invalidateRuntimeQueries(queryClient);
       toast.success("amux Daemon stopped");
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t("resources.stopFailed"));
+      toast.errorFrom(cause, t("resources.stopFailed"));
     } finally {
       setStopping(false);
     }

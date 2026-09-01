@@ -4,7 +4,12 @@ use anyhow::{Context, bail};
 use rusqlite::Connection;
 use rusqlite_migration::{M, Migrations, SchemaVersion};
 
-const MIGRATION_LIST: &[M<'static>] = &[M::up(include_str!("../migrations/0001_initial.sql"))];
+const MIGRATION_LIST: &[M<'static>] = &[
+    M::up(include_str!("../migrations/0001_initial.sql")),
+    M::up(include_str!(
+        "../migrations/0002_nullable_repository_delivery.sql"
+    )),
+];
 const MIGRATIONS: Migrations<'static> = Migrations::from_slice(MIGRATION_LIST);
 
 pub(super) fn to_latest(connection: &mut Connection, path: &Path) -> anyhow::Result<()> {
@@ -30,9 +35,26 @@ pub(super) fn to_latest(connection: &mut Connection, path: &Path) -> anyhow::Res
         _ => {}
     }
 
-    MIGRATIONS
+    connection
+        .execute_batch("PRAGMA foreign_keys=OFF;")
+        .context("disable SQLite foreign keys for schema migrations")?;
+    let migration_result = MIGRATIONS
         .to_latest(connection)
-        .context("apply SQLite schema migrations")?;
+        .context("apply SQLite schema migrations");
+    connection
+        .execute_batch("PRAGMA foreign_keys=ON;")
+        .context("restore SQLite foreign keys after schema migrations")?;
+    migration_result?;
+    let foreign_key_violation: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
+            [],
+            |row| row.get(0),
+        )
+        .context("validate SQLite foreign keys after schema migrations")?;
+    if foreign_key_violation {
+        bail!("SQLite migration left invalid foreign key references");
+    }
     Ok(())
 }
 
@@ -76,13 +98,13 @@ mod tests {
     }
 
     #[test]
-    fn empty_database_migrates_to_complete_v1_schema() {
+    fn empty_database_migrates_to_complete_schema() {
         let directory = tempfile::tempdir().expect("create temporary directory");
         let path = directory.path().join("treefold.db");
         let store = Store::open(&path).expect("migrate empty database");
         let database = store.0.lock();
 
-        assert_eq!(user_version(&database), 1);
+        assert_eq!(user_version(&database), 2);
         let objects = schema_objects(&database);
         assert_eq!(objects.len(), 23, "unexpected schema objects: {objects:#?}");
         for table in [
@@ -169,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn reopening_v1_database_preserves_schema_and_data() {
+    fn reopening_current_database_preserves_schema_and_data() {
         let directory = tempfile::tempdir().expect("create temporary directory");
         let path = directory.path().join("treefold.db");
         let store = Store::open(&path).expect("create database");
@@ -184,9 +206,9 @@ mod tests {
         let original_schema = schema_objects(&store.0.lock());
         drop(store);
 
-        let reopened = Store::open(&path).expect("reopen v1 database");
+        let reopened = Store::open(&path).expect("reopen current database");
         let database = reopened.0.lock();
-        assert_eq!(user_version(&database), 1);
+        assert_eq!(user_version(&database), 2);
         assert_eq!(schema_objects(&database), original_schema);
         assert_eq!(
             database
@@ -196,6 +218,65 @@ mod tests {
                 .expect("read preserved project"),
             "Project"
         );
+    }
+
+    #[test]
+    fn v1_repository_delivery_schema_migrates_without_data_loss() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let path = directory.path().join("treefold.db");
+        let mut v1 = include_str!("../migrations/0001_initial.sql").replace(
+            "base_branch TEXT, delivery_mode TEXT,",
+            "base_branch TEXT NOT NULL DEFAULT 'main', delivery_mode TEXT NOT NULL DEFAULT 'push_branch',",
+        );
+        v1.push_str(
+            "\nPRAGMA user_version=1;\n\
+             INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','Project','now','now');\n\
+             INSERT INTO project_repositories(\n\
+               id,project_id,name,source_root,git_common_dir,created_at,updated_at\n\
+             ) VALUES('r','p','Repo','/tmp/repo','/tmp/repo/.git','now','now');\n\
+             INSERT INTO project_directories(\n\
+               id,project_id,repository_id,name,relative_path,created_at,updated_at\n\
+             ) VALUES('d','p','r','Repo','.','now','now');\n\
+             INSERT INTO workspaces(\n\
+               id,project_id,name,status,created_at,updated_at\n\
+             ) VALUES('w','p','Workspace','active','now','now');\n\
+             INSERT INTO workspace_repositories(\n\
+               id,workspace_id,project_repository_id,repository_name,source_root,git_status,created_at,updated_at\n\
+             ) VALUES('wr','w','r','Repo','/tmp/repo','ready','now','now');",
+        );
+        let connection = Connection::open(&path).expect("open old database");
+        connection.execute_batch(&v1).expect("create v1 database");
+        drop(connection);
+
+        let store = Store::open(&path).expect("migrate v1 database");
+        let database = store.0.lock();
+        assert_eq!(user_version(&database), 2);
+        let nullable = database
+            .prepare("PRAGMA table_info(project_repositories)")
+            .unwrap()
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(1)?, row.get::<_, i64>(3)?))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<std::collections::HashMap<_, _>>>()
+            .unwrap();
+        assert_eq!(nullable.get("base_branch"), Some(&0));
+        assert_eq!(nullable.get("delivery_mode"), Some(&0));
+        for table in [
+            "project_repositories",
+            "project_directories",
+            "workspace_repositories",
+        ] {
+            assert_eq!(
+                database
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get::<_, i64>(0)
+                    })
+                    .unwrap(),
+                1,
+                "preserve {table} rows"
+            );
+        }
     }
 
     #[test]
@@ -241,14 +322,14 @@ mod tests {
         let path = directory.path().join("treefold.db");
         let database = Connection::open(&path).expect("create future database");
         database
-            .execute_batch("PRAGMA user_version=2;")
+            .execute_batch("PRAGMA user_version=3;")
             .expect("set future version");
         drop(database);
 
         let error = Store::open(&path)
             .err()
             .expect("future database must be rejected");
-        assert!(error.to_string().contains("schema version 2"));
+        assert!(error.to_string().contains("schema version 3"));
         assert!(error.to_string().contains("newer than this Treefold build"));
     }
 }

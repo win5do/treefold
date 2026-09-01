@@ -21,6 +21,8 @@ pub enum AppError {
         details: Option<Value>,
     },
     #[error("{0}")]
+    Database(anyhow::Error),
+    #[error("{0}")]
     Internal(#[from] anyhow::Error),
 }
 
@@ -39,14 +41,14 @@ impl From<rusqlite::Error> for AppError {
     fn from(value: rusqlite::Error) -> Self {
         match value {
             rusqlite::Error::QueryReturnedNoRows => Self::NotFound,
-            other => Self::Internal(other.into()),
+            other => Self::Database(other.into()),
         }
     }
 }
 
 impl From<async_sqlite::Error> for AppError {
     fn from(value: async_sqlite::Error) -> Self {
-        Self::Internal(value.into())
+        Self::Database(value.into())
     }
 }
 
@@ -61,12 +63,21 @@ impl IntoResponse for AppError {
                 message,
                 details,
             } => (status, code, message, details),
+            Self::Database(error) => {
+                log::error!("database API error: {error:#}");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "INTERNAL_ERROR",
+                    error.to_string(),
+                    None,
+                )
+            }
             Self::Internal(error) => {
                 log::error!("internal API error: {error:#}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "INTERNAL_ERROR",
-                    "internal server error".into(),
+                    "Treefold encountered an unexpected error".into(),
                     None,
                 )
             }
@@ -156,7 +167,33 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let value: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(value["error"]["code"], "INTERNAL_ERROR");
-        assert_eq!(value["error"]["message"], "internal server error");
+        assert_eq!(
+            value["error"]["message"],
+            "Treefold encountered an unexpected error"
+        );
         assert!(!String::from_utf8_lossy(&body).contains("database password"));
+    }
+
+    #[tokio::test]
+    async fn database_errors_expose_the_sqlite_summary() {
+        let error = rusqlite::Connection::open_in_memory()
+            .unwrap()
+            .execute("SELECT missing FROM absent", [])
+            .unwrap_err();
+        let response = AppError::from(error).into_response();
+
+        assert_eq!(
+            response.status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["error"]["code"], "INTERNAL_ERROR");
+        assert!(
+            value["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("absent")
+        );
     }
 }

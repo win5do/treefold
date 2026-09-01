@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/toast";
 import { applyThemePreference } from "@/lib/theme";
 import { setApiBase } from "@/api/client";
 import { RuntimeSync } from "@/features/app/RuntimeSync";
+import { frontendLogger, installGlobalErrorLogging } from "@/lib/logger";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ const queryClient = new QueryClient({
 });
 
 applyThemePreference("system");
+installGlobalErrorLogging();
 
 if (isTauri()) {
   document.addEventListener("contextmenu", (event) => {
@@ -44,7 +46,20 @@ if (isTauri()) {
   }
 }
 
-createRoot(document.getElementById("root")!).render(
+createRoot(document.getElementById("root")!, {
+  onUncaughtError(error, errorInfo) {
+    frontendLogger.error(
+      `Uncaught React error${errorInfo.componentStack ?? ""}`,
+      error,
+    );
+  },
+  onRecoverableError(error, errorInfo) {
+    frontendLogger.warn(
+      `Recoverable React error${errorInfo.componentStack ?? ""}`,
+      error,
+    );
+  },
+}).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RuntimeSync />

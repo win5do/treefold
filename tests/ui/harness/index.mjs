@@ -49,6 +49,8 @@ async function startFixtureApi() {
   let nextBulkSyncResults = null;
   const workspaceLocationUpdates = [];
   const locationRequests = [];
+  const logsRevealRequests = [];
+  let nextLocationError = null;
   const repositoryUpdateRequests = [];
   const repositoryBaseRequests = [];
   const renameRequests = [];
@@ -89,6 +91,11 @@ async function startFixtureApi() {
     if (await agentIntegrationRoutes.handle(request, response, pathname)) return;
     if (request.method === "GET" && pathname === "/api/system") {
       sendJson(response, 200, fixture.system);
+      return;
+    }
+    if (request.method === "POST" && pathname === "/api/system/logs/reveal") {
+      logsRevealRequests.push(pathname);
+      sendJson(response, 204, null);
       return;
     }
     if (request.method === "GET" && pathname === "/api/settings") {
@@ -349,6 +356,14 @@ async function startFixtureApi() {
       projectLocationsMatch &&
       fixture.projectDetails[projectLocationsMatch[1]]
     ) {
+      if (nextLocationError) {
+        const error = nextLocationError;
+        nextLocationError = null;
+        sendJson(response, error.status, {
+          error: { code: error.code, message: error.message },
+        });
+        return;
+      }
       const input = await readJson(request);
       const cleanPath = String(input.path ?? "").replace(/\/+$/, "");
       const name = cleanPath.split("/").filter(Boolean).at(-1) || cleanPath;
@@ -1145,6 +1160,10 @@ async function startFixtureApi() {
       nextBulkSyncResults = results;
     },
     locationRequests,
+    logsRevealRequests,
+    setNextLocationError(error) {
+      nextLocationError = error;
+    },
     repositoryUpdateRequests,
     repositoryBaseRequests,
     workspaceLocationUpdates,
@@ -1248,6 +1267,8 @@ export async function startUiHarness() {
       syncRequests: [],
       setNextBulkSyncResults() {},
       locationRequests: [],
+      logsRevealRequests: [],
+      setNextLocationError() {},
       repositoryUpdateRequests: [],
       repositoryBaseRequests: [],
       workspaceLocationUpdates: [],
@@ -1306,6 +1327,8 @@ export async function startUiHarness() {
     syncRequests: fixtureApi.syncRequests,
     setNextBulkSyncResults: fixtureApi.setNextBulkSyncResults,
     locationRequests: fixtureApi.locationRequests,
+    logsRevealRequests: fixtureApi.logsRevealRequests,
+    setNextLocationError: fixtureApi.setNextLocationError,
     repositoryUpdateRequests: fixtureApi.repositoryUpdateRequests,
     repositoryBaseRequests: fixtureApi.repositoryBaseRequests,
     workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,

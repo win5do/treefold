@@ -13,6 +13,12 @@ pub(super) async fn system_status(State(state): State<AppState>) -> Result<Json<
     })))
 }
 
+pub(super) async fn reveal_runtime_logs(State(state): State<AppState>) -> Result<StatusCode> {
+    let logs = state.settings.treefold_home().join("logs");
+    reveal_in_file_manager(&logs.to_string_lossy())?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub(super) async fn amux_status(
     State(state): State<AppState>,
 ) -> Json<crate::terminal::DaemonResourceStatus> {

@@ -49,7 +49,7 @@ export function AgentIntegrationPopover() {
       await queryClient.invalidateQueries({ queryKey: appKeys.agentIntegration });
       toast.success(success);
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : t("integration.failed"));
+      toast.errorFrom(cause, t("integration.failed"));
     } finally {
       setBusy(false);
     }

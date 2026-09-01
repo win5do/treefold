@@ -29,6 +29,7 @@
     "@tanstack/react-query": "^5.101.4",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",
+    "@tauri-apps/plugin-log": "^2.9.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.12.0",

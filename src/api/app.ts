@@ -3,6 +3,7 @@ import type { AgentIntegrationStatus, AmuxStatus, AppSettings, BackgroundProcess
 
 export const appApi = {
   system: (signal?: AbortSignal) => request<SystemStatus>("/api/system", { signal }),
+  revealLogs: () => request<void>("/api/system/logs/reveal", { method: "POST" }),
   settings: (signal?: AbortSignal) => request<AppSettings>("/api/settings", { signal }),
   updateSettings: (json: unknown) => request<AppSettings>("/api/settings", { method: "PATCH", json }),
   amuxStatus: (signal?: AbortSignal) => request<AmuxStatus>("/api/amux", { signal }),

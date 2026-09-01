@@ -21,6 +21,10 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+
+const LOG_FILE_SIZE_BYTES: u128 = 5 * 1024 * 1024;
+const LOG_FILE_COUNT: usize = 5;
 
 #[derive(Clone)]
 struct ApiEndpoint(String);
@@ -28,6 +32,35 @@ struct ApiEndpoint(String);
 #[tauri::command]
 fn treefold_api_url(endpoint: tauri::State<'_, ApiEndpoint>) -> String {
     endpoint.0.clone()
+}
+
+fn install_runtime_logger(app: &tauri::AppHandle, home: &std::path::Path) -> anyhow::Result<()> {
+    let application_level = if cfg!(debug_assertions) {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+    let mut builder = tauri_plugin_log::Builder::new()
+        .clear_targets()
+        .target(Target::new(TargetKind::Folder {
+            path: home.join("logs"),
+            file_name: Some("treefold".into()),
+        }))
+        .rotation_strategy(RotationStrategy::KeepSome(LOG_FILE_COUNT))
+        .timezone_strategy(TimezoneStrategy::UseLocal)
+        .max_file_size(LOG_FILE_SIZE_BYTES)
+        // Dependency lifecycle logs can be extremely chatty. Keep the normal
+        // timeline focused on Treefold and WebView events while retaining
+        // dependency warnings and errors.
+        .level(log::LevelFilter::Warn)
+        .level_for("treefold_lib", application_level)
+        .level_for("treefold_app", application_level)
+        .level_for(tauri_plugin_log::WEBVIEW_TARGET, application_level);
+    if cfg!(debug_assertions) {
+        builder = builder.target(Target::new(TargetKind::Stdout));
+    }
+    app.plugin(builder.build())?;
+    Ok(())
 }
 
 fn publish_api_url(home: &std::path::Path, api_url: &str) -> anyhow::Result<std::path::PathBuf> {
@@ -199,17 +232,16 @@ pub fn run() {
         })
         .setup(move |app| {
             let setup_result: anyhow::Result<()> = (|| {
-                if cfg!(debug_assertions) {
-                    app.handle().plugin(
-                        tauri_plugin_log::Builder::default()
-                            .level(log::LevelFilter::Info)
-                            .build(),
-                    )?;
-                }
                 let user_home = app.path().home_dir()?;
                 let home = std::env::var_os("TREEFOLD_HOME")
                     .map(std::path::PathBuf::from)
                     .unwrap_or_else(|| user_home.join(".treefold"));
+                install_runtime_logger(app.handle(), &home)?;
+                log::info!(
+                    "Treefold starting version={} home={}",
+                    BUILD_VERSION,
+                    home.display()
+                );
                 let settings = settings::SettingsStore::open(&home)?;
                 let executable_dir = std::env::current_exe()?
                     .parent()
