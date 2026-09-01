@@ -2,7 +2,7 @@ CREATE TABLE projects (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  status TEXT NOT NULL DEFAULT 'active', default_directory_id TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-);
+) STRICT;
 CREATE TABLE project_repositories (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, source_root TEXT NOT NULL, git_common_dir TEXT NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE project_repositories (
  git_status TEXT NOT NULL DEFAULT 'ready', last_checked_at TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, deleted_at TEXT,
  UNIQUE(project_id,git_common_dir)
-);
+) STRICT;
 CREATE TABLE project_directories (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  repository_id TEXT REFERENCES project_repositories(id), name TEXT NOT NULL,
@@ -21,14 +21,14 @@ CREATE TABLE project_directories (
  CHECK((repository_id IS NOT NULL AND relative_path IS NOT NULL AND external_path IS NULL)
     OR (repository_id IS NULL AND relative_path IS NULL AND external_path IS NOT NULL)),
  UNIQUE(repository_id,relative_path), UNIQUE(project_id,external_path)
-);
+) STRICT;
 CREATE TABLE workspaces (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
  kind TEXT NOT NULL DEFAULT 'workspace', parent_workspace_id TEXT REFERENCES workspaces(id),
  runtime_id TEXT NOT NULL DEFAULT '', runtime_name TEXT NOT NULL DEFAULT '',
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-);
+) STRICT;
 CREATE TABLE workspace_repositories (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  project_repository_id TEXT NOT NULL REFERENCES project_repositories(id),
@@ -38,7 +38,7 @@ CREATE TABLE workspace_repositories (
  branch_ownership TEXT NOT NULL DEFAULT 'managed', delivery_mode TEXT NOT NULL DEFAULT 'push_branch',
  delivery_status TEXT NOT NULL DEFAULT 'active', close_outcome TEXT, integrated_commit TEXT, closed_at TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(workspace_id,project_repository_id)
-);
+) STRICT;
 CREATE TABLE workspace_directories (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  project_directory_id TEXT NOT NULL REFERENCES project_directories(id),
@@ -46,7 +46,7 @@ CREATE TABLE workspace_directories (
  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', relative_path TEXT, external_path TEXT,
  access_mode TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
  UNIQUE(workspace_id,project_directory_id)
-);
+) STRICT;
 CREATE INDEX workspace_repositories_workspace ON workspace_repositories(workspace_id);
 CREATE INDEX workspace_directories_workspace ON workspace_directories(workspace_id);
 CREATE INDEX workspaces_project_status_kind_parent ON workspaces(project_id,status,kind,parent_workspace_id);
@@ -65,19 +65,19 @@ CREATE TABLE sessions (
  io_mode TEXT NOT NULL DEFAULT 'tty' CHECK(io_mode IN ('pipe','tty')),
  launch_started_at TEXT NOT NULL, last_attached_at TEXT, sort_order INTEGER NOT NULL DEFAULT 0,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-);
+) STRICT;
 CREATE INDEX sessions_workspace_visible_order ON sessions(workspace_id,visibility,sort_order);
 CREATE UNIQUE INDEX sessions_amux_identity ON sessions(amux_workspace_name,amux_process_name) WHERE amux_workspace_name!='' AND amux_process_name!='';
 CREATE TABLE session_additional_directories (
  session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, path TEXT NOT NULL,
  access_mode TEXT NOT NULL DEFAULT 'read_write', PRIMARY KEY(session_id,path)
-);
+) STRICT;
 CREATE TABLE todos (
  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
  content TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('pending','in_progress','blocked','done')),
  fork_id TEXT REFERENCES workspaces(id) ON DELETE SET NULL, blocked_reason TEXT,
  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-);
+) STRICT;
 CREATE UNIQUE INDEX todos_fork ON todos(fork_id) WHERE fork_id IS NOT NULL;
 CREATE TABLE delivery_operations (
  workspace_repository_id TEXT PRIMARY KEY REFERENCES workspace_repositories(id) ON DELETE CASCADE,
@@ -87,7 +87,7 @@ CREATE TABLE delivery_operations (
  commit_message TEXT NOT NULL DEFAULT '', before_head TEXT NOT NULL DEFAULT '', source_head TEXT NOT NULL DEFAULT '',
  target_head TEXT NOT NULL DEFAULT '', integrated_commit TEXT, error TEXT NOT NULL DEFAULT '',
  started_at TEXT NOT NULL, updated_at TEXT NOT NULL
-);
+) STRICT;
 CREATE TABLE parent_operations (
  id TEXT PRIMARY KEY, workspace_repository_id TEXT NOT NULL REFERENCES workspace_repositories(id) ON DELETE CASCADE,
  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -99,7 +99,7 @@ CREATE TABLE parent_operations (
  recovery_ref TEXT NOT NULL, status TEXT NOT NULL, phase TEXT NOT NULL, resolver_session_id TEXT,
  delivery_operation_id TEXT, undo_available INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '',
  started_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT
-);
+) STRICT;
 CREATE INDEX parent_operations_repository_updated ON parent_operations(workspace_repository_id,direction,updated_at DESC);
 CREATE INDEX parent_operations_target_updated ON parent_operations(source_repository_id,target_path,updated_at DESC);
 CREATE TABLE delivery_preflights (
@@ -108,6 +108,6 @@ CREATE TABLE delivery_preflights (
  source_status TEXT NOT NULL, source_dirty INTEGER NOT NULL, target_dirty INTEGER NOT NULL,
  ahead INTEGER NOT NULL, behind INTEGER NOT NULL, changed_files TEXT NOT NULL, commits TEXT NOT NULL,
  diff_stat TEXT NOT NULL, blockers TEXT NOT NULL, warnings TEXT NOT NULL, created_at TEXT NOT NULL
-);
+) STRICT;
 CREATE INDEX delivery_preflights_repository_created ON delivery_preflights(workspace_repository_id,created_at DESC);
 PRAGMA user_version = 1;

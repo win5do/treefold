@@ -74,8 +74,9 @@ hard storage boundary.
 - SQLx migrations live in the active generation directory, currently
   `src-tauri/migrations/g1`, and use UTC timestamp filenames. SQLx's
   `_sqlx_migrations` owns within-generation history; `PRAGMA user_version` is
-  reserved for the database generation. Never add startup-time ad-hoc `ALTER`,
-  `DROP`, or data-rewrite logic outside those migrations.
+  reserved for the database generation. Domain tables must use SQLite `STRICT`
+  mode. Never add startup-time ad-hoc `ALTER`, `DROP`, or data-rewrite logic
+  outside those migrations.
 - Treat every committed SQLite migration as immutable, including during
   pre-release development. For every schema or data change—including adding a
   column, constraint, index, or backfill—append a timestamped forward-only

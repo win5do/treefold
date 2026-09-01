@@ -114,11 +114,11 @@ compatible.
 The current SQLite database generation is 1 at
 `$TREEFOLD_HOME/data/treefold_1.sqlite`. SQLx manages immutable UTC timestamped
 migrations within `src-tauri/migrations/g1` through `_sqlx_migrations`, while
-SQLite `user_version` exclusively identifies the database generation. Append a
-forward-only migration for every within-generation schema or data change; never
-edit or squash a committed migration in a published generation. The pre-SQLx
-`treefold.db`, `treefold.db-wal`, and `treefold.db-shm` files are ignored and
-left untouched.
+SQLite `user_version` exclusively identifies the database generation. All
+domain tables are `STRICT`. Append a forward-only migration for every
+within-generation schema or data change; never edit or squash a committed
+migration in a published generation. The pre-SQLx `treefold.db`,
+`treefold.db-wal`, and `treefold.db-shm` files are ignored and left untouched.
 
 Major generations use a new fixed filename and migration directory. A future
 g2 upgrade creates and validates a temporary `treefold_2.sqlite`, copies data

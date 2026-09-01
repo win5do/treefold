@@ -139,6 +139,26 @@ mod tests {
                 .unwrap(),
             1
         );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM pragma_table_list WHERE schema='main' AND type='table' AND name NOT LIKE 'sqlite_%' AND name!='_sqlx_migrations' AND strict=0"
+            )
+            .fetch_one(&store.pool)
+            .await
+            .unwrap(),
+            0,
+            "every generation 1 domain table must be STRICT"
+        );
+        assert!(
+            sqlx::query(
+                "INSERT INTO projects(id,name,created_at,updated_at) VALUES('bad-type',?,'t','t')"
+            )
+            .bind(vec![0xff_u8])
+            .execute(&store.pool)
+            .await
+            .is_err(),
+            "STRICT tables must reject a BLOB written to a TEXT column"
+        );
         sqlx::query("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','t','t')")
             .execute(&store.pool)
             .await

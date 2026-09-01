@@ -143,8 +143,10 @@ assets.
 Treefold's current database generation is `1`. SQLx applies the immutable UTC
 timestamped migrations in `src-tauri/migrations/g1` and uses
 `_sqlx_migrations` for changes within that generation; SQLite `user_version` is
-reserved for the generation number. The former `treefold.db` and its WAL/SHM
-files are intentionally neither imported nor removed.
+reserved for the generation number. All generation 1 domain tables use SQLite
+`STRICT` mode so storage types are enforced at the database boundary. The
+former `treefold.db` and its WAL/SHM files are intentionally neither imported
+nor removed.
 
 Install the matching SQLx CLI before changing persistence queries:
 
