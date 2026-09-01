@@ -1,19 +1,40 @@
 use std::path::Path;
 
 use anyhow::{Context, bail};
-use rusqlite::Connection;
-use rusqlite_migration::{M, Migrations, SchemaVersion};
+use rusqlite::{Connection, Transaction};
+use rusqlite_migration::{HookResult, M, Migrations, SchemaVersion};
 
-const MIGRATION_LIST: &[M<'static>] = &[
-    M::up(include_str!("../migrations/0001_initial.sql")),
-    M::up(include_str!(
-        "../migrations/0002_nullable_repository_delivery.sql"
-    )),
-];
-const MIGRATIONS: Migrations<'static> = Migrations::from_slice(MIGRATION_LIST);
+fn migrations() -> Migrations<'static> {
+    Migrations::new(vec![
+        M::up(include_str!("../migrations/0001_initial.sql")),
+        M::up(include_str!(
+            "../migrations/0002_nullable_repository_delivery.sql"
+        )),
+        // The preceding migrations briefly contained this column during pre-release
+        // development. Keep the forward migration compatible with databases created
+        // in that window while older version-2 databases receive the column normally.
+        M::up_with_hook("", add_project_repository_source_ownership),
+    ])
+}
+
+fn add_project_repository_source_ownership(transaction: &Transaction<'_>) -> HookResult {
+    let already_exists = transaction
+        .prepare("PRAGMA table_info(project_repositories)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .iter()
+        .any(|column| column == "source_ownership");
+    if !already_exists {
+        transaction.execute_batch(include_str!(
+            "../migrations/0003_project_repository_source_ownership.sql"
+        ))?;
+    }
+    Ok(())
+}
 
 pub(super) fn to_latest(connection: &mut Connection, path: &Path) -> anyhow::Result<()> {
-    let version = MIGRATIONS
+    let migrations = migrations();
+    let version = migrations
         .current_version(connection)
         .context("read SQLite schema version")?;
 
@@ -38,7 +59,7 @@ pub(super) fn to_latest(connection: &mut Connection, path: &Path) -> anyhow::Res
     connection
         .execute_batch("PRAGMA foreign_keys=OFF;")
         .context("disable SQLite foreign keys for schema migrations")?;
-    let migration_result = MIGRATIONS
+    let migration_result = migrations
         .to_latest(connection)
         .context("apply SQLite schema migrations");
     connection
@@ -104,7 +125,7 @@ mod tests {
         let store = Store::open(&path).expect("migrate empty database");
         let database = store.0.lock();
 
-        assert_eq!(user_version(&database), 2);
+        assert_eq!(user_version(&database), 3);
         let objects = schema_objects(&database);
         assert_eq!(objects.len(), 23, "unexpected schema objects: {objects:#?}");
         for table in [
@@ -208,7 +229,7 @@ mod tests {
 
         let reopened = Store::open(&path).expect("reopen current database");
         let database = reopened.0.lock();
-        assert_eq!(user_version(&database), 2);
+        assert_eq!(user_version(&database), 3);
         assert_eq!(schema_objects(&database), original_schema);
         assert_eq!(
             database
@@ -250,7 +271,7 @@ mod tests {
 
         let store = Store::open(&path).expect("migrate v1 database");
         let database = store.0.lock();
-        assert_eq!(user_version(&database), 2);
+        assert_eq!(user_version(&database), 3);
         let nullable = database
             .prepare("PRAGMA table_info(project_repositories)")
             .unwrap()
@@ -262,6 +283,7 @@ mod tests {
             .unwrap();
         assert_eq!(nullable.get("base_branch"), Some(&0));
         assert_eq!(nullable.get("delivery_mode"), Some(&0));
+        assert_eq!(nullable.get("source_ownership"), Some(&1));
         for table in [
             "project_repositories",
             "project_directories",
@@ -277,6 +299,104 @@ mod tests {
                 "preserve {table} rows"
             );
         }
+    }
+
+    #[test]
+    fn v2_database_adds_source_ownership_without_data_loss() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let path = directory.path().join("treefold.db");
+        let database = Connection::open(&path).expect("open v2 database");
+        database
+            .execute_batch(include_str!("../migrations/0001_initial.sql"))
+            .expect("create v1 schema");
+        database
+            .execute(
+                "INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','Project','now','now')",
+                [],
+            )
+            .expect("seed project");
+        database
+            .execute(
+                "INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,created_at,updated_at)
+                 VALUES('r','p','Repo','/tmp/repo','/tmp/repo/.git','now','now')",
+                [],
+            )
+            .expect("seed repository");
+        database
+            .execute_batch(include_str!(
+                "../migrations/0002_nullable_repository_delivery.sql"
+            ))
+            .expect("migrate to v2 schema");
+        database
+            .execute_batch("PRAGMA user_version=2;")
+            .expect("mark v2 schema");
+        drop(database);
+
+        let store = Store::open(&path).expect("migrate v2 database");
+        let database = store.0.lock();
+        assert_eq!(user_version(&database), 3);
+        assert_eq!(
+            database
+                .query_row(
+                    "SELECT source_ownership FROM project_repositories WHERE id='r'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("read migrated ownership"),
+            "external"
+        );
+    }
+
+    #[test]
+    fn transitional_v2_database_preserves_existing_source_ownership() {
+        let directory = tempfile::tempdir().expect("create temporary directory");
+        let path = directory.path().join("treefold.db");
+        let database = Connection::open(&path).expect("open transitional database");
+        database
+            .execute_batch(include_str!("../migrations/0001_initial.sql"))
+            .expect("create v1 schema");
+        database
+            .execute_batch(include_str!(
+                "../migrations/0002_nullable_repository_delivery.sql"
+            ))
+            .expect("migrate to v2 schema");
+        database
+            .execute_batch(include_str!(
+                "../migrations/0003_project_repository_source_ownership.sql"
+            ))
+            .expect("add transitional ownership column");
+        database
+            .execute(
+                "INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','Project','now','now')",
+                [],
+            )
+            .expect("seed project");
+        database
+            .execute(
+                "INSERT INTO project_repositories(
+                   id,project_id,name,source_root,git_common_dir,source_ownership,created_at,updated_at
+                 ) VALUES('r','p','Repo','/tmp/repo','/tmp/repo/.git','managed','now','now')",
+                [],
+            )
+            .expect("seed managed repository");
+        database
+            .execute_batch("PRAGMA user_version=2;")
+            .expect("mark transitional v2 schema");
+        drop(database);
+
+        let store = Store::open(&path).expect("migrate transitional database");
+        let database = store.0.lock();
+        assert_eq!(user_version(&database), 3);
+        assert_eq!(
+            database
+                .query_row(
+                    "SELECT source_ownership FROM project_repositories WHERE id='r'",
+                    [],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("read preserved ownership"),
+            "managed"
+        );
     }
 
     #[test]
@@ -322,14 +442,14 @@ mod tests {
         let path = directory.path().join("treefold.db");
         let database = Connection::open(&path).expect("create future database");
         database
-            .execute_batch("PRAGMA user_version=3;")
+            .execute_batch("PRAGMA user_version=4;")
             .expect("set future version");
         drop(database);
 
         let error = Store::open(&path)
             .err()
             .expect("future database must be rejected");
-        assert!(error.to_string().contains("schema version 3"));
+        assert!(error.to_string().contains("schema version 4"));
         assert!(error.to_string().contains("newer than this Treefold build"));
     }
 }

@@ -1,7 +1,6 @@
 CREATE TABLE project_repositories_v2 (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, source_root TEXT NOT NULL, git_common_dir TEXT NOT NULL,
- source_ownership TEXT NOT NULL DEFAULT 'external' CHECK(source_ownership IN ('managed','external')),
  repository_url TEXT, preferred_remote_name TEXT,
  base_branch TEXT, delivery_mode TEXT,
  setup_command TEXT NOT NULL DEFAULT '', setup_workdir TEXT NOT NULL DEFAULT '.',
@@ -10,12 +9,12 @@ CREATE TABLE project_repositories_v2 (
  UNIQUE(project_id,git_common_dir)
 );
 INSERT INTO project_repositories_v2(
- id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,
+ id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,
  base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,
  created_at,updated_at,deleted_at
 )
 SELECT
- id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,
+ id,project_id,name,source_root,git_common_dir,repository_url,preferred_remote_name,
  base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,
  created_at,updated_at,deleted_at
 FROM project_repositories;

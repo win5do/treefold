@@ -75,10 +75,14 @@ hard storage boundary.
   registry under `src-tauri/src/store/migrations.rs`, with SQL loaded via
   `include_str!`. Never add startup-time ad-hoc `ALTER`, `DROP`, or data-rewrite
   logic outside that registry.
-- Before the first release, update `0001_initial.sql` directly and rebuild the
-  development database by closing Treefold and deleting `treefold.db`,
-  `treefold.db-wal`, and `treefold.db-shm`. After the first release, never edit
-  an applied migration; append a new forward-only migration instead.
+- Treat every committed SQLite migration as immutable, including during
+  pre-release development. For every schema or data change—including adding a
+  column, constraint, index, or backfill—append the next numbered forward-only
+  migration and register it in `src-tauri/src/store/migrations.rs`; never edit
+  `0001_initial.sql` or another existing migration to represent the new state.
+- Existing versioned databases must advance through the migration registry on
+  startup. Do not require developers or users to delete `treefold.db`,
+  `treefold.db-wal`, or `treefold.db-shm` for a routine schema change.
 - Temporary UI state may use SQLite or frontend local storage. Caches and
   derived data may use SQLite or a future cache directory, but neither is a
   source of truth for user preferences.

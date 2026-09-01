@@ -7,7 +7,6 @@ CREATE TABLE projects (
 CREATE TABLE project_repositories (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
  name TEXT NOT NULL, source_root TEXT NOT NULL, git_common_dir TEXT NOT NULL,
- source_ownership TEXT NOT NULL DEFAULT 'external' CHECK(source_ownership IN ('managed','external')),
  repository_url TEXT, preferred_remote_name TEXT,
  base_branch TEXT, delivery_mode TEXT,
  setup_command TEXT NOT NULL DEFAULT '', setup_workdir TEXT NOT NULL DEFAULT '.',

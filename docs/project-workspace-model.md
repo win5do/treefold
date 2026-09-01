@@ -98,9 +98,11 @@ compatible.
 ## Development schema migration
 
 SQLite schema versions are managed by the centralized migration registry and
-SQLite `user_version`. The complete current schema is the forward-only
-`0001_initial.sql` baseline. During pre-release development, changing that
-baseline requires closing Treefold and deleting `treefold.db`,
-`treefold.db-wal`, and `treefold.db-shm`; unversioned development databases are
-rejected and are not backed up or rewritten automatically. After the first
-release, schema changes must append migrations instead of changing the baseline.
+SQLite `user_version`. Every committed migration is immutable, including during
+pre-release development. Schema and data changes append the next numbered
+forward-only migration and are applied automatically when Treefold opens an
+older versioned database; adding a field must not be implemented by editing
+`0001_initial.sql` or another existing migration. Routine upgrades must preserve
+the existing database and must not require deleting `treefold.db`,
+`treefold.db-wal`, or `treefold.db-shm`. Unversioned development databases are
+still rejected and are not backed up or rewritten automatically.
