@@ -26,8 +26,22 @@ const queryClient = new QueryClient({
 
 applyThemePreference("system");
 
-if (isTauri() && !import.meta.env.VITE_TREEFOLD_API_BASE) {
-  setApiBase(await invoke<string>("treefold_api_url"));
+if (isTauri()) {
+  document.addEventListener("contextmenu", (event) => {
+    const keepsNativeEditingMenu = event.composedPath().some(
+      (target) =>
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable),
+    );
+    if (!keepsNativeEditingMenu) {
+      event.preventDefault();
+    }
+  });
+
+  if (!import.meta.env.VITE_TREEFOLD_API_BASE) {
+    setApiBase(await invoke<string>("treefold_api_url"));
+  }
 }
 
 createRoot(document.getElementById("root")!).render(
