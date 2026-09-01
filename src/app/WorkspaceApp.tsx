@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -23,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { appApi } from "@/api/app";
 import { projectsApi } from "@/api/projects";
 import { sessionsApi } from "@/api/sessions";
@@ -60,7 +63,6 @@ import {
   type SessionDropPosition,
   type SidebarStream,
 } from "@/features/workspace/WorkspaceSidebar";
-import { SessionWorkspace } from "@/features/terminal/SessionWorkspace";
 import { WorkspaceInspector } from "@/features/review/WorkspaceInspector";
 import { FinishWorkspaceDialog } from "@/features/delivery/FinishWorkspaceDialog";
 import { ParentOperationDialog } from "@/features/workspace/ParentOperationDialog";
@@ -83,7 +85,6 @@ import {
   CreateWorkspaceDialog,
 } from "@/features/workspace/WorkspaceDialogs";
 import { WorkspaceHome } from "@/features/workspace/WorkspaceHome";
-import { GitChangesView } from "@/features/git-diff/GitChangesView";
 import { appKeys, settingsQuery, systemQuery } from "@/features/app/queries";
 import {
   projectDetailQuery,
@@ -98,6 +99,17 @@ import {
   workspaceSessionsQuery,
 } from "@/features/workspace/queries";
 import { watchSystemTheme } from "@/lib/theme";
+
+const GitChangesView = lazy(() =>
+  import("@/features/git-diff/GitChangesView").then((module) => ({
+    default: module.GitChangesView,
+  })),
+);
+const SessionWorkspace = lazy(() =>
+  import("@/features/terminal/SessionWorkspace").then((module) => ({
+    default: module.SessionWorkspace,
+  })),
+);
 
 function HeaderBreadcrumbItem({
   label,
@@ -1355,40 +1367,46 @@ function Workspace() {
               {loading ? (
                 <CenteredMessage>{t("workspace.loading")}</CenteredMessage>
               ) : gitView && gitRepositoryId ? (
-                <GitChangesView
-                  repositoryKind={workspace ? "workspace" : "project"}
-                  repositoryId={gitRepositoryId}
-                  repositoryName={gitRepositoryName}
-                  scope={gitScope}
-                  startCommit={searchParams.get("startCommit") ?? undefined}
-                  endCommit={searchParams.get("endCommit") ?? undefined}
-                  commitCount={Number(searchParams.get("commitCount") ?? "1")}
-                  onClose={() => navigate(location.pathname)}
-                />
+                <Suspense fallback={<WorkspaceContentLoading />}>
+                  <GitChangesView
+                    repositoryKind={workspace ? "workspace" : "project"}
+                    repositoryId={gitRepositoryId}
+                    repositoryName={gitRepositoryName}
+                    scope={gitScope}
+                    startCommit={searchParams.get("startCommit") ?? undefined}
+                    endCommit={searchParams.get("endCommit") ?? undefined}
+                    commitCount={Number(searchParams.get("commitCount") ?? "1")}
+                    onClose={() => navigate(location.pathname)}
+                  />
+                </Suspense>
               ) : selectedSession ? (
-                <SessionWorkspace
-                  session={selectedSession}
-                  busy={busy}
-                  onStop={() =>
-                    void act(() => sessionsApi.stop(selectedSession.id))
-                  }
-                  onRestart={() =>
-                    void act(() => sessionsApi.restart(selectedSession.id))
-                  }
-                  onClose={() =>
-                    workspace
-                      ? void closeSidebarSession(workspace, selectedSession)
-                      : selectedProject
-                        ? void closeProjectSession(
-                            selectedProject,
-                            selectedSession,
-                          )
-                        : undefined
-                  }
-                  onExit={() => {
-                    void refresh();
-                  }}
-                />
+                <Suspense
+                  fallback={<SessionWorkspaceLoading session={selectedSession} />}
+                >
+                  <SessionWorkspace
+                    session={selectedSession}
+                    busy={busy}
+                    onStop={() =>
+                      void act(() => sessionsApi.stop(selectedSession.id))
+                    }
+                    onRestart={() =>
+                      void act(() => sessionsApi.restart(selectedSession.id))
+                    }
+                    onClose={() =>
+                      workspace
+                        ? void closeSidebarSession(workspace, selectedSession)
+                        : selectedProject
+                          ? void closeProjectSession(
+                              selectedProject,
+                              selectedSession,
+                            )
+                          : undefined
+                    }
+                    onExit={() => {
+                      void refresh();
+                    }}
+                  />
+                </Suspense>
               ) : workspace ? (
                 <WorkspaceHome
                   detail={workspace}
@@ -1905,6 +1923,31 @@ function CenteredMessage({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid h-full place-items-center text-sm text-muted-foreground">
       {children}
+    </div>
+  );
+}
+
+function WorkspaceContentLoading() {
+  return (
+    <div className="grid h-full place-items-center" aria-busy="true">
+      <Spinner />
+    </div>
+  );
+}
+
+function SessionWorkspaceLoading({ session }: { session: Session }) {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
+        <span className="truncate font-medium">{session.name}</span>
+        <span className="text-muted-foreground">{session.status}</span>
+      </div>
+      <div
+        className="grid min-h-0 flex-1 place-items-center"
+        aria-busy="true"
+      >
+        <Spinner />
+      </div>
     </div>
   );
 }
