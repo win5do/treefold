@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE todos SET status='in_progress',fork_id=?,blocked_reason=NULL,updated_at=? WHERE id=? AND fork_id IS ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "d1239e2739e5ba60ab823cfa1ce642721f15b08bfd536f581090c4b21b154239"
+}

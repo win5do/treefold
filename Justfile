@@ -17,6 +17,7 @@ app-default-no-watch:
 
 check:
     npm run typecheck
+    cargo xtask database check
     cargo fmt --manifest-path src-tauri/Cargo.toml --check
     cargo check --manifest-path src-tauri/Cargo.toml
 

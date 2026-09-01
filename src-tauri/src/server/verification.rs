@@ -5,11 +5,13 @@ pub(super) async fn create_workspace_repository_preflight(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDeliveryPreflight>,
 ) -> Result<(StatusCode, Json<DeliveryPreflight>)> {
-    blocking_git_operation(move || create_workspace_repository_preflight_impl(state, id, input))
-        .await
+    blocking_git_operation(move || async move {
+        create_workspace_repository_preflight_impl(state, id, input).await
+    })
+    .await
 }
 
-pub(super) fn create_workspace_repository_preflight_impl(
+pub(super) async fn create_workspace_repository_preflight_impl(
     state: AppState,
     id: String,
     input: CreateDeliveryPreflight,
@@ -17,8 +19,8 @@ pub(super) fn create_workspace_repository_preflight_impl(
     if !["local_merge", "push_branch", "keep"].contains(&input.code_action.as_str()) {
         return Err(AppError::BadRequest("invalid code action".into()));
     }
-    let location = state.store.workspace_repository(&id)?;
-    let workspace = state.store.workspace(&location.workspace_id)?;
+    let location = state.store.workspace_repository(&id).await?;
+    let workspace = state.store.workspace(&location.workspace_id).await?;
     if workspace.kind == "fork" && input.code_action == "push_branch" {
         return Err(AppError::BadRequest(
             "a Fork has no remote delivery target; merge it into its parent Workspace or preserve it"
@@ -35,7 +37,7 @@ pub(super) fn create_workspace_repository_preflight_impl(
     let source_status = command_output(Path::new(source_path), "git", &["status", "--porcelain"])
         .map_err(AppError::BadRequest)?;
     let (target_path, local_target_branch) =
-        workspace_repository_delivery_target(&state, &workspace, &location)?;
+        workspace_repository_delivery_target(&state, &workspace, &location).await?;
     let local_target_head = command_output(
         Path::new(&target_path),
         "git",
@@ -185,7 +187,7 @@ pub(super) fn create_workspace_repository_preflight_impl(
         warnings,
         created_at: now(),
     };
-    state.store.create_delivery_preflight(&preflight)?;
+    state.store.create_delivery_preflight(&preflight).await?;
     Ok((StatusCode::CREATED, Json(preflight)))
 }
 
@@ -199,21 +201,23 @@ pub(super) async fn create_delivery_preflight(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateDeliveryPreflight>,
 ) -> Result<(StatusCode, Json<DeliveryPreflight>)> {
-    blocking_git_operation(move || {
+    blocking_git_operation(move || async move {
         create_delivery_preflight_impl(&state, &id, &input)
+            .await
             .map(|preflight| (StatusCode::CREATED, Json(preflight)))
     })
     .await
 }
 
-pub(super) fn create_delivery_preflight_impl(
+pub(super) async fn create_delivery_preflight_impl(
     state: &AppState,
     id: &str,
     input: &CreateDeliveryPreflight,
 ) -> Result<DeliveryPreflight> {
-    let location = state.store.default_workspace_repository(id)?;
+    let location = state.store.default_workspace_repository(id).await?;
     let (_, Json(preflight)) =
-        create_workspace_repository_preflight_impl(state.clone(), location.id, input.clone())?;
+        create_workspace_repository_preflight_impl(state.clone(), location.id, input.clone())
+            .await?;
     Ok(preflight)
 }
 
@@ -227,8 +231,12 @@ pub(super) async fn validate_preflight_snapshot(
     let preflight_id = input.preflight_id.as_deref().ok_or_else(|| {
         AppError::BadRequest("run delivery preflight before closing this Workspace".into())
     })?;
-    let preflight = state.store.delivery_preflight(preflight_id)?;
-    let default_location_id = state.store.default_workspace_repository(&workspace.id)?.id;
+    let preflight = state.store.delivery_preflight(preflight_id).await?;
+    let default_location_id = state
+        .store
+        .default_workspace_repository(&workspace.id)
+        .await?
+        .id;
     if preflight.workspace_repository_id != default_location_id
         || preflight.code_action != input.code_action
     {
@@ -269,7 +277,8 @@ pub(super) async fn validate_preflight_snapshot(
         }
         return Ok(());
     }
-    let repository_root = repository_root_for_directory(state, &workspace.project_directory_id)?;
+    let repository_root =
+        repository_root_for_directory(state, &workspace.project_directory_id).await?;
     let target_head = if input.code_action == "local_merge" {
         git_head(target_path)?
     } else {

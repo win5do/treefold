@@ -68,21 +68,23 @@ hard storage boundary.
   `$TREEFOLD_HOME/config/keymap.toml` described in
   `docs/keymap-configuration-plan.md`. Do not implement or store keymaps until
   that deferred feature is explicitly requested.
-- `$TREEFOLD_HOME/data/treefold.db` owns Projects, Directories, Workspaces,
+- `$TREEFOLD_HOME/data/treefold_<generation>.sqlite` owns Projects, Directories, Workspaces,
   Sessions, Todos, delivery/rebase/reset operations, and similar relational
   runtime records. Do not add user preferences or keymaps to SQLite.
-- SQLite schema changes must be registered in the centralized migration
-  registry under `src-tauri/src/store/migrations.rs`, with SQL loaded via
-  `include_str!`. Never add startup-time ad-hoc `ALTER`, `DROP`, or data-rewrite
-  logic outside that registry.
+- SQLx migrations live in the active generation directory, currently
+  `src-tauri/migrations/g1`, and use UTC timestamp filenames. SQLx's
+  `_sqlx_migrations` owns within-generation history; `PRAGMA user_version` is
+  reserved for the database generation. Never add startup-time ad-hoc `ALTER`,
+  `DROP`, or data-rewrite logic outside those migrations.
 - Treat every committed SQLite migration as immutable, including during
   pre-release development. For every schema or data change—including adding a
-  column, constraint, index, or backfill—append the next numbered forward-only
-  migration and register it in `src-tauri/src/store/migrations.rs`; never edit
-  `0001_initial.sql` or another existing migration to represent the new state.
-- Existing versioned databases must advance through the migration registry on
-  startup. Do not require developers or users to delete `treefold.db`,
-  `treefold.db-wal`, or `treefold.db-shm` for a routine schema change.
+  column, constraint, index, or backfill—append a timestamped forward-only
+  migration; never edit or squash a migration in a published generation.
+- A major generation gets a new fixed database filename and independent
+  migration directory. Create and validate the target in a unique temporary
+  file, copy data through explicit generation conversion code, then atomically
+  rename it. Preserve the prior generation for rollback. Legacy `treefold.db`
+  files predate generation 1 and are ignored without being modified or removed.
 - Temporary UI state may use SQLite or frontend local storage. Caches and
   derived data may use SQLite or a future cache directory, but neither is a
   source of truth for user preferences.

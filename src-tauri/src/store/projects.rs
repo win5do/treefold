@@ -1,857 +1,621 @@
-#![allow(dead_code)] // Directory-shaped accessors bridge internal call sites, not removed HTTP routes.
-
-use std::path::{Path, PathBuf};
-
-use rusqlite::{Connection, OptionalExtension, Row, named_params, params};
-
+#![allow(dead_code)]
 use super::{Store, now};
-use super::{
-    sessions::{SESSION_COLUMNS, session_row},
-    workspaces::{
-        WORKSPACE_COLUMNS, WORKSPACE_DIRECTORY_COLUMNS, WORKSPACE_REPOSITORY_COLUMNS,
-        hydrate_workspace_compat, workspace_directory_row, workspace_repository_row, workspace_row,
-    },
-};
 use crate::{
     error::{AppError, Result},
     model::*,
 };
+use std::path::{Path, PathBuf};
 
 const PROJECT_COLUMNS: &str =
     "id,name,description,status,default_directory_id,created_at,updated_at";
+const REPOSITORY_COLUMNS: &str = "id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at";
 const DIRECTORY_COLUMNS: &str = "d.id,d.project_id,d.repository_id,d.name,d.description,d.relative_path,d.external_path,d.status,d.created_at,d.updated_at,r.name AS repository_name,r.source_root,r.git_common_dir,r.repository_url,r.preferred_remote_name,r.base_branch,r.delivery_mode,r.setup_command,r.setup_workdir,r.git_status AS repository_status,r.last_checked_at";
 
-impl Store {
-    pub async fn project_summaries_async(&self) -> Result<Vec<ProjectSummary>> {
-        self.1.conn_and_then(project_summaries_on).await
+#[derive(sqlx::FromRow)]
+struct ProjectRow {
+    id: String,
+    name: String,
+    description: String,
+    status: String,
+    default_directory_id: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+impl From<ProjectRow> for Project {
+    fn from(r: ProjectRow) -> Self {
+        Self {
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            status: r.status,
+            default_location_id: r.default_directory_id.clone(),
+            default_base_branch: "main".into(),
+            default_delivery_mode: "push_branch".into(),
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            primary_directory_id: r.default_directory_id.unwrap_or_default(),
+            git_common_dir: String::new(),
+            preferred_remote: None,
+            default_target_branch: "main".into(),
+        }
     }
-
-    pub async fn sidebar_async(&self) -> Result<SidebarData> {
-        self.1.conn_and_then(sidebar_on).await
-    }
-
-    pub fn projects(&self) -> Result<Vec<Project>> {
-        let db = self.0.lock();
-        let mut statement = db.prepare(&format!(
-            "SELECT {PROJECT_COLUMNS} FROM projects ORDER BY updated_at DESC"
-        ))?;
-        let values = statement
-            .query_map([], project_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
-    }
-
-    pub fn project(&self, id: &str) -> Result<Project> {
-        let db = self.0.lock();
-        Ok(db.query_row(
-            &format!("SELECT {PROJECT_COLUMNS} FROM projects WHERE id=?"),
-            [id],
-            project_row,
-        )?)
-    }
-
-    pub fn create_empty_project(&self, project: &Project) -> Result<()> {
-        self.0.lock().execute(
-            "INSERT INTO projects(id,name,description,status,default_directory_id,created_at,updated_at)
-             VALUES(:id,:name,:description,:status,:default_directory_id,:created_at,:updated_at)",
-            named_params! {
-                ":id": project.id,
-                ":name": project.name,
-                ":description": project.description,
-                ":status": project.status,
-                ":default_directory_id": project.default_location_id,
-                ":created_at": project.created_at,
-                ":updated_at": project.updated_at,
+}
+#[derive(sqlx::FromRow)]
+struct DirectoryRow {
+    id: String,
+    project_id: String,
+    repository_id: Option<String>,
+    name: String,
+    description: String,
+    relative_path: Option<String>,
+    external_path: Option<String>,
+    status: String,
+    created_at: String,
+    updated_at: String,
+    repository_name: Option<String>,
+    source_root: Option<String>,
+    git_common_dir: Option<String>,
+    repository_url: Option<String>,
+    preferred_remote_name: Option<String>,
+    base_branch: Option<String>,
+    delivery_mode: Option<String>,
+    setup_command: Option<String>,
+    setup_workdir: Option<String>,
+    repository_status: Option<String>,
+    last_checked_at: Option<String>,
+}
+impl DirectoryRow {
+    fn as_directory(&self) -> Directory {
+        let is_git = self.repository_id.is_some();
+        Directory {
+            id: self.id.clone(),
+            project_id: self.project_id.clone(),
+            name: self.name.clone(),
+            description: self.description.clone(),
+            worktree_setup_command: self.setup_command.clone().unwrap_or_default(),
+            path: scope_path(
+                self.source_root.as_deref(),
+                self.relative_path.as_deref(),
+                self.external_path.as_deref(),
+            ),
+            repository_url: self.repository_url.clone(),
+            preferred_remote_name: self.preferred_remote_name.clone(),
+            base_branch: self.base_branch.clone(),
+            delivery_mode: self.delivery_mode.clone(),
+            git_common_dir: self.git_common_dir.clone(),
+            git_status: if is_git {
+                self.repository_status
+                    .clone()
+                    .unwrap_or_else(|| "missing".into())
+            } else {
+                self.status.clone()
             },
-        )?;
+            last_checked_at: self.last_checked_at.clone(),
+            created_at: self.created_at.clone(),
+            updated_at: self.updated_at.clone(),
+            checkout_path: self.source_root.clone(),
+            role: "attached".into(),
+            is_git,
+            remote_url: self.repository_url.clone(),
+            branch: None,
+            head_commit: None,
+            head_summary: None,
+            dirty: false,
+        }
+    }
+    fn as_project_directory(self) -> ProjectDirectory {
+        ProjectDirectory {
+            id: self.id,
+            project_id: self.project_id,
+            repository_id: self.repository_id,
+            name: self.name,
+            description: self.description,
+            relative_path: self.relative_path.clone(),
+            external_path: self.external_path.clone(),
+            path: scope_path(
+                self.source_root.as_deref(),
+                self.relative_path.as_deref(),
+                self.external_path.as_deref(),
+            ),
+            status: self.status,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
+#[derive(sqlx::FromRow)]
+struct SummaryRow {
+    id: String,
+    name: String,
+    description: String,
+    status: String,
+    updated_at: String,
+    location_count: i64,
+    git_location_count: i64,
+    context_location_count: i64,
+    missing_location_count: i64,
+    abnormal_location_count: i64,
+    active_workspace_count: i64,
+}
+impl From<SummaryRow> for ProjectSummary {
+    fn from(r: SummaryRow) -> Self {
+        Self {
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            status: r.status,
+            updated_at: r.updated_at,
+            location_count: r.location_count,
+            git_location_count: r.git_location_count,
+            context_location_count: r.context_location_count,
+            missing_location_count: r.missing_location_count,
+            abnormal_location_count: r.abnormal_location_count,
+            active_workspace_count: r.active_workspace_count,
+        }
+    }
+}
+
+impl Store {
+    async fn project_rows(
+        &self,
+        sql: impl sqlx::SqlSafeStr,
+        id: Option<&str>,
+    ) -> Result<Vec<Project>> {
+        let q = sqlx::query_as::<_, ProjectRow>(sql);
+        let rows = if let Some(id) = id {
+            q.bind(id).fetch_all(&self.pool).await?
+        } else {
+            q.fetch_all(&self.pool).await?
+        };
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+    pub async fn projects(&self) -> Result<Vec<Project>> {
+        self.project_rows(
+            static_sql!("SELECT {PROJECT_COLUMNS} FROM projects ORDER BY updated_at DESC"),
+            None,
+        )
+        .await
+    }
+    pub async fn project(&self, id: &str) -> Result<Project> {
+        let r: ProjectRow = sqlx::query_as(static_sql!(
+            "SELECT {PROJECT_COLUMNS} FROM projects WHERE id=?"
+        ))
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(r.into())
+    }
+    pub async fn create_empty_project(&self, p: &Project) -> Result<()> {
+        sqlx::query("INSERT INTO projects(id,name,description,status,default_directory_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)").bind(&p.id).bind(&p.name).bind(&p.description).bind(&p.status).bind(&p.default_location_id).bind(&p.created_at).bind(&p.updated_at).execute(&self.pool).await?;
         Ok(())
     }
-
-    pub fn update_project_defaults(
+    pub async fn update_project_defaults(
         &self,
         id: &str,
-        default_directory_id: Option<&str>,
-        _default_base_branch: &str,
-        _default_delivery_mode: &str,
+        d: Option<&str>,
+        _: &str,
+        _: &str,
     ) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE projects SET default_directory_id=?,updated_at=? WHERE id=?",
-            params![default_directory_id, now(), id],
-        )?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
+        let r = sqlx::query("UPDATE projects SET default_directory_id=?,updated_at=? WHERE id=?")
+            .bind(d)
+            .bind(now())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            Err(AppError::NotFound)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
-
-    pub fn update_project_status(&self, id: &str, status: &str) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE projects SET status=?,updated_at=? WHERE id=?",
-            params![status, now(), id],
-        )?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
+    pub async fn update_project_status(&self, id: &str, status: &str) -> Result<()> {
+        let r = sqlx::query("UPDATE projects SET status=?,updated_at=? WHERE id=?")
+            .bind(status)
+            .bind(now())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            Err(AppError::NotFound)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
-
-    pub fn rename_project(&self, id: &str, name: &str, description: &str) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE projects SET name=?,description=?,updated_at=? WHERE id=?",
-            params![name, description, now(), id],
-        )?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
+    pub async fn rename_project(&self, id: &str, name: &str, description: &str) -> Result<()> {
+        let r = sqlx::query("UPDATE projects SET name=?,description=?,updated_at=? WHERE id=?")
+            .bind(name)
+            .bind(description)
+            .bind(now())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            Err(AppError::NotFound)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
-
-    pub fn delete_project(&self, id: &str) -> Result<()> {
-        let changed = self
-            .0
-            .lock()
-            .execute("DELETE FROM projects WHERE id=?", [id])?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
+    pub async fn delete_project(&self, id: &str) -> Result<()> {
+        let r = sqlx::query("DELETE FROM projects WHERE id=?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            Err(AppError::NotFound)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
-
-    pub fn repositories(&self, project_id: &str) -> Result<Vec<ProjectRepository>> {
-        let db = self.0.lock();
-        let mut statement = db.prepare(
-            "SELECT id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at
-             FROM project_repositories WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at,id",
-        )?;
-        let values = statement
-            .query_map([project_id], project_repository_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
+    pub async fn repositories(&self, id: &str) -> Result<Vec<ProjectRepository>> {
+        Ok(sqlx::query_as::<_,ProjectRepository>(static_sql!("SELECT {REPOSITORY_COLUMNS} FROM project_repositories WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at,id")).bind(id).fetch_all(&self.pool).await?)
     }
-
-    pub fn repository(&self, id: &str) -> Result<ProjectRepository> {
-        let db = self.0.lock();
-        Ok(db.query_row(
-            "SELECT id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE id=? AND deleted_at IS NULL",
-            [id],
-            project_repository_row,
-        )?)
+    pub async fn repository(&self, id: &str) -> Result<ProjectRepository> {
+        Ok(sqlx::query_as::<_,ProjectRepository>(static_sql!("SELECT {REPOSITORY_COLUMNS} FROM project_repositories WHERE id=? AND deleted_at IS NULL")).bind(id).fetch_one(&self.pool).await?)
     }
-
-    pub fn repository_as_directory(&self, id: &str) -> Result<Directory> {
-        let repository = self.repository(id)?;
+    pub async fn repository_as_directory(&self, id: &str) -> Result<Directory> {
+        let r = self.repository(id).await?;
         Ok(Directory {
-            id: repository.id,
-            project_id: repository.project_id,
-            name: repository.name,
+            id: r.id,
+            project_id: r.project_id,
+            name: r.name,
             description: String::new(),
-            worktree_setup_command: repository.setup_command,
-            path: repository.source_root.clone(),
-            repository_url: repository.repository_url.clone(),
-            preferred_remote_name: repository.preferred_remote_name,
-            base_branch: repository.base_branch,
-            delivery_mode: repository.delivery_mode,
-            git_common_dir: Some(repository.git_common_dir),
-            git_status: repository.git_status,
-            last_checked_at: repository.last_checked_at,
-            created_at: repository.created_at,
-            updated_at: repository.updated_at,
-            checkout_path: Some(repository.source_root),
+            worktree_setup_command: r.setup_command,
+            path: r.source_root.clone(),
+            repository_url: r.repository_url.clone(),
+            preferred_remote_name: r.preferred_remote_name,
+            base_branch: r.base_branch,
+            delivery_mode: r.delivery_mode,
+            git_common_dir: Some(r.git_common_dir),
+            git_status: r.git_status,
+            last_checked_at: r.last_checked_at,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            checkout_path: Some(r.source_root),
             role: "repository".into(),
             is_git: true,
-            remote_url: repository.repository_url,
+            remote_url: r.repository_url,
             branch: None,
             head_commit: None,
             head_summary: None,
             dirty: false,
         })
     }
-
-    pub fn directories(&self, project_id: &str) -> Result<Vec<Directory>> {
-        let db = self.0.lock();
-        let mut statement = db.prepare(&format!(
-            "SELECT {DIRECTORY_COLUMNS} FROM project_directories d
-             LEFT JOIN project_repositories r ON r.id=d.repository_id
-             JOIN projects p ON p.id=d.project_id WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)
-             ORDER BY d.id=p.default_directory_id DESC,d.created_at,d.rowid"
-        ))?;
-        let values = statement
-            .query_map([project_id], directory_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
-    }
-
-    pub fn project_directories(&self, project_id: &str) -> Result<Vec<ProjectDirectory>> {
-        let db = self.0.lock();
-        let mut statement = db.prepare(&format!(
-            "SELECT {DIRECTORY_COLUMNS} FROM project_directories d
-             LEFT JOIN project_repositories r ON r.id=d.repository_id
-             JOIN projects p ON p.id=d.project_id WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)
-             ORDER BY d.id=p.default_directory_id DESC,r.created_at,d.created_at,d.id"
-        ))?;
-        let values = statement
-            .query_map([project_id], project_directory_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
-    }
-
-    pub fn directory(&self, id: &str) -> Result<Directory> {
-        let db = self.0.lock();
-        Ok(db.query_row(
-            &format!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)"),
-            [id],
-            directory_row,
-        )?)
-    }
-
-    pub fn directory_record(&self, id: &str) -> Result<ProjectDirectory> {
-        let db = self.0.lock();
-        Ok(db.query_row(
-            &format!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)"),
-            [id],
-            project_directory_row,
-        )?)
-    }
-
-    pub fn directory_repository_id(&self, id: &str) -> Result<Option<String>> {
-        let db = self.0.lock();
-        Ok(db.query_row(
-            "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
-            [id],
-            |row| row.get(0),
-        )?)
-    }
-
-    pub fn create_directory(&self, directory: &Directory) -> Result<String> {
-        self.create_directory_with_repository_id(directory, None, "external")
-    }
-
-    pub fn create_directory_with_repository_id(
+    async fn directory_rows(
         &self,
-        directory: &Directory,
-        forced_repository_id: Option<&str>,
-        source_ownership: &str,
+        sql: impl sqlx::SqlSafeStr,
+        id: &str,
+    ) -> Result<Vec<DirectoryRow>> {
+        Ok(sqlx::query_as(sql).bind(id).fetch_all(&self.pool).await?)
+    }
+    pub async fn directories(&self, id: &str) -> Result<Vec<Directory>> {
+        let rows=self.directory_rows(static_sql!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id JOIN projects p ON p.id=d.project_id WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL) ORDER BY d.id=p.default_directory_id DESC,d.created_at,d.rowid"),id).await?;
+        Ok(rows.iter().map(DirectoryRow::as_directory).collect())
+    }
+    pub async fn project_directories(&self, id: &str) -> Result<Vec<ProjectDirectory>> {
+        Ok(self.directory_rows(static_sql!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id JOIN projects p ON p.id=d.project_id WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL) ORDER BY d.id=p.default_directory_id DESC,r.created_at,d.created_at,d.id"),id).await?.into_iter().map(DirectoryRow::as_project_directory).collect())
+    }
+    pub async fn directory(&self, id: &str) -> Result<Directory> {
+        let r:DirectoryRow=sqlx::query_as(static_sql!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)")).bind(id).fetch_one(&self.pool).await?;
+        Ok(r.as_directory())
+    }
+    pub async fn directory_record(&self, id: &str) -> Result<ProjectDirectory> {
+        let r:DirectoryRow=sqlx::query_as(static_sql!("SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL)")).bind(id).fetch_one(&self.pool).await?;
+        Ok(r.as_project_directory())
+    }
+    pub async fn directory_repository_id(&self, id: &str) -> Result<Option<String>> {
+        Ok(sqlx::query_scalar(
+            "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await?)
+    }
+    pub async fn create_directory(&self, d: &Directory) -> Result<String> {
+        self.create_directory_with_repository_id(d, None, "external")
+            .await
+    }
+    pub async fn create_directory_with_repository_id(
+        &self,
+        d: &Directory,
+        forced: Option<&str>,
+        ownership: &str,
     ) -> Result<String> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
-        let repository_id = if let Some(git_common_dir) = directory.git_common_dir.as_deref() {
-            let source_root = directory
-                .checkout_path
-                .as_deref()
-                .unwrap_or(&directory.path);
-            let existing: Option<(String, String, Option<String>)> = tx
-                .query_row(
-                    "SELECT id,source_root,deleted_at FROM project_repositories WHERE project_id=? AND git_common_dir=?",
-                    params![directory.project_id, git_common_dir],
-                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-                )
-                .optional()?;
-            if let Some((id, existing_root, deleted_at)) = existing {
-                if deleted_at.is_none()
-                    && normalized_path(&existing_root) != normalized_path(source_root)
-                {
+        let mut tx = self.pool.begin().await?;
+        let repository_id = if let Some(common) = d.git_common_dir.as_deref() {
+            let root = d.checkout_path.as_deref().unwrap_or(&d.path);
+            let existing:Option<(String,String,Option<String>)>=sqlx::query_as("SELECT id,source_root,deleted_at FROM project_repositories WHERE project_id=? AND git_common_dir=?").bind(&d.project_id).bind(common).fetch_optional(&mut *tx).await?;
+            if let Some((id, existing_root, deleted)) = existing {
+                if deleted.is_none() && normalized_path(&existing_root) != normalized_path(root) {
                     return Err(AppError::BadRequest(format!(
                         "repository is already associated with source worktree {existing_root}; add scopes from that worktree"
                     )));
                 }
-                if deleted_at.is_some() {
-                    tx.execute(
-                        "UPDATE project_repositories SET name=?,source_root=?,source_ownership=?,repository_url=?,preferred_remote_name=?,git_status=?,last_checked_at=?,updated_at=?,deleted_at=NULL WHERE id=?",
-                        params![basename(source_root),source_root,source_ownership,directory.repository_url,directory.preferred_remote_name,directory.git_status,directory.last_checked_at,directory.updated_at,id],
-                    )?;
+                if deleted.is_some() {
+                    sqlx::query("UPDATE project_repositories SET name=?,source_root=?,source_ownership=?,repository_url=?,preferred_remote_name=?,git_status=?,last_checked_at=?,updated_at=?,deleted_at=NULL WHERE id=?").bind(basename(root)).bind(root).bind(ownership).bind(&d.repository_url).bind(&d.preferred_remote_name).bind(&d.git_status).bind(&d.last_checked_at).bind(&d.updated_at).bind(&id).execute(&mut *tx).await?;
                 }
                 id
             } else {
-                let id = forced_repository_id
+                let id = forced
                     .map(str::to_owned)
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                tx.execute(
-                    "INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at)
-                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    params![
-                        id,
-                        directory.project_id,
-                        basename(source_root),
-                        source_root,
-                        git_common_dir,
-                        source_ownership,
-                        directory.repository_url,
-                        directory.preferred_remote_name,
-                        directory.base_branch,
-                        directory.delivery_mode,
-                        directory.worktree_setup_command,
-                        ".",
-                        directory.git_status,
-                        directory.last_checked_at,
-                        directory.created_at,
-                        directory.updated_at,
-                    ],
-                )?;
+                sqlx::query("INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&id).bind(&d.project_id).bind(basename(root)).bind(root).bind(common).bind(ownership).bind(&d.repository_url).bind(&d.preferred_remote_name).bind(&d.base_branch).bind(&d.delivery_mode).bind(&d.worktree_setup_command).bind(".").bind(&d.git_status).bind(&d.last_checked_at).bind(&d.created_at).bind(&d.updated_at).execute(&mut *tx).await?;
                 id
             }
         } else {
             String::new()
         };
-        let relative_path = if repository_id.is_empty() {
+        let relative = if repository_id.is_empty() {
             None
         } else {
             Some(relative_scope(
-                directory
-                    .checkout_path
-                    .as_deref()
-                    .unwrap_or(&directory.path),
-                &directory.path,
+                d.checkout_path.as_deref().unwrap_or(&d.path),
+                &d.path,
             )?)
         };
-        let existing_directory: Option<(String, Option<String>)> = if repository_id.is_empty() {
-            tx.query_row(
-                "SELECT id,deleted_at FROM project_directories WHERE project_id=? AND external_path=?",
-                params![directory.project_id, directory.path],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            ).optional()?
+        let existing: Option<(String, Option<String>)> = if repository_id.is_empty() {
+            sqlx::query_as("SELECT id,deleted_at FROM project_directories WHERE project_id=? AND external_path=?").bind(&d.project_id).bind(&d.path).fetch_optional(&mut *tx).await?
         } else {
-            tx.query_row(
-                "SELECT id,deleted_at FROM project_directories WHERE repository_id=? AND relative_path=?",
-                params![repository_id, relative_path],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            ).optional()?
+            sqlx::query_as("SELECT id,deleted_at FROM project_directories WHERE repository_id=? AND relative_path=?").bind(&repository_id).bind(&relative).fetch_optional(&mut *tx).await?
         };
-        if let Some((existing_id, deleted_at)) = existing_directory {
-            if deleted_at.is_none() {
+        if let Some((id, deleted)) = existing {
+            if deleted.is_none() {
                 return Err(AppError::BadRequest(
                     "directory is already part of this Project".into(),
                 ));
             }
-            tx.execute(
-                "UPDATE project_directories SET name=?,description=?,status=?,updated_at=?,deleted_at=NULL WHERE id=?",
-                params![directory.name,directory.description,directory.git_status,directory.updated_at,existing_id],
-            )?;
-            if directory.git_common_dir.is_some() {
-                tx.execute(
-                    "UPDATE projects SET default_directory_id=COALESCE(default_directory_id,?),updated_at=? WHERE id=?",
-                    params![existing_id, now(), directory.project_id],
-                )?;
+            sqlx::query("UPDATE project_directories SET name=?,description=?,status=?,updated_at=?,deleted_at=NULL WHERE id=?").bind(&d.name).bind(&d.description).bind(&d.git_status).bind(&d.updated_at).bind(&id).execute(&mut *tx).await?;
+            if d.git_common_dir.is_some() {
+                sqlx::query("UPDATE projects SET default_directory_id=COALESCE(default_directory_id,?),updated_at=? WHERE id=?").bind(&id).bind(now()).bind(&d.project_id).execute(&mut *tx).await?;
             }
-            tx.commit()?;
-            return Ok(existing_id);
+            tx.commit().await?;
+            return Ok(id);
         }
-        tx.execute(
-            "INSERT INTO project_directories(id,project_id,repository_id,name,description,relative_path,external_path,status,created_at,updated_at)
-             VALUES(?,?,?,?,?,?,?,?,?,?)",
-            params![
-                directory.id,
-                directory.project_id,
-                (!repository_id.is_empty()).then_some(repository_id),
-                directory.name,
-                directory.description,
-                relative_path,
-                directory.git_common_dir.is_none().then_some(directory.path.clone()),
-                directory.git_status,
-                directory.created_at,
-                directory.updated_at,
-            ],
-        )?;
-        if directory.git_common_dir.is_some() {
-            tx.execute(
-                "UPDATE projects SET default_directory_id=COALESCE(default_directory_id,?),updated_at=? WHERE id=?",
-                params![directory.id, now(), directory.project_id],
-            )?;
+        let repo = (!repository_id.is_empty()).then_some(repository_id);
+        let external = d.git_common_dir.is_none().then_some(d.path.clone());
+        sqlx::query("INSERT INTO project_directories(id,project_id,repository_id,name,description,relative_path,external_path,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)").bind(&d.id).bind(&d.project_id).bind(repo).bind(&d.name).bind(&d.description).bind(relative).bind(external).bind(&d.git_status).bind(&d.created_at).bind(&d.updated_at).execute(&mut *tx).await?;
+        if d.git_common_dir.is_some() {
+            sqlx::query("UPDATE projects SET default_directory_id=COALESCE(default_directory_id,?),updated_at=? WHERE id=?").bind(&d.id).bind(now()).bind(&d.project_id).execute(&mut *tx).await?;
         }
-        tx.commit()?;
-        Ok(directory.id.clone())
+        tx.commit().await?;
+        Ok(d.id.clone())
     }
-
-    pub fn update_directory(
+    pub async fn update_directory(
         &self,
         id: &str,
         name: &str,
         description: &str,
-        setup_command: &str,
-        base_branch: Option<&str>,
-        delivery_mode: Option<&str>,
+        setup: &str,
+        base: Option<&str>,
+        mode: Option<&str>,
     ) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
-        let repository_id: Option<String> = tx.query_row(
+        let mut tx = self.pool.begin().await?;
+        let repo: Option<String> = sqlx::query_scalar(
             "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
-            [id],
-            |row| row.get(0),
-        )?;
-        tx.execute(
-            "UPDATE project_directories SET name=?,description=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
-            params![name, description, now(), id],
-        )?;
-        if let Some(repository_id) = repository_id {
-            tx.execute(
-                "UPDATE project_repositories SET setup_command=?,base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),updated_at=? WHERE id=?",
-                params![setup_command, base_branch, delivery_mode, now(), repository_id],
-            )?;
+        )
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE project_directories SET name=?,description=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(name).bind(description).bind(now()).bind(id).execute(&mut *tx).await?;
+        if let Some(repo) = repo {
+            sqlx::query("UPDATE project_repositories SET setup_command=?,base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),updated_at=? WHERE id=?").bind(setup).bind(base).bind(mode).bind(now()).bind(repo).execute(&mut *tx).await?;
         }
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
-
-    pub fn update_repository(
+    pub async fn update_repository(
         &self,
         id: &str,
-        setup_command: &str,
-        setup_workdir: &str,
-        base_branch: &str,
-        delivery_mode: &str,
+        setup: &str,
+        workdir: &str,
+        base: &str,
+        mode: &str,
     ) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET setup_command=?,setup_workdir=?,base_branch=?,delivery_mode=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
-            params![setup_command,setup_workdir,base_branch,delivery_mode,now(),id],
-        )?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
+        let r=sqlx::query("UPDATE project_repositories SET setup_command=?,setup_workdir=?,base_branch=?,delivery_mode=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(setup).bind(workdir).bind(base).bind(mode).bind(now()).bind(id).execute(&self.pool).await?;
+        if r.rows_affected() == 0 {
+            Err(AppError::NotFound)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
-
-    pub fn update_repository_base(
+    pub async fn update_repository_base(
         &self,
         id: &str,
-        base_branch: &str,
-        preferred_remote_name: Option<&str>,
+        base: &str,
+        remote: Option<&str>,
     ) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET base_branch=?,preferred_remote_name=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
-            params![base_branch,preferred_remote_name,now(),id],
-        )?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
+        let r=sqlx::query("UPDATE project_repositories SET base_branch=?,preferred_remote_name=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(base).bind(remote).bind(now()).bind(id).execute(&self.pool).await?;
+        if r.rows_affected() == 0 {
+            Err(AppError::NotFound)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
-
-    pub fn refresh_repository(&self, repository: &ProjectRepository) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET name=?,source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,setup_command=?,setup_workdir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
-            params![repository.name,repository.source_root,repository.git_common_dir,repository.repository_url,repository.preferred_remote_name,repository.base_branch,repository.delivery_mode,repository.setup_command,repository.setup_workdir,repository.git_status,repository.last_checked_at,repository.updated_at,repository.id],
-        )?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
+    pub async fn refresh_repository(&self, r: &ProjectRepository) -> Result<()> {
+        let q=sqlx::query("UPDATE project_repositories SET name=?,source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,setup_command=?,setup_workdir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&r.name).bind(&r.source_root).bind(&r.git_common_dir).bind(&r.repository_url).bind(&r.preferred_remote_name).bind(&r.base_branch).bind(&r.delivery_mode).bind(&r.setup_command).bind(&r.setup_workdir).bind(&r.git_status).bind(&r.last_checked_at).bind(&r.updated_at).bind(&r.id).execute(&self.pool).await?;
+        if q.rows_affected() == 0 {
+            Err(AppError::NotFound)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
-
-    pub fn reattach_repository(
+    pub async fn reattach_repository(
         &self,
         id: &str,
-        source_root: &str,
-        git_common_dir: &str,
-        repository_url: Option<&str>,
-        preferred_remote_name: Option<&str>,
+        root: &str,
+        common: &str,
+        url: Option<&str>,
+        remote: Option<&str>,
     ) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE project_repositories SET source_root=?,git_common_dir=?,source_ownership='external',repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
-            params![source_root,git_common_dir,repository_url,preferred_remote_name,now(),now(),id],
-        )?;
-        if changed == 0 {
-            return Err(AppError::NotFound);
+        let t = now();
+        let r=sqlx::query("UPDATE project_repositories SET source_root=?,git_common_dir=?,source_ownership='external',repository_url=?,preferred_remote_name=?,git_status='ready',last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(root).bind(common).bind(url).bind(remote).bind(&t).bind(&t).bind(id).execute(&self.pool).await?;
+        if r.rows_affected() == 0 {
+            Err(AppError::NotFound)
+        } else {
+            Ok(())
         }
-        Ok(())
     }
-
-    pub fn refresh_project_directory(&self, directory: &Directory) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
-        let repository_id: Option<String> = tx.query_row(
+    pub async fn refresh_project_directory(&self, d: &Directory) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let repo: Option<String> = sqlx::query_scalar(
             "SELECT repository_id FROM project_directories WHERE id=? AND deleted_at IS NULL",
-            [&directory.id],
-            |row| row.get(0),
-        )?;
-        tx.execute(
-            "UPDATE project_directories SET name=?,status=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
-            params![
-                directory.name,
-                directory.git_status,
-                directory.updated_at,
-                directory.id
-            ],
-        )?;
-        if let Some(repository_id) = repository_id {
-            tx.execute(
-                "UPDATE project_repositories SET source_root=COALESCE(?,source_root),repository_url=COALESCE(repository_url,?),preferred_remote_name=COALESCE(preferred_remote_name,?),base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),git_common_dir=COALESCE(?,git_common_dir),git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL",
-                params![directory.checkout_path,directory.repository_url,directory.preferred_remote_name,directory.base_branch,directory.delivery_mode,directory.git_common_dir,directory.git_status,directory.last_checked_at,directory.updated_at,repository_id],
-            )?;
+        )
+        .bind(&d.id)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE project_directories SET name=?,status=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&d.name).bind(&d.git_status).bind(&d.updated_at).bind(&d.id).execute(&mut *tx).await?;
+        if let Some(repo) = repo {
+            sqlx::query("UPDATE project_repositories SET source_root=COALESCE(?,source_root),repository_url=COALESCE(repository_url,?),preferred_remote_name=COALESCE(preferred_remote_name,?),base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),git_common_dir=COALESCE(?,git_common_dir),git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&d.checkout_path).bind(&d.repository_url).bind(&d.preferred_remote_name).bind(&d.base_branch).bind(&d.delivery_mode).bind(&d.git_common_dir).bind(&d.git_status).bind(&d.last_checked_at).bind(&d.updated_at).bind(repo).execute(&mut *tx).await?;
         }
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
-
-    pub fn delete_project_directory(&self, id: &str) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
-        let (project_id, repository_id, is_default): (String, Option<String>, bool) = tx.query_row(
-            "SELECT d.project_id,d.repository_id,COALESCE(d.id=p.default_directory_id,0) FROM project_directories d JOIN projects p ON p.id=d.project_id WHERE d.id=? AND d.deleted_at IS NULL",
-            [id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )?;
+    pub async fn delete_project_directory(&self, id: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let(project,repo,is_default):(String,Option<String>,bool)=sqlx::query_as("SELECT d.project_id,d.repository_id,COALESCE(d.id=p.default_directory_id,0) FROM project_directories d JOIN projects p ON p.id=d.project_id WHERE d.id=? AND d.deleted_at IS NULL").bind(id).fetch_one(&mut *tx).await?;
         if is_default {
             return Err(AppError::BadRequest(
                 "choose another default Directory before removing this one".into(),
             ));
         }
-        let referenced: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM workspace_directories wd JOIN workspaces w ON w.id=wd.workspace_id WHERE wd.project_directory_id=? AND w.status='active')",
-            [id],
-            |row| row.get(0),
-        )?;
+        let referenced:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM workspace_directories wd JOIN workspaces w ON w.id=wd.workspace_id WHERE wd.project_directory_id=? AND w.status='active')").bind(id).fetch_one(&mut *tx).await?;
         if referenced {
             return Err(AppError::BadRequest(
                 "directory is used by an active Workspace or Fork".into(),
             ));
         }
-        let timestamp = now();
-        tx.execute("UPDATE project_directories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL", params![timestamp,timestamp,id])?;
-        if let Some(repository_id) = repository_id {
-            let has_scopes: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM project_directories WHERE repository_id=? AND deleted_at IS NULL)",
-                [&repository_id],
-                |row| row.get(0),
-            )?;
-            if !has_scopes {
-                let snapshotted: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id WHERE wr.project_repository_id=? AND w.status='active')",
-                    [&repository_id],
-                    |row| row.get(0),
-                )?;
-                if snapshotted {
+        let t = now();
+        sqlx::query("UPDATE project_directories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&t).bind(&t).bind(id).execute(&mut *tx).await?;
+        if let Some(repo) = repo {
+            let scopes:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM project_directories WHERE repository_id=? AND deleted_at IS NULL)").bind(&repo).fetch_one(&mut *tx).await?;
+            if !scopes {
+                let used:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id WHERE wr.project_repository_id=? AND w.status='active')").bind(&repo).fetch_one(&mut *tx).await?;
+                if used {
                     return Err(AppError::BadRequest(
                         "repository is used by an active Workspace or Fork".into(),
                     ));
                 }
-                tx.execute("UPDATE project_repositories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL", params![timestamp,timestamp,repository_id])?;
+                sqlx::query("UPDATE project_repositories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&t).bind(&t).bind(repo).execute(&mut *tx).await?;
             }
         }
-        tx.execute(
-            "UPDATE projects SET updated_at=? WHERE id=?",
-            params![now(), project_id],
-        )?;
-        tx.commit()?;
+        sqlx::query("UPDATE projects SET updated_at=? WHERE id=?")
+            .bind(now())
+            .bind(project)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
-
-    pub fn delete_repository(&self, id: &str) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
-        let referenced: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id WHERE wr.project_repository_id=? AND w.status='active')",
-            [id],
-            |row| row.get(0),
-        )?;
-        if referenced {
+    pub async fn delete_repository(&self, id: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let used:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id WHERE wr.project_repository_id=? AND w.status='active')").bind(id).fetch_one(&mut *tx).await?;
+        if used {
             return Err(AppError::BadRequest(
                 "repository is used by an active Workspace or Fork".into(),
             ));
         }
-        let contains_default: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM project_directories d JOIN projects p ON p.default_directory_id=d.id WHERE d.repository_id=?)",
-            [id],
-            |row| row.get(0),
-        )?;
-        if contains_default {
+        let default:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM project_directories d JOIN projects p ON p.default_directory_id=d.id WHERE d.repository_id=?)").bind(id).fetch_one(&mut *tx).await?;
+        if default {
             return Err(AppError::BadRequest(
                 "choose a default Directory in another Repository first".into(),
             ));
         }
-        let timestamp = now();
-        tx.execute("UPDATE project_directories SET deleted_at=?,updated_at=? WHERE repository_id=? AND deleted_at IS NULL", params![timestamp,timestamp,id])?;
-        let changed = tx.execute("UPDATE project_repositories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL", params![timestamp,timestamp,id])?;
-        if changed == 0 {
+        let t = now();
+        sqlx::query("UPDATE project_directories SET deleted_at=?,updated_at=? WHERE repository_id=? AND deleted_at IS NULL").bind(&t).bind(&t).bind(id).execute(&mut *tx).await?;
+        let r=sqlx::query("UPDATE project_repositories SET deleted_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&t).bind(&t).bind(id).execute(&mut *tx).await?;
+        if r.rows_affected() == 0 {
             return Err(AppError::NotFound);
         }
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
-
-    pub fn project_detail(&self, id: &str) -> Result<ProjectDetail> {
+    pub async fn project_detail(&self, id: &str) -> Result<ProjectDetail> {
         Ok(ProjectDetail {
-            project: self.project(id)?,
-            repositories: self.repositories(id)?,
-            directories: self.project_directories(id)?,
-            sessions: self.project_sessions(id)?,
+            project: self.project(id).await?,
+            repositories: self.repositories(id).await?,
+            directories: self.project_directories(id).await?,
+            sessions: self.project_sessions(id).await?,
             workspaces: self
-                .workspaces(id)?
+                .workspaces(id)
+                .await?
                 .into_iter()
-                .filter(|workspace| workspace.kind == "workspace")
+                .filter(|w| w.kind == "workspace")
                 .collect(),
-            worktrees: Vec::new(),
+            worktrees: vec![],
         })
     }
-}
-
-fn project_summaries_on(db: &Connection) -> Result<Vec<ProjectSummary>> {
-    let mut statement = db.prepare(
-        "SELECT p.id,p.name,p.description,p.status,p.updated_at,
-                COUNT(DISTINCT d.id),COUNT(DISTINCT CASE WHEN d.repository_id IS NOT NULL THEN d.id END),
-                COUNT(DISTINCT CASE WHEN d.repository_id IS NULL THEN d.id END),
-                COUNT(DISTINCT CASE WHEN d.status='missing' THEN d.id END),
-                COUNT(DISTINCT CASE WHEN d.status NOT IN ('ready','not_git','missing') THEN d.id END),
-                COUNT(DISTINCT CASE WHEN w.status='active' AND w.kind='workspace' THEN w.id END)
-         FROM projects p LEFT JOIN project_directories d ON d.project_id=p.id AND d.deleted_at IS NULL
-         LEFT JOIN workspaces w ON w.project_id=p.id GROUP BY p.id ORDER BY p.updated_at DESC",
-    )?;
-    let values = statement
-        .query_map([], |row| {
-            Ok(ProjectSummary {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                status: row.get(3)?,
-                updated_at: row.get(4)?,
-                location_count: row.get(5)?,
-                git_location_count: row.get(6)?,
-                context_location_count: row.get(7)?,
-                missing_location_count: row.get(8)?,
-                abnormal_location_count: row.get(9)?,
-                active_workspace_count: row.get(10)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(values)
-}
-
-fn sidebar_on(db: &Connection) -> Result<SidebarData> {
-    let transaction = db.unchecked_transaction()?;
-    let mut project_statement = transaction.prepare(&format!(
-        "SELECT {PROJECT_COLUMNS} FROM projects WHERE status='active' ORDER BY updated_at DESC"
-    ))?;
-    let projects = project_statement
-        .query_map([], project_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    drop(project_statement);
-    let mut result = Vec::with_capacity(projects.len());
-    for project in projects {
-        let repositories = query_project_repositories(&transaction, &project.id)?;
-        let directories = query_project_directories(&transaction, &project.id)?;
-        let aliased_session_columns = format!("s.{}", SESSION_COLUMNS.replace(',', ",s."));
-        let mut sessions_statement = transaction.prepare(&format!(
-            "SELECT {aliased_session_columns} FROM sessions s JOIN workspaces w ON w.id=s.workspace_id
-             WHERE w.project_id=? AND w.kind='base' AND s.visibility='visible' ORDER BY s.sort_order,s.created_at DESC"
-        ))?;
-        let sessions = sessions_statement
-            .query_map([&project.id], session_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut workspace_statement = transaction.prepare(&format!(
-            "SELECT {WORKSPACE_COLUMNS} FROM workspaces WHERE project_id=? AND status='active' AND kind!='base' ORDER BY updated_at DESC"
-        ))?;
-        let mut workspaces = workspace_statement
-            .query_map([&project.id], workspace_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut sidebar_workspaces = Vec::with_capacity(workspaces.len());
-        for mut workspace in workspaces.drain(..) {
-            hydrate_workspace_compat(&transaction, &mut workspace)?;
-            let mut statement = transaction.prepare(&format!(
-                "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? AND visibility='visible' ORDER BY sort_order,created_at DESC"
-            ))?;
-            let workspace_sessions = statement
-                .query_map([&workspace.id], session_row)?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            let mut repository_statement = transaction.prepare(&format!(
-                "SELECT {WORKSPACE_REPOSITORY_COLUMNS} FROM workspace_repositories WHERE workspace_id=? ORDER BY repository_name"
-            ))?;
-            let workspace_repositories = repository_statement
-                .query_map([&workspace.id], workspace_repository_row)?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            let mut directory_statement = transaction.prepare(&format!(
-                "SELECT {WORKSPACE_DIRECTORY_COLUMNS} FROM workspace_directories wd LEFT JOIN workspace_repositories wr ON wr.id=wd.workspace_repository_id WHERE wd.workspace_id=? ORDER BY wd.name"
-            ))?;
-            let workspace_directories = directory_statement
-                .query_map([&workspace.id], workspace_directory_row)?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            sidebar_workspaces.push(SidebarWorkspace {
-                workspace,
-                sessions: workspace_sessions,
-                repositories: workspace_repositories,
-                directories: workspace_directories,
-            });
-        }
-        result.push(SidebarProject {
-            project,
-            repositories,
-            directories,
-            sessions,
-            workspaces: sidebar_workspaces,
-        });
+    pub async fn project_summaries_async(&self) -> Result<Vec<ProjectSummary>> {
+        let rows:Vec<SummaryRow>=sqlx::query_as("SELECT p.id,p.name,p.description,p.status,p.updated_at,COUNT(DISTINCT d.id) location_count,COUNT(DISTINCT CASE WHEN d.repository_id IS NOT NULL THEN d.id END) git_location_count,COUNT(DISTINCT CASE WHEN d.repository_id IS NULL THEN d.id END) context_location_count,COUNT(DISTINCT CASE WHEN d.repository_id IS NULL THEN d.id END) missing_location_count,COUNT(DISTINCT CASE WHEN d.status NOT IN ('ready','not_git','missing') THEN d.id END) abnormal_location_count,COUNT(DISTINCT CASE WHEN w.status='active' AND w.kind='workspace' THEN w.id END) active_workspace_count FROM projects p LEFT JOIN project_directories d ON d.project_id=p.id AND d.deleted_at IS NULL LEFT JOIN workspaces w ON w.project_id=p.id GROUP BY p.id ORDER BY p.updated_at DESC").fetch_all(&self.pool).await?;
+        Ok(rows.into_iter().map(Into::into).collect())
     }
-    drop(transaction);
-    Ok(SidebarData { projects: result })
+    pub async fn sidebar_async(&self) -> Result<SidebarData> {
+        let projects=self.project_rows(static_sql!("SELECT {PROJECT_COLUMNS} FROM projects WHERE status='active' ORDER BY updated_at DESC"),None).await?;
+        let mut out = vec![];
+        for project in projects {
+            let repositories = self.repositories(&project.id).await?;
+            let directories = self.project_directories(&project.id).await?;
+            let sessions = self
+                .project_sessions(&project.id)
+                .await?
+                .into_iter()
+                .filter(|s| s.visibility == "visible")
+                .collect();
+            let mut sw = vec![];
+            for workspace in self
+                .workspaces(&project.id)
+                .await?
+                .into_iter()
+                .filter(|w| w.status == "active" && w.kind != "base")
+            {
+                sw.push(SidebarWorkspace {
+                    sessions: self
+                        .sessions(&workspace.id)
+                        .await?
+                        .into_iter()
+                        .filter(|s| s.visibility == "visible")
+                        .collect(),
+                    repositories: self.workspace_repositories(&workspace.id).await?,
+                    directories: self.workspace_directories(&workspace.id).await?,
+                    workspace,
+                })
+            }
+            out.push(SidebarProject {
+                project,
+                repositories,
+                directories,
+                sessions,
+                workspaces: sw,
+            })
+        }
+        Ok(SidebarData { projects: out })
+    }
 }
-
-fn query_project_repositories(
-    db: &Connection,
-    project_id: &str,
-) -> rusqlite::Result<Vec<ProjectRepository>> {
-    let mut statement = db.prepare(
-        "SELECT id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at FROM project_repositories WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at,id",
-    )?;
-    let values = statement
-        .query_map([project_id], project_repository_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(values)
-}
-
-fn query_project_directories(
-    db: &Connection,
-    project_id: &str,
-) -> rusqlite::Result<Vec<ProjectDirectory>> {
-    let mut statement = db.prepare(&format!(
-        "SELECT {DIRECTORY_COLUMNS} FROM project_directories d LEFT JOIN project_repositories r ON r.id=d.repository_id WHERE d.project_id=? AND d.deleted_at IS NULL AND (r.id IS NULL OR r.deleted_at IS NULL) ORDER BY d.created_at,d.id"
-    ))?;
-    let values = statement
-        .query_map([project_id], project_directory_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(values)
-}
-
-fn project_row(row: &Row<'_>) -> rusqlite::Result<Project> {
-    let default_directory_id: Option<String> = row.get("default_directory_id")?;
-    Ok(Project {
-        id: row.get("id")?,
-        name: row.get("name")?,
-        description: row.get("description")?,
-        status: row.get("status")?,
-        default_location_id: default_directory_id.clone(),
-        default_base_branch: "main".into(),
-        default_delivery_mode: "push_branch".into(),
-        created_at: row.get("created_at")?,
-        updated_at: row.get("updated_at")?,
-        primary_directory_id: default_directory_id.unwrap_or_default(),
-        git_common_dir: String::new(),
-        preferred_remote: None,
-        default_target_branch: "main".into(),
-    })
-}
-
-fn project_repository_row(row: &Row<'_>) -> rusqlite::Result<ProjectRepository> {
-    Ok(ProjectRepository {
-        id: row.get("id")?,
-        project_id: row.get("project_id")?,
-        name: row.get("name")?,
-        source_root: row.get("source_root")?,
-        git_common_dir: row.get("git_common_dir")?,
-        source_ownership: row.get("source_ownership")?,
-        repository_url: row.get("repository_url")?,
-        preferred_remote_name: row.get("preferred_remote_name")?,
-        base_branch: row.get("base_branch")?,
-        delivery_mode: row.get("delivery_mode")?,
-        setup_command: row.get("setup_command")?,
-        setup_workdir: row.get("setup_workdir")?,
-        git_status: row.get("git_status")?,
-        last_checked_at: row.get("last_checked_at")?,
-        created_at: row.get("created_at")?,
-        updated_at: row.get("updated_at")?,
-    })
-}
-
-fn directory_row(row: &Row<'_>) -> rusqlite::Result<Directory> {
-    let repository_id: Option<String> = row.get("repository_id")?;
-    let relative_path: Option<String> = row.get("relative_path")?;
-    let source_root: Option<String> = row.get("source_root")?;
-    let external_path: Option<String> = row.get("external_path")?;
-    let path = scope_path(
-        source_root.as_deref(),
-        relative_path.as_deref(),
-        external_path.as_deref(),
-    );
-    let is_git = repository_id.is_some();
-    Ok(Directory {
-        id: row.get("id")?,
-        project_id: row.get("project_id")?,
-        name: row.get("name")?,
-        description: row.get("description")?,
-        worktree_setup_command: row
-            .get::<_, Option<String>>("setup_command")?
-            .unwrap_or_default(),
-        path,
-        repository_url: row.get("repository_url")?,
-        preferred_remote_name: row.get("preferred_remote_name")?,
-        base_branch: row.get("base_branch")?,
-        delivery_mode: row.get("delivery_mode")?,
-        git_common_dir: row.get("git_common_dir")?,
-        git_status: if is_git {
-            row.get::<_, Option<String>>("repository_status")?
-                .unwrap_or_else(|| "missing".into())
-        } else {
-            row.get("status")?
-        },
-        last_checked_at: row.get("last_checked_at")?,
-        created_at: row.get("created_at")?,
-        updated_at: row.get("updated_at")?,
-        checkout_path: source_root,
-        role: "attached".into(),
-        is_git,
-        remote_url: row.get("repository_url")?,
-        branch: None,
-        head_commit: None,
-        head_summary: None,
-        dirty: false,
-    })
-}
-
-fn project_directory_row(row: &Row<'_>) -> rusqlite::Result<ProjectDirectory> {
-    let relative_path: Option<String> = row.get("relative_path")?;
-    let external_path: Option<String> = row.get("external_path")?;
-    let source_root: Option<String> = row.get("source_root")?;
-    Ok(ProjectDirectory {
-        id: row.get("id")?,
-        project_id: row.get("project_id")?,
-        repository_id: row.get("repository_id")?,
-        name: row.get("name")?,
-        description: row.get("description")?,
-        relative_path: relative_path.clone(),
-        external_path: external_path.clone(),
-        path: scope_path(
-            source_root.as_deref(),
-            relative_path.as_deref(),
-            external_path.as_deref(),
-        ),
-        status: row.get("status")?,
-        created_at: row.get("created_at")?,
-        updated_at: row.get("updated_at")?,
-    })
-}
-
-fn scope_path(
-    source_root: Option<&str>,
-    relative_path: Option<&str>,
-    external: Option<&str>,
-) -> String {
-    match (source_root, relative_path, external) {
-        (Some(root), Some("."), _) => root.into(),
-        (Some(root), Some(relative), _) => Path::new(root)
-            .join(relative)
-            .to_string_lossy()
-            .into_owned(),
-        (_, _, Some(path)) => path.into(),
+fn scope_path(root: Option<&str>, relative: Option<&str>, external: Option<&str>) -> String {
+    match (root, relative, external) {
+        (Some(r), Some("."), _) => r.into(),
+        (Some(r), Some(p), _) => Path::new(r).join(p).to_string_lossy().into_owned(),
+        (_, _, Some(p)) => p.into(),
         _ => String::new(),
     }
 }
-
-fn relative_scope(source_root: &str, selected: &str) -> Result<String> {
-    let root = PathBuf::from(source_root);
+fn relative_scope(root: &str, selected: &str) -> Result<String> {
+    let root = PathBuf::from(root);
     let selected = PathBuf::from(selected);
     let relative = selected.strip_prefix(&root).map_err(|_| {
         AppError::BadRequest("Directory must be inside the Repository source root".into())
     })?;
-    if relative.as_os_str().is_empty() {
-        Ok(".".into())
+    Ok(if relative.as_os_str().is_empty() {
+        ".".into()
     } else {
-        Ok(relative.to_string_lossy().replace('\\', "/"))
-    }
+        relative.to_string_lossy().replace('\\', "/")
+    })
 }
-
 fn normalized_path(path: &str) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path))
 }
-
 fn basename(path: &str) -> String {
     Path::new(path)
         .file_name()
-        .and_then(|value| value.to_str())
+        .and_then(|v| v.to_str())
         .unwrap_or("repository")
         .to_owned()
 }

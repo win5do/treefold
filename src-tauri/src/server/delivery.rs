@@ -5,29 +5,30 @@ pub(super) async fn finish_workspace_repository(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<FinishWorkspace>,
 ) -> Result<Json<FinishProgress>> {
-    let location = state.store.workspace_repository(&id)?;
-    let workspace = state.store.workspace(&location.workspace_id)?;
+    let location = state.store.workspace_repository(&id).await?;
+    let workspace = state.store.workspace(&location.workspace_id).await?;
     let project_id = workspace.project_id;
     let common = state
         .store
-        .repository(&location.project_repository_id)?
+        .repository(&location.project_repository_id)
+        .await?
         .git_common_dir;
-    let result = blocking_git_operation_for(common, move || {
-        finish_workspace_repository_impl(state, id, input)
+    let result = blocking_git_operation_for(common, move || async move {
+        finish_workspace_repository_impl(state, id, input).await
     })
     .await;
     project_worktrees_cache().invalidate(&project_id).await;
     result
 }
 
-pub(super) fn finish_workspace_repository_impl(
+pub(super) async fn finish_workspace_repository_impl(
     state: AppState,
     id: String,
     input: FinishWorkspace,
 ) -> Result<Json<FinishProgress>> {
     validate_delivery_input(&input)?;
-    let location = state.store.workspace_repository(&id)?;
-    let workspace = state.store.workspace(&location.workspace_id)?;
+    let location = state.store.workspace_repository(&id).await?;
+    let workspace = state.store.workspace(&location.workspace_id).await?;
     if location.access_mode != "read_write" {
         return Err(AppError::BadRequest(
             "read-only locations do not require Finish".into(),
@@ -54,7 +55,7 @@ pub(super) fn finish_workspace_repository_impl(
             "run delivery preflight before finishing this Workspace Repository".into(),
         )
     })?;
-    let preflight = state.store.delivery_preflight(preflight_id)?;
+    let preflight = state.store.delivery_preflight(preflight_id).await?;
     if preflight.workspace_repository_id != location.id
         || preflight.code_action != input.code_action
     {
@@ -92,13 +93,14 @@ pub(super) fn finish_workspace_repository_impl(
     if input.code_action == "local_merge" {
         let previous = state
             .store
-            .latest_parent_operation(&location.id, "integrate")?;
+            .latest_parent_operation(&location.id, "integrate")
+            .await?;
         if !previous
             .as_ref()
             .is_some_and(|operation| operation.status == "completed")
         {
             let (target_path, target_branch) =
-                workspace_repository_delivery_target(&state, &workspace, &location)?;
+                workspace_repository_delivery_target(&state, &workspace, &location).await?;
             let target_head = command_output(
                 Path::new(&target_path),
                 "git",
@@ -132,7 +134,8 @@ pub(super) fn finish_workspace_repository_impl(
         "local_merge" => {
             let previous = state
                 .store
-                .latest_parent_operation(&location.id, "integrate")?;
+                .latest_parent_operation(&location.id, "integrate")
+                .await?;
             let operation = start_parent_operation_impl(
                 &state,
                 &location.id,
@@ -140,17 +143,19 @@ pub(super) fn finish_workspace_repository_impl(
                 "merge",
                 "finish",
                 Some(&location.id),
-            )?;
+            )
+            .await?;
             if matches!(
                 operation.status.as_str(),
                 "conflicted" | "resolving" | "recovery_required" | "active"
             ) {
                 state
                     .store
-                    .set_delivery_status(&location.id, "conflicted")?;
+                    .set_delivery_status(&location.id, "conflicted")
+                    .await?;
                 return Ok(Json(FinishProgress {
                     status: "paused".into(),
-                    repository: state.store.workspace_repository(&location.id)?,
+                    repository: state.store.workspace_repository(&location.id).await?,
                     operation: Some(operation),
                 }));
             }
@@ -166,7 +171,7 @@ pub(super) fn finish_workspace_repository_impl(
             if resumed && !input.resume_finish {
                 return Ok(Json(FinishProgress {
                     status: "awaiting_resume".into(),
-                    repository: state.store.workspace_repository(&location.id)?,
+                    repository: state.store.workspace_repository(&location.id).await?,
                     operation: Some(operation),
                 }));
             }
@@ -201,18 +206,19 @@ pub(super) fn finish_workspace_repository_impl(
         _ => unreachable!(),
     };
     if let Some(operation) = linked_operation.as_ref() {
-        consume_parent_operation(&state, operation)?;
+        consume_parent_operation(&state, operation).await?;
     }
     if input.delete_worktree {
         let project_repository = state
             .store
-            .repository_as_directory(&location.project_repository_id)?;
+            .repository_as_directory(&location.project_repository_id)
+            .await?;
         remove_worktree_if_present(&project_repository.path, &source_path, false)?;
         if input.delete_branch {
             let (target, require_merged) = match input.code_action.as_str() {
                 "local_merge" => {
                     let (_, target_branch) =
-                        workspace_repository_delivery_target(&state, &workspace, &location)?;
+                        workspace_repository_delivery_target(&state, &workspace, &location).await?;
                     (target_branch, true)
                 }
                 "push_branch" => ("FETCH_HEAD".to_owned(), true),
@@ -228,32 +234,36 @@ pub(super) fn finish_workspace_repository_impl(
         }
     }
     let timestamp = now();
-    state.store.finish_workspace_repository(
-        &location.id,
-        status,
-        outcome,
-        integrated.as_deref(),
-        &timestamp,
-    )?;
+    state
+        .store
+        .finish_workspace_repository(
+            &location.id,
+            status,
+            outcome,
+            integrated.as_deref(),
+            &timestamp,
+        )
+        .await?;
     if workspace.kind == "fork" && outcome == "local_merge" {
         let all_delivered = state
             .store
-            .workspace_repositories(&workspace.id)?
+            .workspace_repositories(&workspace.id)
+            .await?
             .iter()
             .filter(|item| item.access_mode == "read_write")
             .all(|item| item.delivery_status == "delivered");
-        if all_delivered && let Some(todo) = state.store.todo_for_fork(&workspace.id)? {
-            state.store.update_todo(&todo.id, "done")?;
+        if all_delivered && let Some(todo) = state.store.todo_for_fork(&workspace.id).await? {
+            state.store.update_todo(&todo.id, "done").await?;
         }
     }
     Ok(Json(FinishProgress {
         status: "finished".into(),
-        repository: state.store.workspace_repository(&location.id)?,
+        repository: state.store.workspace_repository(&location.id).await?,
         operation: linked_operation,
     }))
 }
 
-pub(super) fn workspace_repository_delivery_target(
+pub(super) async fn workspace_repository_delivery_target(
     state: &AppState,
     workspace: &Workspace,
     location: &WorkspaceRepository,
@@ -261,7 +271,8 @@ pub(super) fn workspace_repository_delivery_target(
     if let Some(parent_id) = workspace.parent_workspace_id.as_deref() {
         let parent = state
             .store
-            .workspace_repositories(parent_id)?
+            .workspace_repositories(parent_id)
+            .await?
             .into_iter()
             .find(|item| item.project_repository_id == location.project_repository_id)
             .ok_or_else(|| {
@@ -274,7 +285,8 @@ pub(super) fn workspace_repository_delivery_target(
     }
     let project_repository = state
         .store
-        .repository_as_directory(&location.project_repository_id)?;
+        .repository_as_directory(&location.project_repository_id)
+        .await?;
     ensure_location_ready(&project_repository)?;
     Ok((
         project_repository.path,
@@ -375,7 +387,7 @@ pub(super) fn git_rebase_output(dir: &Path, args: &[&str]) -> std::result::Resul
     )
 }
 
-pub(super) fn workspace_delivery_target(
+pub(super) async fn workspace_delivery_target(
     state: &AppState,
     workspace: &Workspace,
 ) -> Result<(String, String)> {
@@ -383,7 +395,7 @@ pub(super) fn workspace_delivery_target(
         let parent_id = workspace.parent_workspace_id.as_deref().ok_or_else(|| {
             AppError::Internal(anyhow::anyhow!("Fork is missing its parent Workspace"))
         })?;
-        let parent = state.store.workspace(parent_id)?;
+        let parent = state.store.workspace(parent_id).await?;
         if parent.status != "active" {
             return Err(AppError::BadRequest(
                 "the parent Workspace must be active to receive this Fork".into(),
@@ -391,7 +403,8 @@ pub(super) fn workspace_delivery_target(
         }
         return Ok((parent.checkout_path, parent.branch));
     }
-    let repository_root = repository_root_for_directory(state, &workspace.project_directory_id)?;
+    let repository_root =
+        repository_root_for_directory(state, &workspace.project_directory_id).await?;
     Ok((repository_root, workspace.target_branch.clone()))
 }
 
@@ -428,10 +441,16 @@ pub(super) async fn finish_workspace_impl(
     input: &FinishWorkspace,
     fail_after_phase: Option<&str>,
 ) -> Result<Workspace> {
-    let was_active = state.store.workspace(id)?.status == "active";
+    let was_active = state.store.workspace(id).await?.status == "active";
     let result = finish_workspace_steps(state, id, input, fail_after_phase).await;
     if let Err(error) = &result
-        && state.store.delivery_operation(id).ok().flatten().is_some()
+        && state
+            .store
+            .delivery_operation(id)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
     {
         let _ = state.store.set_delivery_error(id, &error.to_string());
     }
@@ -449,7 +468,7 @@ pub(super) async fn finish_workspace_steps(
 ) -> Result<Workspace> {
     validate_delivery_input(input)?;
 
-    let workspace = state.store.workspace(id)?;
+    let workspace = state.store.workspace(id).await?;
     if workspace.kind == "base" {
         return Err(AppError::BadRequest(
             "Project Sessions do not have a delivery lifecycle".into(),
@@ -458,7 +477,8 @@ pub(super) async fn finish_workspace_steps(
     if workspace.kind == "workspace"
         && state
             .store
-            .forks(id)?
+            .forks(id)
+            .await?
             .iter()
             .any(|fork| fork.status == "active")
     {
@@ -482,19 +502,21 @@ pub(super) async fn finish_workspace_steps(
             "only a Fork can carry Todos into a parent Workspace".into(),
         ));
     }
-    let existing_operation = state.store.delivery_operation(id)?;
+    let existing_operation = state.store.delivery_operation(id).await?;
     if workspace.status == "archived" {
         let operation = existing_operation
             .ok_or_else(|| AppError::BadRequest("Workspace is already archived".into()))?;
         ensure_delivery_matches(&operation, input)?;
         state
             .store
-            .advance_delivery(id, "archived", None, None, None)?;
-        return state.store.workspace(id);
+            .advance_delivery(id, "archived", None, None, None)
+            .await?;
+        return state.store.workspace(id).await;
     }
-    let project = state.store.project(&workspace.project_id)?;
-    let repository_root = repository_root_for_directory(state, &workspace.project_directory_id)?;
-    let (target_path, target_branch) = workspace_delivery_target(state, &workspace)?;
+    let project = state.store.project(&workspace.project_id).await?;
+    let repository_root =
+        repository_root_for_directory(state, &workspace.project_directory_id).await?;
+    let (target_path, target_branch) = workspace_delivery_target(state, &workspace).await?;
 
     let source_is_managed = true;
     ensure_clean_workspace(&workspace.checkout_path, "Workspace")?;
@@ -529,7 +551,7 @@ pub(super) async fn finish_workspace_steps(
             let timestamp = now();
             let operation = DeliveryOperation {
                 workspace_id: id.to_owned(),
-                workspace_repository_id: state.store.default_workspace_repository(id)?.id,
+                workspace_repository_id: state.store.default_workspace_repository(id).await?.id,
                 phase: "preflight_passed".into(),
                 code_action: input.code_action.clone(),
                 todo_action: input.todo_action.clone(),
@@ -546,7 +568,7 @@ pub(super) async fn finish_workspace_steps(
                 started_at: timestamp.clone(),
                 updated_at: timestamp,
             };
-            state.store.create_delivery_operation(&operation)?;
+            state.store.create_delivery_operation(&operation).await?;
             operation
         }
     };
@@ -568,7 +590,7 @@ pub(super) async fn finish_workspace_steps(
             source_head = git_head(&workspace.checkout_path)?;
             let merge_target = target_path.clone();
             let merge_branch = workspace.branch.clone();
-            if let Err(error) = blocking_git_operation(move || {
+            if let Err(error) = blocking_git_operation(move || async move {
                 if let Err(error) = command_output(
                     Path::new(&merge_target),
                     "git",
@@ -581,7 +603,7 @@ pub(super) async fn finish_workspace_steps(
             })
             .await
             {
-                state.store.set_delivery_status(id, "conflicted")?;
+                state.store.set_delivery_status(id, "conflicted").await?;
                 return Err(AppError::BadRequest(format!(
                     "merge failed; both worktrees and branches were preserved: {error}"
                 )));
@@ -589,13 +611,16 @@ pub(super) async fn finish_workspace_steps(
             target_head = git_head(&target_path)?;
             integrated_commit = Some(target_head.clone());
         }
-        state.store.advance_delivery(
-            id,
-            "code_integrated",
-            Some(&source_head),
-            Some(&target_head),
-            integrated_commit.as_deref(),
-        )?;
+        state
+            .store
+            .advance_delivery(
+                id,
+                "code_integrated",
+                Some(&source_head),
+                Some(&target_head),
+                integrated_commit.as_deref(),
+            )
+            .await?;
         operation.phase = "code_integrated".into();
         operation.source_head = source_head;
         operation.target_head = target_head;
@@ -638,7 +663,8 @@ pub(super) async fn finish_workspace_steps(
         }
         state
             .store
-            .advance_delivery(id, "target_pushed", None, None, None)?;
+            .advance_delivery(id, "target_pushed", None, None, None)
+            .await?;
         operation.phase = "target_pushed".into();
     }
     fail_delivery_after(fail_after_phase, "target_pushed")?;
@@ -646,14 +672,15 @@ pub(super) async fn finish_workspace_steps(
     if !delivery_phase_at_least(&operation.phase, "records_carried")? {
         state
             .store
-            .advance_delivery(id, "records_carried", None, None, None)?;
+            .advance_delivery(id, "records_carried", None, None, None)
+            .await?;
         operation.phase = "records_carried".into();
     }
     fail_delivery_after(fail_after_phase, "records_carried")?;
 
     if !delivery_phase_at_least(&operation.phase, "sessions_finalized")? {
-        for mut session in state.store.sessions(id)? {
-            capture_codex_session_id(&state.store, &mut session)?;
+        for mut session in state.store.sessions(id).await? {
+            capture_codex_session_id(&state.store, &mut session).await?;
             if input.keep_session_history && session.kind == "codex" {
                 let _ = state
                     .terminals
@@ -673,10 +700,12 @@ pub(super) async fn finish_workspace_steps(
         };
         state
             .store
-            .finalize_sessions(id, resume_cwd, input.keep_session_history)?;
+            .finalize_sessions(id, resume_cwd, input.keep_session_history)
+            .await?;
         state
             .store
-            .advance_delivery(id, "sessions_finalized", None, None, None)?;
+            .advance_delivery(id, "sessions_finalized", None, None, None)
+            .await?;
         operation.phase = "sessions_finalized".into();
     }
     fail_delivery_after(fail_after_phase, "sessions_finalized")?;
@@ -685,7 +714,7 @@ pub(super) async fn finish_workspace_steps(
         if input.delete_worktree && source_is_managed {
             let repository = repository_root.clone();
             let checkout_path = workspace.checkout_path.clone();
-            blocking_git_operation(move || {
+            blocking_git_operation(move || async move {
                 remove_worktree_if_present(&repository, &checkout_path, false)
             })
             .await?;
@@ -708,7 +737,7 @@ pub(super) async fn finish_workspace_steps(
             let merged_target = merged_target.to_owned();
             let source_head = operation.source_head.clone();
             let require_merged = input.code_action != "keep";
-            blocking_git_operation(move || {
+            blocking_git_operation(move || async move {
                 delete_delivered_branch_if_present(
                     &repository,
                     &branch,
@@ -721,7 +750,8 @@ pub(super) async fn finish_workspace_steps(
         }
         state
             .store
-            .advance_delivery(id, "resources_cleaned", None, None, None)?;
+            .advance_delivery(id, "resources_cleaned", None, None, None)
+            .await?;
         operation.phase = "resources_cleaned".into();
     }
     fail_delivery_after(fail_after_phase, "resources_cleaned")?;
@@ -732,23 +762,27 @@ pub(super) async fn finish_workspace_steps(
         _ => "preserved",
     };
     let timestamp = now();
-    state.store.finish_workspace(
-        id,
-        delivery_status,
-        &input.code_action,
-        operation.integrated_commit.as_deref(),
-        &timestamp,
-    )?;
+    state
+        .store
+        .finish_workspace(
+            id,
+            delivery_status,
+            &input.code_action,
+            operation.integrated_commit.as_deref(),
+            &timestamp,
+        )
+        .await?;
     if workspace.kind == "fork"
         && input.code_action == "local_merge"
-        && let Some(todo) = state.store.todo_for_fork(id)?
+        && let Some(todo) = state.store.todo_for_fork(id).await?
     {
-        state.store.update_todo(&todo.id, "done")?;
+        state.store.update_todo(&todo.id, "done").await?;
     }
     state
         .store
-        .advance_delivery(id, "archived", None, None, None)?;
-    state.store.workspace(id)
+        .advance_delivery(id, "archived", None, None, None)
+        .await?;
+    state.store.workspace(id).await
 }
 
 pub(super) fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO todos(id,workspace_id,content,status,fork_id,blocked_reason,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "cb0cc9199ae0f79fe078ad711d5a3df5090285f9a3e9e732fd32f3ef1487c54e"
+}

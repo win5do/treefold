@@ -34,10 +34,19 @@ pub(super) async fn get_parent_operation_preview(
     validate_parent_direction(&query.direction)?;
     let common = state
         .store
-        .repository(&state.store.workspace_repository(&id)?.project_repository_id)?
+        .repository(
+            &state
+                .store
+                .workspace_repository(&id)
+                .await?
+                .project_repository_id,
+        )
+        .await?
         .git_common_dir;
-    blocking_git_operation_for(common, move || {
-        parent_operation_preview_impl(&state, &id, &query.direction).map(Json)
+    blocking_git_operation_for(common, move || async move {
+        parent_operation_preview_impl(&state, &id, &query.direction)
+            .await
+            .map(Json)
     })
     .await
 }
@@ -59,10 +68,18 @@ pub(super) async fn start_parent_operation(
     validate_parent_strategy(&query.direction, &strategy)?;
     let common = state
         .store
-        .repository(&state.store.workspace_repository(&id)?.project_repository_id)?
+        .repository(
+            &state
+                .store
+                .workspace_repository(&id)
+                .await?
+                .project_repository_id,
+        )
+        .await?
         .git_common_dir;
-    blocking_git_operation_for(common, move || {
+    blocking_git_operation_for(common, move || async move {
         start_parent_operation_impl(&state, &id, &query.direction, &strategy, "standalone", None)
+            .await
             .map(Json)
     })
     .await
@@ -72,13 +89,16 @@ pub(super) async fn get_parent_operation(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ParentOperation>> {
-    let operation = state.store.parent_operation(&id)?;
+    let operation = state.store.parent_operation(&id).await?;
     let common = state
         .store
-        .repository(&operation.source_repository_id)?
+        .repository(&operation.source_repository_id)
+        .await?
         .git_common_dir;
-    blocking_git_operation_for(common, move || {
-        reconcile_parent_operation(&state, &operation).map(Json)
+    blocking_git_operation_for(common, move || async move {
+        reconcile_parent_operation(&state, &operation)
+            .await
+            .map(Json)
     })
     .await
 }
@@ -87,40 +107,44 @@ pub(super) async fn resolve_parent_operation_with_codex(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<(StatusCode, Json<Session>)> {
-    let operation = state.store.parent_operation(&id)?;
-    let operation = reconcile_parent_operation(&state, &operation)?;
+    let operation = state.store.parent_operation(&id).await?;
+    let operation = reconcile_parent_operation(&state, &operation).await?;
     if !matches!(operation.status.as_str(), "conflicted" | "resolving") {
         return Err(AppError::BadRequest(
             "only a conflicted parent operation can be resolved with Codex".into(),
         ));
     }
     if let Some(session_id) = operation.resolver_session_id.as_deref() {
-        return Ok((StatusCode::OK, Json(state.store.session(session_id)?)));
+        return Ok((StatusCode::OK, Json(state.store.session(session_id).await?)));
     }
 
-    let source_workspace = state.store.workspace(&operation.workspace_id)?;
+    let source_workspace = state.store.workspace(&operation.workspace_id).await?;
     let resolver_workspace = if operation.direction == "update" {
         source_workspace
     } else if let Some(parent_id) = operation.target_workspace_id.as_deref() {
-        state.store.workspace(parent_id)?
+        state.store.workspace(parent_id).await?
     } else {
-        sync_project_session_workspace(&state, &source_workspace.project_id)?
+        sync_project_session_workspace(&state, &source_workspace.project_id).await?
     };
-    let directories = state.store.workspace_directories(&resolver_workspace.id)?;
+    let directories = state
+        .store
+        .workspace_directories(&resolver_workspace.id)
+        .await?;
+    let repository_ids = state
+        .store
+        .workspace_repositories(&resolver_workspace.id)
+        .await?
+        .into_iter()
+        .filter(|location| location.project_repository_id == operation.source_repository_id)
+        .map(|location| location.id)
+        .collect::<std::collections::HashSet<_>>();
     let selected = directories
         .iter()
         .find(|directory| {
             directory
                 .workspace_repository_id
-                .as_deref()
-                .is_some_and(|repository_id| {
-                    state
-                        .store
-                        .workspace_repository(repository_id)
-                        .is_ok_and(|location| {
-                            location.project_repository_id == operation.source_repository_id
-                        })
-                })
+                .as_ref()
+                .is_some_and(|id| repository_ids.contains(id))
         })
         .ok_or_else(|| {
             AppError::BadRequest("resolver Workspace has no matching Repository directory".into())
@@ -162,7 +186,8 @@ pub(super) async fn resolve_parent_operation_with_codex(
     .await?;
     state
         .store
-        .set_parent_operation_resolver(&operation.id, &session.id)?;
+        .set_parent_operation_resolver(&operation.id, &session.id)
+        .await?;
     Ok((StatusCode::CREATED, Json(session)))
 }
 
@@ -170,9 +195,9 @@ pub(super) async fn abort_parent_operation(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ParentOperation>> {
-    let operation = state.store.parent_operation(&id)?;
+    let operation = state.store.parent_operation(&id).await?;
     if let Some(session_id) = operation.resolver_session_id.as_deref()
-        && let Ok(session) = state.store.session(session_id)
+        && let Ok(session) = state.store.session(session_id).await
     {
         let _ = state
             .terminals
@@ -181,10 +206,13 @@ pub(super) async fn abort_parent_operation(
     }
     let common = state
         .store
-        .repository(&operation.source_repository_id)?
+        .repository(&operation.source_repository_id)
+        .await?
         .git_common_dir;
-    blocking_git_operation_for(common, move || {
-        abort_parent_operation_impl(&state, &operation).map(Json)
+    blocking_git_operation_for(common, move || async move {
+        abort_parent_operation_impl(&state, &operation)
+            .await
+            .map(Json)
     })
     .await
 }
@@ -193,13 +221,16 @@ pub(super) async fn undo_parent_operation(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ParentOperation>> {
-    let operation = state.store.parent_operation(&id)?;
+    let operation = state.store.parent_operation(&id).await?;
     let common = state
         .store
-        .repository(&operation.source_repository_id)?
+        .repository(&operation.source_repository_id)
+        .await?
         .git_common_dir;
-    blocking_git_operation_for(common, move || {
-        undo_parent_operation_impl(&state, &operation).map(Json)
+    blocking_git_operation_for(common, move || async move {
+        undo_parent_operation_impl(&state, &operation)
+            .await
+            .map(Json)
     })
     .await
 }
@@ -226,14 +257,14 @@ pub(super) fn validate_parent_strategy(direction: &str, strategy: &str) -> Resul
     }
 }
 
-pub(super) fn parent_operation_context(
+pub(super) async fn parent_operation_context(
     state: &AppState,
     id: &str,
     direction: &str,
 ) -> Result<ParentOperationContext> {
     validate_parent_direction(direction)?;
-    let location = state.store.workspace_repository(id)?;
-    let workspace = state.store.workspace(&location.workspace_id)?;
+    let location = state.store.workspace_repository(id).await?;
+    let workspace = state.store.workspace(&location.workspace_id).await?;
     if workspace.status != "active"
         || location.access_mode != "read_write"
         || location.git_status != "ready"
@@ -244,7 +275,8 @@ pub(super) fn parent_operation_context(
     }
     let repository = state
         .store
-        .repository_as_directory(&location.project_repository_id)?;
+        .repository_as_directory(&location.project_repository_id)
+        .await?;
     let source_path = workspace_repository_git_path(&location)?.to_owned();
     let source_branch = location
         .branch
@@ -252,7 +284,7 @@ pub(super) fn parent_operation_context(
         .ok_or_else(|| AppError::BadRequest("Workspace Repository has no branch".into()))?;
     let source_head = git_head(&source_path)?;
     let (parent_path, parent_branch) =
-        workspace_repository_delivery_target(state, &workspace, &location)?;
+        workspace_repository_delivery_target(state, &workspace, &location).await?;
     let parent_head = git_head(&parent_path)?;
     let (target_scope, target_workspace_id) = if direction == "update" {
         (
@@ -289,17 +321,18 @@ pub(super) fn parent_operation_context(
     })
 }
 
-pub(super) fn parent_operation_preview_impl(
+pub(super) async fn parent_operation_preview_impl(
     state: &AppState,
     id: &str,
     direction: &str,
 ) -> Result<ParentOperationPreview> {
-    let context = parent_operation_context(state, id, direction)?;
-    let operation = state
-        .store
-        .latest_parent_operation(id, direction)?
-        .map(|operation| reconcile_parent_operation(state, &operation))
-        .transpose()?;
+    let context = parent_operation_context(state, id, direction).await?;
+    let operation =
+        if let Some(operation) = state.store.latest_parent_operation(id, direction).await? {
+            Some(reconcile_parent_operation(state, &operation).await?)
+        } else {
+            None
+        };
     let mut blockers = Vec::new();
     if !git_status_porcelain(&context.source_path)?.is_empty() {
         blockers.push("Workspace Repository has uncommitted changes".into());
@@ -317,12 +350,16 @@ pub(super) fn parent_operation_preview_impl(
     {
         blockers.push("Parent target already has a Git operation in progress".into());
     }
-    if let Some(active) = state.store.active_parent_operation_for_target(
-        &context.location.project_repository_id,
-        &context.target_path,
-    )? && operation
-        .as_ref()
-        .is_none_or(|current| current.id != active.id)
+    if let Some(active) = state
+        .store
+        .active_parent_operation_for_target(
+            &context.location.project_repository_id,
+            &context.target_path,
+        )
+        .await?
+        && operation
+            .as_ref()
+            .is_none_or(|current| current.id != active.id)
     {
         blockers.push(format!(
             "another parent operation ({}) is active on this target",
@@ -345,7 +382,8 @@ pub(super) fn parent_operation_preview_impl(
         } else {
             &context.source_head
         },
-    )?;
+    )
+    .await?;
     Ok(ParentOperationPreview {
         direction: direction.into(),
         repository_name: context.location.repository_name,
@@ -362,7 +400,7 @@ pub(super) fn parent_operation_preview_impl(
     })
 }
 
-pub(super) fn start_parent_operation_impl(
+pub(super) async fn start_parent_operation_impl(
     state: &AppState,
     id: &str,
     direction: &str,
@@ -371,8 +409,8 @@ pub(super) fn start_parent_operation_impl(
     delivery_operation_id: Option<&str>,
 ) -> Result<ParentOperation> {
     validate_parent_strategy(direction, strategy)?;
-    if let Some(current) = state.store.latest_parent_operation(id, direction)? {
-        let current = reconcile_parent_operation(state, &current)?;
+    if let Some(current) = state.store.latest_parent_operation(id, direction).await? {
+        let current = reconcile_parent_operation(state, &current).await?;
         if matches!(
             current.status.as_str(),
             "active" | "conflicted" | "resolving" | "recovery_required"
@@ -383,7 +421,7 @@ pub(super) fn start_parent_operation_impl(
             return Ok(current);
         }
     }
-    let context = parent_operation_context(state, id, direction)?;
+    let context = parent_operation_context(state, id, direction).await?;
     ensure_clean_workspace(&context.source_path, "Workspace Repository")?;
     ensure_checked_out_branch(
         &context.source_path,
@@ -405,10 +443,14 @@ pub(super) fn start_parent_operation_impl(
             "another Git operation is already in progress".into(),
         ));
     }
-    if let Some(active) = state.store.active_parent_operation_for_target(
-        &context.location.project_repository_id,
-        &context.target_path,
-    )? {
+    if let Some(active) = state
+        .store
+        .active_parent_operation_for_target(
+            &context.location.project_repository_id,
+            &context.target_path,
+        )
+        .await?
+    {
         return Err(AppError::BadRequest(format!(
             "parent operation {} already owns this target",
             active.id
@@ -459,19 +501,22 @@ pub(super) fn start_parent_operation_impl(
         updated_at: timestamp,
         completed_at: None,
     };
-    if let Err(error) = state.store.create_parent_operation(&operation) {
+    if let Err(error) = state.store.create_parent_operation(&operation).await {
         let _ = delete_recovery_ref(&context.repository.path, &operation.recovery_ref);
         return Err(error);
     }
-    state.store.supersede_parent_operation_undo(
-        &operation.source_repository_id,
-        &operation.target_path,
-        &operation.id,
-    )?;
-    execute_parent_operation(state, &operation)
+    state
+        .store
+        .supersede_parent_operation_undo(
+            &operation.source_repository_id,
+            &operation.target_path,
+            &operation.id,
+        )
+        .await?;
+    execute_parent_operation(state, &operation).await
 }
 
-pub(super) fn execute_parent_operation(
+pub(super) async fn execute_parent_operation(
     state: &AppState,
     operation: &ParentOperation,
 ) -> Result<ParentOperation> {
@@ -490,58 +535,71 @@ pub(super) fn execute_parent_operation(
         )
     };
     match result {
-        Ok(_) => reconcile_parent_operation(state, &state.store.parent_operation(&operation.id)?),
+        Ok(_) => {
+            reconcile_parent_operation(state, &state.store.parent_operation(&operation.id).await?)
+                .await
+        }
         Err(error)
             if git_operation_in_progress(&operation.target_path)?
                 || has_unmerged_paths(&operation.target_path)? =>
         {
-            state.store.update_parent_operation(ParentOperationUpdate {
-                id: &operation.id,
-                status: "conflicted",
-                phase: "conflicted",
-                result_head: None,
-                error: &error,
-                terminal: false,
-                undo_available: false,
-            })?;
-            state.store.parent_operation(&operation.id)
+            state
+                .store
+                .update_parent_operation(ParentOperationUpdate {
+                    id: &operation.id,
+                    status: "conflicted",
+                    phase: "conflicted",
+                    result_head: None,
+                    error: &error,
+                    terminal: false,
+                    undo_available: false,
+                })
+                .await?;
+            state.store.parent_operation(&operation.id).await
         }
         Err(error) => {
             if git_head(&operation.target_path)? == operation.before_head {
                 delete_recovery_ref(
                     &state
                         .store
-                        .repository_as_directory(&operation.source_repository_id)?
+                        .repository_as_directory(&operation.source_repository_id)
+                        .await?
                         .path,
                     &operation.recovery_ref,
                 )?;
-                state.store.update_parent_operation(ParentOperationUpdate {
-                    id: &operation.id,
-                    status: "failed",
-                    phase: "failed",
-                    result_head: None,
-                    error: &error,
-                    terminal: true,
-                    undo_available: false,
-                })?;
+                state
+                    .store
+                    .update_parent_operation(ParentOperationUpdate {
+                        id: &operation.id,
+                        status: "failed",
+                        phase: "failed",
+                        result_head: None,
+                        error: &error,
+                        terminal: true,
+                        undo_available: false,
+                    })
+                    .await?;
                 Err(AppError::BadRequest(error))
             } else {
-                state.store.update_parent_operation(ParentOperationUpdate {
-                    id: &operation.id,
-                    status: "recovery_required",
-                    phase: "command_failed_after_head_moved",
-                    result_head: None,
-                    error: &error,
-                    terminal: false,
-                    undo_available: false,
-                })?;
-                state.store.parent_operation(&operation.id)
+                state
+                    .store
+                    .update_parent_operation(ParentOperationUpdate {
+                        id: &operation.id,
+                        status: "recovery_required",
+                        phase: "command_failed_after_head_moved",
+                        result_head: None,
+                        error: &error,
+                        terminal: false,
+                        undo_available: false,
+                    })
+                    .await?;
+                state.store.parent_operation(&operation.id).await
             }
         }
     }
 }
 
-pub(super) fn reconcile_parent_operation(
+pub(super) async fn reconcile_parent_operation(
     state: &AppState,
     operation: &ParentOperation,
 ) -> Result<ParentOperation> {
@@ -567,20 +625,23 @@ pub(super) fn reconcile_parent_operation(
         } else {
             "running"
         };
-        state.store.update_parent_operation(ParentOperationUpdate {
-            id: &operation.id,
-            status,
-            phase,
-            result_head: None,
-            error: if conflicted {
-                "Git has unresolved conflicts"
-            } else {
-                ""
-            },
-            terminal: false,
-            undo_available: false,
-        })?;
-        return state.store.parent_operation(&operation.id);
+        state
+            .store
+            .update_parent_operation(ParentOperationUpdate {
+                id: &operation.id,
+                status,
+                phase,
+                result_head: None,
+                error: if conflicted {
+                    "Git has unresolved conflicts"
+                } else {
+                    ""
+                },
+                terminal: false,
+                undo_available: false,
+            })
+            .await?;
+        return state.store.parent_operation(&operation.id).await;
     }
     let current_branch = command_output(
         Path::new(&operation.target_path),
@@ -590,19 +651,22 @@ pub(super) fn reconcile_parent_operation(
     .map_err(AppError::BadRequest)?;
     let current_head = git_head(&operation.target_path)?;
     if current_branch != operation.target_branch {
-        state.store.update_parent_operation(ParentOperationUpdate {
-            id: &operation.id,
-            status: "recovery_required",
-            phase: "branch_moved",
-            result_head: None,
-            error: &format!(
-                "expected branch {}, found {}",
-                operation.target_branch, current_branch
-            ),
-            terminal: false,
-            undo_available: false,
-        })?;
-        return state.store.parent_operation(&operation.id);
+        state
+            .store
+            .update_parent_operation(ParentOperationUpdate {
+                id: &operation.id,
+                status: "recovery_required",
+                phase: "branch_moved",
+                result_head: None,
+                error: &format!(
+                    "expected branch {}, found {}",
+                    operation.target_branch, current_branch
+                ),
+                terminal: false,
+                undo_available: false,
+            })
+            .await?;
+        return state.store.parent_operation(&operation.id).await;
     }
     let incoming = if operation.direction == "update" {
         &operation.parent_head
@@ -633,46 +697,55 @@ pub(super) fn reconcile_parent_operation(
         true
     };
     if valid && merge_parents_valid && !has_unmerged_paths(&operation.target_path)? {
-        state.store.update_parent_operation(ParentOperationUpdate {
-            id: &operation.id,
-            status: "completed",
-            phase: "completed",
-            result_head: Some(&current_head),
-            error: "",
-            terminal: true,
-            undo_available: true,
-        })?;
+        state
+            .store
+            .update_parent_operation(ParentOperationUpdate {
+                id: &operation.id,
+                status: "completed",
+                phase: "completed",
+                result_head: Some(&current_head),
+                error: "",
+                terminal: true,
+                undo_available: true,
+            })
+            .await?;
     } else if current_head == operation.before_head
         && matches!(operation.status.as_str(), "conflicted" | "resolving")
     {
-        state.store.update_parent_operation(ParentOperationUpdate {
-            id: &operation.id,
-            status: "aborted",
-            phase: "aborted",
-            result_head: None,
-            error: "",
-            terminal: true,
-            undo_available: false,
-        })?;
+        state
+            .store
+            .update_parent_operation(ParentOperationUpdate {
+                id: &operation.id,
+                status: "aborted",
+                phase: "aborted",
+                result_head: None,
+                error: "",
+                terminal: true,
+                undo_available: false,
+            })
+            .await?;
     } else {
-        state.store.update_parent_operation(ParentOperationUpdate {
-            id: &operation.id,
-            status: "recovery_required",
-            phase: "verification_failed",
-            result_head: Some(&current_head),
-            error: "Git operation ended but the fixed heads or merge parents do not match",
-            terminal: false,
-            undo_available: false,
-        })?;
+        state
+            .store
+            .update_parent_operation(ParentOperationUpdate {
+                id: &operation.id,
+                status: "recovery_required",
+                phase: "verification_failed",
+                result_head: Some(&current_head),
+                error: "Git operation ended but the fixed heads or merge parents do not match",
+                terminal: false,
+                undo_available: false,
+            })
+            .await?;
     }
-    state.store.parent_operation(&operation.id)
+    state.store.parent_operation(&operation.id).await
 }
 
-pub(super) fn abort_parent_operation_impl(
+pub(super) async fn abort_parent_operation_impl(
     state: &AppState,
     operation: &ParentOperation,
 ) -> Result<ParentOperation> {
-    let operation = reconcile_parent_operation(state, operation)?;
+    let operation = reconcile_parent_operation(state, operation).await?;
     if matches!(operation.status.as_str(), "aborted" | "undone" | "failed") {
         return Ok(operation);
     }
@@ -709,27 +782,31 @@ pub(super) fn abort_parent_operation_impl(
     delete_recovery_ref(
         &state
             .store
-            .repository_as_directory(&operation.source_repository_id)?
+            .repository_as_directory(&operation.source_repository_id)
+            .await?
             .path,
         &operation.recovery_ref,
     )?;
-    state.store.update_parent_operation(ParentOperationUpdate {
-        id: &operation.id,
-        status: "aborted",
-        phase: "aborted",
-        result_head: None,
-        error: "",
-        terminal: true,
-        undo_available: false,
-    })?;
-    state.store.parent_operation(&operation.id)
+    state
+        .store
+        .update_parent_operation(ParentOperationUpdate {
+            id: &operation.id,
+            status: "aborted",
+            phase: "aborted",
+            result_head: None,
+            error: "",
+            terminal: true,
+            undo_available: false,
+        })
+        .await?;
+    state.store.parent_operation(&operation.id).await
 }
 
-pub(super) fn undo_parent_operation_impl(
+pub(super) async fn undo_parent_operation_impl(
     state: &AppState,
     operation: &ParentOperation,
 ) -> Result<ParentOperation> {
-    let operation = reconcile_parent_operation(state, operation)?;
+    let operation = reconcile_parent_operation(state, operation).await?;
     if operation.status == "undone" {
         return Ok(operation);
     }
@@ -762,37 +839,45 @@ pub(super) fn undo_parent_operation_impl(
     delete_recovery_ref(
         &state
             .store
-            .repository_as_directory(&operation.source_repository_id)?
+            .repository_as_directory(&operation.source_repository_id)
+            .await?
             .path,
         &operation.recovery_ref,
     )?;
-    state.store.update_parent_operation(ParentOperationUpdate {
-        id: &operation.id,
-        status: "undone",
-        phase: "undone",
-        result_head: Some(&operation.before_head),
-        error: "",
-        terminal: true,
-        undo_available: false,
-    })?;
-    state.store.parent_operation(&operation.id)
+    state
+        .store
+        .update_parent_operation(ParentOperationUpdate {
+            id: &operation.id,
+            status: "undone",
+            phase: "undone",
+            result_head: Some(&operation.before_head),
+            error: "",
+            terminal: true,
+            undo_available: false,
+        })
+        .await?;
+    state.store.parent_operation(&operation.id).await
 }
 
-pub(super) fn consume_parent_operation(
+pub(super) async fn consume_parent_operation(
     state: &AppState,
     operation: &ParentOperation,
 ) -> Result<()> {
     delete_recovery_ref(
         &state
             .store
-            .repository_as_directory(&operation.source_repository_id)?
+            .repository_as_directory(&operation.source_repository_id)
+            .await?
             .path,
         &operation.recovery_ref,
     )?;
-    state.store.consume_parent_operation_undo(&operation.id)
+    state
+        .store
+        .consume_parent_operation_undo(&operation.id)
+        .await
 }
 
-pub(super) fn parent_operation_outcome(
+pub(super) async fn parent_operation_outcome(
     path: &str,
     current: &str,
     incoming: &str,

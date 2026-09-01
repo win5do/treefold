@@ -111,12 +111,16 @@ compatible.
 
 ## Development schema migration
 
-SQLite schema versions are managed by the centralized migration registry and
-SQLite `user_version`. Every committed migration is immutable, including during
-pre-release development. Schema and data changes append the next numbered
-forward-only migration and are applied automatically when Treefold opens an
-older versioned database; adding a field must not be implemented by editing
-`0001_initial.sql` or another existing migration. Routine upgrades must preserve
-the existing database and must not require deleting `treefold.db`,
-`treefold.db-wal`, or `treefold.db-shm`. Unversioned development databases are
-still rejected and are not backed up or rewritten automatically.
+The current SQLite database generation is 1 at
+`$TREEFOLD_HOME/data/treefold_1.sqlite`. SQLx manages immutable UTC timestamped
+migrations within `src-tauri/migrations/g1` through `_sqlx_migrations`, while
+SQLite `user_version` exclusively identifies the database generation. Append a
+forward-only migration for every within-generation schema or data change; never
+edit or squash a committed migration in a published generation. The pre-SQLx
+`treefold.db`, `treefold.db-wal`, and `treefold.db-shm` files are ignored and
+left untouched.
+
+Major generations use a new fixed filename and migration directory. A future
+g2 upgrade creates and validates a temporary `treefold_2.sqlite`, copies data
+with explicit g1-to-g2 conversion code, then closes and atomically renames it.
+The g1 database remains in place for rollback.

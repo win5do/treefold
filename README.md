@@ -94,7 +94,7 @@ Treefold stores its files under `~/.treefold` by default:
 ~/.treefold/
 ├── config/settings.toml
 ├── data/
-│   ├── treefold.db
+│   ├── treefold_1.sqlite
 │   └── amux/
 └── git/
     ├── s/<project-id>/<repository-slug>/
@@ -127,7 +127,7 @@ the request and unknown keys already present in the file are preserved.
 Tauri macOS process
 ├── WKWebView: React + Vite + xterm.js
 ├── Rust/Axum: loopback REST + terminal WebSocket
-├── Rust/rusqlite: local project and session metadata
+├── Rust/SQLx: asynchronous local project and session metadata
 ├── Rust/amux: persistent shell and Codex terminal processes
 └── Git CLI: isolated Workspace worktrees
 ```
@@ -137,6 +137,35 @@ process groups. The GUI keeps private daemon/shim entry points, while the
 user-facing `treefold` CLI and private `amux` CLI are separate bundled sidecars.
 Frontend routes use hash history so deep links work from both Vite and packaged
 assets.
+
+### Database development
+
+Treefold's current database generation is `1`. SQLx applies the immutable UTC
+timestamped migrations in `src-tauri/migrations/g1` and uses
+`_sqlx_migrations` for changes within that generation; SQLite `user_version` is
+reserved for the generation number. The former `treefold.db` and its WAL/SHM
+files are intentionally neither imported nor removed.
+
+Install the matching SQLx CLI before changing persistence queries:
+
+```sh
+cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,rustls
+cargo xtask database prepare
+cargo xtask database check
+```
+
+Name new migrations `YYYYMMDDHHMMSS_description.sql` using UTC. Once committed,
+a migration in a released generation is permanent and must never be edited or
+squashed. Static SQL should use SQLx's checked macros; `database prepare`
+rebuilds the committed `src-tauri/.sqlx` offline metadata using a disposable
+generation 1 database, and `database check` verifies it without depending on a
+developer database.
+
+A future generation 2 must use `data/treefold_2.sqlite` and
+`migrations/g2/`. It is built in a unique temporary file, populated by explicit
+`g1 -> g2` conversion code, validated, closed, and atomically renamed. The
+generation 1 file remains available for rollback; no manifest or symlink
+selects the active database.
 
 Create a release bundle with `npm run bundle:desktop`. Its thin Node entry point
 invokes `cargo xtask sidecars bundle` to build the pinned CLI sidecars before

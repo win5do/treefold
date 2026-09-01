@@ -69,7 +69,7 @@ pub struct Directory {
     pub dirty: bool,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ProjectRepository {
     pub id: String,
     pub project_id: String,

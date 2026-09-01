@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE todos SET status='in_progress',updated_at=? WHERE id=? AND status IN ('pending','blocked')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "dad3babb06d5ccb1df302718ad0b0585e2067a80a9c000091607a1e5295ad4da"
+}

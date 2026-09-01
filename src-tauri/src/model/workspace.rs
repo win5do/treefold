@@ -73,7 +73,7 @@ pub struct Workspace {
     pub closed_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct WorkspaceRepository {
     pub id: String,
     pub workspace_id: String,
@@ -165,7 +165,7 @@ pub struct Session {
     pub additional_directories: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Todo {
     pub id: String,
     pub workspace_id: String,

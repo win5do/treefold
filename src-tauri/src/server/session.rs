@@ -13,7 +13,7 @@ pub(super) async fn create_project_session(
     AxumPath(project_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateSession>,
 ) -> Result<(StatusCode, Json<Session>)> {
-    let workspace = sync_project_session_workspace(&state, &project_id)?;
+    let workspace = sync_project_session_workspace(&state, &project_id).await?;
     create_session_for_workspace(&state, workspace, input).await
 }
 
@@ -21,32 +21,30 @@ pub(super) async fn list_project_sessions(
     State(state): State<AppState>,
     AxumPath(project_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
-    state.store.project(&project_id)?;
-    Ok(Json(state.store.project_sessions(&project_id)?))
+    state.store.project(&project_id).await?;
+    Ok(Json(state.store.project_sessions(&project_id).await?))
 }
 
-pub(super) fn sync_project_session_workspace(
+pub(super) async fn sync_project_session_workspace(
     state: &AppState,
     project_id: &str,
 ) -> Result<Workspace> {
-    let project = state.store.project(project_id)?;
+    let project = state.store.project(project_id).await?;
     if project.status != "active" {
         return Err(AppError::BadRequest(
             "cannot create a Session in an archived Project".into(),
         ));
     }
-    let project_directories = state.store.project_directories(project_id)?;
+    let project_directories = state.store.project_directories(project_id).await?;
     if project_directories.is_empty() {
         return Err(AppError::BadRequest(
             "Project has no location for a Session".into(),
         ));
     }
-    let mut project_repositorys = state
-        .store
-        .repositories(project_id)?
-        .iter()
-        .map(|repository| state.store.repository_as_directory(&repository.id))
-        .collect::<Result<Vec<_>>>()?;
+    let mut project_repositorys = Vec::new();
+    for repository in state.store.repositories(project_id).await? {
+        project_repositorys.push(state.store.repository_as_directory(&repository.id).await?);
+    }
     for location in &mut project_repositorys {
         refresh_location_observation(location)?;
     }
@@ -89,8 +87,9 @@ pub(super) fn sync_project_session_workspace(
         .collect::<Vec<_>>();
     state
         .store
-        .sync_project_session_workspace(&workspace, &locations)?;
-    state.store.workspace(&workspace.id)
+        .sync_project_session_workspace(&workspace, &locations)
+        .await?;
+    state.store.workspace(&workspace.id).await
 }
 
 pub(super) fn project_session_location(
@@ -142,7 +141,7 @@ pub(super) async fn create_session(
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateSession>,
 ) -> Result<(StatusCode, Json<Session>)> {
-    let workspace = state.store.workspace(&workspace_id)?;
+    let workspace = state.store.workspace(&workspace_id).await?;
     create_session_for_workspace(&state, workspace, input).await
 }
 
@@ -150,8 +149,8 @@ pub(super) async fn list_sessions(
     State(state): State<AppState>,
     AxumPath(workspace_id): AxumPath<String>,
 ) -> Result<Json<Vec<Session>>> {
-    state.store.workspace(&workspace_id)?;
-    Ok(Json(state.store.sessions(&workspace_id)?))
+    state.store.workspace(&workspace_id).await?;
+    Ok(Json(state.store.sessions(&workspace_id).await?))
 }
 
 #[derive(Deserialize)]
@@ -164,7 +163,7 @@ pub(super) async fn reorder_sessions(
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<ReorderSessions>,
 ) -> Result<Json<Vec<Session>>> {
-    ensure_active_workspace(&state.store.workspace(&workspace_id)?)?;
+    ensure_active_workspace(&state.store.workspace(&workspace_id).await?)?;
     let unique = input
         .session_ids
         .iter()
@@ -176,9 +175,10 @@ pub(super) async fn reorder_sessions(
     }
     state
         .store
-        .reorder_sessions(&workspace_id, &input.session_ids)?;
+        .reorder_sessions(&workspace_id, &input.session_ids)
+        .await?;
     state.runtime.publish_session_list(None);
-    Ok(Json(state.store.sessions(&workspace_id)?))
+    Ok(Json(state.store.sessions(&workspace_id).await?))
 }
 
 pub(super) async fn create_session_for_workspace(
@@ -192,7 +192,7 @@ pub(super) async fn create_session_for_workspace(
             "cannot create a session for an archived workspace".into(),
         ));
     }
-    if state.store.project(&workspace.project_id)?.status != "active" {
+    if state.store.project(&workspace.project_id).await?.status != "active" {
         return Err(AppError::BadRequest(
             "cannot create a Session in an archived Project".into(),
         ));
@@ -203,9 +203,9 @@ pub(super) async fn create_session_for_workspace(
     if kind != "shell" && kind != "codex" {
         return Err(AppError::BadRequest("kind must be shell or codex".into()));
     }
-    let project = state.store.project(&workspace.project_id)?;
-    let repositories = state.store.workspace_repositories(&workspace.id)?;
-    let directories = state.store.workspace_directories(&workspace.id)?;
+    let project = state.store.project(&workspace.project_id).await?;
+    let repositories = state.store.workspace_repositories(&workspace.id).await?;
+    let directories = state.store.workspace_directories(&workspace.id).await?;
     let repository_is_ready = |directory: &&WorkspaceDirectory| {
         directory
             .workspace_repository_id
@@ -330,11 +330,13 @@ pub(super) async fn create_session_for_workspace(
         updated_at: timestamp,
         additional_directories,
     };
-    let developer_instructions = treefold_developer_instructions(state, &session, &workspace)?;
-    state.store.create_session(&session)?;
+    let developer_instructions =
+        treefold_developer_instructions(state, &session, &workspace).await?;
+    state.store.create_session(&session).await?;
     state
         .store
-        .add_session_read_only_contexts(&session.id, &read_only_contexts)?;
+        .add_session_read_only_contexts(&session.id, &read_only_contexts)
+        .await?;
     match state
         .terminals
         .spawn(
@@ -348,16 +350,16 @@ pub(super) async fn create_session_for_workspace(
         Ok(process) => {
             session.argv = process.command;
             session.status = "running".into();
-            if persist_amux_process(&state.store, &session.id, &session)? {
+            if persist_amux_process(&state.store, &session.id, &session).await? {
                 state.runtime.publish_session(session.id.clone());
             }
         }
         Err(error) => {
             session.status = "failed".into();
-            let changed =
-                state
-                    .store
-                    .set_session_runtime(&session.id, "failed", None, "", &session.argv)?;
+            let changed = state
+                .store
+                .set_session_runtime(&session.id, "failed", None, "", &session.argv)
+                .await?;
             if changed {
                 state.runtime.publish_session(session.id.clone());
             }
@@ -371,7 +373,7 @@ pub(super) async fn get_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
-    Ok(Json(state.store.session(&id)?))
+    Ok(Json(state.store.session(&id).await?))
 }
 
 #[derive(Deserialize)]
@@ -384,26 +386,26 @@ pub(super) async fn update_session(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<UpdateSession>,
 ) -> Result<Json<Session>> {
-    ensure_session_owner_active(&state, &state.store.session(&id)?)?;
+    ensure_session_owner_active(&state, &state.store.session(&id).await?).await?;
     let name = input.name.trim();
     if name.is_empty() {
         return Err(AppError::BadRequest("Session name cannot be empty".into()));
     }
-    state.store.rename_session(&id, name)?;
+    state.store.rename_session(&id, name).await?;
     state.runtime.publish_session_list(Some(id.clone()));
-    Ok(Json(state.store.session(&id)?))
+    Ok(Json(state.store.session(&id).await?))
 }
 pub(super) async fn stop_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
-    let session = state.store.session(&id)?;
+    let session = state.store.session(&id).await?;
     state
         .terminals
         .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    state.store.set_session_status(&id, "stopped")?;
+    state.store.set_session_status(&id, "stopped").await?;
     state.runtime.publish_session(id);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -411,22 +413,23 @@ pub(super) async fn restart_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
-    let mut session = state.store.session(&id)?;
-    ensure_session_owner_active(&state, &session)?;
-    capture_codex_session_id(&state.store, &mut session)?;
+    let mut session = state.store.session(&id).await?;
+    ensure_session_owner_active(&state, &session).await?;
+    capture_codex_session_id(&state.store, &mut session).await?;
     state
         .terminals
         .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    let mut workspace = state.store.workspace(&session.workspace_id)?;
+    let mut workspace = state.store.workspace(&session.workspace_id).await?;
     if workspace.kind == "base" {
-        workspace = sync_project_session_workspace(&state, &workspace.project_id)?;
+        workspace = sync_project_session_workspace(&state, &workspace.project_id).await?;
     }
     if session.kind == "codex" {
         session.additional_directories = state
             .store
-            .workspace_repositories(&workspace.id)?
+            .workspace_repositories(&workspace.id)
+            .await?
             .into_iter()
             .filter(|location| {
                 location.access_mode == "read_write"
@@ -442,9 +445,11 @@ pub(super) async fn restart_session(
             .collect();
         state
             .store
-            .replace_session_additional_directories(&session.id, &session.additional_directories)?;
+            .replace_session_additional_directories(&session.id, &session.additional_directories)
+            .await?;
     }
-    let developer_instructions = treefold_developer_instructions(&state, &session, &workspace)?;
+    let developer_instructions =
+        treefold_developer_instructions(&state, &session, &workspace).await?;
     let codex_extra_args = if session.kind == "codex" {
         state.settings.load()?.agents.codex.extra_args
     } else {
@@ -462,7 +467,7 @@ pub(super) async fn restart_session(
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     session.argv = process.command;
     session.status = "running".into();
-    persist_amux_process(&state.store, &id, &session)?;
+    persist_amux_process(&state.store, &id, &session).await?;
     state.runtime.publish_session(id);
     Ok(Json(session))
 }
@@ -470,26 +475,26 @@ pub(super) async fn close_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
-    let mut session = state.store.session(&id)?;
+    let mut session = state.store.session(&id).await?;
     if session.kind == "shell" || session.kind == "command" {
         let _ = state
             .terminals
             .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
             .await;
-        state.store.delete_session(&id)?;
+        state.store.delete_session(&id).await?;
         session.visibility = "hidden".into();
         session.status = "stopped".into();
         state.runtime.publish_session(id);
         return Ok(Json(session));
     }
-    capture_codex_session_id(&state.store, &mut session)?;
+    capture_codex_session_id(&state.store, &mut session).await?;
     let _ = state
         .terminals
         .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await;
-    state.store.set_session_status(&id, "stopped")?;
-    state.store.set_session_visibility(&id, "hidden")?;
-    let mut session = state.store.session(&id)?;
+    state.store.set_session_status(&id, "stopped").await?;
+    state.store.set_session_visibility(&id, "hidden").await?;
+    let mut session = state.store.session(&id).await?;
     session.visibility = "hidden".into();
     state.runtime.publish_session(id);
     Ok(Json(session))
@@ -498,8 +503,8 @@ pub(super) async fn open_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
-    ensure_session_owner_active(&state, &state.store.session(&id)?)?;
-    state.store.set_session_visibility(&id, "visible")?;
+    ensure_session_owner_active(&state, &state.store.session(&id).await?).await?;
+    state.store.set_session_visibility(&id, "visible").await?;
     state.runtime.publish_session_list(Some(id.clone()));
     get_session(State(state), AxumPath(id)).await
 }
@@ -507,13 +512,13 @@ pub(super) async fn delete_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
-    if let Ok(session) = state.store.session(&id) {
+    if let Ok(session) = state.store.session(&id).await {
         let _ = state
             .terminals
             .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
             .await;
     }
-    state.store.delete_session(&id)?;
+    state.store.delete_session(&id).await?;
     state.runtime.publish_session(id);
     Ok(StatusCode::NO_CONTENT)
 }
@@ -527,7 +532,7 @@ pub(super) async fn create_todo(
     AxumPath(workspace_id): AxumPath<String>,
     ApiJson(input): ApiJson<CreateTodo>,
 ) -> Result<(StatusCode, Json<Todo>)> {
-    let requested = state.store.workspace(&workspace_id)?;
+    let requested = state.store.workspace(&workspace_id).await?;
     ensure_active_workspace(&requested)?;
     if requested.kind == "base" {
         return Err(AppError::BadRequest(
@@ -552,7 +557,7 @@ pub(super) async fn create_todo(
         created_at: timestamp.clone(),
         updated_at: timestamp,
     };
-    state.store.create_todo(&todo)?;
+    state.store.create_todo(&todo).await?;
     Ok((StatusCode::CREATED, Json(todo)))
 }
 #[derive(Deserialize)]
@@ -568,8 +573,8 @@ pub(super) async fn update_todo(
     if input.content.is_none() && input.status.is_none() {
         return Err(AppError::BadRequest("content or status is required".into()));
     }
-    let todo = state.store.todo(&id)?;
-    ensure_active_workspace(&state.store.workspace(&todo.workspace_id)?)?;
+    let todo = state.store.todo(&id).await?;
+    ensure_active_workspace(&state.store.workspace(&todo.workspace_id).await?)?;
     if let Some(content) = input.content.as_deref() {
         if content.trim().is_empty() {
             return Err(AppError::BadRequest("content must not be empty".into()));
@@ -581,12 +586,16 @@ pub(super) async fn update_todo(
                 "status must be pending or done".into(),
             ));
         }
-        if todo.fork_id.as_deref().is_some_and(|fork_id| {
+        let fork_active = if let Some(fork_id) = todo.fork_id.as_deref() {
             state
                 .store
                 .workspace(fork_id)
+                .await
                 .is_ok_and(|fork| fork.status == "active")
-        }) {
+        } else {
+            false
+        };
+        if fork_active {
             return Err(AppError::api(
                 StatusCode::CONFLICT,
                 "TODO_FORK_ACTIVE",
@@ -595,41 +604,43 @@ pub(super) async fn update_todo(
         }
     }
     if let Some(content) = input.content.as_deref() {
-        state.store.edit_todo(&id, Some(content.trim()))?;
+        state.store.edit_todo(&id, Some(content.trim())).await?;
     }
     if let Some(status) = input.status.as_deref() {
-        state.store.update_todo(&id, status)?;
+        state.store.update_todo(&id, status).await?;
     }
-    Ok(Json(state.store.todo(&id)?))
+    Ok(Json(state.store.todo(&id).await?))
 }
 
 pub(super) async fn delete_todo(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
-    let todo = state.store.todo(&id)?;
-    if todo.status == "in_progress"
-        || todo.fork_id.as_deref().is_some_and(|fork_id| {
-            state
-                .store
-                .workspace(fork_id)
-                .is_ok_and(|fork| fork.status == "active")
-        })
-    {
+    let todo = state.store.todo(&id).await?;
+    let fork_active = if let Some(fork_id) = todo.fork_id.as_deref() {
+        state
+            .store
+            .workspace(fork_id)
+            .await
+            .is_ok_and(|fork| fork.status == "active")
+    } else {
+        false
+    };
+    if todo.status == "in_progress" || fork_active {
         return Err(AppError::api(
             StatusCode::CONFLICT,
             "TODO_FORK_ACTIVE",
             "archive or finish the active Fork before deleting this Todo",
         ));
     }
-    state.store.delete_todo(&id)?;
+    state.store.delete_todo(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub(super) fn ensure_session_owner_active(state: &AppState, session: &Session) -> Result<()> {
-    let workspace = state.store.workspace(&session.workspace_id)?;
+pub(super) async fn ensure_session_owner_active(state: &AppState, session: &Session) -> Result<()> {
+    let workspace = state.store.workspace(&session.workspace_id).await?;
     if workspace.status != "active"
-        || state.store.project(&workspace.project_id)?.status != "active"
+        || state.store.project(&workspace.project_id).await?.status != "active"
     {
         return Err(AppError::BadRequest(
             "Archived Projects, Workspaces, and Forks are read-only".into(),
@@ -658,7 +669,7 @@ pub(super) async fn terminal_socket(
     Query(query): Query<HashMap<String, String>>,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse> {
-    state.store.session(&id)?;
+    state.store.session(&id).await?;
     let input_client_id = query.get("input_client_id").cloned();
     let controller_client_id = query.get("controller_client_id").cloned();
     let valid_id = |value: &str| {
@@ -721,13 +732,13 @@ pub(super) async fn reconcile_daemon_sessions(state: &AppState) -> Result<()> {
         .map(|process| (process.workspace_name.as_str(), process.name.as_str()))
         .collect::<std::collections::HashSet<_>>();
     for process in &processes {
-        reconcile_process(state, &process, false)?;
+        reconcile_process(state, &process, false).await?;
     }
-    for (id, workspace, process) in state.store.running_session_identities()? {
+    for (id, workspace, process) in state.store.running_session_identities().await? {
         if !active.contains(&(workspace.as_str(), process.as_str())) {
-            let mut session = state.store.session(&id)?;
+            let mut session = state.store.session(&id).await?;
             session.status = "stopped".into();
-            if persist_amux_process(&state.store, &id, &session)? {
+            if persist_amux_process(&state.store, &id, &session).await? {
                 state.runtime.publish_session(id);
             }
         }
@@ -735,7 +746,7 @@ pub(super) async fn reconcile_daemon_sessions(state: &AppState) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn reconcile_process_event(
+pub(super) async fn reconcile_process_event(
     state: &AppState,
     event: crate::terminal::TreefoldProcessEvent,
 ) -> Result<()> {
@@ -744,10 +755,10 @@ pub(super) fn reconcile_process_event(
         amux::model::ProcessEventKind::ProcessRemoved
     );
     let process = crate::terminal::treefold_process_view(&event.event.process, event.session_id);
-    reconcile_process(state, &process, removed)
+    reconcile_process(state, &process, removed).await
 }
 
-pub(super) fn reconcile_process(
+pub(super) async fn reconcile_process(
     state: &AppState,
     process: &crate::terminal::TreefoldProcessView,
     removed: bool,
@@ -759,14 +770,15 @@ pub(super) fn reconcile_process(
     };
     if let Some(mut session) = state
         .store
-        .session_by_amux_identity(&process.workspace_name, &process.name)?
+        .session_by_amux_identity(&process.workspace_name, &process.name)
+        .await?
     {
         session.status = reconciled_status(&session.status, status).into();
         session.exit_code = process.exit_code.map(Into::into);
         session.exit_signal = process.exit_signal.clone();
         session.argv = process.command.clone();
         let id = session.id.clone();
-        if persist_amux_process(&state.store, &id, &session)? {
+        if persist_amux_process(&state.store, &id, &session).await? {
             state.runtime.publish_session(id);
         }
         return Ok(());
@@ -783,7 +795,7 @@ pub(super) fn reconcile_process(
     // separately discoverable Command Session.
     if process.session_root {
         if let Some(session_id) = process.session_id.as_deref()
-            && let Ok(mut session) = state.store.session(session_id)
+            && let Ok(mut session) = state.store.session(session_id).await
             && session.amux_process_name == process.name
         {
             session.status = reconciled_status(&session.status, status).into();
@@ -791,7 +803,7 @@ pub(super) fn reconcile_process(
             session.exit_signal = process.exit_signal.clone();
             session.argv = process.command.clone();
             let id = session.id.clone();
-            if persist_amux_process(&state.store, &id, &session)? {
+            if persist_amux_process(&state.store, &id, &session).await? {
                 state.runtime.publish_session(id);
             }
             return Ok(());
@@ -799,16 +811,20 @@ pub(super) fn reconcile_process(
         return Ok(());
     }
 
-    let workspace_id = process
-        .session_id
-        .as_deref()
-        .and_then(|id| state.store.session(id).ok())
-        .map(|session| session.workspace_id)
-        .or_else(|| {
-            workspace_for_process_cwd(&state.store, &process.cwd)
-                .ok()
-                .flatten()
-        });
+    let workspace_id = if let Some(id) = process.session_id.as_deref() {
+        state
+            .store
+            .session(id)
+            .await
+            .ok()
+            .map(|session| session.workspace_id)
+    } else {
+        None
+    };
+    let workspace_id = match workspace_id {
+        Some(id) => Some(id),
+        None => workspace_for_process_cwd(&state.store, &process.cwd).await?,
+    };
     let Some(workspace_id) = workspace_id else {
         return Ok(());
     };
@@ -841,7 +857,7 @@ pub(super) fn reconcile_process(
         updated_at: now(),
         additional_directories: vec![],
     };
-    match state.store.create_session(&session) {
+    match state.store.create_session(&session).await {
         Ok(()) => {
             state.runtime.publish_session(session.id);
             Ok(())
@@ -851,14 +867,15 @@ pub(super) fn reconcile_process(
             // makes a concurrent insert harmless and the winner is refreshed.
             if let Some(mut existing) = state
                 .store
-                .session_by_amux_identity(&process.workspace_name, &process.name)?
+                .session_by_amux_identity(&process.workspace_name, &process.name)
+                .await?
             {
                 existing.status = reconciled_status(&existing.status, status).into();
                 existing.argv = process.command.clone();
                 existing.exit_code = process.exit_code.map(Into::into);
                 existing.exit_signal = process.exit_signal.clone();
                 let id = existing.id.clone();
-                if persist_amux_process(&state.store, &id, &existing)? {
+                if persist_amux_process(&state.store, &id, &existing).await? {
                     state.runtime.publish_session(id);
                 }
                 Ok(())
@@ -883,10 +900,11 @@ pub(super) fn reconciled_status<'a>(current: &'a str, observed: &'a str) -> &'a 
     }
 }
 
-pub(super) fn workspace_for_process_cwd(store: &Store, cwd: &str) -> Result<Option<String>> {
+pub(super) async fn workspace_for_process_cwd(store: &Store, cwd: &str) -> Result<Option<String>> {
     let cwd = std::fs::canonicalize(cwd).unwrap_or_else(|_| PathBuf::from(cwd));
     Ok(store
-        .session_workspace_candidates()?
+        .session_workspace_candidates()
+        .await?
         .into_iter()
         .filter_map(|(workspace_id, path)| {
             let path = std::fs::canonicalize(&path).unwrap_or_else(|_| PathBuf::from(path));
@@ -902,20 +920,27 @@ pub(super) async fn refresh_session_records(
     sessions: Vec<Session>,
 ) -> Result<Vec<Session>> {
     reconcile_daemon_sessions(state).await?;
-    sessions
-        .into_iter()
-        .map(|session| state.store.session(&session.id))
-        .collect()
+    let mut refreshed = Vec::with_capacity(sessions.len());
+    for session in sessions {
+        refreshed.push(state.store.session(&session.id).await?);
+    }
+    Ok(refreshed)
 }
 
-pub(super) fn persist_amux_process(store: &Store, id: &str, session: &Session) -> Result<bool> {
-    store.set_session_runtime(
-        id,
-        &session.status,
-        session.exit_code,
-        &session.exit_signal,
-        &session.argv,
-    )
+pub(super) async fn persist_amux_process(
+    store: &Store,
+    id: &str,
+    session: &Session,
+) -> Result<bool> {
+    store
+        .set_session_runtime(
+            id,
+            &session.status,
+            session.exit_code,
+            &session.exit_signal,
+            &session.argv,
+        )
+        .await
 }
 
 pub(super) async fn proxy_terminal(
@@ -926,7 +951,7 @@ pub(super) async fn proxy_terminal(
     input_client_id: Option<String>,
     after_output_sequence: Option<u64>,
 ) {
-    let Ok(session) = state.store.session(&id) else {
+    let Ok(session) = state.store.session(&id).await else {
         return;
     };
     let Ok(Some(amux_socket)) = state
@@ -989,12 +1014,15 @@ pub(super) async fn proxy_terminal(
         .inspect_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await
     {
-        let mut session = match state.store.session(&id) {
+        let mut session = match state.store.session(&id).await {
             Ok(session) => session,
             Err(_) => return,
         };
         apply_amux_process(&mut session, process);
-        if persist_amux_process(&state.store, &id, &session).unwrap_or(false) {
+        if persist_amux_process(&state.store, &id, &session)
+            .await
+            .unwrap_or(false)
+        {
             state.runtime.publish_session(id);
         }
     }
@@ -1055,12 +1083,14 @@ pub(super) fn discover_codex_session_id(session: &Session) -> Option<String> {
     best.map(|(_, session_id)| session_id)
 }
 
-pub(super) fn capture_codex_session_id(store: &Store, session: &mut Session) -> Result<()> {
+pub(super) async fn capture_codex_session_id(store: &Store, session: &mut Session) -> Result<()> {
     if session.kind != "codex" || session.codex_session_id.is_some() {
         return Ok(());
     }
     if let Some(codex_session_id) = discover_codex_session_id(session) {
-        store.set_codex_session_id(&session.id, &codex_session_id)?;
+        store
+            .set_codex_session_id(&session.id, &codex_session_id)
+            .await?;
         session.codex_session_id = Some(codex_session_id);
     }
     Ok(())

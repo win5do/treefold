@@ -19,8 +19,8 @@ pub(super) async fn create_todo_fork(
     State(state): State<AppState>,
     AxumPath(todo_id): AxumPath<String>,
 ) -> Result<(StatusCode, Json<TodoForkResult>)> {
-    let todo = state.store.todo(&todo_id)?;
-    let owner = state.store.workspace(&todo.workspace_id)?;
+    let todo = state.store.todo(&todo_id).await?;
+    let owner = state.store.workspace(&todo.workspace_id).await?;
     ensure_active_workspace(&owner)?;
     if !["pending", "blocked"].contains(&todo.status.as_str()) {
         return Err(AppError::api(
@@ -29,19 +29,23 @@ pub(super) async fn create_todo_fork(
             "Todo must be pending or blocked",
         ));
     }
-    if todo.fork_id.as_deref().is_some_and(|fork_id| {
+    let fork_active = if let Some(fork_id) = todo.fork_id.as_deref() {
         state
             .store
             .workspace(fork_id)
+            .await
             .is_ok_and(|fork| fork.status == "active")
-    }) {
+    } else {
+        false
+    };
+    if fork_active {
         return Err(AppError::api(
             StatusCode::CONFLICT,
             "TODO_FORK_ACTIVE",
             "Todo already has an active execution Fork",
         ));
     }
-    if !state.store.reserve_todo_for_fork(&todo.id)? {
+    if !state.store.reserve_todo_for_fork(&todo.id).await? {
         return Err(AppError::api(
             StatusCode::CONFLICT,
             "TODO_NOT_EXECUTABLE",
@@ -58,7 +62,7 @@ pub(super) async fn create_todo_fork(
         .collect::<String>();
     let operation_state = state.clone();
     let parent_id = owner.id.clone();
-    let created = blocking_git_operation(move || {
+    let created = blocking_git_operation(move || async move {
         create_fork_impl(
             operation_state,
             parent_id,
@@ -67,24 +71,29 @@ pub(super) async fn create_todo_fork(
                 description: Some("Created from Workspace Todo".into()),
             },
         )
+        .await
     })
     .await;
     let created = match created {
         Ok(created) => created,
         Err(error) => {
-            state.store.restore_todo_after_fork_failure(
-                &todo.id,
-                todo.fork_id.as_deref(),
-                &todo.status,
-                todo.blocked_reason.as_deref(),
-            )?;
+            state
+                .store
+                .restore_todo_after_fork_failure(
+                    &todo.id,
+                    todo.fork_id.as_deref(),
+                    &todo.status,
+                    todo.blocked_reason.as_deref(),
+                )
+                .await?;
             return Err(error);
         }
     };
-    let fork = state.store.workspace(&created.workspace.id)?;
+    let fork = state.store.workspace(&created.workspace.id).await?;
     if !state
         .store
-        .attach_todo_fork(&todo.id, todo.fork_id.as_deref(), &fork.id)?
+        .attach_todo_fork(&todo.id, todo.fork_id.as_deref(), &fork.id)
+        .await?
     {
         return Err(AppError::api(
             StatusCode::CONFLICT,
@@ -93,7 +102,7 @@ pub(super) async fn create_todo_fork(
         ));
     }
     project_worktrees_cache().invalidate(&fork.project_id).await;
-    spawn_workspace_setup_shells(state.clone(), fork.clone(), created.setup_shells);
+    spawn_workspace_setup_shells(state.clone(), fork.clone(), created.setup_shells).await;
     let session_result = create_session_for_workspace(
         &state,
         fork.clone(),
@@ -125,8 +134,10 @@ pub(super) async fn create_fork(
     ApiJson(input): ApiJson<CreateFork>,
 ) -> Result<(StatusCode, Json<Workspace>)> {
     let operation_state = state.clone();
-    let created =
-        blocking_git_operation(move || create_fork_impl(operation_state, parent_id, input)).await?;
+    let created = blocking_git_operation(move || async move {
+        create_fork_impl(operation_state, parent_id, input).await
+    })
+    .await?;
     project_worktrees_cache()
         .invalidate(&created.workspace.project_id)
         .await;
@@ -134,14 +145,15 @@ pub(super) async fn create_fork(
         state.clone(),
         created.workspace.clone(),
         created.setup_shells,
-    );
+    )
+    .await;
     Ok((
         StatusCode::CREATED,
-        Json(state.store.workspace(&created.workspace.id)?),
+        Json(state.store.workspace(&created.workspace.id).await?),
     ))
 }
 
-pub(super) fn create_fork_impl(
+pub(super) async fn create_fork_impl(
     state: AppState,
     parent_id: String,
     input: CreateFork,
@@ -149,7 +161,7 @@ pub(super) fn create_fork_impl(
     if input.name.trim().is_empty() {
         return Err(AppError::BadRequest("fork name is required".into()));
     }
-    let parent = state.store.workspace(&parent_id)?;
+    let parent = state.store.workspace(&parent_id).await?;
     if parent.status != "active" {
         return Err(AppError::BadRequest(
             "cannot fork an archived Workspace".into(),
@@ -161,21 +173,19 @@ pub(super) fn create_fork_impl(
                 .into(),
         ));
     }
-    let parent_locations = state.store.workspace_repositories(&parent_id)?;
-    let project = state.store.project(&parent.project_id)?;
+    let parent_locations = state.store.workspace_repositories(&parent_id).await?;
+    let project = state.store.project(&parent.project_id).await?;
     if project.status != "active" {
         return Err(AppError::BadRequest(
             "cannot create a Fork in an archived Project".into(),
         ));
     }
     let fork_id = id();
-    let project_directories = state.store.project_directories(&project.id)?;
-    let project_repositorys = state
-        .store
-        .repositories(&project.id)?
-        .iter()
-        .map(|repository| state.store.repository_as_directory(&repository.id))
-        .collect::<Result<Vec<_>>>()?;
+    let project_directories = state.store.project_directories(&project.id).await?;
+    let mut project_repositorys = Vec::new();
+    for repository in state.store.repositories(&project.id).await? {
+        project_repositorys.push(state.store.repository_as_directory(&repository.id).await?);
+    }
     let branch = choose_shared_branch(
         &project_repositorys,
         None,
@@ -187,7 +197,8 @@ pub(super) fn create_fork_impl(
     for parent_location in &parent_locations {
         let project_repository = state
             .store
-            .repository_as_directory(&parent_location.project_repository_id)?;
+            .repository_as_directory(&parent_location.project_repository_id)
+            .await?;
         let checkout_path =
             managed_worktree_path(&state.settings, &fork_id, &parent_location.repository_name)
                 .to_string_lossy()
@@ -261,7 +272,8 @@ pub(super) fn create_fork_impl(
                 .unwrap_or_default(),
             setup_workdir: state
                 .store
-                .repository(&parent_location.project_repository_id)?
+                .repository(&parent_location.project_repository_id)
+                .await?
                 .setup_workdir,
         });
         snapshots.push(snapshot);
@@ -297,12 +309,13 @@ pub(super) fn create_fork_impl(
     };
     state
         .store
-        .create_workspace_with_repositories(&fork, &snapshots)?;
+        .create_workspace_with_repositories(&fork, &snapshots)
+        .await?;
 
     let outcomes = create_workspace_worktrees(plans);
-    let setup_shells = record_workspace_worktree_outcomes(&state.store, outcomes)?;
+    let setup_shells = record_workspace_worktree_outcomes(&state.store, outcomes).await?;
     Ok(CreatedWorkspace {
-        workspace: state.store.workspace(&fork.id)?,
+        workspace: state.store.workspace(&fork.id).await?,
         setup_shells,
     })
 }

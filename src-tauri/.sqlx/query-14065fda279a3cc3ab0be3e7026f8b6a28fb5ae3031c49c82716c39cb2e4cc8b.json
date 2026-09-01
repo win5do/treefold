@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE todos SET content=COALESCE(?,content),updated_at=? WHERE id=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "14065fda279a3cc3ab0be3e7026f8b6a28fb5ae3031c49c82716c39cb2e4cc8b"
+}

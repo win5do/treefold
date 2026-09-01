@@ -215,7 +215,7 @@ pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> anyhow
             tokio::select! {
                 event = process_events.recv() => match event {
                     Ok(event) => {
-                        if let Err(error) = reconcile_process_event(&bridge_state, event) {
+                        if let Err(error) = reconcile_process_event(&bridge_state, event).await {
                             log::error!("failed to reconcile amux process event: {error}");
                         }
                     }

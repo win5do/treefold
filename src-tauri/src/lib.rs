@@ -272,10 +272,14 @@ pub fn run() {
                     tray = tray.icon(icon);
                 }
                 tray.build(app)?;
-                let store = store::Store::open(&home.join("data/treefold.db"))
-                    .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                let (store, listener) = tauri::async_runtime::block_on(async {
+                    let store = store::Store::open(&home.join("data"))
+                        .await
+                        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+                    let listener = server::bind().await?;
+                    anyhow::Ok((store, listener))
+                })?;
                 let (daemon_name, daemon_config) = amux_identity(&home)?;
-                let listener = tauri::async_runtime::block_on(server::bind())?;
                 let api_url = format!("http://{}", listener.local_addr()?);
                 let api_url_file = publish_api_url(&home, &api_url)?;
                 app.manage(ApiEndpoint(api_url.clone()));
@@ -337,8 +341,10 @@ pub fn run() {
             if daemon_stopped.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 return;
             }
-            let result = tauri::async_runtime::block_on(terminals.stop_daemon());
-            if let Err(error) = store.stop_active_sessions() {
+            let (result, store_result) = tauri::async_runtime::block_on(async {
+                tokio::join!(terminals.stop_daemon(), store.stop_active_sessions())
+            });
+            if let Err(error) = store_result {
                 log::error!("failed to stop persisted Sessions during Treefold exit: {error}");
             }
             if let Err(error) = result {

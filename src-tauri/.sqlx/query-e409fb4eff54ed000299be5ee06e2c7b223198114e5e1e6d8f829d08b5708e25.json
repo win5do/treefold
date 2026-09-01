@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE todos SET status='blocked',blocked_reason=?,updated_at=? WHERE id=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "e409fb4eff54ed000299be5ee06e2c7b223198114e5e1e6d8f829d08b5708e25"
+}

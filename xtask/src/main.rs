@@ -32,8 +32,74 @@ fn run() -> Result<()> {
             }
             prepare_bundle_sidecars()
         }
-        _ => bail!("usage: cargo xtask sidecars <dev [-- TAURI_ARGS...]|bundle>"),
+        (Some("database"), Some("prepare")) => database_prepare(false, args.collect()),
+        (Some("database"), Some("check")) => database_prepare(true, args.collect()),
+        _ => bail!(
+            "usage: cargo xtask <sidecars <dev [-- TAURI_ARGS...]|bundle>|database <prepare|check>>"
+        ),
     }
+}
+
+fn database_prepare(check: bool, remaining: Vec<String>) -> Result<()> {
+    if let Some(argument) = remaining.first() {
+        bail!("unexpected argument for database command: {argument}");
+    }
+    let root = repository_root()?;
+    let source = root.join("src-tauri/migrations/g1");
+    let crate_dir = root.join("src-tauri");
+    let temporary = tempfile::tempdir().context("create temporary database directory")?;
+    let database = temporary.path().join("treefold_1.sqlite");
+    let database_url = format!("sqlite://{}", database.display());
+
+    run_command(
+        Command::new("cargo")
+            .current_dir(&root)
+            .args(["sqlx", "database", "create", "--database-url"])
+            .arg(&database_url),
+        "create temporary SQLx database",
+    )?;
+    run_command(
+        Command::new("cargo")
+            .current_dir(&root)
+            .args(["sqlx", "migrate", "run", "--source"])
+            .arg(&source)
+            .arg("--database-url")
+            .arg(&database_url),
+        "apply generation 1 migrations",
+    )?;
+
+    let mut command = Command::new("cargo");
+    command
+        .current_dir(&crate_dir)
+        .args(["sqlx", "prepare", "--database-url"])
+        .arg(&database_url);
+    if check {
+        command.arg("--check");
+    }
+    command.args(["--", "--all-targets"]);
+    run_command(
+        &mut command,
+        if check {
+            "check SQLx offline metadata"
+        } else {
+            "prepare SQLx offline metadata"
+        },
+    )?;
+    eprintln!(
+        "SQLx metadata {} for database generation 1",
+        if check { "is current" } else { "was updated" }
+    );
+    Ok(())
+}
+
+fn run_command(command: &mut Command, description: &str) -> Result<()> {
+    let status = command
+        .status()
+        .with_context(|| format!("{description}: failed to start command"))?;
+    if !status.success() {
+        bail!("{description}: command exited with {status}");
+    }
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Eq)]

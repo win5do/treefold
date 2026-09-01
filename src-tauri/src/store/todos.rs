@@ -1,137 +1,95 @@
-#![allow(dead_code)] // Delivery compatibility helpers remain covered by integration tests.
-
-use rusqlite::{Row, named_params, params};
+#![allow(dead_code)]
 
 use super::{Store, now};
-use crate::{error::Result, model::*};
+use crate::{error::Result, model::Todo};
 
 impl Store {
-    pub fn todos(&self, workspace_id: &str) -> Result<Vec<Todo>> {
-        let db = self.0.lock();
-        let mut stmt = db.prepare(&format!(
-            "SELECT {TODO_COLUMNS} FROM todos WHERE workspace_id=? ORDER BY created_at DESC"
-        ))?;
-        let values = stmt
-            .query_map([workspace_id], todo_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
+    pub async fn todos(&self, workspace_id: &str) -> Result<Vec<Todo>> {
+        Ok(sqlx::query_as!(
+            Todo,
+            "SELECT id AS 'id!',workspace_id AS 'workspace_id!',content AS 'content!',status AS 'status!',fork_id,blocked_reason,created_at AS 'created_at!',updated_at AS 'updated_at!' FROM todos WHERE workspace_id=? ORDER BY created_at DESC",
+            workspace_id
+        )
+        .fetch_all(&self.pool)
+        .await?)
     }
-
-    pub fn create_todo(&self, t: &Todo) -> Result<()> {
-        self.0.lock().execute(
-            "INSERT INTO todos(id,workspace_id,content,status,fork_id,blocked_reason,created_at,updated_at)
-             VALUES(:id,:workspace_id,:content,:status,:fork_id,:blocked_reason,:created_at,:updated_at)",
-            named_params! {
-                ":id": t.id,
-                ":workspace_id": t.workspace_id,
-                ":content": t.content,
-                ":status": t.status,
-                ":fork_id": t.fork_id,
-                ":blocked_reason": t.blocked_reason,
-                ":created_at": t.created_at,
-                ":updated_at": t.updated_at,
-            },
-        )?;
+    pub async fn create_todo(&self, t: &Todo) -> Result<()> {
+        sqlx::query!(
+            "INSERT INTO todos(id,workspace_id,content,status,fork_id,blocked_reason,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+            t.id,
+            t.workspace_id,
+            t.content,
+            t.status,
+            t.fork_id,
+            t.blocked_reason,
+            t.created_at,
+            t.updated_at
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
-
-    pub fn todo(&self, id: &str) -> Result<Todo> {
-        Ok(self.0.lock().query_row(
-            &format!("SELECT {TODO_COLUMNS} FROM todos WHERE id=?"),
-            [id],
-            todo_row,
-        )?)
+    pub async fn todo(&self, id: &str) -> Result<Todo> {
+        Ok(sqlx::query_as!(Todo, "SELECT id AS 'id!',workspace_id AS 'workspace_id!',content AS 'content!',status AS 'status!',fork_id,blocked_reason,created_at AS 'created_at!',updated_at AS 'updated_at!' FROM todos WHERE id=?", id)
+            .fetch_one(&self.pool)
+            .await?)
     }
-
-    pub fn update_todo(&self, id: &str, status: &str) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE todos SET status=?,blocked_reason=CASE WHEN ?='blocked' THEN blocked_reason ELSE NULL END,updated_at=? WHERE id=?",
-            params![status, status, now(), id],
-        )?;
+    pub async fn update_todo(&self, id: &str, status: &str) -> Result<()> {
+        sqlx::query!("UPDATE todos SET status=?,blocked_reason=CASE WHEN ?='blocked' THEN blocked_reason ELSE NULL END,updated_at=? WHERE id=?", status, status, now(), id).execute(&self.pool).await?;
         Ok(())
     }
-
-    pub fn edit_todo(&self, id: &str, content: Option<&str>) -> Result<()> {
-        self.0.lock().execute(
+    pub async fn edit_todo(&self, id: &str, content: Option<&str>) -> Result<()> {
+        sqlx::query!(
             "UPDATE todos SET content=COALESCE(?,content),updated_at=? WHERE id=?",
-            params![content, now(), id],
-        )?;
+            content,
+            now(),
+            id
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
-
-    pub fn reserve_todo_for_fork(&self, id: &str) -> Result<bool> {
-        let changed = self.0.lock().execute(
-            "UPDATE todos SET status='in_progress',updated_at=?
-             WHERE id=? AND status IN ('pending','blocked')",
-            params![now(), id],
-        )?;
-        Ok(changed == 1)
+    pub async fn reserve_todo_for_fork(&self, id: &str) -> Result<bool> {
+        Ok(sqlx::query!("UPDATE todos SET status='in_progress',updated_at=? WHERE id=? AND status IN ('pending','blocked')", now(), id).execute(&self.pool).await?.rows_affected() == 1)
     }
-
-    pub fn attach_todo_fork(
+    pub async fn attach_todo_fork(
         &self,
         id: &str,
         previous_fork_id: Option<&str>,
         fork_id: &str,
     ) -> Result<bool> {
-        let changed = self.0.lock().execute(
-            "UPDATE todos SET status='in_progress',fork_id=?,blocked_reason=NULL,updated_at=?
-             WHERE id=? AND fork_id IS ?",
-            params![fork_id, now(), id, previous_fork_id],
-        )?;
-        Ok(changed == 1)
+        Ok(sqlx::query!("UPDATE todos SET status='in_progress',fork_id=?,blocked_reason=NULL,updated_at=? WHERE id=? AND fork_id IS ?", fork_id, now(), id, previous_fork_id).execute(&self.pool).await?.rows_affected() == 1)
     }
-
-    pub fn restore_todo_after_fork_failure(
+    pub async fn restore_todo_after_fork_failure(
         &self,
         id: &str,
         previous_fork_id: Option<&str>,
         status: &str,
         blocked_reason: Option<&str>,
     ) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE todos SET status=?,blocked_reason=?,updated_at=?
-             WHERE id=? AND status='in_progress' AND fork_id IS ?",
-            params![status, blocked_reason, now(), id, previous_fork_id],
-        )?;
+        sqlx::query!("UPDATE todos SET status=?,blocked_reason=?,updated_at=? WHERE id=? AND status='in_progress' AND fork_id IS ?", status, blocked_reason, now(), id, previous_fork_id).execute(&self.pool).await?;
         Ok(())
     }
-
-    pub fn block_todo(&self, id: &str, reason: &str) -> Result<()> {
-        self.0.lock().execute(
+    pub async fn block_todo(&self, id: &str, reason: &str) -> Result<()> {
+        sqlx::query!(
             "UPDATE todos SET status='blocked',blocked_reason=?,updated_at=? WHERE id=?",
-            params![reason, now(), id],
-        )?;
+            reason,
+            now(),
+            id
+        )
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
-
-    pub fn delete_todo(&self, id: &str) -> Result<()> {
-        self.0
-            .lock()
-            .execute("DELETE FROM todos WHERE id=?", [id])?;
+    pub async fn delete_todo(&self, id: &str) -> Result<()> {
+        sqlx::query!("DELETE FROM todos WHERE id=?", id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
-
-    pub fn todo_for_fork(&self, fork_id: &str) -> Result<Option<Todo>> {
-        let db = self.0.lock();
-        let mut stmt = db.prepare(&format!("SELECT {TODO_COLUMNS} FROM todos WHERE fork_id=?"))?;
-        let mut rows = stmt.query([fork_id])?;
-        Ok(rows.next()?.map(todo_row).transpose()?)
+    pub async fn todo_for_fork(&self, fork_id: &str) -> Result<Option<Todo>> {
+        Ok(sqlx::query_as!(Todo, "SELECT id AS 'id!',workspace_id AS 'workspace_id!',content AS 'content!',status AS 'status!',fork_id,blocked_reason,created_at AS 'created_at!',updated_at AS 'updated_at!' FROM todos WHERE fork_id=?", fork_id)
+            .fetch_optional(&self.pool)
+            .await?)
     }
 }
-
-fn todo_row(r: &Row<'_>) -> rusqlite::Result<Todo> {
-    Ok(Todo {
-        id: r.get("id")?,
-        workspace_id: r.get("workspace_id")?,
-        content: r.get("content")?,
-        status: r.get("status")?,
-        fork_id: r.get("fork_id")?,
-        blocked_reason: r.get("blocked_reason")?,
-        created_at: r.get("created_at")?,
-        updated_at: r.get("updated_at")?,
-    })
-}
-
-const TODO_COLUMNS: &str =
-    "id,workspace_id,content,status,fork_id,blocked_reason,created_at,updated_at";

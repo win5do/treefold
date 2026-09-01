@@ -1,12 +1,12 @@
 use super::*;
 
-pub(super) fn treefold_runtime_snapshot(
+pub(super) async fn treefold_runtime_snapshot(
     state: &AppState,
     session: &Session,
     workspace: &Workspace,
 ) -> Result<Value> {
-    let project = state.store.project(&workspace.project_id)?;
-    let locations = state.store.workspace_repositories(&workspace.id)?;
+    let project = state.store.project(&workspace.project_id).await?;
+    let locations = state.store.workspace_repositories(&workspace.id).await?;
     let directory_snapshots = locations
         .iter()
         .map(|location| {
@@ -26,7 +26,7 @@ pub(super) fn treefold_runtime_snapshot(
         })
         .collect::<Vec<_>>();
 
-    let todos = agent_owned_todos(state, &workspace.id)?;
+    let todos = agent_owned_todos(state, &workspace.id).await?;
     Ok(json!({
         "schema_version": 3,
         "observed_at": now(),
@@ -66,7 +66,7 @@ pub(super) fn treefold_runtime_snapshot(
     }))
 }
 
-pub(super) fn treefold_developer_instructions(
+pub(super) async fn treefold_developer_instructions(
     state: &AppState,
     session: &Session,
     workspace: &Workspace,
@@ -75,7 +75,7 @@ pub(super) fn treefold_developer_instructions(
         return Ok(None);
     }
 
-    let snapshot = treefold_runtime_snapshot(state, session, workspace)?;
+    let snapshot = treefold_runtime_snapshot(state, session, workspace).await?;
     let snapshot = serde_json::to_string_pretty(&snapshot)
         .map_err(|error| AppError::Internal(error.into()))?;
     let scope_guidance = if workspace.kind == "base" {

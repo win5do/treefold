@@ -34,10 +34,12 @@ mod current_workspace_tests {
         terminal::{TerminalManager, TreefoldProcessView},
     };
 
-    fn test_state(root: &Path) -> AppState {
+    async fn test_state(root: &Path) -> AppState {
         let home = root.join("home");
         AppState {
-            store: Store::open(&home.join("data/treefold.db")).expect("open test Store"),
+            store: Store::open(&home.join("data"))
+                .await
+                .expect("open test Store"),
             settings: SettingsStore::open(&home).expect("open test Settings"),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -94,7 +96,7 @@ mod current_workspace_tests {
             "treefold-process-snapshot-test-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let response = app(test_state(&root))
+        let response = app(test_state(&root).await)
             .oneshot(
                 Request::builder()
                     .uri("/api/processes")
@@ -124,7 +126,7 @@ mod current_workspace_tests {
         let stale_worktree = root.join("stale-worktree");
         let stale_worktree_path = stale_worktree.to_string_lossy().into_owned();
         initialize_repository(&repository);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -144,6 +146,7 @@ mod current_workspace_tests {
         let repository_id = state
             .store
             .repositories(&project.id)
+            .await
             .expect("list Project repositories")
             .into_iter()
             .next()
@@ -325,7 +328,7 @@ mod current_workspace_tests {
         std::fs::write(api.join("scope.txt"), "api\n").expect("write api scope");
         command_output(&repository, "git", &["add", "."]).expect("stage scopes");
         command_output(&repository, "git", &["commit", "-m", "add scopes"]).expect("commit scopes");
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -354,9 +357,17 @@ mod current_workspace_tests {
         .await
         .expect("add second scope");
 
-        assert_eq!(state.store.repositories(&project.id).unwrap().len(), 1);
         assert_eq!(
-            state.store.project_directories(&project.id).unwrap().len(),
+            state.store.repositories(&project.id).await.unwrap().len(),
+            1
+        );
+        assert_eq!(
+            state
+                .store
+                .project_directories(&project.id)
+                .await
+                .unwrap()
+                .len(),
             2
         );
 
@@ -377,11 +388,16 @@ mod current_workspace_tests {
             state
                 .store
                 .workspace_repositories(&workspace.id)
+                .await
                 .unwrap()
                 .len(),
             1
         );
-        let scopes = state.store.workspace_directories(&workspace.id).unwrap();
+        let scopes = state
+            .store
+            .workspace_directories(&workspace.id)
+            .await
+            .unwrap();
         assert_eq!(scopes.len(), 2);
         assert!(scopes.iter().all(|scope| Path::new(&scope.path).is_dir()));
 
@@ -397,7 +413,7 @@ mod current_workspace_tests {
         ));
         let repository = root.join("repository");
         initialize_repository(&repository);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -448,15 +464,24 @@ mod current_workspace_tests {
             exit_code: None,
             exit_signal: String::new(),
         };
-        reconcile_process(&state, &process, false).expect("discover Command");
+        reconcile_process(&state, &process, false)
+            .await
+            .expect("discover Command");
         let discovered = state
             .store
             .sessions(&workspace.id)
+            .await
             .expect("list discovered Session");
         let first_updated_at = discovered[0].updated_at.clone();
         let first_revision = state.runtime.revision();
-        reconcile_process(&state, &process, false).expect("rediscover Command");
-        let sessions = state.store.sessions(&workspace.id).expect("list Sessions");
+        reconcile_process(&state, &process, false)
+            .await
+            .expect("rediscover Command");
+        let sessions = state
+            .store
+            .sessions(&workspace.id)
+            .await
+            .expect("list Sessions");
         assert_eq!(
             sessions.len(),
             1,
@@ -478,7 +503,7 @@ mod current_workspace_tests {
         .expect("stop without starting a missing daemon");
         assert!(!state.terminals.daemon_status().await.running);
         assert_eq!(
-            state.store.session(&sessions[0].id).unwrap().status,
+            state.store.session(&sessions[0].id).await.unwrap().status,
             "stopped"
         );
         assert_eq!(state.runtime.revision(), first_revision + 1);
@@ -486,19 +511,25 @@ mod current_workspace_tests {
         let mut late_exit = process.clone();
         late_exit.state = "exited".into();
         late_exit.exit_signal = "TERM".into();
-        reconcile_process(&state, &late_exit, false).expect("reconcile late Stop exit");
+        reconcile_process(&state, &late_exit, false)
+            .await
+            .expect("reconcile late Stop exit");
         assert_eq!(
-            state.store.session(&sessions[0].id).unwrap().status,
+            state.store.session(&sessions[0].id).await.unwrap().status,
             "stopped"
         );
         assert_eq!(state.runtime.revision(), first_revision + 2);
         let reconciled_revision = state.runtime.revision();
-        reconcile_process(&state, &late_exit, false).expect("repeat late Stop exit");
+        reconcile_process(&state, &late_exit, false)
+            .await
+            .expect("repeat late Stop exit");
         assert_eq!(state.runtime.revision(), reconciled_revision);
 
-        reconcile_process(&state, &process, false).expect("reconcile explicit Restart");
+        reconcile_process(&state, &process, false)
+            .await
+            .expect("reconcile explicit Restart");
         assert_eq!(
-            state.store.session(&sessions[0].id).unwrap().status,
+            state.store.session(&sessions[0].id).await.unwrap().status,
             "running"
         );
         let before_daemon_stop = state.runtime.revision();
@@ -518,26 +549,47 @@ mod current_workspace_tests {
             ]
         );
         assert_eq!(
-            state.store.session(&sessions[0].id).unwrap().status,
+            state.store.session(&sessions[0].id).await.unwrap().status,
             "stopped"
         );
-        reconcile_process(&state, &process, true).expect("remove Command runtime");
+        reconcile_process(&state, &process, true)
+            .await
+            .expect("remove Command runtime");
         assert_eq!(
-            state.store.session(&sessions[0].id).unwrap().status,
+            state.store.session(&sessions[0].id).await.unwrap().status,
             "stopped"
         );
         state
             .store
             .delete_session(&sessions[0].id)
+            .await
             .expect("close Command Session");
-        reconcile_process(&state, &process, true).expect("ignore late removal after Close");
-        assert!(state.store.sessions(&workspace.id).unwrap().is_empty());
+        reconcile_process(&state, &process, true)
+            .await
+            .expect("ignore late removal after Close");
+        assert!(
+            state
+                .store
+                .sessions(&workspace.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         let mut root_process = process.clone();
         root_process.name = "treefold-root".into();
         root_process.session_root = true;
         root_process.session_id = Some("missing-root-session".into());
-        reconcile_process(&state, &root_process, false).expect("ignore Treefold root");
-        assert!(state.store.sessions(&workspace.id).unwrap().is_empty());
+        reconcile_process(&state, &root_process, false)
+            .await
+            .expect("ignore Treefold root");
+        assert!(
+            state
+                .store
+                .sessions(&workspace.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
         std::fs::remove_dir_all(root).expect("remove Command discovery fixture");
     }
 
@@ -550,7 +602,7 @@ mod current_workspace_tests {
         let repository = root.join("repository");
         let context = root.join("reference-context");
         std::fs::create_dir_all(&context).expect("create context directory");
-        let state = test_state(&root);
+        let state = test_state(&root).await;
 
         let error = create_project(
             State(state.clone()),
@@ -572,7 +624,14 @@ mod current_workspace_tests {
             error.to_string(),
             "a Project's first location must be a ready Git repository"
         );
-        assert!(state.store.projects().expect("list Projects").is_empty());
+        assert!(
+            state
+                .store
+                .projects()
+                .await
+                .expect("list Projects")
+                .is_empty()
+        );
 
         let (_, Json(project)) = create_project(
             State(state.clone()),
@@ -622,6 +681,7 @@ mod current_workspace_tests {
             state
                 .store
                 .project(&project.id)
+                .await
                 .unwrap()
                 .default_location_id,
             Some(primary.id.clone())
@@ -655,6 +715,7 @@ mod current_workspace_tests {
                 primary.base_branch.as_deref(),
                 primary.delivery_mode.as_deref(),
             )
+            .await
             .unwrap();
         let Json(refreshed) = refresh_project_directory(
             State(state.clone()),
@@ -681,6 +742,7 @@ mod current_workspace_tests {
         let context_location = state
             .store
             .directories(&project.id)
+            .await
             .unwrap()
             .into_iter()
             .find(|location| location.git_status == "not_git")
@@ -722,7 +784,7 @@ mod current_workspace_tests {
         ));
         let repository = root.join("repository");
         initialize_repository(&repository);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -752,16 +814,29 @@ mod current_workspace_tests {
         .await
         .expect("create managed Project Shell");
         assert_eq!(
-            state.store.workspace(&shell.workspace_id).unwrap().kind,
+            state
+                .store
+                .workspace(&shell.workspace_id)
+                .await
+                .unwrap()
+                .kind,
             "base"
         );
-        assert_eq!(state.store.project_sessions(&project.id).unwrap().len(), 1);
+        assert_eq!(
+            state
+                .store
+                .project_sessions(&project.id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         assert!(state.terminals.is_running(&shell.id).await);
 
         let _ = close_session(State(state.clone()), axum::extract::Path(shell.id.clone()))
             .await
             .expect("close Project Shell");
-        assert!(state.store.session(&shell.id).is_err());
+        assert!(state.store.session(&shell.id).await.is_err());
         assert!(!state.terminals.is_running(&shell.id).await);
 
         let timestamp = now();
@@ -790,16 +865,25 @@ mod current_workspace_tests {
             updated_at: timestamp,
             additional_directories: vec![],
         };
-        state.store.create_session(&codex).unwrap();
+        state.store.create_session(&codex).await.unwrap();
         let _ = close_session(State(state.clone()), axum::extract::Path(codex.id.clone()))
             .await
             .expect("hide saved Project Codex");
         let saved = state
             .store
             .session(&codex.id)
+            .await
             .expect("retain Codex history");
         assert_eq!(saved.visibility, "hidden");
-        assert_eq!(state.store.project_sessions(&project.id).unwrap().len(), 1);
+        assert_eq!(
+            state
+                .store
+                .project_sessions(&project.id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
 
         let mut finalized_shell = codex.clone();
         finalized_shell.id = "finalized-shell".into();
@@ -808,14 +892,15 @@ mod current_workspace_tests {
         finalized_shell.codex_session_id = None;
         finalized_shell.visibility = "visible".into();
         finalized_shell.amux_process_name = finalized_shell.id.clone();
-        state.store.create_session(&finalized_shell).unwrap();
+        state.store.create_session(&finalized_shell).await.unwrap();
         state
             .store
             .finalize_sessions(&codex.workspace_id, &codex.cwd, true)
+            .await
             .expect("finalize Session history");
-        assert!(state.store.session(&finalized_shell.id).is_err());
+        assert!(state.store.session(&finalized_shell.id).await.is_err());
         assert_eq!(
-            state.store.session(&codex.id).unwrap().status,
+            state.store.session(&codex.id).await.unwrap().status,
             "stopped",
             "Codex remains resumable while Shell history is removed"
         );
@@ -832,7 +917,7 @@ mod current_workspace_tests {
         ));
         let repository = root.join("repository");
         initialize_repository(&repository);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
 
         let (_, Json(project)) = create_project(
             State(state.clone()),
@@ -914,6 +999,7 @@ mod current_workspace_tests {
         let fork_location = state
             .store
             .default_workspace_repository(&fork.id)
+            .await
             .expect("get Fork location");
         assert!(
             update_workspace_repository(
@@ -943,6 +1029,7 @@ mod current_workspace_tests {
                 created_at: timestamp.clone(),
                 updated_at: timestamp,
             })
+            .await
             .expect("create Fork Todo");
         let locked_status = app(state.clone())
             .oneshot(
@@ -963,7 +1050,7 @@ mod current_workspace_tests {
         )
         .expect("decode locked Todo response");
         assert_eq!(locked_status_body["error"]["code"], "TODO_FORK_ACTIVE");
-        let unchanged = state.store.todo("fork-todo").unwrap();
+        let unchanged = state.store.todo("fork-todo").await.unwrap();
         assert_eq!(unchanged.status, "blocked");
         assert_eq!(unchanged.content, "Finish parallel work");
 
@@ -996,6 +1083,7 @@ mod current_workspace_tests {
                 code_action: "local_merge".into(),
             },
         )
+        .await
         .expect("create Fork preflight");
         assert!(preflight.blockers.is_empty());
         let finished = finish_workspace_impl(
@@ -1024,7 +1112,11 @@ mod current_workspace_tests {
                 .exists()
         );
         assert!(!Path::new(&fork.checkout_path).exists());
-        let carried = state.store.todos(&workspace.id).expect("parent Todos");
+        let carried = state
+            .store
+            .todos(&workspace.id)
+            .await
+            .expect("parent Todos");
         assert_eq!(carried.len(), 1);
         assert_eq!(carried[0].status, "done");
         assert_eq!(carried[0].fork_id.as_deref(), Some(fork.id.as_str()));
@@ -1047,7 +1139,7 @@ mod current_workspace_tests {
         ));
         let repository = root.join("repository");
         initialize_repository(&repository);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -1090,6 +1182,7 @@ mod current_workspace_tests {
         let fork_location = state
             .store
             .default_workspace_repository(&fork.id)
+            .await
             .expect("Fork Repository");
 
         let commit = |path: &str, name: &str, contents: &str, message: &str| {
@@ -1115,6 +1208,7 @@ mod current_workspace_tests {
             "standalone",
             None,
         )
+        .await
         .expect("rebase Fork from parent");
         assert_eq!(update.status, "completed");
         assert!(update.undo_available);
@@ -1126,7 +1220,9 @@ mod current_workspace_tests {
             )
             .expect("parent is ancestor")
         );
-        let undone_update = undo_parent_operation_impl(&state, &update).expect("undo update");
+        let undone_update = undo_parent_operation_impl(&state, &update)
+            .await
+            .expect("undo update");
         assert_eq!(undone_update.status, "undone");
         assert_eq!(git_head(&fork.checkout_path).unwrap(), fork_before);
 
@@ -1138,6 +1234,7 @@ mod current_workspace_tests {
             "standalone",
             None,
         )
+        .await
         .expect("integrate Fork into parent");
         assert_eq!(integration.status, "completed");
         let integrated_head = integration
@@ -1153,7 +1250,9 @@ mod current_workspace_tests {
         )
         .expect("read merge parents");
         assert_eq!(parents.split_whitespace().count(), 2);
-        undo_parent_operation_impl(&state, &integration).expect("undo integration");
+        undo_parent_operation_impl(&state, &integration)
+            .await
+            .expect("undo integration");
         assert_eq!(git_head(&workspace.checkout_path).unwrap(), parent_head);
 
         commit(
@@ -1176,19 +1275,25 @@ mod current_workspace_tests {
             "standalone",
             None,
         )
+        .await
         .expect("start conflicted update");
         assert_eq!(conflicted.status, "conflicted");
         let restarted = AppState {
-            store: Store::open(&root.join("home/data/treefold.db")).expect("reopen Store"),
+            store: Store::open(&root.join("home/data"))
+                .await
+                .expect("reopen Store"),
             settings: SettingsStore::open(&root.join("home")).expect("reopen Settings"),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
             integration: crate::integration::IntegrationManager::test(&root.join("home")),
         };
-        let recovered =
-            reconcile_parent_operation(&restarted, &conflicted).expect("reconcile after restart");
+        let recovered = reconcile_parent_operation(&restarted, &conflicted)
+            .await
+            .expect("reconcile after restart");
         assert_eq!(recovered.status, "conflicted");
-        let aborted = abort_parent_operation_impl(&restarted, &recovered).expect("abort update");
+        let aborted = abort_parent_operation_impl(&restarted, &recovered)
+            .await
+            .expect("abort update");
         assert_eq!(aborted.status, "aborted");
         assert_eq!(
             git_head(&fork.checkout_path).unwrap(),
@@ -1198,6 +1303,7 @@ mod current_workspace_tests {
         let workspace_repository = state
             .store
             .default_workspace_repository(&workspace.id)
+            .await
             .expect("root Workspace Repository");
         let project_before = git_head(repository.to_str().unwrap()).unwrap();
         let root_integration = start_parent_operation_impl(
@@ -1208,14 +1314,16 @@ mod current_workspace_tests {
             "standalone",
             None,
         )
+        .await
         .expect("integrate root Workspace into Project");
         assert_eq!(root_integration.status, "completed");
         assert_eq!(
             git_head(repository.to_str().unwrap()).unwrap(),
             root_integration.result_head.clone().unwrap()
         );
-        let root_undone =
-            undo_parent_operation_impl(&state, &root_integration).expect("undo root integration");
+        let root_undone = undo_parent_operation_impl(&state, &root_integration)
+            .await
+            .expect("undo root integration");
         assert_eq!(root_undone.status, "undone");
         assert_eq!(
             git_head(repository.to_str().unwrap()).unwrap(),
@@ -1235,7 +1343,7 @@ mod current_workspace_tests {
         ));
         let repository = root.join("repository");
         initialize_repository(&repository);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -1275,7 +1383,11 @@ mod current_workspace_tests {
         )
         .await
         .unwrap();
-        let fork_location = state.store.default_workspace_repository(&fork.id).unwrap();
+        let fork_location = state
+            .store
+            .default_workspace_repository(&fork.id)
+            .await
+            .unwrap();
         for (path, contents, message) in [
             (&fork.checkout_path, "child\n", "child conflict"),
             (&workspace.checkout_path, "parent\n", "parent conflict"),
@@ -1291,6 +1403,7 @@ mod current_workspace_tests {
                 code_action: "local_merge".into(),
             },
         )
+        .await
         .expect("create conflict Finish preflight");
         let input = FinishWorkspace {
             code_action: "local_merge".into(),
@@ -1308,6 +1421,7 @@ mod current_workspace_tests {
             fork_location.id.clone(),
             input.clone(),
         )
+        .await
         .expect("pause Finish on conflict");
         assert_eq!(paused.status, "paused");
         let operation = paused.operation.expect("linked integration");
@@ -1330,7 +1444,9 @@ mod current_workspace_tests {
             &["-c", "core.editor=true", "merge", "--continue"],
         )
         .unwrap();
-        let completed = reconcile_parent_operation(&state, &operation).unwrap();
+        let completed = reconcile_parent_operation(&state, &operation)
+            .await
+            .unwrap();
         assert_eq!(completed.status, "completed");
         assert!(completed.undo_available);
 
@@ -1339,12 +1455,14 @@ mod current_workspace_tests {
             fork_location.id.clone(),
             input.clone(),
         )
+        .await
         .expect("wait for explicit Resume Finish");
         assert_eq!(awaiting.status, "awaiting_resume");
         let mut resume = input;
         resume.resume_finish = true;
         let Json(finished) =
             finish_workspace_repository_impl(state.clone(), fork_location.id, resume)
+                .await
                 .expect("resume Finish");
         assert_eq!(finished.status, "finished");
         assert_eq!(finished.repository.delivery_status, "delivered");
@@ -1352,6 +1470,7 @@ mod current_workspace_tests {
             !state
                 .store
                 .parent_operation(&completed.id)
+                .await
                 .unwrap()
                 .undo_available
         );
@@ -1368,7 +1487,7 @@ mod current_workspace_tests {
         ));
         let repository = root.join("repository");
         initialize_repository(&repository);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -1406,6 +1525,7 @@ mod current_workspace_tests {
         let location = state
             .store
             .default_workspace_repository(&workspace.id)
+            .await
             .unwrap();
         let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
             state.clone(),
@@ -1414,6 +1534,7 @@ mod current_workspace_tests {
                 code_action: "keep".into(),
             },
         )
+        .await
         .unwrap();
         assert!(
             preflight
@@ -1436,6 +1557,7 @@ mod current_workspace_tests {
                 resume_finish: false,
             },
         )
+        .await
         .expect_err("dirty Finish must be blocked");
         assert!(error.to_string().contains("preflight is blocked"));
         assert!(
@@ -1465,7 +1587,7 @@ mod current_workspace_tests {
             &["remote", "add", "origin", remote.to_string_lossy().as_ref()],
         )
         .unwrap();
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -1498,6 +1620,7 @@ mod current_workspace_tests {
         let location = state
             .store
             .default_workspace_repository(&workspace.id)
+            .await
             .unwrap();
         let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
             state.clone(),
@@ -1506,6 +1629,7 @@ mod current_workspace_tests {
                 code_action: "push_branch".into(),
             },
         )
+        .await
         .unwrap();
         assert!(preflight.blockers.is_empty(), "{:#?}", preflight.blockers);
         let Json(finished) = finish_workspace_repository_impl(
@@ -1523,6 +1647,7 @@ mod current_workspace_tests {
                 resume_finish: false,
             },
         )
+        .await
         .unwrap();
         assert_eq!(finished.repository.delivery_status, "pushed");
         assert_eq!(
@@ -1558,7 +1683,7 @@ mod current_workspace_tests {
         initialize_repository(&first);
         initialize_repository(&second);
         std::fs::create_dir_all(&context).expect("create context");
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -1599,6 +1724,7 @@ mod current_workspace_tests {
                         Some("main"),
                         Some("local_merge"),
                     )
+                    .await
                     .expect("configure Project Repository");
             }
             ids.push(location.id);
@@ -1607,6 +1733,7 @@ mod current_workspace_tests {
             state
                 .store
                 .directories(&project.id)
+                .await
                 .expect("list ordered Project locations")
                 .iter()
                 .map(|location| location.name.as_str())
@@ -1617,11 +1744,13 @@ mod current_workspace_tests {
         state
             .store
             .update_project_defaults(&project.id, Some(&ids[1]), "main", "local_merge")
+            .await
             .expect("switch primary location");
         assert_eq!(
             state
                 .store
                 .directories(&project.id)
+                .await
                 .expect("list reordered Project locations")
                 .iter()
                 .map(|location| location.name.as_str())
@@ -1645,6 +1774,7 @@ mod current_workspace_tests {
         let repositories = state
             .store
             .workspace_repositories(&workspace.id)
+            .await
             .expect("list Workspace repositories");
         assert_eq!(repositories.len(), 2);
         assert!(
@@ -1664,6 +1794,7 @@ mod current_workspace_tests {
         let directories = state
             .store
             .workspace_directories(&workspace.id)
+            .await
             .expect("list Workspace Directory snapshots");
         assert_eq!(directories.len(), 3);
         assert_eq!(
@@ -1673,7 +1804,7 @@ mod current_workspace_tests {
                 .count(),
             1
         );
-        let project_directory = state.store.directory(&ids[2]).unwrap();
+        let project_directory = state.store.directory(&ids[2]).await.unwrap();
         state
             .store
             .update_directory(
@@ -1684,11 +1815,13 @@ mod current_workspace_tests {
                 None,
                 None,
             )
+            .await
             .unwrap();
         assert_eq!(
             state
                 .store
                 .workspace_directories(&workspace.id)
+                .await
                 .unwrap()
                 .into_iter()
                 .find(|item| item.project_directory_id == ids[2])
@@ -1751,6 +1884,7 @@ mod current_workspace_tests {
             state
                 .store
                 .workspace_directories(&workspace.id)
+                .await
                 .unwrap()
                 .iter()
                 .find(|item| item.project_directory_id == ids[2])
@@ -1772,7 +1906,7 @@ mod current_workspace_tests {
         let second = root.join("repo-z");
         initialize_repository(&first);
         initialize_repository(&second);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -1810,6 +1944,7 @@ mod current_workspace_tests {
                 Some("main"),
                 Some("local_merge"),
             )
+            .await
             .expect("configure second Project Repository");
         let (_, Json(workspace)) = create_workspace(
             State(state.clone()),
@@ -1824,7 +1959,7 @@ mod current_workspace_tests {
         )
         .await
         .expect("setup command must not block Workspace creation");
-        assert_eq!(state.store.workspaces(&project.id).unwrap().len(), 1);
+        assert_eq!(state.store.workspaces(&project.id).await.unwrap().len(), 1);
         assert_eq!(
             super::git_worktrees(first.to_str().unwrap()).unwrap().len(),
             2
@@ -1840,6 +1975,7 @@ mod current_workspace_tests {
             setup_shell = state
                 .store
                 .sessions(&workspace.id)
+                .await
                 .unwrap()
                 .into_iter()
                 .find(|session| {
@@ -1852,6 +1988,13 @@ mod current_workspace_tests {
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
         let setup_shell = setup_shell.expect("create a visible setup Shell");
+        let second_repository_id = state
+            .store
+            .directory_record(&second_location.id)
+            .await
+            .unwrap()
+            .repository_id
+            .unwrap();
         assert_eq!(setup_shell.kind, "shell");
         assert!(setup_shell.initial_prompt.ends_with("&& exit 7"));
         assert_eq!(
@@ -1859,17 +2002,10 @@ mod current_workspace_tests {
             state
                 .store
                 .workspace_repositories(&workspace.id)
+                .await
                 .unwrap()
                 .into_iter()
-                .find(|location| {
-                    location.project_repository_id
-                        == state
-                            .store
-                            .directory_record(&second_location.id)
-                            .unwrap()
-                            .repository_id
-                            .unwrap()
-                })
+                .find(|location| { location.project_repository_id == second_repository_id })
                 .unwrap()
                 .checkout_path
                 .unwrap()
@@ -1880,11 +2016,17 @@ mod current_workspace_tests {
         let _ = close_session(State(state.clone()), axum::extract::Path(setup_shell.id))
             .await
             .expect("close setup Shell");
-        for location in state.store.workspace_repositories(&workspace.id).unwrap() {
+        for location in state
+            .store
+            .workspace_repositories(&workspace.id)
+            .await
+            .unwrap()
+        {
             if let Some(checkout_path) = location.checkout_path {
                 let repository = state
                     .store
                     .repository(&location.project_repository_id)
+                    .await
                     .unwrap()
                     .source_root;
                 command_output(
@@ -1909,7 +2051,7 @@ mod current_workspace_tests {
         let second = root.join("repo-z");
         initialize_repository(&first);
         initialize_repository(&second);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -1947,6 +2089,7 @@ mod current_workspace_tests {
                 Some("missing-base"),
                 Some("local_merge"),
             )
+            .await
             .unwrap();
         state
             .store
@@ -1956,6 +2099,7 @@ mod current_workspace_tests {
                 "main",
                 "local_merge",
             )
+            .await
             .unwrap();
 
         let (_, Json(workspace)) = create_workspace(
@@ -1974,10 +2118,15 @@ mod current_workspace_tests {
         let second_repository_id = state
             .store
             .directory_record(&second_location.id)
+            .await
             .unwrap()
             .repository_id
             .unwrap();
-        let repositories = state.store.workspace_repositories(&workspace.id).unwrap();
+        let repositories = state
+            .store
+            .workspace_repositories(&workspace.id)
+            .await
+            .unwrap();
         let failed = repositories
             .iter()
             .find(|repository| repository.project_repository_id == second_repository_id)
@@ -2044,7 +2193,7 @@ mod current_workspace_tests {
         )
         .await
         .expect("retain the same partial location set in a Fork");
-        let fork_locations = state.store.workspace_repositories(&fork.id).unwrap();
+        let fork_locations = state.store.workspace_repositories(&fork.id).await.unwrap();
         assert_eq!(
             fork_locations
                 .iter()
@@ -2119,7 +2268,7 @@ mod current_workspace_tests {
         ));
         let origin = root.join("origin");
         initialize_repository(&origin);
-        let state = test_state(&root);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
@@ -2146,6 +2295,7 @@ mod current_workspace_tests {
                 setup_command: None,
             },
         )
+        .await
         .expect("clone managed Repository");
 
         assert_eq!(
@@ -2160,13 +2310,15 @@ mod current_workspace_tests {
         let repository_id = state
             .store
             .directory_repository_id(&directory.id)
+            .await
             .expect("read cloned Repository id")
             .expect("cloned Directory belongs to a Repository");
-        let repository = state.store.repository(&repository_id).unwrap();
+        let repository = state.store.repository(&repository_id).await.unwrap();
         assert_eq!(repository.source_ownership, "managed");
         state
             .store
             .update_repository(&repository_id, "", ".", "main", "keep")
+            .await
             .expect("configure cloned Repository");
         let (_, Json(workspace)) = create_workspace(
             State(state.clone()),
@@ -2188,10 +2340,12 @@ mod current_workspace_tests {
         state
             .store
             .finish_workspace(&workspace.id, "kept", "kept", None, &now())
+            .await
             .expect("archive retained Workspace");
         state
             .store
             .update_project_status(&project.id, "archived")
+            .await
             .expect("archive Project");
         delete_project(
             State(state.clone()),
@@ -2265,7 +2419,9 @@ mod tests {
         let home = root.join("home");
         std::fs::create_dir_all(&repository).expect("create agent API repository");
         let state = AppState {
-            store: Store::open(&home.join("data/treefold.db")).expect("open agent API store"),
+            store: Store::open(&home.join("data"))
+                .await
+                .expect("open agent API store"),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -2522,7 +2678,7 @@ mod tests {
         let home = root.join("home");
         std::fs::create_dir_all(&repository).expect("create Project directory");
         let state = AppState {
-            store: Store::open(&home.join("data/treefold.db")).expect("open store"),
+            store: Store::open(&home.join("data")).await.expect("open store"),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -2593,7 +2749,12 @@ mod tests {
             "visible"
         );
         assert_eq!(
-            state.store.session(&shell.id).expect("read Shell").status,
+            state
+                .store
+                .session(&shell.id)
+                .await
+                .expect("read Shell")
+                .status,
             "stopped"
         );
         assert_eq!(
@@ -2679,7 +2840,14 @@ mod tests {
         )
         .await
         .expect("delete archived Project");
-        assert!(state.store.projects().expect("list Projects").is_empty());
+        assert!(
+            state
+                .store
+                .projects()
+                .await
+                .expect("list Projects")
+                .is_empty()
+        );
         drop(state);
         std::fs::remove_dir_all(root).expect("remove archive fixture");
     }
@@ -2720,7 +2888,9 @@ mod tests {
             .expect("commit rebase fixture");
 
         let state = AppState {
-            store: Store::open(&home.join("data/treefold.db")).expect("open rebase store"),
+            store: Store::open(&home.join("data"))
+                .await
+                .expect("open rebase store"),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -3025,7 +3195,7 @@ mod tests {
             .expect("commit initial");
 
         let state = AppState {
-            store: Store::open(&home.join("data/treefold.db")).expect("open store"),
+            store: Store::open(&home.join("data")).await.expect("open store"),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -3270,8 +3440,9 @@ mod tests {
                 .error
                 .contains("injected delivery failure")
         );
-        let reopened_store =
-            Store::open(&home.join("data/treefold.db")).expect("reopen persistent store");
+        let reopened_store = Store::open(&home.join("data"))
+            .await
+            .expect("reopen persistent store");
         assert_eq!(
             reopened_store
                 .delivery_operation(&fork.id)
@@ -3282,7 +3453,12 @@ mod tests {
         );
         drop(reopened_store);
         assert_eq!(
-            state.store.workspace(&fork.id).expect("active Fork").status,
+            state
+                .store
+                .workspace(&fork.id)
+                .await
+                .expect("active Fork")
+                .status,
             "active"
         );
         assert!(Path::new(&fork.checkout_path).exists());
@@ -3374,7 +3550,11 @@ mod tests {
                 .len(),
             1
         );
-        let archived_session = state.store.session(&session.id).expect("session history");
+        let archived_session = state
+            .store
+            .session(&session.id)
+            .await
+            .expect("session history");
         assert_eq!(archived_session.status, "stopped");
         assert_eq!(archived_session.visibility, "hidden");
         assert_eq!(archived_session.cwd, workspace.checkout_path);
@@ -3383,7 +3563,11 @@ mod tests {
             archived_session.codex_session_id.as_deref(),
             Some("codex-session-for-resume")
         );
-        let archived_shell = state.store.session(&fork_shell.id).expect("Shell history");
+        let archived_shell = state
+            .store
+            .session(&fork_shell.id)
+            .await
+            .expect("Shell history");
         assert_eq!(archived_shell.status, "stopped");
         assert_eq!(archived_shell.cwd, workspace.checkout_path);
         let branches = command_output(Path::new(&repository), "git", &["branch", "--list"])

@@ -1,106 +1,127 @@
-#![allow(dead_code)] // Delivery compatibility helpers remain covered by integration tests.
-
-use rusqlite::{Row, named_params, params};
+#![allow(dead_code)]
 
 use super::{Store, now};
 use crate::{
     error::{AppError, Result},
-    model::*,
+    model::Session,
 };
 
+const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
+
+#[derive(sqlx::FromRow)]
+struct SessionRow {
+    id: String,
+    workspace_id: String,
+    name: String,
+    kind: String,
+    cwd: String,
+    original_cwd: String,
+    initial_prompt: String,
+    codex_session_id: Option<String>,
+    visibility: String,
+    hidden_at: Option<String>,
+    evicted_at: Option<String>,
+    amux_workspace_name: String,
+    amux_process_name: String,
+    status: String,
+    exit_code: Option<i64>,
+    exit_signal: String,
+    argv: String,
+    io_mode: String,
+    launch_started_at: String,
+    last_attached_at: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+impl From<SessionRow> for Session {
+    fn from(r: SessionRow) -> Self {
+        Self {
+            id: r.id,
+            workspace_id: r.workspace_id,
+            name: r.name,
+            kind: r.kind,
+            cwd: r.cwd,
+            original_cwd: r.original_cwd,
+            initial_prompt: r.initial_prompt,
+            codex_session_id: r.codex_session_id,
+            visibility: r.visibility,
+            hidden_at: r.hidden_at,
+            evicted_at: r.evicted_at,
+            amux_workspace_name: r.amux_workspace_name,
+            amux_process_name: r.amux_process_name,
+            status: r.status,
+            exit_code: r.exit_code,
+            exit_signal: r.exit_signal,
+            argv: serde_json::from_str(&r.argv).unwrap_or_default(),
+            io_mode: r.io_mode,
+            launch_started_at: r.launch_started_at,
+            last_attached_at: r.last_attached_at,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            additional_directories: vec![],
+        }
+    }
+}
+
 impl Store {
-    pub fn session_workspace_candidates(&self) -> Result<Vec<(String, String)>> {
-        let db = self.0.lock();
-        let mut stmt = db.prepare(
-            "SELECT wr.workspace_id,COALESCE(wr.checkout_path,wr.source_root)
-             FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id
-             JOIN projects p ON p.id=w.project_id
-             WHERE w.status='active' AND p.status='active'",
-        )?;
-        let values = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
+    async fn session_rows(&self, sql: &str, bind: &str) -> Result<Vec<Session>> {
+        Ok(sqlx::query_as::<_, SessionRow>(sqlx::AssertSqlSafe(sql))
+            .bind(bind)
+            .fetch_all(&self.pool)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
     }
-
-    pub fn project_sessions(&self, project_id: &str) -> Result<Vec<Session>> {
-        match self.project_session_workspace(project_id)? {
-            Some(workspace) => self.sessions(&workspace.id),
-            None => Ok(Vec::new()),
+    pub async fn session_workspace_candidates(&self) -> Result<Vec<(String, String)>> {
+        Ok(sqlx::query_as("SELECT wr.workspace_id,COALESCE(wr.checkout_path,wr.source_root) FROM workspace_repositories wr JOIN workspaces w ON w.id=wr.workspace_id JOIN projects p ON p.id=w.project_id WHERE w.status='active' AND p.status='active'").fetch_all(&self.pool).await?)
+    }
+    pub async fn project_sessions(&self, project_id: &str) -> Result<Vec<Session>> {
+        match self.project_session_workspace(project_id).await? {
+            Some(w) => self.sessions(&w.id).await,
+            None => Ok(vec![]),
         }
     }
-
-    pub fn sessions(&self, workspace_id: &str) -> Result<Vec<Session>> {
-        let db = self.0.lock();
-        let mut stmt = db.prepare(&format!(
+    pub async fn sessions(&self, workspace_id: &str) -> Result<Vec<Session>> {
+        let sql = format!(
             "SELECT {SESSION_COLUMNS} FROM sessions WHERE workspace_id=? ORDER BY sort_order ASC,created_at DESC"
-        ))?;
-        let mut values = stmt
-            .query_map([workspace_id], session_row)?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        drop(stmt);
-        drop(db);
+        );
+        let mut values = self.session_rows(&sql, workspace_id).await?;
         for session in &mut values {
-            session.additional_directories = self.session_additional_directories(&session.id)?;
+            session.additional_directories =
+                self.session_additional_directories(&session.id).await?;
         }
         Ok(values)
     }
-
-    pub fn session(&self, id: &str) -> Result<Session> {
-        let db = self.0.lock();
-        let mut value = db.query_row(
-            &format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE id=?"),
-            [id],
-            session_row,
-        )?;
-        drop(db);
-        value.additional_directories = self.session_additional_directories(id)?;
+    pub async fn session(&self, id: &str) -> Result<Session> {
+        let sql = format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE id=?");
+        let row: SessionRow = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await?;
+        let mut value: Session = row.into();
+        value.additional_directories = self.session_additional_directories(id).await?;
         Ok(value)
     }
-
-    pub fn create_session(&self, s: &Session) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
-        tx.execute(
-            "INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at)
-             VALUES(:id,:workspace_id,:name,:kind,:cwd,:original_cwd,:initial_prompt,:codex_session_id,:visibility,:hidden_at,:evicted_at,:amux_workspace_name,:amux_process_name,:status,:exit_code,:exit_signal,:argv,:io_mode,:launch_started_at,:last_attached_at,:created_at,:updated_at)",
-            named_params! {
-                ":id": s.id,
-                ":workspace_id": s.workspace_id,
-                ":name": s.name,
-                ":kind": s.kind,
-                ":cwd": s.cwd,
-                ":original_cwd": s.original_cwd,
-                ":initial_prompt": s.initial_prompt,
-                ":codex_session_id": s.codex_session_id,
-                ":visibility": s.visibility,
-                ":hidden_at": s.hidden_at,
-                ":evicted_at": s.evicted_at,
-                ":amux_workspace_name": s.amux_workspace_name,
-                ":amux_process_name": s.amux_process_name,
-                ":status": s.status,
-                ":exit_code": s.exit_code,
-                ":exit_signal": s.exit_signal,
-                ":argv": serde_json::to_string(&s.argv).unwrap_or_default(),
-                ":io_mode": s.io_mode,
-                ":launch_started_at": s.launch_started_at,
-                ":last_attached_at": s.last_attached_at,
-                ":created_at": s.created_at,
-                ":updated_at": s.updated_at,
-            },
-        )?;
+    pub async fn create_session(&self, s: &Session) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+            .bind(&s.id).bind(&s.workspace_id).bind(&s.name).bind(&s.kind).bind(&s.cwd).bind(&s.original_cwd)
+            .bind(&s.initial_prompt).bind(&s.codex_session_id).bind(&s.visibility).bind(&s.hidden_at).bind(&s.evicted_at)
+            .bind(&s.amux_workspace_name).bind(&s.amux_process_name).bind(&s.status).bind(s.exit_code).bind(&s.exit_signal)
+            .bind(serde_json::to_string(&s.argv).unwrap_or_default()).bind(&s.io_mode).bind(&s.launch_started_at)
+            .bind(&s.last_attached_at).bind(&s.created_at).bind(&s.updated_at).execute(&mut *tx).await?;
         for path in &s.additional_directories {
-            tx.execute(
-                "INSERT INTO session_additional_directories(session_id,path) VALUES(:session_id,:path)",
-                named_params! { ":session_id": s.id, ":path": path },
-            )?;
+            sqlx::query("INSERT INTO session_additional_directories(session_id,path) VALUES(?,?)")
+                .bind(&s.id)
+                .bind(path)
+                .execute(&mut *tx)
+                .await?;
         }
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn set_session_runtime(
+    pub async fn set_session_runtime(
         &self,
         id: &str,
         status: &str,
@@ -109,229 +130,171 @@ impl Store {
         argv: &[String],
     ) -> Result<bool> {
         let argv = serde_json::to_string(argv).unwrap_or_default();
-        let changed = self.0.lock().execute(
-            "UPDATE sessions SET status=?,exit_code=?,exit_signal=?,argv=?,updated_at=?
-             WHERE id=? AND (status IS NOT ? OR exit_code IS NOT ? OR exit_signal IS NOT ? OR argv IS NOT ?)",
-            params![
-                status,
-                exit_code,
-                exit_signal,
-                argv,
-                now(),
-                id,
-                status,
-                exit_code,
-                exit_signal,
-                argv,
-            ],
-        )?;
-        Ok(changed != 0)
+        Ok(sqlx::query("UPDATE sessions SET status=?,exit_code=?,exit_signal=?,argv=?,updated_at=? WHERE id=? AND (status IS NOT ? OR exit_code IS NOT ? OR exit_signal IS NOT ? OR argv IS NOT ?)")
+            .bind(status).bind(exit_code).bind(exit_signal).bind(&argv).bind(now()).bind(id).bind(status).bind(exit_code).bind(exit_signal).bind(&argv).execute(&self.pool).await?.rows_affected()!=0)
     }
-
-    pub fn set_session_visibility(&self, id: &str, visibility: &str) -> Result<()> {
+    pub async fn set_session_visibility(&self, id: &str, visibility: &str) -> Result<()> {
         let timestamp = now();
-        self.0.lock().execute(
-            "UPDATE sessions SET visibility=?,hidden_at=?,updated_at=? WHERE id=?",
-            params![
-                visibility,
-                if visibility == "visible" {
-                    None::<String>
-                } else {
-                    Some(timestamp.clone())
-                },
-                timestamp,
-                id
-            ],
-        )?;
+        let hidden = if visibility == "visible" {
+            None
+        } else {
+            Some(timestamp.clone())
+        };
+        sqlx::query("UPDATE sessions SET visibility=?,hidden_at=?,updated_at=? WHERE id=?")
+            .bind(visibility)
+            .bind(hidden)
+            .bind(timestamp)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
-
-    pub fn set_session_status(&self, id: &str, status: &str) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE sessions SET status=?,updated_at=? WHERE id=?",
-            params![status, now(), id],
-        )?;
+    pub async fn set_session_status(&self, id: &str, status: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET status=?,updated_at=? WHERE id=?")
+            .bind(status)
+            .bind(now())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
-
-    pub fn stop_active_sessions(&self) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE sessions SET status='stopped',updated_at=? WHERE status='running'",
-            [now()],
-        )?;
+    pub async fn stop_active_sessions(&self) -> Result<()> {
+        sqlx::query("UPDATE sessions SET status='stopped',updated_at=? WHERE status='running'")
+            .bind(now())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
-
-    pub fn running_session_identities(&self) -> Result<Vec<(String, String, String)>> {
-        let db = self.0.lock();
-        let mut statement = db.prepare(
+    pub async fn running_session_identities(&self) -> Result<Vec<(String, String, String)>> {
+        Ok(sqlx::query_as(
             "SELECT id,amux_workspace_name,amux_process_name FROM sessions WHERE status='running'",
-        )?;
-        let values = statement
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
+        )
+        .fetch_all(&self.pool)
+        .await?)
     }
-
-    pub fn session_by_amux_identity(
+    pub async fn session_by_amux_identity(
         &self,
         workspace: &str,
         process: &str,
     ) -> Result<Option<Session>> {
-        let db = self.0.lock();
-        let value = db.query_row(
-            &format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE amux_workspace_name=? AND amux_process_name=?"),
-            params![workspace, process],
-            session_row,
+        let sql = format!(
+            "SELECT {SESSION_COLUMNS} FROM sessions WHERE amux_workspace_name=? AND amux_process_name=?"
         );
-        match value {
-            Ok(session) => Ok(Some(session)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(error) => Err(error.into()),
-        }
+        let row: Option<SessionRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql))
+            .bind(workspace)
+            .bind(process)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(Into::into))
     }
-
-    pub fn rename_session(&self, id: &str, name: &str) -> Result<()> {
-        let changed = self.0.lock().execute(
-            "UPDATE sessions SET name=?,updated_at=? WHERE id=?",
-            params![name, now(), id],
-        )?;
-        if changed == 0 {
-            return Err(crate::error::AppError::NotFound);
+    pub async fn rename_session(&self, id: &str, name: &str) -> Result<()> {
+        let r = sqlx::query("UPDATE sessions SET name=?,updated_at=? WHERE id=?")
+            .bind(name)
+            .bind(now())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        if r.rows_affected() == 0 {
+            return Err(AppError::NotFound);
         }
         Ok(())
     }
-
-    pub fn reorder_sessions(&self, workspace_id: &str, session_ids: &[String]) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
+    pub async fn reorder_sessions(&self, workspace_id: &str, session_ids: &[String]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
         for (sort_order, id) in session_ids.iter().enumerate() {
-            let changed = tx.execute(
+            let r = sqlx::query(
                 "UPDATE sessions SET sort_order=?,updated_at=? WHERE id=? AND workspace_id=?",
-                params![sort_order as i64, now(), id, workspace_id],
-            )?;
-            if changed == 0 {
+            )
+            .bind(sort_order as i64)
+            .bind(now())
+            .bind(id)
+            .bind(workspace_id)
+            .execute(&mut *tx)
+            .await?;
+            if r.rows_affected() == 0 {
                 return Err(AppError::BadRequest(
                     "every Session must belong to the target Workspace".into(),
                 ));
             }
         }
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
-
-    pub fn touch_session(&self, id: &str) -> Result<()> {
+    pub async fn touch_session(&self, id: &str) -> Result<()> {
         let timestamp = now();
-        self.0.lock().execute(
-            "UPDATE sessions SET last_attached_at=?,updated_at=? WHERE id=?",
-            params![timestamp, timestamp, id],
-        )?;
+        sqlx::query("UPDATE sessions SET last_attached_at=?,updated_at=? WHERE id=?")
+            .bind(&timestamp)
+            .bind(&timestamp)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
-
-    pub fn set_codex_session_id(&self, id: &str, codex_session_id: &str) -> Result<()> {
-        self.0.lock().execute(
-            "UPDATE sessions SET codex_session_id=?,updated_at=? WHERE id=?",
-            params![codex_session_id, now(), id],
-        )?;
+    pub async fn set_codex_session_id(&self, id: &str, codex_session_id: &str) -> Result<()> {
+        sqlx::query("UPDATE sessions SET codex_session_id=?,updated_at=? WHERE id=?")
+            .bind(codex_session_id)
+            .bind(now())
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
-
-    pub fn delete_session(&self, id: &str) -> Result<()> {
-        self.0
-            .lock()
-            .execute("DELETE FROM sessions WHERE id=?", [id])?;
+    pub async fn delete_session(&self, id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM sessions WHERE id=?")
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
-
-    pub fn finalize_sessions(
+    pub async fn finalize_sessions(
         &self,
         workspace_id: &str,
         resume_cwd: &str,
         keep_history: bool,
     ) -> Result<()> {
         let timestamp = now();
-        let db = self.0.lock();
+        let mut tx = self.pool.begin().await?;
         if keep_history {
-            db.execute(
-                "DELETE FROM sessions WHERE workspace_id=? AND kind='shell'",
-                [workspace_id],
-            )?;
-            db.execute("UPDATE sessions SET cwd=?,visibility='hidden',hidden_at=?,status='stopped',updated_at=? WHERE workspace_id=? AND kind='codex'", params![resume_cwd,timestamp,timestamp,workspace_id])?;
+            sqlx::query("DELETE FROM sessions WHERE workspace_id=? AND kind='shell'")
+                .bind(workspace_id)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("UPDATE sessions SET cwd=?,visibility='hidden',hidden_at=?,status='stopped',updated_at=? WHERE workspace_id=? AND kind='codex'").bind(resume_cwd).bind(&timestamp).bind(&timestamp).bind(workspace_id).execute(&mut *tx).await?;
         } else {
-            db.execute("DELETE FROM sessions WHERE workspace_id=?", [workspace_id])?;
+            sqlx::query("DELETE FROM sessions WHERE workspace_id=?")
+                .bind(workspace_id)
+                .execute(&mut *tx)
+                .await?;
         }
+        tx.commit().await?;
         Ok(())
     }
-
-    fn session_additional_directories(&self, id: &str) -> Result<Vec<String>> {
-        let db = self.0.lock();
-        let mut stmt = db.prepare(
-            "SELECT path FROM session_additional_directories WHERE session_id=? AND access_mode='read_write' ORDER BY path",
-        )?;
-        let values = stmt
-            .query_map([id], |r| r.get("path"))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        Ok(values)
+    async fn session_additional_directories(&self, id: &str) -> Result<Vec<String>> {
+        Ok(sqlx::query_scalar("SELECT path FROM session_additional_directories WHERE session_id=? AND access_mode='read_write' ORDER BY path").bind(id).fetch_all(&self.pool).await?)
     }
-
-    pub fn replace_session_additional_directories(&self, id: &str, paths: &[String]) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
-        tx.execute(
-            "DELETE FROM session_additional_directories WHERE session_id=? AND access_mode='read_write'",
-            [id],
-        )?;
+    pub async fn replace_session_additional_directories(
+        &self,
+        id: &str,
+        paths: &[String],
+    ) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM session_additional_directories WHERE session_id=? AND access_mode='read_write'").bind(id).execute(&mut *tx).await?;
         for path in paths {
-            tx.execute(
-                "INSERT INTO session_additional_directories(session_id,path) VALUES(:session_id,:path)",
-                named_params! { ":session_id": id, ":path": path },
-            )?;
+            sqlx::query("INSERT INTO session_additional_directories(session_id,path) VALUES(?,?)")
+                .bind(id)
+                .bind(path)
+                .execute(&mut *tx)
+                .await?;
         }
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
-
-    pub fn add_session_read_only_contexts(&self, id: &str, paths: &[String]) -> Result<()> {
-        let mut db = self.0.lock();
-        let tx = db.transaction()?;
+    pub async fn add_session_read_only_contexts(&self, id: &str, paths: &[String]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
         for path in paths {
-            tx.execute(
-                "INSERT OR REPLACE INTO session_additional_directories(session_id,path,access_mode) VALUES(:session_id,:path,'read_only')",
-                named_params! { ":session_id": id, ":path": path },
-            )?;
+            sqlx::query("INSERT OR REPLACE INTO session_additional_directories(session_id,path,access_mode) VALUES(?,?,'read_only')").bind(id).bind(path).execute(&mut *tx).await?;
         }
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
-}
-
-pub(super) const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
-pub(super) fn session_row(r: &Row<'_>) -> rusqlite::Result<Session> {
-    let argv: String = r.get("argv")?;
-    Ok(Session {
-        id: r.get("id")?,
-        workspace_id: r.get("workspace_id")?,
-        name: r.get("name")?,
-        kind: r.get("kind")?,
-        cwd: r.get("cwd")?,
-        original_cwd: r.get("original_cwd")?,
-        initial_prompt: r.get("initial_prompt")?,
-        codex_session_id: r.get("codex_session_id")?,
-        visibility: r.get("visibility")?,
-        hidden_at: r.get("hidden_at")?,
-        evicted_at: r.get("evicted_at")?,
-        amux_workspace_name: r.get("amux_workspace_name")?,
-        amux_process_name: r.get("amux_process_name")?,
-        status: r.get("status")?,
-        exit_code: r.get("exit_code")?,
-        exit_signal: r.get("exit_signal")?,
-        argv: serde_json::from_str(&argv).unwrap_or_default(),
-        io_mode: r.get("io_mode")?,
-        launch_started_at: r.get("launch_started_at")?,
-        last_attached_at: r.get("last_attached_at")?,
-        created_at: r.get("created_at")?,
-        updated_at: r.get("updated_at")?,
-        additional_directories: vec![],
-    })
 }

@@ -37,18 +37,12 @@ impl AppError {
     }
 }
 
-impl From<rusqlite::Error> for AppError {
-    fn from(value: rusqlite::Error) -> Self {
+impl From<sqlx::Error> for AppError {
+    fn from(value: sqlx::Error) -> Self {
         match value {
-            rusqlite::Error::QueryReturnedNoRows => Self::NotFound,
+            sqlx::Error::RowNotFound => Self::NotFound,
             other => Self::Database(other.into()),
         }
-    }
-}
-
-impl From<async_sqlite::Error> for AppError {
-    fn from(value: async_sqlite::Error) -> Self {
-        Self::Database(value.into())
     }
 }
 
@@ -176,9 +170,11 @@ mod tests {
 
     #[tokio::test]
     async fn database_errors_expose_the_sqlite_summary() {
-        let error = rusqlite::Connection::open_in_memory()
-            .unwrap()
-            .execute("SELECT missing FROM absent", [])
+        use sqlx::ConnectOptions;
+        let error = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename("/definitely/missing/treefold.sqlite")
+            .connect()
+            .await
             .unwrap_err();
         let response = AppError::from(error).into_response();
 
@@ -193,7 +189,16 @@ mod tests {
             value["error"]["message"]
                 .as_str()
                 .unwrap()
-                .contains("absent")
+                .contains("unable to open database file")
         );
+    }
+
+    #[tokio::test]
+    async fn sqlx_row_not_found_maps_to_not_found() {
+        let response = AppError::from(sqlx::Error::RowNotFound).into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["error"]["code"], "NOT_FOUND");
     }
 }

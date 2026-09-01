@@ -4,8 +4,8 @@ pub(super) async fn get_project_repository_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
-    blocking_git_operation(move || {
-        let mut location = state.store.repository_as_directory(&id)?;
+    let mut location = state.store.repository_as_directory(&id).await?;
+    blocking_git_operation(move || async move {
         refresh_location_observation(&mut location)?;
         ensure_location_ready(&location)?;
         Ok(Json(git_history(&location.path)?))
@@ -17,8 +17,8 @@ pub(super) async fn get_workspace_repository_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
-    blocking_git_operation(move || {
-        let location = state.store.workspace_repository(&id)?;
+    let location = state.store.workspace_repository(&id).await?;
+    blocking_git_operation(move || async move {
         let path = workspace_repository_git_path(&location)?;
         Ok(Json(git_history(path)?))
     })
@@ -32,8 +32,8 @@ pub(super) async fn compare_project_repository_commits(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffComparisonInput>,
 ) -> Result<Json<GitDiffComparison>> {
-    blocking_git_operation(move || {
-        let mut location = state.store.repository_as_directory(&id)?;
+    let mut location = state.store.repository_as_directory(&id).await?;
+    blocking_git_operation(move || async move {
         refresh_location_observation(&mut location)?;
         ensure_location_ready(&location)?;
         Ok(Json(compare_git_commits(
@@ -51,8 +51,8 @@ pub(super) async fn compare_workspace_repository_commits(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffComparisonInput>,
 ) -> Result<Json<GitDiffComparison>> {
-    blocking_git_operation(move || {
-        let location = state.store.workspace_repository(&id)?;
+    let location = state.store.workspace_repository(&id).await?;
+    blocking_git_operation(move || async move {
         let path = workspace_repository_git_path(&location)?;
         Ok(Json(compare_git_commits(
             path,
@@ -68,8 +68,8 @@ pub(super) async fn get_project_repository_git_status(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitStatus>> {
-    blocking_git_operation(move || {
-        let mut location = state.store.repository_as_directory(&id)?;
+    let mut location = state.store.repository_as_directory(&id).await?;
+    blocking_git_operation(move || async move {
         refresh_location_observation(&mut location)?;
         ensure_location_ready(&location)?;
         Ok(Json(git_status(&location.path)?))
@@ -81,8 +81,8 @@ pub(super) async fn get_workspace_repository_git_status(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitStatus>> {
-    blocking_git_operation(move || {
-        let location = state.store.workspace_repository(&id)?;
+    let location = state.store.workspace_repository(&id).await?;
+    blocking_git_operation(move || async move {
         Ok(Json(git_status(workspace_repository_git_path(&location)?)?))
     })
     .await
@@ -93,8 +93,8 @@ pub(super) async fn project_repository_git_diff(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffRequest>,
 ) -> Result<Json<GitDiffComparison>> {
-    blocking_git_operation(move || {
-        let mut location = state.store.repository_as_directory(&id)?;
+    let mut location = state.store.repository_as_directory(&id).await?;
+    blocking_git_operation(move || async move {
         refresh_location_observation(&mut location)?;
         ensure_location_ready(&location)?;
         Ok(Json(git_diff(&location.path, &location.name, &input)?))
@@ -107,8 +107,8 @@ pub(super) async fn workspace_repository_git_diff(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffRequest>,
 ) -> Result<Json<GitDiffComparison>> {
-    blocking_git_operation(move || {
-        let location = state.store.workspace_repository(&id)?;
+    let location = state.store.workspace_repository(&id).await?;
+    blocking_git_operation(move || async move {
         let path = workspace_repository_git_path(&location)?;
         Ok(Json(git_diff(path, &location.repository_name, &input)?))
     })
@@ -152,7 +152,7 @@ pub(super) async fn project_repository_commit(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitCommitInput>,
 ) -> Result<Json<GitCommitResult>> {
-    let mut location = state.store.repository_as_directory(&id)?;
+    let mut location = state.store.repository_as_directory(&id).await?;
     refresh_location_observation(&mut location)?;
     ensure_location_ready(&location)?;
     let path = location.path.clone();
@@ -160,7 +160,11 @@ pub(super) async fn project_repository_commit(
         .git_common_dir
         .clone()
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
-    blocking_git_operation_for(common, move || commit_repository(&path, input)).await
+    blocking_git_operation_for(
+        common,
+        move || async move { commit_repository(&path, input) },
+    )
+    .await
 }
 
 pub(super) async fn workspace_repository_commit(
@@ -168,13 +172,18 @@ pub(super) async fn workspace_repository_commit(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitCommitInput>,
 ) -> Result<Json<GitCommitResult>> {
-    let location = state.store.workspace_repository(&id)?;
+    let location = state.store.workspace_repository(&id).await?;
     let path = workspace_repository_git_path(&location)?.to_owned();
     let common = state
         .store
-        .repository(&location.project_repository_id)?
+        .repository(&location.project_repository_id)
+        .await?
         .git_common_dir;
-    blocking_git_operation_for(common, move || commit_repository(&path, input)).await
+    blocking_git_operation_for(
+        common,
+        move || async move { commit_repository(&path, input) },
+    )
+    .await
 }
 
 pub(super) async fn project_repository_revert_commit(
@@ -220,7 +229,7 @@ async fn mutate_project_history(
     commit: String,
     action: GitHistoryAction,
 ) -> Result<Json<GitHistory>> {
-    let mut location = state.store.repository_as_directory(&id)?;
+    let mut location = state.store.repository_as_directory(&id).await?;
     refresh_location_observation(&mut location)?;
     ensure_location_ready(&location)?;
     let path = location.path.clone();
@@ -228,7 +237,7 @@ async fn mutate_project_history(
         .git_common_dir
         .clone()
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
-    blocking_git_operation_for(common, move || {
+    blocking_git_operation_for(common, move || async move {
         mutate_git_history(&path, &commit, action)?;
         Ok(Json(git_history(&path)?))
     })
@@ -241,13 +250,14 @@ async fn mutate_workspace_history(
     commit: String,
     action: GitHistoryAction,
 ) -> Result<Json<GitHistory>> {
-    let location = state.store.workspace_repository(&id)?;
+    let location = state.store.workspace_repository(&id).await?;
     let path = workspace_repository_git_path(&location)?.to_owned();
     let common = state
         .store
-        .repository(&location.project_repository_id)?
+        .repository(&location.project_repository_id)
+        .await?
         .git_common_dir;
-    blocking_git_operation_for(common, move || {
+    blocking_git_operation_for(common, move || async move {
         mutate_git_history(&path, &commit, action)?;
         Ok(Json(git_history(&path)?))
     })
@@ -295,7 +305,7 @@ async fn mutate_project_paths(
     input: GitPathsInput,
     stage: bool,
 ) -> Result<Json<GitStatus>> {
-    let mut location = state.store.repository_as_directory(&id)?;
+    let mut location = state.store.repository_as_directory(&id).await?;
     refresh_location_observation(&mut location)?;
     ensure_location_ready(&location)?;
     let path = location.path.clone();
@@ -303,7 +313,7 @@ async fn mutate_project_paths(
         .git_common_dir
         .clone()
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
-    blocking_git_operation_for(common, move || {
+    blocking_git_operation_for(common, move || async move {
         mutate_paths(&path, &input.paths, stage)?;
         Ok(Json(git_status(&path)?))
     })
@@ -316,13 +326,14 @@ async fn mutate_workspace_paths(
     input: GitPathsInput,
     stage: bool,
 ) -> Result<Json<GitStatus>> {
-    let location = state.store.workspace_repository(&id)?;
+    let location = state.store.workspace_repository(&id).await?;
     let path = workspace_repository_git_path(&location)?.to_owned();
     let common = state
         .store
-        .repository(&location.project_repository_id)?
+        .repository(&location.project_repository_id)
+        .await?
         .git_common_dir;
-    blocking_git_operation_for(common, move || {
+    blocking_git_operation_for(common, move || async move {
         mutate_paths(&path, &input.paths, stage)?;
         Ok(Json(git_status(&path)?))
     })
@@ -648,8 +659,8 @@ pub(super) async fn pull_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.repository_as_directory(&id)?;
-    let project = state.store.project(&location.project_id)?;
+    let location = state.store.repository_as_directory(&id).await?;
+    let project = state.store.project(&location.project_id).await?;
     ensure_active_project(&project)?;
     let common = location
         .git_common_dir
@@ -667,8 +678,8 @@ pub(super) async fn push_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.repository_as_directory(&id)?;
-    let project = state.store.project(&location.project_id)?;
+    let location = state.store.repository_as_directory(&id).await?;
+    let project = state.store.project(&location.project_id).await?;
     ensure_active_project(&project)?;
     let common = location
         .git_common_dir
@@ -686,11 +697,12 @@ pub(super) async fn pull_workspace_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.workspace_repository(&id)?;
-    ensure_active_workspace(&state.store.workspace(&location.workspace_id)?)?;
+    let location = state.store.workspace_repository(&id).await?;
+    ensure_active_workspace(&state.store.workspace(&location.workspace_id).await?)?;
     let common = state
         .store
-        .repository(&location.project_repository_id)?
+        .repository(&location.project_repository_id)
+        .await?
         .git_common_dir;
     git::with_repository_lock(Path::new(&common), || async {
         Ok(Json(sync_workspace_repository(&location, "pull").await?))
@@ -702,11 +714,12 @@ pub(super) async fn push_workspace_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.workspace_repository(&id)?;
-    ensure_active_workspace(&state.store.workspace(&location.workspace_id)?)?;
+    let location = state.store.workspace_repository(&id).await?;
+    ensure_active_workspace(&state.store.workspace(&location.workspace_id).await?)?;
     let common = state
         .store
-        .repository(&location.project_repository_id)?
+        .repository(&location.project_repository_id)
+        .await?
         .git_common_dir;
     git::with_repository_lock(Path::new(&common), || async {
         Ok(Json(sync_workspace_repository(&location, "push").await?))
@@ -731,11 +744,11 @@ pub(super) async fn sync_all_project_repositories(
     project_id: &str,
     action: &str,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    let project = state.store.project(project_id)?;
+    let project = state.store.project(project_id).await?;
     ensure_active_project(&project)?;
     let mut results = Vec::new();
-    for repository in state.store.repositories(project_id)? {
-        let location = state.store.repository_as_directory(&repository.id)?;
+    for repository in state.store.repositories(project_id).await? {
+        let location = state.store.repository_as_directory(&repository.id).await?;
         if location.git_status == "not_git" {
             results.push(GitSyncItemResult {
                 project_repository_id: location.id,
@@ -797,9 +810,9 @@ pub(super) async fn sync_all_workspace_repositories(
     workspace_id: &str,
     action: &str,
 ) -> Result<Json<Vec<GitSyncItemResult>>> {
-    ensure_active_workspace(&state.store.workspace(workspace_id)?)?;
+    ensure_active_workspace(&state.store.workspace(workspace_id).await?)?;
     let mut results = Vec::new();
-    for location in state.store.workspace_repositories(workspace_id)? {
+    for location in state.store.workspace_repositories(workspace_id).await? {
         if location.access_mode != "read_write" {
             results.push(GitSyncItemResult {
                 project_repository_id: location.project_repository_id,
@@ -1003,31 +1016,34 @@ pub(super) async fn archive_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Workspace>> {
-    let workspace = state.store.workspace(&id)?;
-    state.store.archive_workspace(&id)?;
+    let workspace = state.store.workspace(&id).await?;
+    state.store.archive_workspace(&id).await?;
     if workspace.kind == "fork"
-        && let Some(todo) = state.store.todo_for_fork(&id)?
+        && let Some(todo) = state.store.todo_for_fork(&id).await?
         && matches!(todo.status.as_str(), "in_progress" | "blocked")
     {
-        state.store.update_todo(&todo.id, "pending")?;
+        state.store.update_todo(&todo.id, "pending").await?;
     }
-    for mut session in state.store.sessions(&id)? {
-        capture_codex_session_id(&state.store, &mut session)?;
+    for mut session in state.store.sessions(&id).await? {
+        capture_codex_session_id(&state.store, &mut session).await?;
         let _ = state
             .terminals
             .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
             .await;
-        state.store.set_session_status(&session.id, "stopped")?;
+        state
+            .store
+            .set_session_status(&session.id, "stopped")
+            .await?;
     }
     state.runtime.publish_sessions();
-    Ok(Json(state.store.workspace(&id)?))
+    Ok(Json(state.store.workspace(&id).await?))
 }
 
 pub(super) async fn pull_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let workspace = state.store.workspace(&id)?;
+    let workspace = state.store.workspace(&id).await?;
     ensure_active_workspace(&workspace)?;
     if workspace.kind != "workspace" {
         return Err(AppError::BadRequest(
@@ -1078,7 +1094,7 @@ pub(super) async fn push_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let workspace = state.store.workspace(&id)?;
+    let workspace = state.store.workspace(&id).await?;
     ensure_active_workspace(&workspace)?;
     if workspace.kind != "workspace" {
         return Err(AppError::BadRequest(
@@ -1095,7 +1111,7 @@ pub(super) async fn push_workspace(
     )
     .await
     .map_err(AppError::BadRequest)?;
-    state.store.set_delivery_status(&id, "published")?;
+    state.store.set_delivery_status(&id, "published").await?;
     Ok(Json(sync_result(
         "workspace",
         "push",
@@ -1319,27 +1335,33 @@ pub(super) fn command_output(
     Ok(String::from_utf8_lossy(&output.stdout).trim().into())
 }
 
-pub(super) async fn blocking_git_operation<T, F>(operation: F) -> Result<T>
+pub(super) async fn blocking_git_operation<T, F, Fut>(operation: F) -> Result<T>
 where
     T: Send + 'static,
-    F: FnOnce() -> Result<T> + Send + 'static,
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<T>> + Send,
 {
-    git::blocking(operation)
+    let runtime = tokio::runtime::Handle::current();
+    git::blocking(move || runtime.block_on(operation()))
         .await
         .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
 }
 
-pub(super) async fn blocking_git_operation_for<T, F>(
+pub(super) async fn blocking_git_operation_for<T, F, Fut>(
     git_common_dir: String,
     operation: F,
 ) -> Result<T>
 where
     T: Send + 'static,
-    F: FnOnce() -> Result<T> + Send + 'static,
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<T>> + Send,
 {
-    git::blocking_for(Path::new(&git_common_dir), operation)
-        .await
-        .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
+    let runtime = tokio::runtime::Handle::current();
+    git::blocking_for(Path::new(&git_common_dir), move || {
+        runtime.block_on(operation())
+    })
+    .await
+    .map_err(|error| AppError::Internal(anyhow::anyhow!(error)))?
 }
 
 #[derive(Debug, PartialEq)]
