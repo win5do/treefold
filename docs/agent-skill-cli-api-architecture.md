@@ -109,9 +109,9 @@ in_progress / blocked ── archive Fork ──→ pending
 
 字段包括 `content`、`status`、可选的 `fork_id`、可选阻塞原因及时间戳。
 `in_progress` 表示 Todo 已绑定活动 Fork，而不是某个 Agent Session 持有锁。Fork
-Fork 成功合并到父 Workspace 后 Todo 变为 `done`；归档未完成的 Fork 时回到
-`pending`。Agent
-可以把当前范围内的 Todo 标记为 `blocked`，但不直接 claim、release 或 done。
+成功合并到父 Workspace 后 Todo 变为 `done`；归档未完成的 Fork 时回到
+`pending`。Agent 可以把当前范围内的 Todo 标记为 `blocked`，但不直接 claim、
+release 或 done。
 
 Todo 属于根 Workspace；由 Todo 创建的 Fork 通过 `fork_id` 关联该工作项。根
 Workspace Session 可见整个 Workspace 的 Todos，Fork Session 只看见与该 Fork
