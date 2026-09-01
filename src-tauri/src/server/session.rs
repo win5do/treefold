@@ -294,7 +294,7 @@ pub(super) async fn create_session_for_workspace(
     } else {
         vec![]
     };
-    let session_id = id();
+    let session_id = new_id();
     let timestamp = now();
     let mut name = trimmed(input.name)
         .filter(|v| !v.is_empty())
@@ -548,7 +548,7 @@ pub(super) async fn create_todo(
         .unwrap_or(workspace_id);
     let timestamp = now();
     let todo = Todo {
-        id: id(),
+        id: new_id(),
         workspace_id: owner_id,
         content: input.content.trim().into(),
         status: "pending".into(),
@@ -833,7 +833,7 @@ pub(super) async fn reconcile_process(
         .clone()
         .unwrap_or_else(|| process.created_at.clone());
     let session = Session {
-        id: id(),
+        id: new_id(),
         workspace_id,
         name: process.name.clone(),
         kind: "command".into(),

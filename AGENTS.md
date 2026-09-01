@@ -71,6 +71,9 @@ hard storage boundary.
 - `$TREEFOLD_HOME/data/treefold_<generation>.sqlite` owns Projects, Directories, Workspaces,
   Sessions, Todos, delivery/rebase/reset operations, and similar relational
   runtime records. Do not add user preferences or keymaps to SQLite.
+- Persisted random entity IDs use the shared UUID v7 generator and remain
+  lowercase 32-character `TEXT`. Stable composite IDs such as Project base
+  Workspace IDs remain strings and must not be replaced with random UUIDs.
 - SQLx migrations live in the active generation directory, currently
   `src-tauri/migrations/g1`, and use UTC timestamp filenames. SQLx's
   `_sqlx_migrations` owns within-generation history; `PRAGMA user_version` is

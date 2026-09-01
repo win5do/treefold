@@ -148,6 +148,10 @@ reserved for the generation number. All generation 1 domain tables use SQLite
 former `treefold.db` and its WAL/SHM files are intentionally neither imported
 nor removed.
 
+Persisted random entity IDs are time-ordered UUID v7 values encoded as
+lowercase 32-character `TEXT`. Stable composite IDs remain readable strings;
+all random entity ID creation goes through the shared Rust generator.
+
 Install the matching SQLx CLI before changing persistence queries:
 
 ```sh

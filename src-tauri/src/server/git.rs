@@ -1,4 +1,5 @@
 use super::*;
+use uuid::Uuid;
 
 pub(super) async fn get_project_repository_git_history(
     State(state): State<AppState>,
@@ -1193,9 +1194,6 @@ pub(super) fn sync_result(
     }
 }
 
-pub(super) fn id() -> String {
-    Uuid::new_v4().simple().to_string()
-}
 pub(super) fn trimmed(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned())
 }
@@ -1883,7 +1881,7 @@ pub(super) fn git_workspace_repository(
     delivery_mode: String,
 ) -> WorkspaceRepository {
     WorkspaceRepository {
-        id: id(),
+        id: new_id(),
         workspace_id: workspace_id.into(),
         project_repository_id: location.id.clone(),
         repository_name: location.name.clone(),

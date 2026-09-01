@@ -156,7 +156,7 @@ pub(super) async fn create_workspace_repository_preflight_impl(
     let source_dirty = !source_status.is_empty();
     let target_dirty = !target_status.is_empty();
     let preflight = DeliveryPreflight {
-        id: id_for_operation(),
+        id: new_id(),
         workspace_repository_id: location.id.clone(),
         workspace_id: workspace.id,
         code_action: input.code_action,

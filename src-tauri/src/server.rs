@@ -9,6 +9,16 @@ use std::{
     time::Duration,
 };
 
+use crate::{
+    error::{ApiJson, AppError, Result},
+    git,
+    ids::new_id,
+    integration::IntegrationManager,
+    model::*,
+    settings::{SettingsPatch, SettingsStore},
+    store::{ParentOperationUpdate, Store, now},
+    terminal::TerminalManager,
+};
 use axum::{
     Json, Router,
     extract::{
@@ -34,17 +44,6 @@ use std::{
     },
 };
 use tower_http::cors::CorsLayer;
-use uuid::Uuid;
-
-use crate::{
-    error::{ApiJson, AppError, Result},
-    git,
-    integration::IntegrationManager,
-    model::*,
-    settings::{SettingsPatch, SettingsStore},
-    store::{ParentOperationUpdate, Store, now},
-    terminal::TerminalManager,
-};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -90,7 +89,7 @@ impl Default for RuntimeHub {
     fn default() -> Self {
         let (changes, _) = tokio::sync::broadcast::channel(256);
         Self {
-            instance_id: Arc::from(Uuid::new_v4().to_string()),
+            instance_id: Arc::from(new_id()),
             revision: Arc::new(AtomicU64::new(0)),
             changes,
         }

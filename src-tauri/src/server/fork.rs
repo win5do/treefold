@@ -180,7 +180,7 @@ pub(super) async fn create_fork_impl(
             "cannot create a Fork in an archived Project".into(),
         ));
     }
-    let fork_id = id();
+    let fork_id = new_id();
     let project_directories = state.store.project_directories(&project.id).await?;
     let mut project_repositorys = Vec::new();
     for repository in state.store.repositories(&project.id).await? {

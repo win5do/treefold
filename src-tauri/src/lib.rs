@@ -1,5 +1,6 @@
 mod error;
 mod git;
+mod ids;
 mod integration;
 mod model;
 mod server;

@@ -456,7 +456,7 @@ pub(super) async fn start_parent_operation_impl(
             active.id
         )));
     }
-    let operation_id = id_for_operation();
+    let operation_id = new_id();
     let before_head = if direction == "update" {
         context.source_head.clone()
     } else {

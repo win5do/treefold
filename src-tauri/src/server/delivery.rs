@@ -296,10 +296,6 @@ pub(super) async fn workspace_repository_delivery_target(
     ))
 }
 
-pub(super) fn id_for_operation() -> String {
-    Uuid::new_v4().simple().to_string()
-}
-
 pub(super) fn rebase_in_progress(workspace: &str) -> Result<bool> {
     for name in ["rebase-merge", "rebase-apply"] {
         let path = command_output(

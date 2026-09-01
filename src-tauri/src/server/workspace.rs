@@ -31,7 +31,7 @@ pub(super) async fn create_project(
     ApiJson(input): ApiJson<CreateProject>,
 ) -> Result<(StatusCode, Json<Project>)> {
     let timestamp = now();
-    let project_id = id();
+    let project_id = new_id();
     let name = trimmed(input.name)
         .filter(|v| !v.is_empty())
         .or_else(|| input.path.as_deref().map(basename))
@@ -80,7 +80,7 @@ pub(super) async fn create_project(
     state.store.create_empty_project(&project).await?;
     if let Some((path, is_git)) = inspected_path {
         let mut location = Directory {
-            id: id(),
+            id: new_id(),
             project_id: project_id.clone(),
             name: basename(&path),
             description: trimmed(input.directory_description).unwrap_or_default(),
@@ -368,7 +368,7 @@ pub(super) async fn delete_worktree(
     }
 
     let operation = DeleteWorktreeOperation {
-        id: id(),
+        id: new_id(),
         repository_id: repository_id.clone(),
         path: input.path.clone(),
         status: "deleting".into(),
@@ -993,7 +993,7 @@ pub(super) async fn clone_project_repository_impl(
     if url.is_empty() {
         return Err(AppError::BadRequest("Git URL is required".into()));
     }
-    let repository_id = id();
+    let repository_id = new_id();
     let repository_name = input
         .name
         .as_deref()
@@ -1032,7 +1032,7 @@ pub(super) async fn clone_project_repository_impl(
     let source_string = source.to_string_lossy().into_owned();
     let timestamp = now();
     let mut directory = Directory {
-        id: id(),
+        id: new_id(),
         project_id: project_id.clone(),
         name: repository_name,
         description: String::new(),
@@ -1108,7 +1108,7 @@ pub(super) async fn create_directory(
     }
     let name = basename(&path);
     let directory = Directory {
-        id: id(),
+        id: new_id(),
         project_id,
         name,
         description: trimmed(input.description).unwrap_or_default(),
@@ -2002,7 +2002,7 @@ pub(super) async fn create_workspace_impl(
             location.name, location.git_status
         )));
     }
-    let workspace_id = id();
+    let workspace_id = new_id();
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
     let branch = choose_shared_branch(&locations, explicit_branch.as_deref(), input.name.trim())?;
     let default_delivery_mode = locations

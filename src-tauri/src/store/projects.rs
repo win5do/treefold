@@ -2,6 +2,7 @@
 use super::{Store, now};
 use crate::{
     error::{AppError, Result},
+    ids::new_id,
     model::*,
 };
 use std::path::{Path, PathBuf};
@@ -335,9 +336,7 @@ impl Store {
                 }
                 id
             } else {
-                let id = forced
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                let id = forced.map(str::to_owned).unwrap_or_else(new_id);
                 sqlx::query("INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&id).bind(&d.project_id).bind(basename(root)).bind(root).bind(common).bind(ownership).bind(&d.repository_url).bind(&d.preferred_remote_name).bind(&d.base_branch).bind(&d.delivery_mode).bind(&d.worktree_setup_command).bind(".").bind(&d.git_status).bind(&d.last_checked_at).bind(&d.created_at).bind(&d.updated_at).execute(&mut *tx).await?;
                 id
             }

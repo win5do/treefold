@@ -202,7 +202,7 @@ pub(super) async fn agent_create_todo(
         .unwrap_or(context.workspace.id);
     let timestamp = now();
     let todo = Todo {
-        id: id(),
+        id: new_id(),
         workspace_id: owner_id,
         content: input.content.trim().into(),
         status: "pending".into(),
