@@ -127,11 +127,14 @@ pub fn run() -> anyhow::Result<()> {
     .format(|writer, now, record| {
         write!(
             writer,
-            "{} {} [backend] {}",
+            "{} {} [backend] {}{}",
             now.now()
                 .with_timezone(&chrono::Utc)
                 .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
             record.level(),
+            crate::request_context::current_id()
+                .map(|id| format!("request_id={id} "))
+                .unwrap_or_default(),
             record.args()
         )
     })

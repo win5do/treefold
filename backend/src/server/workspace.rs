@@ -380,7 +380,7 @@ pub(super) async fn delete_worktree(
     let operation_id = operation.id.clone();
     let operation_repository_id = operation.repository_id.clone();
     let operation_path = operation.path.clone();
-    tokio::spawn(async move {
+    crate::request_context::spawn(async move {
         let result = blocking_git_operation(move || async move {
             let inspection = inspect_delete_worktree(&state, &repository_id, &input.path).await?;
             if let Some(blocker) = inspection.precheck.blockers.first() {
@@ -2326,7 +2326,7 @@ pub(super) async fn spawn_workspace_setup_shells(
     if setup_shells.is_empty() {
         return;
     }
-    tokio::spawn(async move {
+    crate::request_context::spawn(async move {
         start_workspace_setup_shells(&state, &workspace, setup_shells).await;
     });
 }

@@ -2,7 +2,8 @@ import { desktop } from "@/lib/desktop"
 
 function errorDetails(cause: unknown): string {
   if (cause instanceof Error) {
-    return cause.stack || `${cause.name}: ${cause.message}`
+    const requestId = "requestId" in cause && typeof cause.requestId === "string" ? `request_id=${cause.requestId} ` : ""
+    return requestId + (cause.stack || `${cause.name}: ${cause.message}`)
   }
   if (typeof cause === "string") return cause
   try {

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { appApi } from "@/api/app";
-import { apiUrl } from "@/api/client";
+import { logStreamState, streamUrl } from "@/api/client";
 import { invalidateRuntimeQueries, type RuntimeDomain } from "@/features/app/runtimeInvalidation";
 
 type RuntimeChange = {
@@ -37,7 +37,9 @@ export function RuntimeSync() {
       void invalidateRuntimeQueries(queryClient, change.domains);
     };
 
-    const events = new EventSource(apiUrl("/api/events"));
+    const events = new EventSource(streamUrl("/api/events"));
+    events.onopen = () => logStreamState(events.url, "open");
+    events.onerror = () => logStreamState(events.url, "error");
     events.addEventListener("runtime.sync", (event) => {
       try {
         accept(JSON.parse((event as MessageEvent<string>).data) as RuntimeChange, true);

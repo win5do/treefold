@@ -64,3 +64,33 @@ test('unexpected backend exit retains recent stderr for diagnosis', { timeout: 3
     assert.match(backendLog, /\d{4}-\d{2}-\d{2}T[\d:.]+Z INFO \[backend\] Treefold backend starting/);
   } finally { await backend.stop(); await rm(home, { recursive: true, force: true }); }
 });
+
+
+test('request IDs correlate real API failures and mutations and are exposed to browsers', { timeout: 30000 }, async () => {
+  const home = await mkdtemp(path.join(tmpdir(), 'treefold-request-id-'));
+  const backend = service(home);
+  try {
+    const url = await backend.start();
+    const cases = [
+      ['/api/settings', 'PATCH', 'mutation-1', JSON.stringify({ language: 'en-US' }), 200],
+      ['/api/settings', 'PATCH', 'invalid-json-1', '{', 400],
+      ['/missing', 'GET', 'missing-1', undefined, 404],
+    ];
+    for (const [route, method, id, body, status] of cases) {
+      const response = await fetch(`${url}${route}`, { method, headers: { 'x-request-id': id, 'content-type': 'application/json', origin: 'http://localhost:15011' }, body });
+      assert.equal(response.status, status);
+      assert.equal(response.headers.get('x-request-id'), id);
+      assert.match(response.headers.get('access-control-expose-headers'), /x-request-id/i);
+    }
+    const generated = await fetch(`${url}/api/health`);
+    assert.match(generated.headers.get('x-request-id'), /^[a-f0-9]{32}$/);
+    const preflight = await fetch(`${url}/api/settings`, { method: 'OPTIONS', headers: { origin: 'http://localhost:15011', 'access-control-request-method': 'PATCH', 'access-control-request-headers': 'x-request-id,content-type' } });
+    assert.equal(preflight.status, 200);
+    assert.ok(preflight.headers.get('x-request-id'));
+    await backend.stop();
+    const logs = await readFile(path.join(home, 'logs/treefold_rCURRENT.log'), 'utf8');
+    for (const [route, method, id, , status] of cases) {
+      assert.ok(logs.includes(`request_id=${id} HTTP ${method} ${route} status=${status}`), logs);
+    }
+  } finally { await backend.stop(); await rm(home, { recursive: true, force: true }); }
+});

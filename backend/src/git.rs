@@ -65,7 +65,7 @@ where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
 {
-    tokio::task::spawn_blocking(operation)
+    crate::request_context::spawn_blocking(operation)
         .await
         .map_err(|error| format!("Git operation task failed: {error}"))
 }

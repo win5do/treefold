@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Bot, PanelsTopLeft, RotateCcw, Square, TerminalSquare, X } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { logStreamState } from "@/api/client";
 import { sessionsApi } from "@/api/sessions";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
@@ -139,16 +140,18 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
 
     const connect = () => {
       if (disposed) return;
-      const candidate = new WebSocket(sessionsApi.terminalSocketUrl(
+      const candidateUrl = sessionsApi.terminalSocketUrl(
         session.id,
         runtime.controllerClientId,
         inputClientId,
         runtime.lastOutputSequence,
-      ));
+      );
+      const candidate = new WebSocket(candidateUrl);
       const candidateGeneration = ++generation;
       socket = candidate;
       candidate.binaryType = "arraybuffer";
       candidate.onopen = () => {
+        logStreamState(candidateUrl, "open");
         if (disposed || socket !== candidate || generation !== candidateGeneration) return;
         reconnectAttempt = 0;
         inputQueue.reconnect();
@@ -203,11 +206,15 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
         }
       };
       candidate.onclose = () => {
+        logStreamState(candidateUrl, "closed");
         if (socket === candidate) socket = null;
         inputQueue.reconnect();
         if (generation === candidateGeneration) scheduleReconnect(connect);
       };
-      candidate.onerror = () => candidate.close();
+      candidate.onerror = () => {
+        logStreamState(candidateUrl, "error");
+        candidate.close();
+      };
     };
     const input = terminal.onData((data) => {
       if (runtime.ownership !== "controller") return;

@@ -92,3 +92,29 @@ Workstation 始终拥有代码和执行环境。可选的 Relay 只负责设备�
 - 不因为 CLI 或 Skill 引入 daemon；
 - 不默认把 Workstation API 暴露到公网；
 - 不假设未来 Cloud Server 持有代码或直接执行 Git。
+
+
+### 请求日志关联
+
+前端 HTTP adapter 为每次调用生成 `X-Request-ID`，后端校验后回显同名响应头，
+并通过 CORS 暴露给浏览器。缺失或非法的 ID 由后端生成；ID 只允许 1–128 个
+ASCII 字母、数字、下划线、连字符。它是诊断字段，不是授权凭据。
+
+`desktop.log` 的 renderer 请求日志和 `treefold_rCURRENT.log` 的后端日志使用
+同一个 `request_id=...`。记录 method、path、status 和 elapsed_ms，不记录请求体、
+响应体或 URL query。成功读取记 DEBUG，成功修改记 INFO，失败记 WARN/ERROR。
+发布版默认不写成功读取的 DEBUG；读取失败仍会记录。`ApiError.requestId` 保留
+关联 ID，后续错误日志也携带它。网络未抵达后端时只能找到前端记录。
+
+后端使用 Tokio task-local 隔离并发请求，已有 handler 日志自动携带 ID；
+请求派生的 workspace 后台任务和 Git blocking 任务显式继承上下文。
+后续新增请求派生任务应使用 `request_context::spawn` / `spawn_blocking`，
+独立运行的 daemon 和启动日志没有请求 ID。
+
+WebSocket 与 EventSource 通过 `request_id` 查询参数关联握手/连接请求，
+WebSocket handler 继承上下文。每次 WebSocket 重连使用新 ID；同一个 EventSource
+自动重连复用 ID。HTTP elapsed_ms 对流式连接表示响应头/握手耗时，不表示连接
+存活时间，也不为每个终端帧或运行时事件单独生成 ID。
+
+排查示例：在 `$TREEFOLD_HOME/logs` 下运行
+`rg 'request_id=<ID>' desktop.log* treefold*.log`。

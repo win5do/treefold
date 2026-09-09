@@ -1,3 +1,5 @@
+import { frontendLogger } from "@/lib/logger";
+
 let API_BASE = import.meta.env.VITE_TREEFOLD_API_BASE || "http://127.0.0.1:15001";
 
 export function setApiBase(apiBase: string): void {
@@ -16,6 +18,7 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly details?: unknown,
+    readonly requestId?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -31,7 +34,7 @@ function isErrorBody(value: unknown): value is ErrorBody {
     && typeof error.code === "string" && "message" in error && typeof error.message === "string");
 }
 
-async function responseBody(response: Response): Promise<unknown> {
+async function responseBody(response: Response, requestId: string): Promise<unknown> {
   if (response.status === 204) return undefined;
   const text = await response.text();
   if (!text) return undefined;
@@ -40,7 +43,7 @@ async function responseBody(response: Response): Promise<unknown> {
   try {
     return JSON.parse(text);
   } catch {
-    throw new ApiError(response.status, "INVALID_RESPONSE", `Server returned invalid JSON (${response.status})`);
+    throw new ApiError(response.status, "INVALID_RESPONSE", `Server returned invalid JSON (${response.status})`, undefined, requestId);
   }
 }
 
@@ -48,27 +51,58 @@ export async function request<T = void>(path: string, options: RequestOptions = 
   const { json, ...init } = options;
   const headers = new Headers(init.headers);
   if (json !== undefined && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  let response: Response;
+  const requestId = crypto.randomUUID();
+  headers.set("X-Request-ID", requestId);
+  const method = (init.method ?? "GET").toUpperCase();
+  const label = `${method} ${new URL(apiUrl(path)).pathname}`;
+  const started = performance.now();
+  let activeId: string = requestId;
+  let status = 0;
   try {
-    response = await fetch(`${API_BASE}${path}`, {
-      ...init,
-      headers,
-      body: json === undefined ? undefined : JSON.stringify(json),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${path}`, {
+        ...init, headers, body: json === undefined ? undefined : JSON.stringify(json),
+      });
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
+      throw new ApiError(0, "NETWORK_ERROR", cause instanceof Error ? cause.message : "Network request failed", cause, activeId);
+    }
+    status = response.status;
+    const returnedId = response.headers.get("X-Request-ID");
+    if (returnedId && /^[A-Za-z0-9_-]{1,128}$/.test(returnedId)) activeId = returnedId;
+    const body = await responseBody(response, activeId);
+    if (!response.ok) {
+      if (isErrorBody(body)) throw new ApiError(status, body.error.code, body.error.message, body.error.details, activeId);
+      throw new ApiError(status, "HTTP_ERROR", `Request failed: ${status}`, body, activeId);
+    }
+    const level = ["GET", "HEAD", "OPTIONS"].includes(method) ? "debug" : "info";
+    frontendLogger[level](`request_id=${activeId} HTTP ${label} status=${status} elapsed_ms=${Math.round(performance.now() - started)}`);
+    return body as T;
   } catch (cause) {
-    if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
-    throw new ApiError(0, "NETWORK_ERROR", cause instanceof Error ? cause.message : "Network request failed", cause);
+    const aborted = cause instanceof DOMException && cause.name === "AbortError";
+    const level = aborted ? "debug" : status >= 500 || status === 0 ? "error" : "warn";
+    frontendLogger[level](`request_id=${activeId} HTTP ${label} status=${status} outcome=${aborted ? "aborted" : "failed"} elapsed_ms=${Math.round(performance.now() - started)}`);
+    throw cause;
   }
-  const body = await responseBody(response);
-  if (!response.ok) {
-    if (isErrorBody(body)) throw new ApiError(response.status, body.error.code, body.error.message, body.error.details);
-    throw new ApiError(response.status, "HTTP_ERROR", `Request failed: ${response.status}`, body);
-  }
-  return body as T;
+}
+
+/** One ID per logical stream; EventSource automatic reconnects reuse that ID. */
+export function streamUrl(path: string): string {
+  const url = new URL(apiUrl(path));
+  const id = crypto.randomUUID();
+  url.searchParams.set("request_id", id);
+  frontendLogger.debug(`request_id=${id} Stream connecting ${url.pathname}`);
+  return url.toString();
 }
 
 export function websocketUrl(path: string): string {
-  const url = new URL(apiUrl(path));
+  const url = new URL(streamUrl(path));
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   return url.toString();
+}
+
+export function logStreamState(rawUrl: string, state: "open" | "error" | "closed"): void {
+  const url = new URL(rawUrl);
+  frontendLogger[state === "error" ? "warn" : "debug"](`request_id=${url.searchParams.get("request_id")} Stream ${state} ${url.pathname}`);
 }

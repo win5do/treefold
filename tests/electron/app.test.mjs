@@ -28,7 +28,11 @@ test('packaged Electron loads Rust API, persists settings, and preserves close-t
     await page.getByTestId('settings-theme').selectOption('dark');
     const saved = page.waitForResponse(response => response.url() === `${apiUrl}/api/settings` && response.request().method() === 'PATCH');
     await page.getByTestId('settings-save').click();
-    assert.equal((await saved).status(), 200);
+    const savedResponse = await saved;
+    assert.equal(savedResponse.status(), 200);
+    const requestId = savedResponse.request().headers()['x-request-id'];
+    assert.match(requestId, /^[a-z0-9-]{36}$/);
+    assert.equal(savedResponse.headers()['x-request-id'], requestId);
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     assert.equal((await (await fetch(`${apiUrl}/api/settings`)).json()).theme, 'dark');
@@ -38,6 +42,8 @@ test('packaged Electron loads Rust API, persists settings, and preserves close-t
     await page.evaluate(() => window.treefoldDesktop.log('info', 'desktop-smoke-log'));
     const desktopLog = await readFile(path.join(home, 'logs/desktop.log'), 'utf8');
     assert.match(desktopLog, /INFO \[renderer\] desktop-smoke-log/);
+    assert.ok(desktopLog.includes(`request_id=${requestId} HTTP PATCH /api/settings status=200`));
+    assert.ok((await readFile(path.join(home, 'logs/treefold_rCURRENT.log'), 'utf8')).includes(`request_id=${requestId} HTTP PATCH /api/settings status=200`));
     assert.match(desktopLog, /INFO \[main\] Treefold .* ready/);
     assert.doesNotMatch(desktopLog, /Treefold backend starting|Rust API listening/);
     assert.match(await readFile(path.join(home, 'logs/treefold_rCURRENT.log'), 'utf8'), /\[backend\] Treefold backend starting/);

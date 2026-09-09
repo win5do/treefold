@@ -47,8 +47,11 @@ try {
   });
   await (await dialog.$("button=Add 1 location")).click();
   const businessToast = await browser.$('[data-slot="toast"][role="alert"]');
-  await businessToast.waitForDisplayed({ timeout: 3_000 });
-  assert.match(await businessToast.getText(), /already part of this Project/);
+  // The previous toast can remain mounted during its exit animation.
+  await browser.waitUntil(async () => /already part of this Project/.test(await businessToast.getText()), {
+    timeout: 3_000,
+    timeoutMsg: "business rejection toast did not show the API error",
+  });
   assert.equal(
     await (await businessToast.$("button=Open logs")).isExisting(),
     false,

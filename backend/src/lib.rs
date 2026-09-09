@@ -3,6 +3,7 @@ mod git;
 mod ids;
 mod integration;
 mod model;
+mod request_context;
 mod server;
 mod settings;
 mod store;

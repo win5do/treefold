@@ -251,7 +251,8 @@ fn app(state: AppState) -> Router {
             Method::PUT,
             Method::DELETE,
         ])
-        .allow_headers(tower_http::cors::Any);
+        .allow_headers(tower_http::cors::Any)
+        .expose_headers([http::HeaderName::from_static("x-request-id")]);
     Router::new()
         .route("/api/health", get(health))
         .route("/api/v1/agent/current", get(agent_current))
@@ -521,6 +522,7 @@ fn app(state: AppState) -> Router {
         .fallback(route_not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(cors)
+        .layer(axum::middleware::from_fn(crate::request_context::correlate))
         .with_state(state)
 }
 

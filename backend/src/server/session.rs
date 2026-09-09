@@ -692,15 +692,20 @@ pub(super) async fn terminal_socket(
         .map(|value| value.parse::<u64>())
         .transpose()
         .map_err(|_| AppError::BadRequest("invalid terminal output cursor".into()))?;
-    Ok(ws.on_upgrade(move |socket| {
-        proxy_terminal(
-            socket,
-            state,
-            id,
-            controller_client_id,
-            input_client_id,
-            after_output_sequence,
+    let request_id = crate::request_context::current_id();
+    Ok(ws.on_upgrade(move |socket| async move {
+        crate::request_context::with_id(
+            request_id,
+            proxy_terminal(
+                socket,
+                state,
+                id,
+                controller_client_id,
+                input_client_id,
+                after_output_sequence,
+            ),
         )
+        .await
     }))
 }
 
