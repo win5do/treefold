@@ -7,7 +7,7 @@ import { Backend } from '../../electron/backend.cjs';
 
 const executable = path.resolve(process.env.TREEFOLD_BACKEND_PATH || 'backend/target/debug/treefold-backend');
 function service(home) {
-  return new Backend({ executable, env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' }, log: () => {}, timeout: 15000 });
+  return new Backend({ executable, env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' }, timeout: 15000 });
 }
 test('Rust API owns its home, preserves settings, and removes discovery state on exit', { timeout: 60000 }, async () => {
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-backend-'));
@@ -43,5 +43,24 @@ test('invalid settings surface the cause without rewriting the file', { timeout:
     await writeFile(path.join(home, 'config/settings.toml'), contents);
     await assert.rejects(backend.start(), /schema|version/i);
     assert.equal(await readFile(path.join(home, 'config/settings.toml'), 'utf8'), contents);
+  } finally { await backend.stop(); await rm(home, { recursive: true, force: true }); }
+});
+
+
+test('unexpected backend exit retains recent stderr for diagnosis', { timeout: 30000 }, async () => {
+  const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-crash-'));
+  let report;
+  const exited = new Promise(resolve => { report = resolve; });
+  const backend = new Backend({ executable, env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' }, onExit: report });
+  try {
+    await backend.start();
+    backend.child.kill('SIGKILL');
+    await backend.exited;
+    const error = await exited;
+    assert.match(error.message, /Rust backend exited \(SIGKILL\)/);
+    assert.match(error.message, /Recent backend stderr:/);
+    assert.match(error.message, /Treefold backend starting/);
+    const backendLog = await readFile(path.join(home, 'logs/treefold_rCURRENT.log'), 'utf8');
+    assert.match(backendLog, /\d{4}-\d{2}-\d{2}T[\d:.]+Z INFO \[backend\] Treefold backend starting/);
   } finally { await backend.stop(); await rm(home, { recursive: true, force: true }); }
 });

@@ -40,7 +40,7 @@ async function start() {
     executable: app.isPackaged ? path.join(bin, 'treefold-backend') : process.env.TREEFOLD_BACKEND_PATH || path.join(root, 'backend/target/debug/treefold-backend'),
     env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_RESOURCE_DIR: resources, TREEFOLD_BUNDLED_BIN_DIR: bin,
       TREEFOLD_AMUX_SKILL_DIR: app.isPackaged ? path.join(resources, 'agent-integration/skills/amux') : path.join(resources, 'dev-sidecars/skills/amux') },
-    log: message => { log('info', message); if (!app.isPackaged) console.error(message); },
+    onStderr: message => { if (!app.isPackaged) console.error(message); },
     onExit: error => {
       if (!ready || quitting) return;
       log('error', error.message);
@@ -64,7 +64,7 @@ async function start() {
     const result = await dialog.showOpenDialog(window, { title: typeof options?.title === 'string' ? options.title : 'Choose a directory', properties: ['openDirectory'] });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
-  ipcMain.handle('treefold:log', (event, level, message) => { trusted(event); log(level, message); });
+  ipcMain.handle('treefold:log', (event, level, message) => { trusted(event); log(level, message, 'renderer'); });
   window = new BrowserWindow({ title: 'Treefold', width: 1440, height: 900, minWidth: 960, minHeight: 640, show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   if (!devUrl) {

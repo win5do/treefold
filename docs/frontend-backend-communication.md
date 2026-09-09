@@ -55,7 +55,11 @@ Electron 主进程启动独立的 `treefold-backend`，通过 stdout 就绪消�
 同一 `TREEFOLD_HOME` 只允许一个 Rust backend，文件锁由操作系统释放。关闭窗口仅隐藏
 窗口，API 继续运行；退出 App 时关闭父进程控制管道，Rust 清理 API 地址并按
 `amux.keep_daemon_running_on_exit` 设置停止或保留 amux。API backend 本身不常驻。
-Rust 与 Electron 分别记录轮转日志，保存在同一 home 的 `logs/` 下。
+Rust 与 Electron 分别记录轮转日志，保存在同一 home 的 `logs/` 下：
+`desktop.log` 记录前端（`renderer`）和主进程（`main`），`treefold_rCURRENT.log`
+记录 Rust（`backend`）。两边使用 UTC ISO 8601 毫秒时间戳。
+Electron 不逐条转存 Rust stderr，只保留最近 8192 个字符用于启动失败或异常退出诊断；
+开发模式下仍将 stderr 输出到终端。正常后端日志只在 Rust 日志文件中保存。
 
 生产页面通过 `treefold://app/` 加载，使用上下文隔离和沙箱。开发时仍由 Vite 提供页面。
 Electron、Rust backend、CLI 和 amux 随同一 App 发布，资源位于 App 的 Resources 目录。

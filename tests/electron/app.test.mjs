@@ -36,7 +36,11 @@ test('packaged Electron loads Rust API, persists settings, and preserves close-t
     await desktop.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ['/tmp/treefold-picker-test'] }); });
     assert.equal(await page.evaluate(() => window.treefoldDesktop.openDirectory({ title: 'Test picker', directory: true, multiple: false })), '/tmp/treefold-picker-test');
     await page.evaluate(() => window.treefoldDesktop.log('info', 'desktop-smoke-log'));
-    assert.match(await readFile(path.join(home, 'logs/desktop.log'), 'utf8'), /desktop-smoke-log/);
+    const desktopLog = await readFile(path.join(home, 'logs/desktop.log'), 'utf8');
+    assert.match(desktopLog, /INFO \[renderer\] desktop-smoke-log/);
+    assert.match(desktopLog, /INFO \[main\] Treefold .* ready/);
+    assert.doesNotMatch(desktopLog, /Treefold backend starting|Rust API listening/);
+    assert.match(await readFile(path.join(home, 'logs/treefold_rCURRENT.log'), 'utf8'), /\[backend\] Treefold backend starting/);
     const prefs = await desktop.evaluate(({ BrowserWindow }) => {
       const p = BrowserWindow.getAllWindows()[0].webContents.getLastWebPreferences();
       return { contextIsolation: p.contextIsolation, sandbox: p.sandbox, nodeIntegration: p.nodeIntegration };

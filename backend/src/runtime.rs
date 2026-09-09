@@ -124,6 +124,17 @@ pub fn run() -> anyhow::Result<()> {
         flexi_logger::Naming::Numbers,
         flexi_logger::Cleanup::KeepLogFiles(5),
     )
+    .format(|writer, now, record| {
+        write!(
+            writer,
+            "{} {} [backend] {}",
+            now.now()
+                .with_timezone(&chrono::Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            record.level(),
+            record.args()
+        )
+    })
     .append()
     .duplicate_to_stderr(flexi_logger::Duplicate::All)
     .start()?;

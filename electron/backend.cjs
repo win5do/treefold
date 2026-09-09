@@ -2,9 +2,10 @@ const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
 
 class Backend {
-  constructor({ executable, env, onExit = () => {}, log = console.error, timeout = 30000 }) {
-    Object.assign(this, { executable, env, onExit, log, timeout });
+  constructor({ executable, env, onExit = () => {}, onStderr = () => {}, timeout = 30000 }) {
+    Object.assign(this, { executable, env, onExit, onStderr, timeout });
     this.stopping = false;
+    this.diagnostic = '';
   }
   async start() {
     this.child = spawn(this.executable, [], {
@@ -13,16 +14,16 @@ class Backend {
     });
     this.child.stdin.on('error', () => {});
     this.exited = new Promise(resolve => {
-      this.child.once('exit', (code, signal) => {
+      this.child.once('close', (code, signal) => {
         resolve();
-        if (!this.stopping) this.onExit(new Error(`Rust backend exited (${signal || code})`));
+        if (!this.stopping) this.onExit(new Error(this.withDiagnostics(`Rust backend exited (${signal || code})`)));
       });
       this.child.once('error', resolve);
     });
-    let diagnostic = '';
+    this.child.stderr.setEncoding('utf8');
     this.child.stderr.on('data', data => {
-      diagnostic = (diagnostic + data).slice(-8192);
-      this.log(String(data).trimEnd());
+      this.diagnostic = (this.diagnostic + data).slice(-8192);
+      this.onStderr(data.trimEnd());
     });
     try {
       const apiUrl = await new Promise((resolve, reject) => {
@@ -31,13 +32,13 @@ class Backend {
         const finish = (error, value) => {
           clearTimeout(timer); lines.close(); this.child.stdout.resume();
           this.child.removeListener('error', failed);
-          this.child.removeListener('exit', exited);
+          this.child.removeListener('close', exited);
           error ? reject(error) : resolve(value);
         };
         const failed = error => finish(error);
-        const exited = () => finish(new Error(`Rust backend could not start.\n${diagnostic}`));
+        const exited = () => finish(new Error('Rust backend could not start.'));
         this.child.once('error', failed);
-        this.child.once('exit', exited);
+        this.child.once('close', exited);
         lines.on('line', line => {
           try {
             const event = JSON.parse(line);
@@ -60,11 +61,15 @@ class Backend {
         } catch {}
         await new Promise(resolve => setTimeout(resolve, 100));
       }
-      throw new Error(`Rust API did not become healthy.\n${diagnostic}`);
+      throw new Error('Rust API did not become healthy.');
     } catch (error) {
       await this.stop();
-      throw error;
+      throw new Error(this.withDiagnostics(error.message), { cause: error });
     }
+  }
+  withDiagnostics(message) {
+    const recent = this.diagnostic.trim();
+    return recent ? `${message}\nRecent backend stderr:\n${recent}` : message;
   }
   async stop() {
     this.stopping = true;
