@@ -4,8 +4,8 @@ asar: true
 directories:
   output: release
 files:
-  - dist/**/*
-  - electron/*.cjs
+  - out/**/*
+  - '!out/**/*.map'
   - package.json
   - '!node_modules/**/*'
 extraResources:

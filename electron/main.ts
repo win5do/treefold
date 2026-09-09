@@ -1,19 +1,22 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, protocol, net, shell } = require('electron');
-const path = require('node:path');
-const { pathToFileURL } = require('node:url');
-const { mkdirSync } = require('node:fs');
-const { Backend } = require('./backend.cjs');
-const { createLog } = require('./log.cjs');
+import { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, protocol, net, shell, type IpcMainInvokeEvent, type WebContents, type MenuItemConstructorOptions } from 'electron';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { mkdirSync } from 'node:fs';
+import { Backend } from './backend';
+import { createLog } from './log';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
 mkdirSync(path.join(home, 'data', 'electron'), { recursive: true });
 app.setPath('userData', path.join(home, 'data', 'electron'));
 protocol.registerSchemesAsPrivileged([{ scheme: 'treefold', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 const log = createLog(home, { debug: !app.isPackaged });
-const root = path.resolve(__dirname, '..');
-const devUrl = !app.isPackaged ? process.env.TREEFOLD_UI_URL : undefined;
+const root = app.getAppPath();
+const devUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
 const pageUrl = devUrl || 'treefold://app/index.html';
-let window, tray, backend, apiUrl;
+let window: BrowserWindow;
+let tray: Tray;
+let backend: Backend | undefined;
+let apiUrl: string;
 let quitting = false, stopped = false, ready = false;
 
 function showWindow() {
@@ -22,7 +25,7 @@ function showWindow() {
   if (window.isMinimized()) window.restore();
   window.show(); window.focus();
 }
-function trusted(event) {
+function trusted(event: IpcMainInvokeEvent) {
   const url = event.senderFrame?.url;
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !url) {
     throw new Error('Untrusted desktop request');
@@ -30,7 +33,7 @@ function trusted(event) {
   const expected = new URL(pageUrl), actual = new URL(url);
   if (actual.protocol !== expected.protocol || actual.host !== expected.host) throw new Error('Untrusted desktop origin');
 }
-async function external(url) {
+async function external(url: string) {
   if (['https:', 'http:'].includes(new URL(url).protocol)) await shell.openExternal(url);
 }
 async function start() {
@@ -50,7 +53,7 @@ async function start() {
   });
   apiUrl = await backend.start();
   if (!app.isPackaged) console.info(`[treefold dev] API: ${apiUrl}`);
-  const assetRoot = path.join(root, 'dist');
+  const assetRoot = path.join(root, 'out/renderer');
   protocol.handle('treefold', request => {
     const url = new URL(request.url);
     if (url.host !== 'app') return new Response('Not found', { status: 404 });
@@ -66,7 +69,7 @@ async function start() {
   });
   ipcMain.handle('treefold:log', (event, level, message) => { trusted(event); log(level, message, 'renderer'); });
   window = new BrowserWindow({ title: 'Treefold', width: 1440, height: 900, minWidth: 960, minHeight: 640, show: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    webPreferences: { preload: path.join(__dirname, '../preload/index.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   if (!devUrl) {
     const websocket = apiUrl.replace('http:', 'ws:');
     window.webContents.session.webRequest.onHeadersReceived((details, callback) => callback({
@@ -77,7 +80,7 @@ async function start() {
   // The renderer needs clipboard writes and loopback access for the Rust API.
   // Its production CSP restricts connections to that exact backend endpoint.
   const permissions = new Set(['clipboard-sanitized-write', 'local-network', 'local-network-access', 'loopback-network']);
-  const allowPermission = (contents, permission) => contents === window.webContents && permissions.has(permission);
+  const allowPermission = (contents: WebContents | null, permission: string) => contents === window.webContents && permissions.has(permission);
   window.webContents.session.setPermissionCheckHandler(allowPermission);
   window.webContents.session.setPermissionRequestHandler((contents, permission, callback) => callback(allowPermission(contents, permission)));
   window.webContents.setWindowOpenHandler(({ url }) => { void external(url).catch(error => log('error', String(error))); return { action: 'deny' }; });
@@ -87,11 +90,12 @@ async function start() {
   });
   window.webContents.on('render-process-gone', (_event, details) => log('error', `Renderer stopped: ${details.reason}`));
   window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide(); app.dock?.hide(); } });
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] : []),
+  const menu: MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
-    ...(process.platform !== 'darwin' ? [{ label: 'File', submenu: [{ role: 'quit' }] }] : []),
-  ]));
+    ...(process.platform !== 'darwin' ? [{ label: 'File', submenu: [{ role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
   const iconPath = app.isPackaged ? path.join(resources, 'icon.png') : path.join(root, 'electron/icons/32x32.png');
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 }));
   tray.setToolTip('Treefold');
@@ -101,9 +105,19 @@ async function start() {
   ready = true; showWindow();
   log('info', `Treefold ${app.getVersion()} ready; API ${apiUrl}`);
 }
-if (!app.requestSingleInstanceLock()) app.quit();
-else {
-  app.on('second-instance', showWindow);
+async function acquireInstance() {
+  const deadline = Date.now() + (devUrl ? 15000 : 0);
+  do {
+    if (app.requestSingleInstanceLock()) return true;
+    if (!devUrl) break;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } while (Date.now() < deadline);
+  return false;
+}
+// electron-vite restarts main before the previous Rust child has finished stopping.
+void acquireInstance().then(acquired => {
+  if (!acquired) { app.quit(); return; }
+  app.on('second-instance', () => { if (!devUrl) showWindow(); });
   app.on('activate', showWindow);
   app.on('before-quit', event => {
     quitting = true;
@@ -118,4 +132,4 @@ else {
     dialog.showErrorBox("Treefold couldn't start", `${error.message}\n\nFollow the instructions above, then reopen Treefold.`);
     app.quit();
   });
-}
+});

@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [
+      "node",
+      "electron-vite/node"
+    ]
+  },
+  "include": [
+    "electron/**/*.ts",
+    "electron.vite.config.ts",
+    "vite.config.ts",
+    "scripts/rust-sidecars.ts"
+  ]
+}

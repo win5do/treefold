@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Backend } from '../../electron/backend.cjs';
+import { Backend } from '../../electron/backend.ts';
 
 const executable = path.resolve(process.env.TREEFOLD_BACKEND_PATH || 'backend/target/debug/treefold-backend');
 function service(home) {

@@ -81,3 +81,42 @@ Deferred designs, which are not runtime contracts:
 - [Keymap configuration](docs/keymap-configuration-plan.md)
 - [Codex App Server integration](docs/codex-app-server-future-integration.md)
 - [Git History squash](docs/git-history-squash-design.md)
+
+
+## Development and builds
+
+The desktop uses `electron-vite` for main/preload/renderer builds and
+`electron-builder` for macOS packaging. React remains in `src/`; Electron
+TypeScript lives in `electron/`. `electron.vite.config.ts` shares the renderer
+configuration in `vite.config.ts` with standalone browser tests.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` / `just app-dev` | Desktop development, isolated `.treefold-dev`, React HMR and main/preload/Rust watching |
+| `npm run dev:no-watch` / `just app-dev-no-watch` | Desktop development without main/preload/Rust watching; renderer HMR remains available |
+| `just app-default` | Intentionally use `~/.treefold` for desktop development |
+| `npm run dev:web` / `just web-dev` | Browser-only Vite server; requires a separate API |
+| `npm run typecheck` | Check Electron Node code and React browser code separately |
+| `npm run build` | Typecheck and build main/preload/renderer to `out/` |
+| `npm start` | Preview the built desktop; prepare debug sidecars first with `cargo xtask sidecars dev` |
+| `npm run build:web` | Build the standalone renderer to `dist/` |
+| `npm run bundle:desktop` / `just build` | Build release Rust sidecars, desktop assets, signed App and DMG in `release/` |
+| `just check` | TypeScript, SQLx metadata, Rust formatting and compilation |
+| `just test` | Rust, standalone backend and deterministic browser tests |
+| `just test-electron` | Packaged App and electron-vite development lifecycle tests; build the package first |
+| `just install-app-local` | Build and replace the local installed App |
+
+`TREEFOLD_HOME` takes priority over `TREEFOLD_DEV_HOME`; desktop development
+otherwise defaults to `.treefold-dev`. UI port defaults to 15011 and the API
+selects a free port. Use `TREEFOLD_UI_PORT` / `TREEFOLD_API_PORT` to override.
+
+`scripts/rust-sidecars.ts` prepares and watches Rust inputs only during desktop
+development. Electron-only changes do not run Cargo. electron-vite handles
+main restarts and preload reloads. The main process waits for the previous
+instance to finish shutting down its Rust child before acquiring its lock.
+
+The old `scripts/dev.mjs` launcher and `scripts/prepare-sidecars.mjs` forwarding
+script, and their single-use `scripts/xtask.mjs` helper are removed. Packaging, signing and local installation scripts remain
+because they own Treefold's Rust resources and macOS delivery requirements.
+Node.js 24+ is required. electron-vite 5 currently supports Vite 5–7, so this
+project uses Vite 7 with the compatible React plugin 5.

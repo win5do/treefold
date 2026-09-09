@@ -59,14 +59,17 @@ newer, Git, and Codex when exercising Codex Sessions. `just` is the preferred
 task runner but is optional.
 
 - Run `npm install` once to install frontend and desktop tooling.
+- `npm run dev` uses electron-vite for desktop development; `npm run dev:web`
+  starts the standalone browser UI. `npm run build` builds main/preload/renderer
+  to `out/`; `npm run typecheck` checks both Node and browser code.
 - Run `just app-dev` for hot reload with repository-local state under
   `.treefold-dev/`; use `just app-default` only when intentionally developing
   against `~/.treefold`.
 - `TREEFOLD_DEV_HOME` relocates development state. `TREEFOLD_UI_PORT` and
   `TREEFOLD_API_PORT` override the default development ports `15011` and an
   automatically selected API port.
-- Use `app-dev-no-watch` or `app-default-no-watch` when file watching is not
-  needed.
+- Use `app-dev-no-watch` or `app-default-no-watch` when main/preload/Rust watching is not
+  needed; renderer HMR remains enabled.
 - Run `just check` for the standard validation set and `just build` for a full
   application build.
 
@@ -329,5 +332,5 @@ If exploration reveals a stable and mechanically testable regression risk, add a
 For important logic involving the native title bar, window controls, menus,
 filesystem dialogs, terminal integration, or other Electron APIs, use focused Electron
 UI test coverage when it can exercise the affected contract. Do not run
-`npm run dev:desktop`, use Computer Use, or perform manual real-App acceptance
+`npm run dev`, use Computer Use, or perform manual real-App acceptance
 unless the user explicitly requests it.

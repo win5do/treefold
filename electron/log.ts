@@ -1,10 +1,10 @@
-const fs = require('node:fs');
-const path = require('node:path');
-function createLog(home, { debug = false } = {}) {
+import fs from 'node:fs';
+import path from 'node:path';
+export function createLog(home: string, { debug = false } = {}) {
   const directory = path.join(home, 'logs');
   fs.mkdirSync(directory, { recursive: true });
   const file = path.join(directory, 'desktop.log');
-  return (level, message, source = 'main') => {
+  return (level: string, message: string, source = 'main') => {
     if (!['debug', 'info', 'warn', 'error'].includes(level) || typeof message !== 'string') return;
     if (!['main', 'renderer'].includes(source)) return;
     if (level === 'debug' && !debug) return;
@@ -18,4 +18,4 @@ function createLog(home, { debug = false } = {}) {
     } catch (error) { console.error('Desktop log write failed', error); }
   };
 }
-module.exports = { createLog };
+

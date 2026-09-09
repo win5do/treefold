@@ -1,9 +1,20 @@
-const { spawn } = require('node:child_process');
-const { createInterface } = require('node:readline');
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createInterface } from 'node:readline';
 
-class Backend {
-  constructor({ executable, env, onExit = () => {}, onStderr = () => {}, timeout = 30000 }) {
-    Object.assign(this, { executable, env, onExit, onStderr, timeout });
+type Options = { executable: string; env: NodeJS.ProcessEnv; onExit?: (error: Error) => void; onStderr?: (message: string) => void; timeout?: number };
+export class Backend {
+  executable: string;
+  env: NodeJS.ProcessEnv;
+  onExit: (error: Error) => void;
+  onStderr: (message: string) => void;
+  timeout: number;
+  stopping: boolean;
+  diagnostic: string;
+  child!: ChildProcessWithoutNullStreams;
+  exited!: Promise<void>;
+  apiUrl?: string;
+  constructor({ executable, env, onExit = () => {}, onStderr = () => {}, timeout = 30000 }: Options) {
+    this.executable = executable; this.env = env; this.onExit = onExit; this.onStderr = onStderr; this.timeout = timeout;
     this.stopping = false;
     this.diagnostic = '';
   }
@@ -18,7 +29,7 @@ class Backend {
         resolve();
         if (!this.stopping) this.onExit(new Error(this.withDiagnostics(`Rust backend exited (${signal || code})`)));
       });
-      this.child.once('error', resolve);
+      this.child.once('error', () => resolve());
     });
     this.child.stderr.setEncoding('utf8');
     this.child.stderr.on('data', data => {
@@ -26,16 +37,16 @@ class Backend {
       this.onStderr(data.trimEnd());
     });
     try {
-      const apiUrl = await new Promise((resolve, reject) => {
+      const apiUrl = await new Promise<string>((resolve, reject) => {
         const lines = createInterface({ input: this.child.stdout });
         const timer = setTimeout(() => finish(new Error('Rust backend startup timed out')), this.timeout);
-        const finish = (error, value) => {
+        const finish = (error: Error | null, value?: string) => {
           clearTimeout(timer); lines.close(); this.child.stdout.resume();
           this.child.removeListener('error', failed);
           this.child.removeListener('close', exited);
-          error ? reject(error) : resolve(value);
+          error ? reject(error) : resolve(value!);
         };
-        const failed = error => finish(error);
+        const failed = (error: Error) => finish(error);
         const exited = () => finish(new Error('Rust backend could not start.'));
         this.child.once('error', failed);
         this.child.once('close', exited);
@@ -64,10 +75,10 @@ class Backend {
       throw new Error('Rust API did not become healthy.');
     } catch (error) {
       await this.stop();
-      throw new Error(this.withDiagnostics(error.message), { cause: error });
+      throw new Error(this.withDiagnostics((error instanceof Error ? error.message : String(error))), { cause: error });
     }
   }
-  withDiagnostics(message) {
+  withDiagnostics(message: string) {
     const recent = this.diagnostic.trim();
     return recent ? `${message}\nRecent backend stderr:\n${recent}` : message;
   }
@@ -79,4 +90,4 @@ class Backend {
     try { await this.exited; } finally { clearTimeout(timer); }
   }
 }
-module.exports = { Backend };
+

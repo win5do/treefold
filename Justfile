@@ -4,16 +4,16 @@ default-home := env("HOME") + "/.treefold"
 dev-home := env("TREEFOLD_DEV_HOME", justfile_directory() + "/.treefold-dev")
 
 app-dev:
-    TREEFOLD_HOME="{{ dev-home }}" npm run dev:desktop
+    TREEFOLD_HOME="{{ dev-home }}" npm run dev
 
 app-default:
-    TREEFOLD_HOME="{{ default-home }}" npm run dev:desktop
+    TREEFOLD_HOME="{{ default-home }}" npm run dev
 
 app-dev-no-watch:
-    TREEFOLD_HOME="{{ dev-home }}" npm run dev:desktop -- --no-watch
+    TREEFOLD_HOME="{{ dev-home }}" npm run dev:no-watch
 
 app-default-no-watch:
-    TREEFOLD_HOME="{{ default-home }}" npm run dev:desktop -- --no-watch
+    TREEFOLD_HOME="{{ default-home }}" npm run dev:no-watch
 
 check:
     npm run typecheck
@@ -30,4 +30,16 @@ install-app-local:
 
 clean:
     cargo clean --manifest-path backend/Cargo.toml
-    rm -rf dist
+    rm -rf out dist release
+
+# Browser-only development; desktop integration uses app-dev.
+web-dev:
+    npm run dev:web
+
+test:
+    npm run test:backend
+    npm run test:desktop
+    npm run test:ui
+
+test-electron:
+    npm run test:electron
