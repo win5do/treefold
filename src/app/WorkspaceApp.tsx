@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "@/lib/desktop";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";

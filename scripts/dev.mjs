@@ -1,64 +1,56 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { findAvailablePort } from "./random-port.mjs";
-import { devSidecarRoot, root, runXtask } from "./xtask.mjs";
+import { spawn } from 'node:child_process';
+import { watch } from 'node:fs';
+import path from 'node:path';
+import electron from 'electron';
+import { root, runXtask } from './xtask.mjs';
 
-const tauriArgs = process.argv.slice(2);
-const devServerPort = process.env.TREEFOLD_UI_PORT || "15011";
-if (!/^\d+$/.test(devServerPort)) {
-  console.error(`[treefold dev] invalid TREEFOLD_UI_PORT: ${devServerPort}`);
-  process.exit(1);
+const args = process.argv.slice(2);
+if (args.some(arg => arg !== '--no-watch')) throw new Error('Usage: npm run dev:desktop -- [--no-watch]');
+const uiPort = process.env.TREEFOLD_UI_PORT || '15011';
+const apiPort = process.env.TREEFOLD_API_PORT || '0';
+for (const port of [uiPort, apiPort]) if (!/^\d+$/.test(port) || Number(port) > 65535) throw new Error(`Invalid port: ${port}`);
+const env = { ...process.env, TREEFOLD_HOME: process.env.TREEFOLD_HOME || process.env.TREEFOLD_DEV_HOME || path.join(root, '.treefold-dev'),
+  TREEFOLD_API_ADDR: `127.0.0.1:${apiPort}`, TREEFOLD_UI_URL: `http://127.0.0.1:${uiPort}`, TREEFOLD_UI_PORT: uiPort };
+delete env.ELECTRON_RUN_AS_NODE;
+runXtask(['sidecars', 'dev'], { env });
+const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js'], { cwd: root, env, stdio: 'inherit' });
+let desktop, watcher, restartTimer, exiting = false, restarting = false;
+function stop() {
+  if (exiting) return;
+  exiting = true; clearTimeout(restartTimer); watcher?.close();
+  desktop?.kill('SIGTERM'); vite.kill('SIGTERM');
 }
-
-const configuredApiPort = process.env.TREEFOLD_API_PORT;
-if (configuredApiPort !== undefined && !/^\d+$/.test(configuredApiPort)) {
-  console.error(`[treefold dev] invalid TREEFOLD_API_PORT: ${configuredApiPort}`);
-  process.exitCode = 1;
-  process.exit();
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, stop);
+vite.on('exit', code => { process.exitCode = code || 0; stop(); });
+function launch() {
+  desktop = spawn(electron, ['.'], { cwd: root, env, stdio: 'inherit' });
+  desktop.on('error', error => { console.error(error); process.exitCode = 1; stop(); });
+  desktop.on('exit', code => { if (!restarting) { process.exitCode = code || 0; stop(); } });
 }
-const apiPort = configuredApiPort || String(await findAvailablePort());
-
-const devUrl = `http://127.0.0.1:${devServerPort}`;
-const config = JSON.stringify({ build: { devUrl } });
-const env = { ...process.env };
-env.TREEFOLD_API_ADDR = `127.0.0.1:${apiPort}`;
-env.VITE_TREEFOLD_API_BASE = `http://127.0.0.1:${apiPort}`;
-
-const bundledBinDir = env.TREEFOLD_BUNDLED_BIN_DIR
-  ? path.resolve(root, env.TREEFOLD_BUNDLED_BIN_DIR)
-  : path.join(devSidecarRoot, "bin");
-
-if (!env.TREEFOLD_BUNDLED_BIN_DIR) {
-  runXtask(["sidecars", "dev", "--", ...tauriArgs], { env });
-  env.TREEFOLD_AMUX_SKILL_DIR ||= path.join(devSidecarRoot, "skills", "amux");
+async function restart() {
+  if (exiting || restarting) return;
+  restarting = true;
+  try {
+    if (desktop?.exitCode === null) await new Promise(resolve => { desktop.once('exit', resolve); desktop.kill('SIGTERM'); });
+    runXtask(['sidecars', 'dev'], { env });
+    launch();
+  } catch (error) { console.error(error); } finally { restarting = false; }
 }
-env.TREEFOLD_BUNDLED_BIN_DIR = bundledBinDir;
-
-for (const name of ["treefold", "amux"]) {
-  if (!existsSync(path.join(bundledBinDir, name))) {
-    console.error(`[treefold dev] missing ${name} sidecar in ${bundledBinDir}`);
-    process.exit(1);
+try {
+  const deadline = Date.now() + 30000;
+  let ready = false;
+  while (!exiting && Date.now() < deadline) {
+    try { if ((await fetch(env.TREEFOLD_UI_URL, { signal: AbortSignal.timeout(1000) })).ok) { ready = true; break; } } catch {}
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
-}
-
-console.log(`[treefold dev] UI:  ${devUrl}`);
-console.log(`[treefold dev] API: http://127.0.0.1:${apiPort}`);
-
-const child = spawn("npm", ["run", "tauri", "--", "dev", "--config", config, ...tauriArgs], {
-  env,
-  stdio: "inherit",
-});
-
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => child.kill(signal));
-}
-
-child.once("error", (error) => {
-  console.error(`[treefold dev] failed to start: ${error.message}`);
-  process.exitCode = 1;
-});
-
-child.once("exit", (code, signal) => {
-  process.exitCode = code ?? (signal ? 1 : 0);
-});
+  if (!ready) throw new Error('Vite did not become ready');
+  console.log(`[treefold dev] UI: ${env.TREEFOLD_UI_URL}`);
+  launch();
+  if (!args.includes('--no-watch')) {
+    watcher = watch(root, { recursive: true }, (_event, file) => {
+      if (file && /^(backend\/(src\/|migrations\/|Cargo\.toml|Cargo\.lock|build\.rs)|electron\/)/.test(file)) {
+        clearTimeout(restartTimer); restartTimer = setTimeout(restart, 350);
+      }
+    });
+  }
+} catch (error) { console.error(error); process.exitCode = 1; stop(); }

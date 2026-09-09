@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { desktop } from "@/lib/desktop";
 import { HashRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
@@ -28,7 +28,7 @@ const queryClient = new QueryClient({
 applyThemePreference("system");
 installGlobalErrorLogging();
 
-if (isTauri()) {
+if (desktop) {
   document.addEventListener("contextmenu", (event) => {
     const keepsNativeEditingMenu = event.composedPath().some(
       (target) =>
@@ -42,7 +42,7 @@ if (isTauri()) {
   });
 
   if (!import.meta.env.VITE_TREEFOLD_API_BASE) {
-    setApiBase(await invoke<string>("treefold_api_url"));
+    setApiBase(await desktop.apiUrl());
   }
 }
 

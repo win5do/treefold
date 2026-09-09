@@ -1,0 +1,6 @@
+const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('treefoldDesktop', {
+  apiUrl: () => ipcRenderer.invoke('treefold:api-url'),
+  openDirectory: options => ipcRenderer.invoke('treefold:open-directory', { title: options?.title }),
+  log: (level, message) => ipcRenderer.invoke('treefold:log', level, message),
+});

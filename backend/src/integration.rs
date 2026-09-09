@@ -138,7 +138,7 @@ impl IntegrationManager {
             .unwrap_or_else(|| executable_dir.to_path_buf());
         let development_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
-            .expect("src-tauri has a parent")
+            .expect("backend has a parent")
             .to_path_buf();
         let skill_root = bundle_root.join("skills");
         let treefold_skill = if skill_root.join("treefold/SKILL.md").is_file() {

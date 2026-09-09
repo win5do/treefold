@@ -1,12 +1,4 @@
-import { isTauri } from "@tauri-apps/api/core"
-import {
-  debug as tauriDebug,
-  error as tauriError,
-  info as tauriInfo,
-  warn as tauriWarn,
-} from "@tauri-apps/plugin-log"
-
-type LogMethod = (message: string) => Promise<void>
+import { desktop } from "@/lib/desktop"
 
 function errorDetails(cause: unknown): string {
   if (cause instanceof Error) {
@@ -22,19 +14,10 @@ function errorDetails(cause: unknown): string {
 
 function write(level: "debug" | "info" | "warn" | "error", message: string, cause?: unknown) {
   const rendered = cause === undefined ? message : `${message}\n${errorDetails(cause)}`
-  if (!isTauri()) {
-    console[level](rendered)
-    return
+  console[level](rendered)
+  if (desktop) {
+    void desktop.log(level, rendered).catch((error) => console.error("Failed to write desktop log", error))
   }
-  const methods: Record<typeof level, LogMethod> = {
-    debug: tauriDebug,
-    info: tauriInfo,
-    warn: tauriWarn,
-    error: tauriError,
-  }
-  void methods[level](rendered).catch((loggingError) => {
-    console.error("Failed to write WebView log", loggingError, rendered)
-  })
 }
 
 export const frontendLogger = {

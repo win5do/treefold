@@ -10,10 +10,10 @@ use toml_edit::DocumentMut;
 
 const TREEFOLD_MANIFEST: &str = "cli/Cargo.toml";
 const DEFAULT_AMUX_MANIFEST: &str = "../amux/Cargo.toml";
-const TARGET_DIR: &str = "src-tauri/target";
-const DEV_STAGING: &str = "src-tauri/bundle-staging/dev-sidecars";
-const BUNDLE_STAGING: &str = "src-tauri/bundle-staging/agent-integration";
-const INTEGRATION_MANIFEST: &str = "src-tauri/resources/agent-integration/manifest.json";
+const TARGET_DIR: &str = "backend/target";
+const DEV_STAGING: &str = "backend/bundle-staging/dev-sidecars";
+const BUNDLE_STAGING: &str = "backend/bundle-staging/agent-integration";
+const INTEGRATION_MANIFEST: &str = "backend/resources/agent-integration/manifest.json";
 
 fn main() {
     if let Err(error) = run() {
@@ -35,7 +35,7 @@ fn run() -> Result<()> {
         (Some("database"), Some("prepare")) => database_prepare(false, args.collect()),
         (Some("database"), Some("check")) => database_prepare(true, args.collect()),
         _ => bail!(
-            "usage: cargo xtask <sidecars <dev [-- TAURI_ARGS...]|bundle>|database <prepare|check>>"
+            "usage: cargo xtask <sidecars <dev [-- BUILD_ARGS...]|bundle>|database <prepare|check>>"
         ),
     }
 }
@@ -45,8 +45,8 @@ fn database_prepare(check: bool, remaining: Vec<String>) -> Result<()> {
         bail!("unexpected argument for database command: {argument}");
     }
     let root = repository_root()?;
-    let source = root.join("src-tauri/migrations/g1");
-    let crate_dir = root.join("src-tauri");
+    let source = root.join("backend/migrations/g1");
+    let crate_dir = root.join("backend");
     let temporary = tempfile::tempdir().context("create temporary database directory")?;
     let database = temporary.path().join("treefold_1.sqlite");
     let database_url = format!("sqlite://{}", database.display());
@@ -180,20 +180,19 @@ fn prepare_bundle_sidecars() -> Result<()> {
     build_sidecars(&root, &amux, &target_dir, &options)?;
 
     let artifact_dir = options.artifact_dir(&target_dir);
-    let binaries = root.join("src-tauri/binaries");
-    fs::create_dir_all(&binaries).with_context(|| format!("create {}", binaries.display()))?;
-    copy_file(
-        &artifact_dir.join("treefold"),
-        &binaries.join(format!("treefold-{host}")),
-    )?;
-    copy_file(
-        &artifact_dir.join("amux"),
-        &binaries.join(format!("amux-{host}")),
-    )?;
+    let binaries = root.join("backend/bundle-staging/bin");
+    fs::create_dir_all(&binaries)?;
+    for name in ["treefold", "amux", "treefold-backend"] {
+        copy_file(&artifact_dir.join(name), &binaries.join(name))?;
+    }
 
     let staging = root.join(BUNDLE_STAGING);
     replace_staging_dir(&staging, |temporary| {
         copy_tree(&amux.skill, &temporary.join("skills/amux"))?;
+        copy_tree(
+            &root.join("cli/skills/treefold"),
+            &temporary.join("skills/treefold"),
+        )?;
         stage_integration_manifest(&root, temporary, &amux.version)
     })?;
 
@@ -288,7 +287,14 @@ fn build_sidecars(
         target_dir,
         options,
     )?;
-    build_binary(root, &amux.manifest, "amux", target_dir, options)
+    build_binary(root, &amux.manifest, "amux", target_dir, options)?;
+    build_binary(
+        root,
+        &root.join("backend/Cargo.toml"),
+        "treefold-backend",
+        target_dir,
+        options,
+    )
 }
 
 fn build_binary(
@@ -438,7 +444,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_tauri_target_and_release_options() {
+    fn parses_build_target_and_release_options() {
         assert_eq!(
             parse_dev_options(&[
                 "--".into(),
@@ -455,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn ignores_options_after_tauri_app_argument_boundary() {
+    fn ignores_options_after_build_argument_boundary() {
         assert_eq!(
             parse_dev_options(&[
                 "--".into(),

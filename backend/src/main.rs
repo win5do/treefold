@@ -1,6 +1,3 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 fn main() {
     if std::env::args().nth(1).as_deref() == Some("--amux-group-shim") {
         if let Err(error) = treefold_lib::run_amux_group_shim() {
@@ -16,5 +13,8 @@ fn main() {
         }
         return;
     }
-    treefold_lib::run();
+    if let Err(error) = treefold_lib::run() {
+        eprintln!("Treefold backend failed: {error:#}");
+        std::process::exit(1);
+    }
 }

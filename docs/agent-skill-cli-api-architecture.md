@@ -23,7 +23,7 @@ amux 是可脱离 Treefold 使用的独立模块，也是 `amux` CLI 与 Skill �
 
 ## `treefold` CLI
 
-桌面 App 使用内部可执行文件 `treefold-app`；用户 CLI 是不链接 Tauri 的独立
+桌面 App 使用 Electron 主进程，并启动内部 Rust 可执行文件 `treefold-backend`；用户 CLI 是不依赖桌面运行时的独立
 `treefold-cli` package，产物名为 `treefold`。无参数时显示帮助，打开 App 必须显式执行：
 
 ```text

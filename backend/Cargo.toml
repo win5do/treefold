@@ -1,5 +1,5 @@
 [package]
-name = "treefold-app"
+name = "treefold-backend"
 version = "0.1.0"
 description = "Local-first macOS workspace for parallel coding agents"
 authors = ["Treefold contributors"]
@@ -12,14 +12,11 @@ rust-version = "1.97.1"
 
 [lib]
 name = "treefold_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [[bin]]
-name = "treefold-app"
+name = "treefold-backend"
 path = "src/main.rs"
-
-[build-dependencies]
-tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 anyhow = "1"
@@ -38,16 +35,14 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml_edit = { version = "0.25", features = ["serde"] }
 log = "0.4"
-tauri = { version = "2.11.3", features = ["tray-icon"] }
-tauri-plugin-log = "2"
-tauri-plugin-dialog = "2"
+flexi_logger = "0.31"
+fs2 = "0.4"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "process", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "process", "sync", "time", "signal", "io-std", "io-util"] }
 tokio-tungstenite = "0.27"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 sha2 = "0.10"
-tauri-plugin-wdio-webdriver = "1"
 
 [dev-dependencies]
 tempfile = "3"

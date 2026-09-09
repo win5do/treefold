@@ -18,16 +18,16 @@ app-default-no-watch:
 check:
     npm run typecheck
     cargo xtask database check
-    cargo fmt --manifest-path src-tauri/Cargo.toml --check
-    cargo check --manifest-path src-tauri/Cargo.toml
+    cargo fmt --manifest-path backend/Cargo.toml --check
+    cargo check --manifest-path backend/Cargo.toml
 
 build:
-    npm run tauri build
+    npm run bundle:desktop
 
 # Build an ad-hoc signed, timestamped App + DMG and install the App in /Applications.
 install-app-local:
     node scripts/install-app-local.mjs
 
 clean:
-    cargo clean --manifest-path src-tauri/Cargo.toml
+    cargo clean --manifest-path backend/Cargo.toml
     rm -rf dist

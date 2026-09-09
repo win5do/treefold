@@ -54,8 +54,8 @@ do not conflict with user-owned paths.
 
 ```text
 Treefold macOS App
-├── Native desktop UI
-├── Local API and persistent terminal runtime
+├── Electron desktop shell and React UI
+├── Rust HTTP/WebSocket API and persistent terminal runtime
 ├── Local SQLite project and session metadata
 ├── Managed Git worktrees
 └── CLI and Agent Skills

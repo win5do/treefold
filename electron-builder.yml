@@ -1,0 +1,32 @@
+appId: com.win5do.treefold
+productName: Treefold
+asar: true
+directories:
+  output: release
+files:
+  - dist/**/*
+  - electron/*.cjs
+  - package.json
+  - '!node_modules/**/*'
+extraResources:
+  - from: backend/bundle-staging/bin
+    to: bin
+  - from: backend/bundle-staging/agent-integration
+    to: agent-integration
+  - from: electron/icons/32x32.png
+    to: icon.png
+mac:
+  category: public.app-category.developer-tools
+  icon: electron/icons/icon.icns
+  identity: '-'
+  sign: scripts/sign-macos.cjs
+  target:
+    - dmg
+    - dir
+  hardenedRuntime: true
+  entitlements: electron/entitlements.mac.plist
+  entitlementsInherit: electron/entitlements.mac.plist
+  binaries:
+    - Contents/Resources/bin/treefold-backend
+    - Contents/Resources/bin/treefold
+    - Contents/Resources/bin/amux

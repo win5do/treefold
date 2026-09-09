@@ -8,7 +8,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open } from "@/lib/desktop";
 import { projectsApi } from "@/api/projects";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

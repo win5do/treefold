@@ -80,7 +80,7 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 ```
 
 - Run `cargo xtask database prepare` after changing a migration or SQLx query
-  macro and commit the resulting `src-tauri/.sqlx` metadata.
+  macro and commit the resulting `backend/.sqlx` metadata.
 - Run `cargo xtask database check` to verify migrations and offline metadata
   against a disposable database. Normal builds must not require a developer
   database or `DATABASE_URL`.
@@ -90,8 +90,17 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 
 ### Desktop build and sidecars
 
+- `electron/` owns the desktop main process, sandboxed preload bridge, and backend
+  process supervision. `backend/` owns the Rust HTTP/WebSocket service and all
+  business state. Keep business behavior out of Electron IPC handlers.
+- `npm run bundle:desktop` produces the macOS App and DMG under `release/`.
+  `npm run test:desktop` validates the compiled Rust process lifecycle; build it
+  first with `npm run build:backend`. `npm run test:electron` runs a focused
+  automated smoke test against the packaged App with an isolated home.
+
+
 - `npm run bundle:desktop` invokes `cargo xtask sidecars bundle` before applying
-  the Tauri bundle configuration.
+  the Electron bundle configuration.
 - Development runs prepare debug sidecars through the same xtask workflow. The
   default co-workspace layout resolves amux from `../amux`; override it with
   `TREEFOLD_AMUX_MANIFEST` and override Skill discovery with
@@ -126,7 +135,7 @@ hard storage boundary.
   lowercase 32-character `TEXT`. Stable composite IDs such as Project base
   Workspace IDs remain strings and must not be replaced with random UUIDs.
 - SQLx migrations live in the active generation directory, currently
-  `src-tauri/migrations/g1`, and use UTC timestamp filenames. SQLx's
+  `backend/migrations/g1`, and use UTC timestamp filenames. SQLx's
   `_sqlx_migrations` owns within-generation history; `PRAGMA user_version` is
   reserved for the database generation. Domain tables must use SQLite `STRICT`
   mode. Never add startup-time ad-hoc `ALTER`, `DROP`, or data-rewrite logic
@@ -178,12 +187,12 @@ source of truth for this configuration.
 
 ## UI verification workflow
 
-Treefold is delivered as a Tauri desktop App, but deterministic browser-based
+Treefold is delivered as a Electron desktop App, but deterministic browser-based
 coverage is the default verification surface. Use WebdriverIO for regression
 coverage and focused browser diagnostics for DOM state, accessibility, geometry,
-screenshots, and console errors. Important behavior that depends on the Tauri
-runtime, WebView, or native integration may additionally use focused automated
-Tauri UI tests. Do not use Computer Use to control the real App or perform a
+screenshots, and console errors. Important behavior that depends on the Electron
+runtime, renderer, or native integration may additionally use focused automated
+Electron UI tests. Do not use Computer Use to control the real App or perform a
 manual desktop acceptance pass unless the user explicitly requests it. Run the
 existing browser suite for user-visible behavior changes and broader frontend
 work; presentation-only fixes may use the faster browser-diagnostics workflow
@@ -213,17 +222,17 @@ Run the following from the repository root:
    relevant. Discover and reuse an already-running current instance before
    starting a duplicate UI process.
 
-For important or critical behavior that crosses the browser/Tauri boundary, run
-or add a focused Tauri UI test when it provides meaningful regression coverage.
+For important or critical behavior that crosses the browser/Electron boundary, run
+or add a focused Electron UI test when it provides meaningful regression coverage.
 Do not treat manual App acceptance as a default completion requirement. If the
 user explicitly requests manual App verification, report the exercised App
 states and any remaining gaps. The final handoff must state which commands
-passed, which browser diagnostics or Tauri UI tests were used, and any behavior
+passed, which browser diagnostics or Electron UI tests were used, and any behavior
 that remains unverified.
 
 ### Deterministic UI fixture
 
-`npm run test:ui` must be self-contained by default. It must not depend on the user's Treefold database, existing Projects, fixed local directories, Git worktrees, or an already-running Tauri backend.
+`npm run test:ui` must be self-contained by default. It must not depend on the user's Treefold database, existing Projects, fixed local directories, Git worktrees, or an already-running Electron backend.
 
 - `tests/ui/ui-harness.mjs` starts the fixture API and Vite on ephemeral ports and closes both in `finally` cleanup.
 - `tests/ui/fixtures/sidebar-core.mjs` owns fixed IDs, timestamps, names, and API responses for the sidebar core flow.
@@ -307,18 +316,18 @@ acceptance pass:
 
 For important platform-sensitive interactions—including drag and drop, pointer
 capture, focus transfer, keyboard shortcuts, IME, clipboard behavior, context
-menus, scrolling, file drops, and WebView-dependent event behavior—prefer a
-focused automated Tauri UI test when practical. Exercise them manually in the
+menus, scrolling, file drops, and renderer-dependent event behavior—prefer a
+focused automated Electron UI test when practical. Exercise them manually in the
 desktop App only when the user explicitly requests it. If a requested App
-acceptance pass disagrees with browser or automated Tauri results, report the
+acceptance pass disagrees with browser or automated Electron results, report the
 disagreement and treat the real App result as authoritative.
 
 If exploration reveals a stable and mechanically testable regression risk, add automated coverage only when it passes the admission gate above. Presentation regressions must not be converted into pixel or CSS assertions.
 
-### Tauri-specific changes
+### Electron-specific changes
 
 For important logic involving the native title bar, window controls, menus,
-filesystem dialogs, terminal integration, or other Tauri APIs, use focused Tauri
+filesystem dialogs, terminal integration, or other Electron APIs, use focused Electron
 UI test coverage when it can exercise the affected contract. Do not run
 `npm run dev:desktop`, use Computer Use, or perform manual real-App acceptance
 unless the user explicitly requests it.

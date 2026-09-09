@@ -7,25 +7,13 @@ import {
   readdirSync,
   renameSync,
   rmSync,
-  writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const tauriConfigPath = path.join(root, "src-tauri", "tauri.conf.json");
-const bundleConfigPath = path.join(root, "src-tauri", "tauri.bundle.conf.json");
-const stagingRoot = path.join(root, "src-tauri", "bundle-staging");
-const generatedConfigPath = path.join(stagingRoot, "install-app-local.conf.json");
-const sourceApp = path.join(
-  root,
-  "src-tauri",
-  "target",
-  "release",
-  "bundle",
-  "macos",
-  "Treefold.app",
-);
+const packagePath = path.join(root, "package.json");
+const sourceApp = path.join(root, "release", process.arch === "arm64" ? "mac-arm64" : "mac", "Treefold.app");
 
 function timestamp() {
   const now = new Date();
@@ -44,7 +32,7 @@ function buildVersion() {
   if (process.env.TREEFOLD_BUILD_VERSION) {
     return process.env.TREEFOLD_BUILD_VERSION;
   }
-  const configured = JSON.parse(readFileSync(tauriConfigPath, "utf8")).version;
+  const configured = JSON.parse(readFileSync(packagePath, "utf8")).version;
   const base = configured.split(/[+-]/, 1)[0];
   return `${base}-alpha.${timestamp()}`;
 }
@@ -57,7 +45,7 @@ function validateVersion(version) {
 }
 
 function macOSBundleVersion(version) {
-  return version.match(/-alpha\.(\d{14})$/)?.[1] ?? version.split("-", 1)[0];
+  return version;
 }
 
 function verifyApp(appPath, expectedVersion) {
@@ -143,31 +131,11 @@ const version = buildVersion();
 validateVersion(version);
 const environment = { ...process.env, TREEFOLD_BUILD_VERSION: version };
 
-execFileSync("npm", ["run", "prepare:sidecars"], {
-  cwd: root,
-  env: environment,
-  stdio: "inherit",
-});
-
-const bundleConfig = JSON.parse(readFileSync(bundleConfigPath, "utf8"));
-bundleConfig.version = version;
-bundleConfig.bundle.macOS = {
-  ...(bundleConfig.bundle.macOS ?? {}),
-  bundleVersion: macOSBundleVersion(version),
-  signingIdentity: "-",
-};
-mkdirSync(stagingRoot, { recursive: true });
-writeFileSync(generatedConfigPath, `${JSON.stringify(bundleConfig, null, 2)}\n`);
-
-execFileSync(
-  "npm",
-  ["run", "tauri", "--", "build", "--config", generatedConfigPath, "--bundles", "app,dmg"],
-  { cwd: root, env: environment, stdio: "inherit" },
-);
+execFileSync("npm", ["run", "bundle:desktop"], { cwd: root, env: environment, stdio: "inherit" });
 
 verifyApp(sourceApp, version);
 const installedApp = installApp(sourceApp);
-const dmgDir = path.join(root, "src-tauri", "target", "release", "bundle", "dmg");
+const dmgDir = path.join(root, "release");
 const dmg = readdirSync(dmgDir)
   .filter((name) => name.endsWith(".dmg") && name.includes(version))
   .map((name) => path.join(dmgDir, name))

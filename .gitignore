@@ -9,3 +9,6 @@ tsconfig.tsbuildinfo
 *.db
 *.db-shm
 *.db-wal
+
+release/
+backend/bundle-staging/
