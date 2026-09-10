@@ -9,10 +9,15 @@
     "types": [
       "node",
       "electron-vite/node"
+    ],
+    "composite": true,
+    "lib": [
+      "ES2022"
     ]
   },
   "include": [
-    "electron/**/*.ts",
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
     "electron.vite.config.ts",
     "vite.config.ts",
     "scripts/rust-sidecars.ts"

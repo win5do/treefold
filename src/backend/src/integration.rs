@@ -138,13 +138,14 @@ impl IntegrationManager {
             .unwrap_or_else(|| executable_dir.to_path_buf());
         let development_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
-            .expect("backend has a parent")
+            .and_then(Path::parent)
+            .expect("backend belongs to the repository src directory")
             .to_path_buf();
         let skill_root = bundle_root.join("skills");
         let treefold_skill = if skill_root.join("treefold/SKILL.md").is_file() {
             skill_root.join("treefold")
         } else {
-            development_root.join("cli/skills/treefold")
+            development_root.join("src/cli/skills/treefold")
         };
         let amux_skill = if skill_root.join("amux/SKILL.md").is_file() {
             skill_root.join("amux")

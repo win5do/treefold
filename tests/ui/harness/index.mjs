@@ -1331,7 +1331,7 @@ export async function startUiHarness() {
   try {
     vite = await createViteServer({
       configFile: path.join(projectRoot, "vite.config.ts"),
-      root: projectRoot,
+      root: path.join(projectRoot, "src/renderer"),
       logLevel: "error",
       define: {
         "import.meta.env.VITE_TREEFOLD_API_BASE": JSON.stringify(

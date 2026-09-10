@@ -113,7 +113,7 @@ compatible.
 
 The current SQLite database generation is 1 at
 `$TREEFOLD_HOME/data/treefold_1.sqlite`. SQLx manages immutable UTC timestamped
-migrations within `backend/migrations/g1` through `_sqlx_migrations`, while
+migrations within `src/backend/migrations/g1` through `_sqlx_migrations`, while
 SQLite `user_version` exclusively identifies the database generation. All
 domain tables are `STRICT`. Append a forward-only migration for every
 within-generation schema or data change; never edit or squash a committed

@@ -37,10 +37,10 @@ async function external(url: string) {
   if (['https:', 'http:'].includes(new URL(url).protocol)) await shell.openExternal(url);
 }
 async function start() {
-  const resources = app.isPackaged ? process.resourcesPath : path.join(root, 'backend', 'bundle-staging');
+  const resources = app.isPackaged ? process.resourcesPath : path.join(root, 'src/backend', 'bundle-staging');
   const bin = app.isPackaged ? path.join(resources, 'bin') : path.join(resources, 'dev-sidecars', 'bin');
   backend = new Backend({
-    executable: app.isPackaged ? path.join(bin, 'treefold-backend') : process.env.TREEFOLD_BACKEND_PATH || path.join(root, 'backend/target/debug/treefold-backend'),
+    executable: app.isPackaged ? path.join(bin, 'treefold-backend') : process.env.TREEFOLD_BACKEND_PATH || path.join(root, 'src/backend/target/debug/treefold-backend'),
     env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_RESOURCE_DIR: resources, TREEFOLD_BUNDLED_BIN_DIR: bin,
       TREEFOLD_AMUX_SKILL_DIR: app.isPackaged ? path.join(resources, 'agent-integration/skills/amux') : path.join(resources, 'dev-sidecars/skills/amux') },
     onStderr: message => { if (!app.isPackaged) console.error(message); },
@@ -96,7 +96,7 @@ async function start() {
     ...(process.platform !== 'darwin' ? [{ label: 'File', submenu: [{ role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
-  const iconPath = app.isPackaged ? path.join(resources, 'icon.png') : path.join(root, 'electron/icons/32x32.png');
+  const iconPath = app.isPackaged ? path.join(resources, 'icon.png') : path.join(root, 'build/icons/32x32.png');
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 }));
   tray.setToolTip('Treefold');
   tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Treefold', click: showWindow }, { type: 'separator' }, { label: 'Quit Treefold', click: () => app.quit() }]));

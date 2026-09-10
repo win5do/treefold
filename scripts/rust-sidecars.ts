@@ -5,7 +5,7 @@ import type { Plugin } from 'vite';
 // Rollup queues changes during builds. Electron-only edits skip Cargo entirely.
 export async function rustSidecars(): Promise<Plugin> {
   const root = path.resolve('.');
-  const backend = path.join(root, 'backend');
+  const backend = path.join(root, 'src/backend');
   let dirty = false;
   async function prepare() {
     const child = execFile('cargo', ['xtask', 'sidecars', 'dev'], { cwd: root, env: process.env, maxBuffer: 16 * 1024 * 1024 });

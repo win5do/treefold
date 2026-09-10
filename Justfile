@@ -18,8 +18,8 @@ app-default-no-watch:
 check:
     npm run typecheck
     cargo xtask database check
-    cargo fmt --manifest-path backend/Cargo.toml --check
-    cargo check --manifest-path backend/Cargo.toml
+    cargo fmt --manifest-path src/backend/Cargo.toml --check
+    cargo check --manifest-path src/backend/Cargo.toml
 
 build:
     npm run bundle:desktop
@@ -29,7 +29,7 @@ install-app-local:
     node scripts/install-app-local.mjs
 
 clean:
-    cargo clean --manifest-path backend/Cargo.toml
+    cargo clean --manifest-path src/backend/Cargo.toml
     rm -rf out dist release
 
 # Browser-only development; desktop integration uses app-dev.

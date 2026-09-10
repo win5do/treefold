@@ -13,14 +13,14 @@ export default defineConfig(async ({ command }) => {
     main: {
       plugins: command === 'serve' ? [await rustSidecars()] : [],
       build: { sourcemap: true, rollupOptions: {
-        input: path.resolve('electron/main.ts'), output: { format: 'cjs' as const, entryFileNames: 'index.cjs' },
+        input: path.resolve('src/main/index.ts'), output: { format: 'cjs' as const, entryFileNames: 'index.cjs' },
       } },
     },
     preload: {
       build: { sourcemap: true, rollupOptions: {
-        input: path.resolve('electron/preload.ts'), output: { format: 'cjs' as const, entryFileNames: 'index.cjs', inlineDynamicImports: true },
+        input: path.resolve('src/preload/index.ts'), output: { format: 'cjs' as const, entryFileNames: 'index.cjs', inlineDynamicImports: true },
       } },
     },
-    renderer: { ...renderer, root: '.', build: { outDir: 'out/renderer', rollupOptions: { input: path.resolve('index.html') } } },
+    renderer: { ...renderer, build: { outDir: path.resolve('out/renderer'), emptyOutDir: true, rollupOptions: { input: path.resolve('src/renderer/index.html') } } },
   };
 });

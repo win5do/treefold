@@ -7,9 +7,9 @@ cross-domain implementation files.
 
 ### Frontend modules
 
-- `src/App.tsx` owns route composition, lazy-loading boundaries, and top-level
+- `src/renderer/src/App.tsx` owns route composition, lazy-loading boundaries, and top-level
   application assembly only. Put queries, mutations, dialogs, and page content
-  in their owning `src/features/*` or `src/app/*` module.
+  in their owning `src/renderer/src/features/*` or `src/renderer/src/app/*` module.
 - Co-locate feature-specific API adapters, state hooks, and view components.
   Do not route unrelated feature state through `App.tsx` merely to share it.
 - Do not keep extending a component with a flat list of cross-domain callback
@@ -83,7 +83,7 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 ```
 
 - Run `cargo xtask database prepare` after changing a migration or SQLx query
-  macro and commit the resulting `backend/.sqlx` metadata.
+  macro and commit the resulting `src/backend/.sqlx` metadata.
 - Run `cargo xtask database check` to verify migrations and offline metadata
   against a disposable database. Normal builds must not require a developer
   database or `DATABASE_URL`.
@@ -93,13 +93,13 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 
 ### Desktop build and sidecars
 
-- `electron/` owns the desktop main process, sandboxed preload bridge, and backend
-  process supervision. `backend/` owns the Rust HTTP/WebSocket service and all
-  business state. Keep business behavior out of Electron IPC handlers.
+- `src/main/` and `src/preload/` own the desktop main process, sandboxed preload
+  bridge, and backend process supervision. `src/backend/` owns the Rust
+  HTTP/WebSocket service and all business state. Keep business behavior out of Electron IPC handlers.
 - `npm run bundle:desktop` produces the macOS App and DMG under `release/`.
-  `npm run test:desktop` validates the compiled Rust process lifecycle; build it
-  first with `npm run build:backend`. `npm run test:electron` runs a focused
-  automated smoke test against the packaged App with an isolated home.
+  `npm run test:desktop` builds and validates the Rust process lifecycle.
+  `npm run test:electron` validates the packaged App and electron-vite development
+  lifecycle with isolated homes; build the package first.
 
 
 - `npm run bundle:desktop` invokes `cargo xtask sidecars bundle` before applying
@@ -138,7 +138,7 @@ hard storage boundary.
   lowercase 32-character `TEXT`. Stable composite IDs such as Project base
   Workspace IDs remain strings and must not be replaced with random UUIDs.
 - SQLx migrations live in the active generation directory, currently
-  `backend/migrations/g1`, and use UTC timestamp filenames. SQLx's
+  `src/backend/migrations/g1`, and use UTC timestamp filenames. SQLx's
   `_sqlx_migrations` owns within-generation history; `PRAGMA user_version` is
   reserved for the database generation. Domain tables must use SQLite `STRICT`
   mode. Never add startup-time ad-hoc `ALTER`, `DROP`, or data-rewrite logic
@@ -174,7 +174,7 @@ Treefold uses shadcn/ui with Base UI (`base-mira`), Tailwind CSS v4, the Neutral
 CSS-variable theme, Lucide icons, and Inter. Treat `components.json` as the
 source of truth for this configuration.
 
-- Reuse `src/components/ui` primitives and built-in variants before writing
+- Reuse `src/renderer/src/components/ui` primitives and built-in variants before writing
   custom controls or styles. Import them through `@/components/ui/*`.
 - Add components with `npx shadcn@latest`; inspect installed-component updates
   with `--dry-run` and `--diff` before changing local source.

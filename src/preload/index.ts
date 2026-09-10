@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DesktopBridge } from '../src/lib/desktop';
+import type { DesktopBridge } from './bridge';
 const bridge: DesktopBridge = {
 
   apiUrl: () => ipcRenderer.invoke('treefold:api-url'),

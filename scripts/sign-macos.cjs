@@ -9,7 +9,7 @@ module.exports = async function sign(options) {
     identity: '-', identityValidation: false,
     preAutoEntitlements: false, preEmbedProvisioningProfile: false,
     optionsForFile: () => ({
-      entitlements: path.resolve(__dirname, '../electron/entitlements.mac.plist'),
+      entitlements: path.resolve(__dirname, '../build/entitlements.mac.plist'),
       hardenedRuntime: true, timestamp: 'none',
     }),
   });

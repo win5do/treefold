@@ -5,10 +5,10 @@ node_modules/
 out/
 dist/
 .treefold-dev/
-tsconfig.tsbuildinfo
+*.tsbuildinfo
 *.db
 *.db-shm
 *.db-wal
 
 release/
-backend/bundle-staging/
+src/backend/bundle-staging/

@@ -8,12 +8,12 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 use toml_edit::DocumentMut;
 
-const TREEFOLD_MANIFEST: &str = "cli/Cargo.toml";
+const TREEFOLD_MANIFEST: &str = "src/cli/Cargo.toml";
 const DEFAULT_AMUX_MANIFEST: &str = "../amux/Cargo.toml";
-const TARGET_DIR: &str = "backend/target";
-const DEV_STAGING: &str = "backend/bundle-staging/dev-sidecars";
-const BUNDLE_STAGING: &str = "backend/bundle-staging/agent-integration";
-const INTEGRATION_MANIFEST: &str = "backend/resources/agent-integration/manifest.json";
+const TARGET_DIR: &str = "src/backend/target";
+const DEV_STAGING: &str = "src/backend/bundle-staging/dev-sidecars";
+const BUNDLE_STAGING: &str = "src/backend/bundle-staging/agent-integration";
+const INTEGRATION_MANIFEST: &str = "src/backend/resources/agent-integration/manifest.json";
 
 fn main() {
     if let Err(error) = run() {
@@ -45,8 +45,8 @@ fn database_prepare(check: bool, remaining: Vec<String>) -> Result<()> {
         bail!("unexpected argument for database command: {argument}");
     }
     let root = repository_root()?;
-    let source = root.join("backend/migrations/g1");
-    let crate_dir = root.join("backend");
+    let source = root.join("src/backend/migrations/g1");
+    let crate_dir = root.join("src/backend");
     let temporary = tempfile::tempdir().context("create temporary database directory")?;
     let database = temporary.path().join("treefold_1.sqlite");
     let database_url = format!("sqlite://{}", database.display());
@@ -180,7 +180,7 @@ fn prepare_bundle_sidecars() -> Result<()> {
     build_sidecars(&root, &amux, &target_dir, &options)?;
 
     let artifact_dir = options.artifact_dir(&target_dir);
-    let binaries = root.join("backend/bundle-staging/bin");
+    let binaries = root.join("src/backend/bundle-staging/bin");
     fs::create_dir_all(&binaries)?;
     for name in ["treefold", "amux", "treefold-backend"] {
         copy_file(&artifact_dir.join(name), &binaries.join(name))?;
@@ -190,7 +190,7 @@ fn prepare_bundle_sidecars() -> Result<()> {
     replace_staging_dir(&staging, |temporary| {
         copy_tree(&amux.skill, &temporary.join("skills/amux"))?;
         copy_tree(
-            &root.join("cli/skills/treefold"),
+            &root.join("src/cli/skills/treefold"),
             &temporary.join("skills/treefold"),
         )?;
         stage_integration_manifest(&root, temporary, &amux.version)
@@ -290,7 +290,7 @@ fn build_sidecars(
     build_binary(root, &amux.manifest, "amux", target_dir, options)?;
     build_binary(
         root,
-        &root.join("backend/Cargo.toml"),
+        &root.join("src/backend/Cargo.toml"),
         "treefold-backend",
         target_dir,
         options,

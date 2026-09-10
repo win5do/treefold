@@ -43,13 +43,13 @@ test('electron-vite watches main, preload and Rust while releasing the previous 
     await runningUntil(async () => await readyCount() >= 1, 'initial dev startup');
     assert.equal((await fetch(`${endpoints()[0]}/api/health`)).status, 200);
     const before = output.length;
-    await touch('electron/preload.ts');
+    await touch('src/preload/index.ts');
     await runningUntil(() => output.slice(before).includes('electron preload scripts rebuilt successfully'), 'preload reload');
-    await touch('electron/main.ts');
+    await touch('src/main/index.ts');
     await runningUntil(async () => await readyCount() >= 2, 'main restart');
     assert.doesNotMatch(output.slice(before), /Preparing treefold sidecar/, 'Electron-only edits must skip Rust compilation');
     await assert.rejects(fetch(`${endpoints()[0]}/api/health`));
-    await touch('backend/src/main.rs');
+    await touch('src/backend/src/main.rs');
     await runningUntil(async () => await readyCount() >= 3, 'Rust rebuild and restart');
     assert.equal((await fetch(`${endpoints().at(-1)}/api/health`)).status, 200);
     assert.doesNotMatch(output, /Another Treefold backend|couldn't start|Untrusted desktop/);

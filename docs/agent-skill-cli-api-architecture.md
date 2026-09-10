@@ -18,7 +18,7 @@ Treefold App
 Treefold 不包装 `amux run/logs/restart`，也不实现第二套子 Agent 编排。进程管理由独立的 amux CLI 和 Skill 承担；Codex 使用自身的子 Agent 能力。
 
 amux 是可脱离 Treefold 使用的独立模块，也是 `amux` CLI 与 Skill 的唯一源码和版本
-所有者。Treefold 仓库只维护自己的 `cli/skills/treefold`；release 构建从选定的 amux
+所有者。Treefold 仓库只维护自己的 `src/cli/skills/treefold`；release 构建从选定的 amux
 源码 staging 二进制与 `skills/amux`，并以 amux package version 同时标记两者。
 
 ## `treefold` CLI

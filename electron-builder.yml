@@ -9,23 +9,23 @@ files:
   - package.json
   - '!node_modules/**/*'
 extraResources:
-  - from: backend/bundle-staging/bin
+  - from: src/backend/bundle-staging/bin
     to: bin
-  - from: backend/bundle-staging/agent-integration
+  - from: src/backend/bundle-staging/agent-integration
     to: agent-integration
-  - from: electron/icons/32x32.png
+  - from: build/icons/32x32.png
     to: icon.png
 mac:
   category: public.app-category.developer-tools
-  icon: electron/icons/icon.icns
+  icon: build/icons/icon.icns
   identity: '-'
   sign: scripts/sign-macos.cjs
   target:
     - dmg
     - dir
   hardenedRuntime: true
-  entitlements: electron/entitlements.mac.plist
-  entitlementsInherit: electron/entitlements.mac.plist
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   binaries:
     - Contents/Resources/bin/treefold-backend
     - Contents/Resources/bin/treefold

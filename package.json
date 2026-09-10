@@ -18,13 +18,13 @@
     "bundle:desktop": "node scripts/bundle-desktop.mjs",
     "test:ui": "node tests/ui/run.mjs",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "build:backend": "cargo build --manifest-path backend/Cargo.toml",
+    "build:backend": "cargo build --manifest-path src/backend/Cargo.toml",
     "test:desktop": "npm run build:backend && node --test tests/desktop/*.test.mjs",
-    "test:backend": "cargo test --manifest-path backend/Cargo.toml",
+    "test:backend": "cargo test --manifest-path src/backend/Cargo.toml",
     "test:electron": "node --test tests/electron/*.test.mjs",
     "start": "electron-vite preview",
-    "typecheck:web": "tsc --noEmit",
-    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "postinstall": "node node_modules/electron/install.js"
   },
   "dependencies": {

@@ -86,9 +86,27 @@ Deferred designs, which are not runtime contracts:
 ## Development and builds
 
 The desktop uses `electron-vite` for main/preload/renderer builds and
-`electron-builder` for macOS packaging. React remains in `src/`; Electron
-TypeScript lives in `electron/`. `electron.vite.config.ts` shares the renderer
+`electron-builder` for macOS packaging. React remains in `src/renderer/src/`; Electron
+TypeScript lives in `src/main/` and `src/preload/`. `electron.vite.config.ts` shares the renderer
 configuration in `vite.config.ts` with standalone browser tests.
+
+```text
+src/
+├── main/          # Electron main process and Rust child supervisor
+├── preload/       # Isolated desktop bridge
+├── renderer/      # index.html + src/ React application
+├── backend/       # Rust API, migrations and offline SQLx metadata
+└── cli/           # Rust CLI and Treefold Skill
+build/             # Icons and macOS signing entitlements
+xtask/             # Repository build/database tooling
+```
+
+Rust crates retain their own `Cargo.toml`, `Cargo.lock`, and `src/` directories.
+User configuration and runtime data remain outside the source tree.
+`tsconfig.json` is the project-reference entry point; `tsconfig.node.json` checks
+main/preload/build tooling and `tsconfig.web.json` checks the renderer.
+`src/preload/bridge.d.ts` owns the shared desktop bridge contract, so Node code
+never imports renderer implementation files for its types.
 
 | Command | Purpose |
 | --- | --- |
