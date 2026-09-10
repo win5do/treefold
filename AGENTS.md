@@ -59,6 +59,10 @@ newer, Git, and Codex when exercising Codex Sessions. `just` is the preferred
 task runner but is optional.
 
 - Run `npm install` once to install frontend and desktop tooling.
+- `just` owns developer entry points, standalone Cargo tasks, and check/test
+  composition. npm scripts own TypeScript, frontend, and Electron tool commands.
+  TS scripts own version propagation, artifact paths, and installation rollback.
+  Keep calls directed from just to npm/Cargo/TS; npm scripts must not invoke just.
 - `npm run dev` uses electron-vite for desktop development; `npm run dev:web`
   starts the standalone browser UI. `npm run build` builds main/preload/renderer
   to `out/`; `npm run typecheck` checks application code, scripts, and tests.
@@ -87,9 +91,9 @@ compile-time checked queries:
 cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,rustls
 ```
 
-- Run `cargo xtask database prepare` after changing a migration or SQLx query
+- Run `just database-prepare` after changing a migration or SQLx query
   macro and commit the resulting `src/backend/.sqlx` metadata.
-- Run `cargo xtask database check` to verify migrations and offline metadata
+- Run `just database-check` to verify migrations and offline metadata
   against a disposable database. Normal builds must not require a developer
   database or `DATABASE_URL`.
 - Prefer `query!` and `query_as!` for static SQL. Use runtime query APIs only
@@ -101,16 +105,16 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 - `src/main/` and `src/preload/` own the desktop main process, sandboxed preload
   bridge, and backend process supervision. `src/backend/` owns the Rust
   HTTP/WebSocket service and all business state. Keep business behavior out of Electron IPC handlers.
-- `npm run bundle:desktop` produces the macOS App and DMG under `release/`.
+- `just build` produces the macOS App and DMG under `release/`.
   Use electron-builder's built-in macOS signing configured in `electron-builder.yml`;
   do not duplicate its signing pipeline in a custom script. The build and local
   install entry points share `bundleDesktop()` for versioning and artifact paths.
-  `npm run test:desktop` builds and validates the Rust process lifecycle.
-  `npm run test:electron` validates the packaged App and electron-vite development
+  `just test-desktop` builds and validates the Rust process lifecycle.
+  `just test-electron` validates the packaged App and electron-vite development
   lifecycle with isolated homes; build the package first.
 
 
-- `npm run bundle:desktop` invokes `cargo xtask sidecars bundle` before applying
+- `just build` invokes `cargo xtask sidecars bundle` before applying
   the Electron bundle configuration.
 - Development runs prepare debug sidecars through the same xtask workflow. The
   default co-workspace layout resolves amux from `../amux`; override it with

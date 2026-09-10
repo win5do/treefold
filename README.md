@@ -108,21 +108,35 @@ main/preload/build tooling and `tsconfig.web.json` checks the renderer.
 `src/preload/bridge.d.ts` owns the shared desktop bridge contract, so Node code
 never imports renderer implementation files for its types.
 
+Use `just --list` to discover developer commands:
+
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` / `just app-dev` | Desktop development, isolated `.treefold-dev`, React HMR and main/preload/Rust watching |
-| `npm run dev:no-watch` / `just app-dev-no-watch` | Desktop development without main/preload/Rust watching; renderer HMR remains available |
+| `just app-dev` | Desktop development with isolated `.treefold-dev` and hot reload |
+| `just app-dev-no-watch` | Desktop development without main/preload/Rust watching; renderer HMR remains available |
 | `just app-default` | Intentionally use `~/.treefold` for desktop development |
-| `npm run dev:web` / `just web-dev` | Browser-only Vite server; requires a separate API |
-| `npm run typecheck` | Check application code, scripts, and tests |
-| `npm run build` | Typecheck and build main/preload/renderer to `out/` |
-| `npm start` | Preview the built desktop; prepare debug sidecars first with `cargo xtask sidecars dev` |
-| `npm run build:web` | Build the standalone renderer to `dist/` |
-| `npm run bundle:desktop` / `just build` | Build release Rust sidecars, desktop assets, signed App and DMG in `release/` |
+| `just web-dev` | Browser-only Vite server; requires a separate API |
 | `just check` | TypeScript, SQLx metadata, Rust formatting and compilation |
-| `just test` | Rust, standalone backend and deterministic browser tests |
-| `just test-electron` | Packaged App and electron-vite development lifecycle tests; build the package first |
+| `just typecheck` | Check application code, scripts, and tests |
+| `just test` | Rust, backend lifecycle/install, and deterministic browser tests |
+| `just test-backend` / `just test-desktop` / `just test-ui` | Run one test suite; desktop tests build the backend first |
+| `just test-electron` | Packaged App and development lifecycle tests; run `just build` first |
+| `just build-backend` | Build the standalone Rust backend |
+| `just prepare-sidecars [dev\|bundle]` | Prepare sidecars independently; defaults to debug development builds |
+| `just database-prepare` / `just database-check` | Regenerate or validate SQLx metadata |
+| `just build` | Build release sidecars, desktop assets, signed App and DMG in `release/` |
 | `just install-app-local` | Build and replace the local installed App |
+
+`just` owns developer entry points, standalone Cargo tasks, and check/test
+composition. npm scripts own TypeScript, frontend, and Electron tool commands:
+`npm run build` compiles main/preload/renderer to `out/`, `npm run build:web`
+builds the renderer to `dist/`, and `npm start` previews compiled desktop assets
+(after `just prepare-sidecars`). `npm run test:desktop` runs only the Node tests;
+use `just test-desktop` to also build their backend prerequisite.
+TypeScript scripts own workflows that pass versions, return artifact paths, or
+roll back installation. `scripts/bundle-app.ts` shares the complete build flow
+with `scripts/install-app-local.ts`; its internal Cargo calls keep sidecar and
+Electron versions consistent. npm scripts do not invoke just.
 
 `TREEFOLD_HOME` takes priority over `TREEFOLD_DEV_HOME`; desktop development
 otherwise defaults to `.treefold-dev`. UI port defaults to 15011 and the API

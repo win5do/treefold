@@ -3,31 +3,59 @@ default: check
 default-home := env("HOME") + "/.treefold"
 dev-home := env("TREEFOLD_DEV_HOME", justfile_directory() + "/.treefold-dev")
 
+# Start desktop development with isolated local data and hot reload.
 app-dev:
     TREEFOLD_HOME="{{ dev-home }}" npm run dev
 
+# Start desktop development against ~/.treefold intentionally.
 app-default:
     TREEFOLD_HOME="{{ default-home }}" npm run dev
 
+# Start isolated desktop development without main/preload/Rust watching.
 app-dev-no-watch:
     TREEFOLD_HOME="{{ dev-home }}" npm run dev:no-watch
 
+# Use ~/.treefold without main/preload/Rust watching.
 app-default-no-watch:
     TREEFOLD_HOME="{{ default-home }}" npm run dev:no-watch
 
-check:
+# Run TypeScript, database, and Rust checks.
+check: typecheck database-check check-backend
+
+# Check application, tooling, and test TypeScript.
+typecheck:
     npm run typecheck
-    cargo xtask database check
+
+# Check Rust formatting and compilation.
+check-backend:
     cargo fmt --manifest-path src/backend/Cargo.toml --check
     cargo check --manifest-path src/backend/Cargo.toml
 
+# Validate migrations and offline SQLx metadata.
+database-check:
+    cargo xtask database check
+
+# Regenerate offline SQLx metadata after query or migration changes.
+database-prepare:
+    cargo xtask database prepare
+
+# Build the standalone Rust backend.
+build-backend:
+    cargo build --manifest-path src/backend/Cargo.toml
+
+# Prepare sidecars independently (dev or bundle).
+prepare-sidecars mode="dev":
+    cargo xtask sidecars {{ quote(mode) }}
+
+# Build the signed App and DMG with one shared version.
 build:
-    npm run bundle:desktop
+    node scripts/bundle-app.ts
 
 # Build an ad-hoc signed, timestamped App + DMG and install the App in /Applications.
 install-app-local:
     node scripts/install-app-local.ts
 
+# Remove generated Rust, frontend, and packaging outputs.
 clean:
     cargo clean --manifest-path src/backend/Cargo.toml
     rm -rf out dist release
@@ -36,10 +64,21 @@ clean:
 web-dev:
     npm run dev:web
 
-test:
-    npm run test:backend
+# Run Rust, backend lifecycle/install, and deterministic browser tests.
+test: test-backend test-desktop test-ui
+
+# Run Rust tests.
+test-backend:
+    cargo test --manifest-path src/backend/Cargo.toml
+
+# Build the backend before running Node lifecycle and installation tests.
+test-desktop: build-backend
     npm run test:desktop
+
+# Run deterministic browser tests.
+test-ui:
     npm run test:ui
 
+# Test packaged and development Electron lifecycles; run build first.
 test-electron:
     npm run test:electron
