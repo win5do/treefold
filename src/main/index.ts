@@ -37,6 +37,8 @@ async function external(url: string) {
   if (['https:', 'http:'].includes(new URL(url).protocol)) await shell.openExternal(url);
 }
 async function start() {
+  // Development runs inside Electron.app, whose bundle icon is not Treefold's.
+  if (!app.isPackaged && app.dock) app.dock.setIcon(path.join(root, 'build/icons/icon.png'));
   const resources = app.isPackaged ? process.resourcesPath : path.join(root, 'src/backend', 'bundle-staging');
   const bin = app.isPackaged ? path.join(resources, 'bin') : path.join(resources, 'dev-sidecars', 'bin');
   backend = new Backend({
