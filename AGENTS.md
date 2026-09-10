@@ -79,8 +79,20 @@ task runner but is optional.
   automatically selected API port.
 - Use `app-dev-no-watch` or `app-default-no-watch` when main/preload/Rust watching is not
   needed; renderer HMR remains enabled.
-- Run `just check` for the standard validation set and `just build` for a full
-  application build.
+- Run `just --list` to discover tasks, `just check` for the standard validation
+  set, and `just build` for a full application build. `just typecheck` runs only
+  TypeScript checks; `just check-backend` checks Rust formatting and compilation.
+- Run `just test` for Rust, backend lifecycle/install, and deterministic browser
+  tests. `just test-backend`, `just test-desktop`, and `just test-ui` run individual
+  suites. `just test-desktop` builds the backend prerequisite; the underlying
+  `npm run test:desktop` runs only Node tests.
+- `just build-backend` builds the standalone backend. `just prepare-sidecars`
+  prepares debug sidecars; pass `bundle` for release sidecars. `npm start`
+  previews compiled desktop assets after debug sidecars have been prepared.
+- `scripts/rust-sidecars.ts` prepares and watches Rust inputs during development.
+  Electron-only changes do not run Cargo. electron-vite handles main restarts and
+  preload reloads; the main process waits for the previous instance's Rust child
+  to stop before acquiring its lock.
 
 ### SQLx development workflow
 
@@ -102,18 +114,31 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 
 ### Desktop build and sidecars
 
+- `electron-vite` builds main/preload/renderer assets; `electron-builder` packages
+  macOS apps. `electron.vite.config.ts` shares renderer configuration from
+  `vite.config.ts` with deterministic browser tests.
+- React lives in `src/renderer/src/`, Rust CLI code in `src/cli/`, icons and signing
+  entitlements in `build/`, and repository Rust tooling in `xtask/`.
+  Rust crates retain their own `Cargo.toml`, `Cargo.lock`, and `src/` directories.
+- `tsconfig.json` is the project-reference entry point. `tsconfig.node.json`
+  checks main/preload/build tooling; `tsconfig.web.json` checks the renderer.
+  `src/preload/bridge.d.ts` owns the shared desktop bridge contract; Node code
+  must not import renderer implementation files for types.
+- Main/preload source is TypeScript with `.cjs` runtime build output.
+  electron-vite 5 supports Vite 5–7; this project uses Vite 7 and React plugin 5.
+
 - `src/main/` and `src/preload/` own the desktop main process, sandboxed preload
   bridge, and backend process supervision. `src/backend/` owns the Rust
   HTTP/WebSocket service and all business state. Keep business behavior out of Electron IPC handlers.
 - `just build` produces the macOS App and DMG under `release/`.
   Use electron-builder's built-in macOS signing configured in `electron-builder.yml`;
   do not duplicate its signing pipeline in a custom script. The build and local
-  install entry points share `bundleDesktop()` for versioning and artifact paths.
+  install entry points share `bundleDesktop()` in `scripts/bundle-app.ts` for
+  SemVer validation, version propagation, and artifact paths. Keep its Cargo
+  calls inside that workflow so sidecars and Electron share one build version.
   `just test-desktop` builds and validates the Rust process lifecycle.
   `just test-electron` validates the packaged App and electron-vite development
   lifecycle with isolated homes; build the package first.
-
-
 - `just build` invokes `cargo xtask sidecars bundle` before applying
   the Electron bundle configuration.
 - Development runs prepare debug sidecars through the same xtask workflow. The
@@ -126,6 +151,9 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
   the local installation. Quit an installed Treefold instance first.
   `TREEFOLD_BUILD_VERSION` supplies a reproducible SemVer build value and
   `TREEFOLD_INSTALL_DIR` changes the destination from `/Applications`.
+  Local installs default to a UTC timestamped version. Installation validates a
+  temporary copy before replacing the old App and restores it if replacement
+  fails.
 
 ## Configuration and persistence ownership
 

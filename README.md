@@ -85,81 +85,13 @@ Deferred designs, which are not runtime contracts:
 
 ## Development and builds
 
-The desktop uses `electron-vite` for main/preload/renderer builds and
-`electron-builder` for macOS packaging. React remains in `src/renderer/src/`; Electron
-TypeScript lives in `src/main/` and `src/preload/`. `electron.vite.config.ts` shares the renderer
-configuration in `vite.config.ts` with standalone browser tests.
+On macOS, install stable Rust, Node.js 24.12+, Git, and just, then run
+`npm install` once.
 
-```text
-src/
-├── main/          # Electron main process and Rust child supervisor
-├── preload/       # Isolated desktop bridge
-├── renderer/      # index.html + src/ React application
-├── backend/       # Rust API, migrations and offline SQLx metadata
-└── cli/           # Rust CLI and Treefold Skill
-build/             # Icons and macOS signing entitlements
-xtask/             # Repository build/database tooling
+```bash
+just app-dev  # Run locally with hot reload and isolated .treefold-dev data
+just build    # Build a signed App and DMG in release/
 ```
 
-Rust crates retain their own `Cargo.toml`, `Cargo.lock`, and `src/` directories.
-User configuration and runtime data remain outside the source tree.
-`tsconfig.json` is the project-reference entry point; `tsconfig.node.json` checks
-main/preload/build tooling and `tsconfig.web.json` checks the renderer.
-`src/preload/bridge.d.ts` owns the shared desktop bridge contract, so Node code
-never imports renderer implementation files for its types.
-
-Use `just --list` to discover developer commands:
-
-| Command | Purpose |
-| --- | --- |
-| `just app-dev` | Desktop development with isolated `.treefold-dev` and hot reload |
-| `just app-dev-no-watch` | Desktop development without main/preload/Rust watching; renderer HMR remains available |
-| `just app-default` | Intentionally use `~/.treefold` for desktop development |
-| `just check` | TypeScript, SQLx metadata, Rust formatting and compilation |
-| `just typecheck` | Check application code, scripts, and tests |
-| `just test` | Rust, backend lifecycle/install, and deterministic browser tests |
-| `just test-backend` / `just test-desktop` / `just test-ui` | Run one test suite; desktop tests build the backend first |
-| `just test-electron` | Packaged App and development lifecycle tests; run `just build` first |
-| `just build-backend` | Build the standalone Rust backend |
-| `just prepare-sidecars [dev\|bundle]` | Prepare sidecars independently; defaults to debug development builds |
-| `just database-prepare` / `just database-check` | Regenerate or validate SQLx metadata |
-| `just build` | Build release sidecars, desktop assets, signed App and DMG in `release/` |
-| `just install-app-local` | Build and replace the local installed App |
-
-`just` owns developer entry points, standalone Cargo tasks, and check/test
-composition. npm scripts own TypeScript, frontend, and Electron tool commands:
-`npm run build` compiles main/preload/renderer to `out/`, and `npm start`
-previews compiled desktop assets
-(after `just prepare-sidecars`). `npm run test:desktop` runs only the Node tests;
-use `just test-desktop` to also build their backend prerequisite.
-TypeScript scripts own workflows that pass versions, return artifact paths, or
-roll back installation. `scripts/bundle-app.ts` shares the complete build flow
-with `scripts/install-app-local.ts`; its internal Cargo calls keep sidecar and
-Electron versions consistent. npm scripts do not invoke just.
-
-`TREEFOLD_HOME` takes priority over `TREEFOLD_DEV_HOME`; desktop development
-otherwise defaults to `.treefold-dev`. UI port defaults to 15011 and the API
-selects a free port. Use `TREEFOLD_UI_PORT` / `TREEFOLD_API_PORT` to override.
-
-`scripts/rust-sidecars.ts` prepares and watches Rust inputs only during desktop
-development. Electron-only changes do not run Cargo. electron-vite handles
-main restarts and preload reloads. The main process waits for the previous
-instance to finish shutting down its Rust child before acquiring its lock.
-
-Packaging, local installation, and test entry points use TypeScript
-and run directly with Node.js 24.12+ type stripping. No separate TS runner or
-precompilation is required. Use explicit `.ts` runtime imports and `import type`
-for types; avoid enums, parameter properties, and other syntax that requires
-transformation. `npm run typecheck` checks these files separately because Node
-does not check types. UI tests also typecheck their browser-side Vite imports.
-`electron-builder.yml` owns ad-hoc signing, entitlements, and strict signature
-verification through electron-builder's built-in macOS signer. No custom signing
-hook is needed. Packaging and `just install-app-local` share one builder API
-entry point and SemVer validation. Local installs default to a UTC timestamped
-version; `TREEFOLD_BUILD_VERSION` overrides it. Installation verifies a temporary
-copy before replacing the old App, and restores the old App if replacement fails.
-`TREEFOLD_INSTALL_DIR` can select an isolated installation directory.
-
-Electron main/preload source remains TS, with `.cjs` build output for the
-desktop runtime. electron-vite 5 currently supports Vite 5–7, so this
-project uses Vite 7 with the compatible React plugin 5.
+See [AGENTS.md](AGENTS.md#development-environment-and-commands) for development,
+testing, and local installation details.
