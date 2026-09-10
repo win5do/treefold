@@ -8,7 +8,7 @@ export default defineConfig({
   outputDir: '/tmp/treefold-playwright-results',
   reporter: 'list',
   projects: [
-    { name: 'desktop', testMatch: 'desktop/*.test.ts' },
+    { name: 'integration', testMatch: 'integration/*.test.ts' },
     { name: 'ui', testMatch: 'ui/*.spec.ts' },
     { name: 'electron', testMatch: 'electron/*.test.ts' },
   ],

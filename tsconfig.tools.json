@@ -21,7 +21,7 @@
   },
   "include": [
     "scripts/**/*.ts",
-    "tests/desktop/**/*.ts",
+    "tests/integration/**/*.ts",
     "tests/electron/**/*.ts",
     "src/preload/bridge.d.ts",
     "src/main/backend.ts",

@@ -8,7 +8,7 @@ const root = path.resolve(import.meta.dirname, '..');
 
 type BundleOptions = { localInstall?: boolean; directoryOnly?: boolean };
 
-export async function bundleDesktop({ localInstall = false, directoryOnly = false }: BundleOptions = {}) {
+export async function bundleApp({ localInstall = false, directoryOnly = false }: BundleOptions = {}) {
   if (process.platform !== 'darwin') throw new Error('Treefold currently supports macOS desktop packaging.');
   const metadata = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
   const timestamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
@@ -38,4 +38,4 @@ export async function bundleDesktop({ localInstall = false, directoryOnly = fals
   return { appPath, version, artifacts };
 }
 
-if (import.meta.main) await bundleDesktop({ directoryOnly: process.argv.includes('--dir') });
+if (import.meta.main) await bundleApp({ directoryOnly: process.argv.includes('--dir') });

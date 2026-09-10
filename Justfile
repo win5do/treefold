@@ -61,15 +61,15 @@ clean:
     rm -rf out dist release
 
 # Run Rust, backend lifecycle/install, and deterministic Electron UI tests.
-test: test-backend test-desktop test-ui
+test: test-backend test-integration test-ui
 
 # Run Rust tests.
 test-backend:
     cargo test --manifest-path src/backend/Cargo.toml
 
 # Build the backend before running Playwright backend and installation tests.
-test-desktop: build-backend
-    npm run test:desktop
+test-integration: build-backend
+    npm run test:integration
 
 # Run deterministic Electron UI tests.
 test-ui:

@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { bundleDesktop } from './bundle-app.ts';
+import { bundleApp } from './bundle-app.ts';
 
 function assertAppStopped(installedApp: string) {
   const executable = path.join(installedApp, 'Contents/MacOS');
@@ -58,7 +58,7 @@ export function installApp(appPath: string, installDir: string, version: string)
 if (import.meta.main) {
   const installDir = path.resolve(process.env.TREEFOLD_INSTALL_DIR ?? '/Applications');
   assertAppStopped(path.join(installDir, 'Treefold.app'));
-  const { appPath, version, artifacts } = await bundleDesktop({ localInstall: true });
+  const { appPath, version, artifacts } = await bundleApp({ localInstall: true });
   const installedApp = installApp(appPath, installDir, version);
   console.log(`Installed Treefold ${version} at ${installedApp}`);
   for (const artifact of artifacts) if (artifact.endsWith('.dmg')) console.log(`Packaged DMG: ${artifact}`);

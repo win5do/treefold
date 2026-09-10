@@ -84,9 +84,9 @@ task runner but is optional.
   set, and `just build` for a full application build. `just typecheck` runs only
   TypeScript checks; `just check-backend` checks Rust formatting and compilation.
 - Run `just test` for Rust, backend lifecycle/install, and deterministic Electron UI
-  tests. `just test-backend`, `just test-desktop`, and `just test-ui` run individual
-  suites. `just test-desktop` builds the backend prerequisite; the underlying
-  `npm run test:desktop` runs only the backend/install tests.
+  tests. `just test-backend`, `just test-integration`, and `just test-ui` run individual
+  suites. `just test-integration` builds the backend prerequisite; the underlying
+  `npm run test:integration` runs only the backend/install tests.
 - `just build-backend` builds the standalone backend. `just prepare-sidecars`
   prepares debug sidecars; pass `bundle` for release sidecars. `npm start`
   previews compiled desktop assets after debug sidecars have been prepared.
@@ -134,10 +134,10 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 - `just build` produces the macOS App and DMG under `release/`.
   Use electron-builder's built-in macOS signing configured in `electron-builder.yml`;
   do not duplicate its signing pipeline in a custom script. The build and local
-  install entry points share `bundleDesktop()` in `scripts/bundle-app.ts` for
+  install entry points share `bundleApp()` in `scripts/bundle-app.ts` for
   SemVer validation, version propagation, and artifact paths. Keep its Cargo
   calls inside that workflow so sidecars and Electron share one build version.
-  `just test-desktop` builds and validates the Rust process lifecycle.
+  `just test-integration` builds and validates the Rust process lifecycle.
   `just test-electron` validates the packaged App and electron-vite development
   lifecycle with isolated homes; build the package first.
 - `just build` invokes `cargo xtask sidecars bundle` before applying
@@ -237,7 +237,7 @@ serial execution. `npm run test:ui` runs deterministic UI scenarios in an Electr
 BrowserWindow with the production preload and fixture API. `npm run test:electron`
 runs packaged App and development lifecycle coverage against the real main process.
 Rust unit tests remain in Cargo. Standalone backend and installation tests use
-the Playwright `desktop` project without launching a renderer.
+the Playwright `integration` project without launching a renderer.
 
 ### Default checks
 

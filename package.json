@@ -12,7 +12,7 @@
     "build": "npm run typecheck && electron-vite build",
     "test:ui": "playwright test --project=ui",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:tools",
-    "test:desktop": "playwright test --project=desktop",
+    "test:integration": "playwright test --project=integration",
     "test:electron": "playwright test --project=electron",
     "start": "electron-vite preview",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
