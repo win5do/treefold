@@ -51,7 +51,6 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; min-height: 100%; }
 body { margin: 0; overflow: hidden; }
-button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 .xterm { height: 100%; padding: 4px; }
