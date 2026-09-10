@@ -60,18 +60,18 @@ clean:
     cargo clean --manifest-path src/backend/Cargo.toml
     rm -rf out dist release
 
-# Run Rust, backend lifecycle/install, and deterministic browser tests.
+# Run Rust, backend lifecycle/install, and deterministic Electron UI tests.
 test: test-backend test-desktop test-ui
 
 # Run Rust tests.
 test-backend:
     cargo test --manifest-path src/backend/Cargo.toml
 
-# Build the backend before running Node lifecycle and installation tests.
+# Build the backend before running Playwright backend and installation tests.
 test-desktop: build-backend
     npm run test:desktop
 
-# Run deterministic browser tests.
+# Run deterministic Electron UI tests.
 test-ui:
     npm run test:ui
 

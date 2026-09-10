@@ -1,0 +1,52 @@
+import { test, expect, type Page } from "@playwright/test";
+import assert from "node:assert/strict";
+import { FIXTURE_COMMITS, FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
+import { startUiHarness } from "./ui-harness.ts";
+import {
+  closeUiSession,
+  createUiSession,
+  openUiContextMenu,
+} from "./harness/session.ts";
+
+test("git-diff", async () => {
+  const harness = await startUiHarness();
+  let page!: Page;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "git-diff" });
+    await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+    await (page.locator('[data-testid="workspace-sidebar"]')).waitFor({ timeout: 10_000, state: 'visible' });
+    await page.locator('button[aria-label="Show right sidebar"]').click();
+    await page.locator('button[role="tab"][aria-label="Git History"]').click();
+    await expect.poll(async () => (await (await page.locator('[data-testid="git-history-commit"]').all()).length) === FIXTURE_COMMITS.length, { timeout: 3_000 }).toBeTruthy();
+    const commits = await page.locator('[data-testid="git-history-commit"]').all();
+    await commits[0].click();
+    await commits[2].click({ modifiers: ["Shift"] });
+    await openUiContextMenu(page, commits[1]);
+    await (page.locator('[data-testid="view-git-diff-action"]')).click();
+    await (page.locator("h1:text-is(\"Commit Diff\")")).waitFor({ timeout: 5_000, state: 'visible' });
+    assert.equal((page.context().pages()).length, 1, "View Diff must remain in the current window");
+    assert.match(page.url(), /view=git-changes/, "View Diff must switch the Workspace main view");
+    assert.deepEqual(harness.compareRequests.at(-1), {
+      repositoryId: FIXTURE_IDS.primaryRepository,
+      action: "git-diff",
+      scope: "commit",
+      start_commit: FIXTURE_COMMITS[2].hash,
+      end_commit: FIXTURE_COMMITS[0].hash,
+      commit_count: 3,
+    });
+    assert.equal(await page.locator('[data-testid="git-diff-content"]').isVisible(), true, "inline diff content must be displayed");
+    const next = page.locator('button[aria-label="Next file"]');
+    await expect(next).toBeEnabled({ timeout: 3_000 });
+    await next.click();
+    await (page.locator('[title="src/alpha.ts"]')).waitFor({ timeout: 3_000, state: 'visible' });
+    harness.assertNoUnexpectedRequests();
+    console.log("✓ Git History opens commit diff in the Workspace main view");
+  } catch (error) {
+    await page.screenshot({ path: "/tmp/treefold-git-diff-failure.png" }).catch(() => {});
+    throw error;
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+
+});
+

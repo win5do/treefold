@@ -66,7 +66,8 @@ task runner but is optional.
 - `npm run dev` uses electron-vite for desktop development.
   `npm run build` builds main/preload/renderer
   to `out/`; `npm run typecheck` checks application code, scripts, and tests.
-- Run scripts and tests directly with Node type stripping (`node file.ts`).
+- Run standalone scripts with Node type stripping (`node file.ts`).
+  Playwright Test loads UI/Electron test TypeScript through its runner.
   Keep runtime imports explicit (`./file.ts`), use type-only imports for types,
   and avoid syntax requiring transformation. Node does not run type checks.
   `tsconfig.tools.json` checks direct Node entry points; `tsconfig.ui-tests.json`
@@ -82,10 +83,10 @@ task runner but is optional.
 - Run `just --list` to discover tasks, `just check` for the standard validation
   set, and `just build` for a full application build. `just typecheck` runs only
   TypeScript checks; `just check-backend` checks Rust formatting and compilation.
-- Run `just test` for Rust, backend lifecycle/install, and deterministic browser
+- Run `just test` for Rust, backend lifecycle/install, and deterministic Electron UI
   tests. `just test-backend`, `just test-desktop`, and `just test-ui` run individual
   suites. `just test-desktop` builds the backend prerequisite; the underlying
-  `npm run test:desktop` runs only Node tests.
+  `npm run test:desktop` runs only the backend/install tests.
 - `just build-backend` builds the standalone backend. `just prepare-sidecars`
   prepares debug sidecars; pass `bundle` for release sidecars. `npm start`
   previews compiled desktop assets after debug sidecars have been prepared.
@@ -116,7 +117,7 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 
 - `electron-vite` builds main/preload/renderer assets; `electron-builder` packages
   macOS apps. `electron.vite.config.ts` shares renderer configuration from
-  `vite.config.ts` with deterministic browser tests.
+  `vite.config.ts` with deterministic Electron UI tests.
 - React lives in `src/renderer/src/`, Rust CLI code in `src/cli/`, icons and signing
   entitlements in `build/`, and repository Rust tooling in `xtask/`.
   Rust crates retain their own `Cargo.toml`, `Cargo.lock`, and `src/` directories.
@@ -230,65 +231,54 @@ source of truth for this configuration.
 
 ## UI verification workflow
 
-Treefold is delivered as a Electron desktop App, but deterministic browser-based
-coverage is the default verification surface. Use WebdriverIO for regression
-coverage and focused browser diagnostics for DOM state, accessibility, geometry,
-screenshots, and console errors. Important behavior that depends on the Electron
-runtime, renderer, or native integration may additionally use focused automated
-Electron UI tests. Do not use Computer Use to control the real App or perform a
-manual desktop acceptance pass unless the user explicitly requests it. Run the
-existing browser suite for user-visible behavior changes and broader frontend
-work; presentation-only fixes may use the faster browser-diagnostics workflow
-below. Adding or changing automated coverage is not required. New UI tests must
-pass the admission gate below.
+Treefold UI tests use Playwright Test with Electron, with no standalone Chrome
+or WebDriver transport. `playwright.config.ts` owns automatic test discovery and
+serial execution. `npm run test:ui` runs deterministic UI scenarios in an Electron
+BrowserWindow with the production preload and fixture API. `npm run test:electron`
+runs packaged App and development lifecycle coverage against the real main process.
+Rust unit tests remain in Cargo. Standalone backend and installation tests use
+the Playwright `desktop` project without launching a renderer.
 
 ### Default checks
 
-Run the following from the repository root:
+1. Run `just typecheck` after every TypeScript or React change.
+2. Run `npm run build` for dependency, production build, substantial frontend,
+   routing, or broad layout changes.
+3. Run `just test-ui` for user-visible behavior changes and broader frontend work.
+   Use focused Playwright Electron diagnostics and screenshots for presentation
+   changes that do not pass the automated test admission gate below.
+4. For main process, native integration, or lifecycle changes, run
+   `just test-electron` after building the current App with `just build`.
 
-1. Run `npm run typecheck` after every TypeScript or React change, including
-   small presentation-only TSX changes. It is the default fast correctness
-   check and should not be skipped merely because the edit is visually small.
-2. Run `npm run build` for substantial frontend features, routing or lazy-load
-   changes, dependency changes, production-bundle changes, or broad layout
-   refactors. It is not required for an isolated spacing, color, typography, or
-   class-name adjustment when `typecheck` is sufficient.
-3. Run `npm run test:ui` for user-visible behavior changes and broader frontend
-   work. Presentation-only changes that do not pass the automated UI-test
-   admission gate may instead use focused browser diagnostics against a current
-   dev UI.
-4. For UI presentation defects, prefer a short feedback loop: connect Codex
-   browser control to the current dev UI URL emitted by the repository's normal
-   development workflow, including `default-app` and similar commands,
-   reproduce the affected state, and inspect screenshots, DOM state, computed
-   styles, element bounds, hit testing, accessibility, and console errors as
-   relevant. Discover and reuse an already-running current instance before
-   starting a duplicate UI process.
-
-For important or critical behavior that crosses the browser/Electron boundary, run
-or add a focused Electron UI test when it provides meaningful regression coverage.
-Do not treat manual App acceptance as a default completion requirement. If the
-user explicitly requests manual App verification, report the exercised App
-states and any remaining gaps. The final handoff must state which commands
-passed, which browser diagnostics or Electron UI tests were used, and any behavior
-that remains unverified.
+Do not use Computer Use or perform manual desktop acceptance unless explicitly
+requested. Automated Electron runs use isolated temporary homes. Report passed
+commands, exercised Electron scenarios, and any remaining verification gaps.
 
 ### Deterministic UI fixture
 
 `npm run test:ui` must be self-contained by default. It must not depend on the user's Treefold database, existing Projects, fixed local directories, Git worktrees, or an already-running Electron backend.
 
-- `tests/ui/ui-harness.ts` starts the fixture API and Vite on ephemeral ports and closes both in `finally` cleanup.
+- `tests/ui/ui-harness.ts` starts the fixture API and renderer asset server on
+  ephemeral ports. Vite serves assets inside Electron; tests do not launch Chrome.
+- `tests/ui/harness/session.ts` launches Electron through Playwright with a
+  test-only main process, the production preload, and a unique temporary userData
+  directory. Close the Electron application and both servers in `finally`, and
+  remove temporary builds and data. Test main-process handlers must remain inert;
+  production IPC and backend lifecycle are covered by `tests/electron/`.
+- UI cases use native Playwright Page/Locator APIs. Do not add WebDriver adapters
+  or browser transport switches. Add `tests/ui/*.spec.ts` cases without changing
+  npm scripts.
 - `tests/ui/fixtures/sidebar-core.ts` owns fixed IDs, timestamps, names, and API responses for the sidebar core flow.
 - The fixture API must reject and record unimplemented requests so a new frontend dependency cannot silently pass.
 - Use inert fixture Sessions; UI layout tests must not launch real Shell or Codex processes.
 - Keep fixture data deterministic and include relevant stress states such as long labels, active and archived records, nested tree rows, and empty collections.
 - Do not weaken fixture data or assertions merely to make a regression pass. Update them only when the intended product behavior changes.
 
-`TREEFOLD_UI_URL` may be used only when an already-running UI instance is wired to this same deterministic fixture API; it is not a path for testing user data. The default checked-in test path must remain isolated and reproducible.
+Do not connect UI tests to an external UI URL or user data. Each run creates its own fixture API and Electron session.
 
-### WebdriverIO core flow
+### Playwright core flow
 
-Keep `tests/ui/sidebar.core.ts` small and focused on stable, high-value behavior. Do not add a new feature domain to this core flow. Split or replace legacy cross-domain coverage before extending it, and do not treat existing broad coverage as precedent for appending more scenarios.
+Keep `tests/ui/sidebar.core.spec.ts` small and focused on stable, high-value behavior. Do not add a new feature domain to this core flow. Split or replace legacy cross-domain coverage before extending it, and do not treat existing broad coverage as precedent for appending more scenarios.
 
 #### Automated UI-test admission gate
 
@@ -300,13 +290,13 @@ Add or update an automated UI test only when the regression would change at leas
 - keyboard behavior or another accessibility semantic;
 - shared overlay reachability or occlusion behavior covered under the representative-overlay rules below.
 
-Do not add or update automated tests for presentation-only changes, including spacing, alignment, centering, dimensions, colors, typography, icon placement, animation names, static copy, or visual hierarchy. A useful test must survive a pure CSS refactor that preserves behavior and accessibility. Verify presentation changes with focused browser diagnostics and screenshots. Inspect the current Treefold App only when the user explicitly requests manual App verification.
+Do not add or update automated tests for presentation-only changes, including spacing, alignment, centering, dimensions, colors, typography, icon placement, animation names, static copy, or visual hierarchy. A useful test must survive a pure CSS refactor that preserves behavior and accessibility. Verify presentation changes with focused Playwright Electron diagnostics and screenshots. Inspect the current Treefold App only when the user explicitly requests manual App verification.
 
 Outside the representative overlay helper, automated tests must not assert exact pixels, element coordinates, computed CSS properties, DOM sibling order, or animation implementation details. Do not use `getLocation`, `getSize`, `getCSSProperty`, or `compareDocumentPosition` to encode visual design. Functional resize limits may assert the resulting persisted value, but not incidental page offsets.
 
 Do not retain permanent "tombstone" assertions that merely prove a removed label, field, or control is absent. Keep a negative assertion only when absence enforces a current permission, data-ownership, safety, or contextual-visibility contract. Remove transitional assertions once the migration they protect is complete.
 
-Before adding a UI assertion, identify the concrete user-visible failure it detects and confirm that existing coverage does not already detect it. Cover shared components and interaction models once with a representative stress case; usage sites should assert only their distinct business behavior. Prefer unit, API, or contract tests when a browser is not required.
+Before adding a UI assertion, identify the concrete user-visible failure it detects and confirm that existing coverage does not already detect it. Cover shared components and interaction models once with a representative stress case; usage sites should assert only their distinct business behavior. Prefer unit, API, or contract tests when a renderer is not required.
 
 Prefer semantic locators such as roles, accessible names, and labels, followed by stable `data-testid` attributes. Do not locate controls by fragile DOM depth or absolute screen coordinates.
 
@@ -329,18 +319,15 @@ Add or extend automated overlay coverage only when a shared overlay implementati
 - Capture and inspect screenshots whenever the risk involves clipping, overlap, alignment, stacking, animation, or hierarchy. A DOM snapshot may complement but cannot replace the screenshot for these risks.
 - Keep geometry and hit-testing inside a small reusable overlay helper so the same acceptance checks apply to future overlays without spreading coordinate assertions through feature tests.
 
-The WebdriverIO session and all harness services must always be closed. Save a failure screenshot under `/tmp` when practical.
+The Electron application and all harness services must always be closed. Save a failure screenshot under `/tmp` when practical.
 
-### Browser diagnostics and optional desktop App acceptance
+### Electron diagnostics and optional desktop App acceptance
 
-After WebdriverIO passes, use browser control as an information-rich diagnostic surface where it adds value. Browser inspection is preferred for DOM and accessibility snapshots, computed layout, exact bounds, representative hit testing, screenshots, and console errors.
-
-For presentation-only investigation, browser control may be used directly
-against the current dev UI started by the normal development workflow, without
-first running the full WebdriverIO suite. The URL is normally emitted by that
-workflow and does not need to be supplied explicitly by the user. Treat that
-session as focused diagnosis of the reported state, not as deterministic
-regression coverage, and state what was inspected in the handoff.
+Use Playwright's Electron Page for DOM and accessibility inspection, computed
+layout, hit testing, screenshots, and console errors. Presentation-only diagnosis
+can use a focused temporary Electron scenario without adding permanent assertions.
+Use the deterministic fixture unless the issue requires the real backend; in that
+case use an isolated home and the current build.
 
 Only when the user explicitly requests manual App acceptance, launch or connect
 to a Treefold desktop App built from the current working revision and inspect the
@@ -362,7 +349,7 @@ capture, focus transfer, keyboard shortcuts, IME, clipboard behavior, context
 menus, scrolling, file drops, and renderer-dependent event behavior—prefer a
 focused automated Electron UI test when practical. Exercise them manually in the
 desktop App only when the user explicitly requests it. If a requested App
-acceptance pass disagrees with browser or automated Electron results, report the
+acceptance pass disagrees with automated Electron results, report the
 disagreement and treat the real App result as authoritative.
 
 If exploration reveals a stable and mechanically testable regression risk, add automated coverage only when it passes the admission gate above. Presentation regressions must not be converted into pixel or CSS assertions.

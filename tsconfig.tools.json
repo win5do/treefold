@@ -24,7 +24,8 @@
     "tests/desktop/**/*.ts",
     "tests/electron/**/*.ts",
     "src/preload/bridge.d.ts",
-    "src/main/backend.ts"
+    "src/main/backend.ts",
+    "playwright.config.ts"
   ],
   "exclude": [
     "scripts/rust-sidecars.ts"

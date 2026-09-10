@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,7 +9,8 @@ const executable = path.resolve(process.env.TREEFOLD_BACKEND_PATH || 'src/backen
 function service(home: string) {
   return new Backend({ executable, env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' }, timeout: 15000 });
 }
-test('Rust API owns its home, preserves settings, and removes discovery state on exit', { timeout: 60000 }, async () => {
+test('Rust API owns its home, preserves settings, and removes discovery state on exit', async () => {
+  test.setTimeout(60000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-backend-'));
   const backend = service(home), duplicate = service(home);
   try {
@@ -34,7 +35,8 @@ test('Rust API owns its home, preserves settings, and removes discovery state on
   } finally { await duplicate.stop(); await backend.stop(); await rm(home, { recursive: true, force: true }); }
 });
 
-test('invalid settings surface the cause without rewriting the file', { timeout: 30000 }, async () => {
+test('invalid settings surface the cause without rewriting the file', async () => {
+  test.setTimeout(30000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-invalid-'));
   const backend = service(home);
   try {
@@ -47,7 +49,8 @@ test('invalid settings surface the cause without rewriting the file', { timeout:
 });
 
 
-test('unexpected backend exit retains recent stderr for diagnosis', { timeout: 30000 }, async () => {
+test('unexpected backend exit retains recent stderr for diagnosis', async () => {
+  test.setTimeout(30000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-crash-'));
   let report!: (error: Error) => void;
   const exited = new Promise<Error>(resolve => { report = resolve; });
@@ -66,7 +69,8 @@ test('unexpected backend exit retains recent stderr for diagnosis', { timeout: 3
 });
 
 
-test('request IDs correlate real API failures and mutations and are exposed to browsers', { timeout: 30000 }, async () => {
+test('request IDs correlate real API failures and mutations and are exposed to browsers', async () => {
+  test.setTimeout(30000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-request-id-'));
   const backend = service(home);
   try {

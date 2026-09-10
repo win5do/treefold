@@ -1,4 +1,4 @@
-import test from 'node:test';
+import { test } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, utimes } from 'node:fs/promises';
@@ -24,7 +24,8 @@ async function until(check: () => boolean | Promise<boolean>, description: strin
   throw new Error(`Timed out: ${description}`);
 }
 
-test('electron-vite watches main, preload and Rust while releasing the previous backend', { timeout: 240000 }, async () => {
+test('electron-vite watches main, preload and Rust while releasing the previous backend', async () => {
+  test.setTimeout(240000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-vite-'));
   let output = '';
   const child = spawn(process.execPath, ['node_modules/electron-vite/bin/electron-vite.js', 'dev', '--watch'], {
@@ -59,15 +60,24 @@ test('electron-vite watches main, preload and Rust while releasing the previous 
     console.error(output);
     throw error;
   } finally {
-    try { process.kill(-child.pid!, 'SIGTERM'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+    let stopped = false;
     try {
+      try { process.kill(-child.pid!, 'SIGTERM'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
       await until(async () => {
+        if (child.exitCode === null && child.signalCode === null) return false;
         try { await readFile(path.join(home, 'runtime/api-url')); return false; }
         catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
-      }, 'backend cleanup', 15000);
+      }, 'dev process and backend cleanup', 15000);
+      stopped = true;
     } finally {
-      try { process.kill(-child.pid!, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
-      await rm(home, { recursive: true, force: true });
+      try {
+        // Escalate only when graceful shutdown failed, never after a completed exit.
+        if (!stopped) {
+          try { process.kill(-child.pid!, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+        }
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
     }
   }
 });

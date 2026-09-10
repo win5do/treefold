@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { AgentIntegrationState, AppSettings, BackgroundProcess, GitBranches, GitSyncItemResult, Session, WorktreeDeleteOperation, WorktreeDeletePrecheck, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
+import type { AppSettings, BackgroundProcess, GitBranches, GitSyncItemResult, Session, WorktreeDeleteOperation, WorktreeDeletePrecheck, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
 import type { FixtureDirectory, FixtureProject, FixtureRepository, FixtureSession, FixtureWorkspace } from "../fixtures/types.ts";
 import http from "node:http";
 import path from "node:path";
@@ -1302,41 +1302,9 @@ async function startFixtureApi() {
   };
 }
 
-type UiHarness = Omit<Awaited<ReturnType<typeof startFixtureApi>>, "unexpectedRequests"> & { assertNoUnexpectedRequests(): void };
+type UiHarness = Omit<Awaited<ReturnType<typeof startFixtureApi>>, "unexpectedRequests"> & { apiUrl: string; assertNoUnexpectedRequests(): void };
 
 export async function startUiHarness(): Promise<UiHarness> {
-  if (process.env.TREEFOLD_UI_URL) {
-    return {
-      baseUrl: process.env.TREEFOLD_UI_URL,
-      syncRequests: [],
-      setNextBulkSyncResults() {},
-      locationRequests: [],
-      logsRevealRequests: [],
-      setNextLocationError() {},
-      repositoryUpdateRequests: [],
-      repositoryBaseRequests: [],
-      workspaceLocationUpdates: [],
-      renameRequests: [],
-      sessionOrderRequests: [],
-      deleteRequests: [],
-      amuxStopRequests: [],
-      agentIntegrationRequests: [],
-      setAgentIntegrationState(_state: AgentIntegrationState) {},
-      parentOperationRequests: [],
-      todoRequests: [],
-      compareRequests: [],
-      archiveAllStreams() {},
-      restoreActiveStreams() {},
-      setProjectStatus() {},
-      setProcessState() {},
-      restartRuntimeInstance() {},
-      setWorktreeDeletePrecheck() {},
-      removeProcess() {},
-      assertNoUnexpectedRequests() {},
-      async close() {},
-    };
-  }
-
   const fixtureApi = await startFixtureApi();
   let vite;
   try {
@@ -1370,6 +1338,7 @@ export async function startUiHarness(): Promise<UiHarness> {
 
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
+    apiUrl: fixtureApi.baseUrl,
     syncRequests: fixtureApi.syncRequests,
     setNextBulkSyncResults: fixtureApi.setNextBulkSyncResults,
     locationRequests: fixtureApi.locationRequests,
@@ -1402,8 +1371,7 @@ export async function startUiHarness(): Promise<UiHarness> {
       }
     },
     async close() {
-      await vite.close();
-      await fixtureApi.close();
+      try { await vite.close(); } finally { await fixtureApi.close(); }
     },
   };
 }

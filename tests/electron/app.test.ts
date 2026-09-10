@@ -1,13 +1,14 @@
-import type { ElectronApplication } from 'playwright-core';
-import test from 'node:test';
+import type { ElectronApplication } from '@playwright/test';
+import { test } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { _electron as electron } from 'playwright-core';
+import { _electron as electron } from '@playwright/test';
 
 const executablePath = process.env.TREEFOLD_ELECTRON_APP || path.resolve('release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Treefold.app/Contents/MacOS/Treefold');
-test('packaged Electron loads Rust API, persists settings, and preserves close-to-tray lifecycle', { timeout: 60000 }, async () => {
+test('packaged Electron loads Rust API, persists settings, and preserves close-to-tray lifecycle', async () => {
+  test.setTimeout(60000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-app-'));
   const env: NodeJS.ProcessEnv = { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' };
   delete env.ELECTRON_RUN_AS_NODE;
