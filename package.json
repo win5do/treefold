@@ -15,7 +15,7 @@
     "build": "npm run typecheck && electron-vite build",
     "build:web": "vite build",
     "prepare:sidecars": "cargo xtask sidecars bundle",
-    "bundle:desktop": "node scripts/buudle-app.ts",
+    "bundle:desktop": "node scripts/bundle-app.ts",
     "test:ui": "node tests/ui/run.ts",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:tools",
     "build:backend": "cargo build --manifest-path src/backend/Cargo.toml",

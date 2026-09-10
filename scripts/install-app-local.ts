@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
-import { bundleDesktop } from './buudle-app.ts';
+import { bundleDesktop } from './bundle-app.ts';
 
 function assertAppStopped(installedApp: string) {
   const executable = path.join(installedApp, 'Contents/MacOS');
