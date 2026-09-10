@@ -1,3 +1,5 @@
+import type { Todo, WorkspaceDirectory, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
+import type { FixtureProject, FixtureDirectory, FixtureRepository, FixtureSession, FixtureWorkspace, FixtureProjectDetail, FixtureWorkspaceDetail, FixturePreflight, SidebarFixture } from "./types.ts";
 export const FIXTURE_IDS = Object.freeze({
   project: "project-ui-fixture",
   primaryDirectory: "directory-primary-ui-fixture",
@@ -70,7 +72,7 @@ const forkPath = "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture";
 const secondaryForkPath =
   "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture-api";
 
-const project = {
+const project: FixtureProject = {
   id: FIXTURE_IDS.project,
   name: FIXTURE_NAMES.project,
   description: "Deterministic data used only by the Treefold UI core test.",
@@ -87,7 +89,7 @@ const project = {
   updated_at: timestamp,
 };
 
-const directories = [
+const directories: FixtureDirectory[] = [
   {
     id: FIXTURE_IDS.primaryDirectory,
     repository_id: FIXTURE_IDS.primaryRepository,
@@ -167,7 +169,7 @@ const directories = [
   },
 ];
 
-const repositories = [
+const repositories: FixtureRepository[] = [
   {
     id: FIXTURE_IDS.primaryRepository,
     project_id: FIXTURE_IDS.project,
@@ -212,7 +214,10 @@ function session({
   codexSessionId,
   visible = true,
   argv,
-}) {
+}: {
+  id: string; workspaceId: string; name: string; kind: FixtureSession["kind"];
+  cwd: string; status: FixtureSession["status"]; codexSessionId?: string; visible?: boolean; argv?: string[];
+}): FixtureSession {
   return {
     id,
     workspace_id: workspaceId,
@@ -231,7 +236,7 @@ function session({
     exit_signal: "",
     argv:
       argv ??
-      (kind === "codex" ? ["codex", "resume", codexSessionId] : ["/bin/zsh"]),
+      (kind === "codex" ? ["codex", "resume", codexSessionId!] : ["/bin/zsh"]),
     io_mode: kind === "command" ? "pipe" : "tty",
     launch_started_at: timestamp,
     last_attached_at: timestamp,
@@ -254,7 +259,7 @@ const projectSessions = [
   }),
 ];
 
-const workspace = {
+const workspace: FixtureWorkspace = {
   id: FIXTURE_IDS.workspace,
   project_id: FIXTURE_IDS.project,
   name: FIXTURE_NAMES.workspace,
@@ -284,7 +289,7 @@ const workspace = {
   updated_at: timestamp,
 };
 
-const fork = {
+const fork: FixtureWorkspace = {
   ...workspace,
   id: FIXTURE_IDS.fork,
   name: FIXTURE_NAMES.fork,
@@ -303,7 +308,7 @@ const fork = {
   runtime_name: "treefold-fork-ui-fixture",
 };
 
-const archivedWorkspace = {
+const archivedWorkspace: FixtureWorkspace = {
   ...workspace,
   id: FIXTURE_IDS.archivedWorkspace,
   name: FIXTURE_NAMES.archivedWorkspace,
@@ -318,7 +323,7 @@ const archivedWorkspace = {
   runtime_name: "treefold-archived-workspace-ui-fixture",
 };
 
-const archivedFork = {
+const archivedFork: FixtureWorkspace = {
   ...fork,
   id: FIXTURE_IDS.archivedFork,
   name: FIXTURE_NAMES.archivedFork,
@@ -381,7 +386,7 @@ const forkSessions = [
   }),
 ];
 
-const workspaceTodos = [
+const workspaceTodos: Todo[] = [
   {
     id: "todo-active-ui-fixture",
     workspace_id: FIXTURE_IDS.workspace,
@@ -405,7 +410,7 @@ const workspaceTodos = [
   },
 ];
 
-const workspaceRepositories = [
+const workspaceRepositories: WorkspaceRepository[] = [
   {
     id: FIXTURE_IDS.workspacePrimaryLocation,
     workspace_id: FIXTURE_IDS.workspace,
@@ -442,7 +447,7 @@ const workspaceRepositories = [
   },
 ];
 
-const workspaceDirectories = [
+const workspaceDirectories: WorkspaceDirectory[] = [
   {
     id: `workspace-${FIXTURE_IDS.primaryDirectory}`,
     workspace_id: FIXTURE_IDS.workspace,
@@ -500,7 +505,7 @@ const workspaceDirectories = [
   },
 ];
 
-const workspaceDetail = {
+const workspaceDetail: FixtureWorkspaceDetail = {
   ...workspace,
   project,
   directories: directories.map((directory) =>
@@ -517,7 +522,7 @@ const workspaceDetail = {
   forks: [fork, archivedFork],
 };
 
-const forkDetail = {
+const forkDetail: FixtureWorkspaceDetail = {
   ...fork,
   project,
   directories: directories.map((directory) =>
@@ -585,7 +590,7 @@ const forkDetail = {
   forks: [],
 };
 
-const projectDetail = {
+const projectDetail: FixtureProjectDetail = {
   ...project,
   directories,
   repositories,
@@ -649,7 +654,7 @@ const projectDetail = {
   ],
 };
 
-const deliveryPreflight = {
+const deliveryPreflight: FixturePreflight = {
   id: "delivery-preflight-ui-fixture",
   workspace_id: FIXTURE_IDS.fork,
   workspace_repository_id: FIXTURE_IDS.forkPrimaryLocation,
@@ -663,15 +668,15 @@ const deliveryPreflight = {
   ahead: 2,
   behind: 1,
   changed_files: ["src/App.tsx", "backend/src/server.rs"],
-  commits: FIXTURE_COMMITS,
+  commits: [...FIXTURE_COMMITS],
   diff_stat: "2 files changed, 24 insertions(+)",
   blockers: [],
   warnings: ["source is 1 commit(s) behind its merge target"],
   created_at: timestamp,
 };
 
-export function createSidebarCoreFixture() {
-  return structuredClone({
+export function createSidebarCoreFixture(): SidebarFixture {
+  return structuredClone<SidebarFixture>({
     settings: {
       schema_version: 1,
       language: "en-US",
@@ -772,23 +777,23 @@ export function createSidebarCoreFixture() {
     gitHistories: {
       [FIXTURE_IDS.primaryRepository]: {
         branch: "main",
-        commits: FIXTURE_COMMITS,
+        commits: [...FIXTURE_COMMITS],
       },
       [FIXTURE_IDS.secondaryRepository]: {
         branch: "develop",
-        commits: FIXTURE_COMMITS,
+        commits: [...FIXTURE_COMMITS],
       },
       [FIXTURE_IDS.workspacePrimaryLocation]: {
         branch: workspace.branch,
-        commits: FIXTURE_COMMITS,
+        commits: [...FIXTURE_COMMITS],
       },
       [FIXTURE_IDS.forkPrimaryLocation]: {
         branch: fork.branch,
-        commits: FIXTURE_COMMITS,
+        commits: [...FIXTURE_COMMITS],
       },
       [FIXTURE_IDS.forkSecondaryLocation]: {
         branch: fork.branch,
-        commits: FIXTURE_COMMITS,
+        commits: [...FIXTURE_COMMITS],
       },
     },
     gitComparisons: {

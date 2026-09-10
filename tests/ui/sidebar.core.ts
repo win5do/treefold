@@ -1,11 +1,13 @@
+import type { UiElement } from "./harness/session.ts";
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
 import { Key } from "webdriverio";
 import {
   FIXTURE_COMMITS,
   FIXTURE_IDS,
   FIXTURE_NAMES,
-} from "./fixtures/sidebar-core.mjs";
-import { startUiHarness } from "./ui-harness.mjs";
+} from "./fixtures/sidebar-core.ts";
+import { startUiHarness } from "./ui-harness.ts";
 import {
   beginUiPointerDrag,
   clickUiElement,
@@ -15,9 +17,9 @@ import {
   openUiContextMenu,
   pressUiEscape,
   selectUiOption,
-} from "./harness/session.mjs";
+} from "./harness/session.ts";
 
-async function assertOverlayVisibleAndTopmost(browser, selector, label) {
+async function assertOverlayVisibleAndTopmost(browser: Browser, selector: string, label: string) {
   const result = await browser.execute((targetSelector) => {
     const element = document.querySelector(targetSelector);
     if (!(element instanceof HTMLElement)) return { exists: false };
@@ -75,8 +77,8 @@ async function assertOverlayVisibleAndTopmost(browser, selector, label) {
   );
 }
 
-async function waitForToast(browser, role, text) {
-  let matchedToast;
+async function waitForToast(browser: Browser, role: string, text: RegExp) {
+  let matchedToast: Awaited<UiElement> | undefined;
   await browser.waitUntil(
     async () => {
       const toasts = await browser.$$(`[data-slot="toast"][role="${role}"]`);
@@ -93,14 +95,15 @@ async function waitForToast(browser, role, text) {
       timeoutMsg: `toast did not appear: ${text}`,
     },
   );
+  assert.ok(matchedToast);
   return matchedToast;
 }
 
 async function createSessionFromSidebar(
-  browser,
-  ownerSelector,
-  directoryId,
-  kind,
+  browser: Browser,
+  ownerSelector: string,
+  directoryId: string,
+  kind: string,
 ) {
   const owner = await browser.$(ownerSelector);
   await (await owner.$('[data-sidebar-row-action="true"]')).click();
@@ -111,14 +114,14 @@ async function createSessionFromSidebar(
     `[data-testid="sidebar-session-menu"] [data-testid="session-kind-${kind === "Shell" ? "shell" : "codex"}"]`,
   );
   const submenu = await browser.$('[data-testid="directory-session-submenu"]');
-  await submenu.waitForDisplayed({ timeout: 3_000 });
+  await (await submenu.getElement()).waitForDisplayed({ timeout: 3_000 });
   await (
     await submenu.$(`[data-testid="session-directory-${directoryId}"]`)
   ).click();
 }
 
-async function assertDirectorySubmenu(submenu, kind, directoryIds) {
-  await submenu.waitForDisplayed({ timeout: 3_000 });
+async function assertDirectorySubmenu(submenu: UiElement, kind: string, directoryIds: string[]) {
+  await (await submenu.getElement()).waitForDisplayed({ timeout: 3_000 });
   for (const directoryId of directoryIds) {
     assert.equal(
       await (
@@ -130,7 +133,7 @@ async function assertDirectorySubmenu(submenu, kind, directoryIds) {
   }
 }
 
-async function renameNode(browser, nodeSelector, name, description) {
+async function renameNode(browser: Browser, nodeSelector: string, name: string, description: string) {
   const node = await browser.$(nodeSelector);
   await moveUiPointerTo(browser, node);
   await (await node.$('[data-testid="sidebar-node-menu-trigger"]')).click();
@@ -147,7 +150,7 @@ async function renameNode(browser, nodeSelector, name, description) {
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
 }
 
-async function renameSession(browser, sessionId, name) {
+async function renameSession(browser: Browser, sessionId: string, name: string) {
   const row = await browser.$(`[data-testid="sidebar-session-${sessionId}"]`);
   assert.equal(
     await (await row.$('[data-testid="rename-session-action"]')).isExisting(),
@@ -170,12 +173,12 @@ async function renameSession(browser, sessionId, name) {
   await dialog.waitForDisplayed({ reverse: true, timeout: 3_000 });
 }
 
-async function pointerDragSession(browser, source, target, expectedPosition) {
+async function pointerDragSession(browser: Browser, source: UiElement, target: UiElement, expectedPosition: string) {
   const releasePointer = await beginUiPointerDrag(browser, source, target);
   try {
     await browser.waitUntil(
       async () =>
-        (await target.getAttribute("data-drop-position")) === expectedPosition,
+        (await (await target.getElement()).getAttribute("data-drop-position")) === expectedPosition,
       {
         timeout: 3_000,
         timeoutMsg: `Session drag did not show its ${expectedPosition} insertion line`,
@@ -187,7 +190,7 @@ async function pointerDragSession(browser, source, target, expectedPosition) {
 }
 
 const harness = await startUiHarness();
-let browser;
+let browser!: Browser;
 
 try {
   browser = await createUiSession({ sessionName: "sidebar-core" });
@@ -363,7 +366,7 @@ try {
   const main = await browser.$('[data-testid="workspace-main"]');
 
   let nodeNames = await browser.$$('[data-testid="sidebar-node-name"]');
-  if (nodeNames.length === 0) {
+  if ((await nodeNames.length) === 0) {
     const projectToggle = await browser.$(
       `button[aria-label="Expand Project ${FIXTURE_NAMES.project}"]`,
     );
@@ -435,7 +438,7 @@ try {
   );
   assert.deepEqual(
     await browser.execute(
-      (select) => Array.from(select.options, (option) => option.value),
+      (select) => Array.from((select as HTMLSelectElement).options, (option) => option.value),
       workspaceStrategy,
     ),
     ["local_merge", "push_branch", "keep"],
@@ -480,7 +483,7 @@ try {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
-        writeText: async (value) => {
+        writeText: async (value: string) => {
           window.__treefoldCopiedPath = value;
         },
       },
@@ -2422,7 +2425,7 @@ try {
       "Repository details did not close after saving repository settings",
   });
   assert.equal(
-    harness.repositoryUpdateRequests.at(-1).id,
+    harness.repositoryUpdateRequests.at(-1)!.id,
     FIXTURE_IDS.primaryRepository,
     "repository settings must PATCH the repository resource",
   );
@@ -2469,7 +2472,7 @@ try {
   );
   await browser.waitUntil(
     async () =>
-      (await browser.$$('[data-testid="git-history-commit"]')).length ===
+      (await browser.$$('[data-testid="git-history-commit"]').length) ===
       FIXTURE_COMMITS.length,
     {
       timeout: 3_000,
@@ -2527,7 +2530,7 @@ try {
     ["breadcrumb-project", "breadcrumb-workspace", "breadcrumb-fork"].map(
       (testId) => {
         const style = getComputedStyle(
-          document.querySelector(`[data-testid="${testId}"] > span`),
+          document.querySelector(`[data-testid="${testId}"] > span`)!,
         );
         return {
           fontSize: style.fontSize,
@@ -2659,7 +2662,7 @@ try {
   const forkStrategy = await finishForkDialog.$("#finish-code-action");
   assert.deepEqual(
     await browser.execute(
-      (select) => Array.from(select.options, (option) => option.value),
+      (select) => Array.from((select as HTMLSelectElement).options, (option) => option.value),
       forkStrategy,
     ),
     ["local_merge", "keep"],
@@ -2761,7 +2764,7 @@ try {
   await browser.url(harness.baseUrl);
   await browser.waitUntil(
     async () =>
-      (await browser.$$('[data-testid="project-overview-row"]')).length === 2,
+      (await browser.$$('[data-testid="project-overview-row"]').length) === 2,
     {
       timeout: 3_000,
       timeoutMsg: "Project summaries did not load after returning to the overview",

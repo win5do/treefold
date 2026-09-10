@@ -1,10 +1,11 @@
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
-import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
-import { startUiHarness } from "./ui-harness.mjs";
-import { closeUiSession, createUiSession } from "./harness/session.mjs";
+import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
+import { startUiHarness } from "./ui-harness.ts";
+import { closeUiSession, createUiSession } from "./harness/session.ts";
 
 const harness = await startUiHarness();
-let browser;
+let browser!: Browser;
 
 try {
   browser = await createUiSession({ windowSize: "900,760", sessionName: "todos" });
@@ -71,7 +72,7 @@ try {
       (await browser.getUrl()).includes(`/workspaces/${FIXTURE_IDS.fork}`),
     { timeout: 3_000 },
   );
-  assert.equal(harness.todoRequests.at(-1).action, "fork");
+  assert.equal(harness.todoRequests.at(-1)!.action, "fork");
   harness.assertNoUnexpectedRequests();
   console.log("✓ Todo CRUD and Todo Fork launch passed");
 } finally {

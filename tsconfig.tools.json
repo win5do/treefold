@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ],
+    "composite": true
+  },
+  "include": [
+    "scripts/**/*.ts",
+    "tests/desktop/**/*.ts",
+    "tests/electron/**/*.ts",
+    "src/preload/bridge.d.ts",
+    "src/main/backend.ts"
+  ],
+  "exclude": [
+    "scripts/rust-sidecars.ts"
+  ]
+}

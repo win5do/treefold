@@ -26,7 +26,7 @@ build:
 
 # Build an ad-hoc signed, timestamped App + DMG and install the App in /Applications.
 install-app-local:
-    node scripts/install-app-local.mjs
+    node scripts/install-app-local.ts
 
 clean:
     cargo clean --manifest-path src/backend/Cargo.toml

@@ -1,13 +1,14 @@
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
-import { startUiHarness } from "./ui-harness.mjs";
+import { startUiHarness } from "./ui-harness.ts";
 import {
   closeUiSession,
   createUiSession,
   pressUiEscape,
-} from "./harness/session.mjs";
+} from "./harness/session.ts";
 
 const harness = await startUiHarness();
-let browser;
+let browser!: Browser;
 
 try {
   browser = await createUiSession({

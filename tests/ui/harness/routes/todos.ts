@@ -1,17 +1,20 @@
-import { FIXTURE_IDS } from "../../fixtures/sidebar-core.mjs";
+import type { Todo } from "../../../../src/renderer/src/domain/types.ts";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { RouteDependencies } from "../types.ts";
+import { FIXTURE_IDS } from "../../fixtures/sidebar-core.ts";
 
-export function createTodoRoutes({ fixture, readJson, sendJson }) {
-  const requests = [];
+export function createTodoRoutes({ fixture, readJson, sendJson }: RouteDependencies) {
+  const requests: ({ action: string; id: string; forkId?: string } & Partial<Todo>)[] = [];
 
   return {
     requests,
-    async handle(request, response, pathname) {
+    async handle(request: IncomingMessage, response: ServerResponse, pathname: string) {
       const workspaceMatch = pathname.match(
         /^\/api\/workspaces\/([^/]+)\/todos$/,
       );
       if (request.method === "POST" && workspaceMatch) {
-        const input = await readJson(request);
-        const todo = {
+        const input = await readJson<Pick<Todo, "content">>(request);
+        const todo: Todo = {
           id: `todo-created-${fixture.workspaceDetails[workspaceMatch[1]].todos.length}`,
           workspace_id: workspaceMatch[1],
           content: input.content,
@@ -29,7 +32,7 @@ export function createTodoRoutes({ fixture, readJson, sendJson }) {
       );
       const todo = owner?.todos.find((item) => item.id === todoMatch?.[1]);
       if (request.method === "PATCH" && todoMatch && todo) {
-        const input = await readJson(request);
+        const input = await readJson<Partial<Pick<Todo, "content" | "status">>>(request);
         if (input.content !== undefined) todo.content = input.content;
         if (input.status !== undefined) todo.status = input.status;
         requests.push({ action: "update", id: todo.id, ...input });

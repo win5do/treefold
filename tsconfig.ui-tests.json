@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.tools.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@/*": [
+        "./src/renderer/src/*"
+      ],
+      "/src/*": [
+        "./src/renderer/src/*"
+      ]
+    }
+  },
+  "include": [
+    "tests/ui/**/*.ts",
+    "src/preload/bridge.d.ts",
+    "src/renderer/src/domain/types.ts",
+    "src/renderer/src/i18n/**/*.ts",
+    "src/renderer/src/features/terminal/inputQueue.ts",
+    "src/renderer/src/features/terminal/runtime.ts"
+  ],
+  "exclude": []
+}

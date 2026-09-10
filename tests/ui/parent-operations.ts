@@ -1,17 +1,18 @@
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
-import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
-import { startUiHarness } from "./ui-harness.mjs";
+import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
+import { startUiHarness } from "./ui-harness.ts";
 import {
   closeUiSession,
   createUiSession,
   openUiContextMenu,
   pressUiEscape,
-} from "./harness/session.mjs";
+} from "./harness/session.ts";
 
 const harness = await startUiHarness();
-let browser;
+let browser!: Browser;
 
-async function ownerMenu(selector) {
+async function ownerMenu(selector: string) {
   await openUiContextMenu(browser, selector);
   const menu = await browser.$('[data-testid="directory-session-context-menu"]');
   await menu.waitForDisplayed({ timeout: 3_000 });

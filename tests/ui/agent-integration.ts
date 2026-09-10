@@ -1,10 +1,11 @@
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
-import { startUiHarness } from "./ui-harness.mjs";
-import { closeUiSession, createUiSession } from "./harness/session.mjs";
+import { startUiHarness } from "./ui-harness.ts";
+import { closeUiSession, createUiSession } from "./harness/session.ts";
 
 const harness = await startUiHarness();
 harness.setAgentIntegrationState("not_installed");
-let browser;
+let browser!: Browser;
 
 try {
   browser = await createUiSession({ windowSize: "1200,800", sessionName: "agent-integration" });

@@ -1,21 +1,22 @@
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
-import { FIXTURE_COMMITS, FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
-import { startUiHarness } from "./ui-harness.mjs";
+import { FIXTURE_COMMITS, FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
+import { startUiHarness } from "./ui-harness.ts";
 import {
   closeUiSession,
   createUiSession,
   openUiContextMenu,
-} from "./harness/session.mjs";
+} from "./harness/session.ts";
 
 const harness = await startUiHarness();
-let browser;
+let browser!: Browser;
 try {
   browser = await createUiSession({ sessionName: "git-diff" });
   await browser.url(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
   await (await browser.$('[data-testid="workspace-sidebar"]')).waitForDisplayed({ timeout: 10_000 });
   await browser.$('button[aria-label="Show right sidebar"]').click();
   await browser.$('button[role="tab"][aria-label="Git History"]').click();
-  await browser.waitUntil(async () => (await browser.$$('[data-testid="git-history-commit"]')).length === FIXTURE_COMMITS.length, { timeout: 3_000 });
+  await browser.waitUntil(async () => (await browser.$$('[data-testid="git-history-commit"]').length) === FIXTURE_COMMITS.length, { timeout: 3_000 });
   const commits = await browser.$$('[data-testid="git-history-commit"]');
   await commits[0].click();
   await browser.execute((element) => element.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })), commits[2]);

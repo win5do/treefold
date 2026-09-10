@@ -8,16 +8,18 @@ import path from 'node:path';
 
 async function availablePort() {
   const server = createServer();
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const port = server.address().port;
-  await new Promise(resolve => server.close(resolve));
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   return port;
 }
-async function until(check, description, timeout = 90000) {
+async function until(check: () => boolean | Promise<boolean>, description: string, timeout = 90000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (await check()) return;
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise<void>(resolve => setTimeout(resolve, 100));
   }
   throw new Error(`Timed out: ${description}`);
 }
@@ -32,13 +34,13 @@ test('electron-vite watches main, preload and Rust while releasing the previous 
   });
   child.stdout.on('data', chunk => { output += chunk; });
   child.stderr.on('data', chunk => { output += chunk; });
-  const runningUntil = (check, description) => until(() => {
+  const runningUntil = (check: () => boolean | Promise<boolean>, description: string) => until(() => {
     if (child.exitCode !== null || child.signalCode) throw new Error(`Dev process exited (${child.exitCode ?? child.signalCode})`);
     return check();
   }, description);
   const endpoints = () => [...output.matchAll(/\[treefold dev\] API: (http:\/\/127\.0\.0\.1:\d+)/g)].map(match => match[1]);
   const readyCount = async () => ((await readFile(path.join(home, 'logs/desktop.log'), 'utf8').catch(() => '')).match(/Treefold .* ready; API/g) || []).length;
-  const touch = file => utimes(file, new Date(), new Date());
+  const touch = (file: string) => utimes(file, new Date(), new Date());
   try {
     await runningUntil(async () => await readyCount() >= 1, 'initial dev startup');
     assert.equal((await fetch(`${endpoints()[0]}/api/health`)).status, 200);
@@ -57,14 +59,14 @@ test('electron-vite watches main, preload and Rust while releasing the previous 
     console.error(output);
     throw error;
   } finally {
-    try { process.kill(-child.pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    try { process.kill(-child.pid!, 'SIGTERM'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
     try {
       await until(async () => {
         try { await readFile(path.join(home, 'runtime/api-url')); return false; }
-        catch (error) { return error.code === 'ENOENT'; }
+        catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
       }, 'backend cleanup', 15000);
     } finally {
-      try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      try { process.kill(-child.pid!, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
       await rm(home, { recursive: true, force: true });
     }
   }

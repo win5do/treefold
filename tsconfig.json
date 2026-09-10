@@ -6,6 +6,12 @@
     },
     {
       "path": "./tsconfig.web.json"
+    },
+    {
+      "path": "./tsconfig.tools.json"
+    },
+    {
+      "path": "./tsconfig.ui-tests.json"
     }
   ]
 }

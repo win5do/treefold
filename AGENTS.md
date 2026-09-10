@@ -19,12 +19,12 @@ cross-domain implementation files.
 
 ### UI-test modules
 
-- `tests/ui/ui-harness.mjs` is a compatibility entry point. Harness lifecycle,
+- `tests/ui/ui-harness.ts` is a compatibility entry point. Harness lifecycle,
   fixture state, and feature route handlers belong in `tests/ui/harness/*`.
 - Keep fixture API handlers grouped by feature. A new API domain must not add a
   new branch to one repository-wide request handler.
 - Prefer composable fixture builders and scenario overrides over adding every
-  state to `tests/ui/fixtures/sidebar-core.mjs`.
+  state to `tests/ui/fixtures/sidebar-core.ts`.
 - `npm run test:ui` must invoke the stable test runner. Adding a new test must
   not require editing the package script.
 
@@ -54,14 +54,19 @@ cross-domain implementation files.
 
 ## Development environment and commands
 
-Treefold development targets macOS and requires stable Rust, Node.js 24 or
+Treefold development targets macOS and requires stable Rust, Node.js 24.12 or
 newer, Git, and Codex when exercising Codex Sessions. `just` is the preferred
 task runner but is optional.
 
 - Run `npm install` once to install frontend and desktop tooling.
 - `npm run dev` uses electron-vite for desktop development; `npm run dev:web`
   starts the standalone browser UI. `npm run build` builds main/preload/renderer
-  to `out/`; `npm run typecheck` checks both Node and browser code.
+  to `out/`; `npm run typecheck` checks application code, scripts, and tests.
+- Run scripts and tests directly with Node type stripping (`node file.ts`).
+  Keep runtime imports explicit (`./file.ts`), use type-only imports for types,
+  and avoid syntax requiring transformation. Node does not run type checks.
+  `tsconfig.tools.json` checks direct Node entry points; `tsconfig.ui-tests.json`
+  also resolves browser-only Vite imports inside UI-test callbacks.
 - Run `just app-dev` for hot reload with repository-local state under
   `.treefold-dev/`; use `just app-default` only when intentionally developing
   against `~/.treefold`.
@@ -237,8 +242,8 @@ that remains unverified.
 
 `npm run test:ui` must be self-contained by default. It must not depend on the user's Treefold database, existing Projects, fixed local directories, Git worktrees, or an already-running Electron backend.
 
-- `tests/ui/ui-harness.mjs` starts the fixture API and Vite on ephemeral ports and closes both in `finally` cleanup.
-- `tests/ui/fixtures/sidebar-core.mjs` owns fixed IDs, timestamps, names, and API responses for the sidebar core flow.
+- `tests/ui/ui-harness.ts` starts the fixture API and Vite on ephemeral ports and closes both in `finally` cleanup.
+- `tests/ui/fixtures/sidebar-core.ts` owns fixed IDs, timestamps, names, and API responses for the sidebar core flow.
 - The fixture API must reject and record unimplemented requests so a new frontend dependency cannot silently pass.
 - Use inert fixture Sessions; UI layout tests must not launch real Shell or Codex processes.
 - Keep fixture data deterministic and include relevant stress states such as long labels, active and archived records, nested tree rows, and empty collections.
@@ -248,7 +253,7 @@ that remains unverified.
 
 ### WebdriverIO core flow
 
-Keep `tests/ui/sidebar.core.mjs` small and focused on stable, high-value behavior. Do not add a new feature domain to this core flow. Split or replace legacy cross-domain coverage before extending it, and do not treat existing broad coverage as precedent for appending more scenarios.
+Keep `tests/ui/sidebar.core.ts` small and focused on stable, high-value behavior. Do not add a new feature domain to this core flow. Split or replace legacy cross-domain coverage before extending it, and do not treat existing broad coverage as precedent for appending more scenarios.
 
 #### Automated UI-test admission gate
 

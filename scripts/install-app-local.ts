@@ -17,7 +17,7 @@ const sourceApp = path.join(root, "release", process.arch === "arm64" ? "mac-arm
 
 function timestamp() {
   const now = new Date();
-  const part = (value, width = 2) => String(value).padStart(width, "0");
+  const part = (value: number, width = 2) => String(value).padStart(width, "0");
   return [
     part(now.getFullYear(), 4),
     part(now.getMonth() + 1),
@@ -28,27 +28,27 @@ function timestamp() {
   ].join("");
 }
 
-function buildVersion() {
+function buildVersion(): string {
   if (process.env.TREEFOLD_BUILD_VERSION) {
     return process.env.TREEFOLD_BUILD_VERSION;
   }
-  const configured = JSON.parse(readFileSync(packagePath, "utf8")).version;
+  const configured = (JSON.parse(readFileSync(packagePath, "utf8")) as { version: string }).version;
   const base = configured.split(/[+-]/, 1)[0];
   return `${base}-alpha.${timestamp()}`;
 }
 
-function validateVersion(version) {
+function validateVersion(version: string) {
   const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
   if (!semver.test(version)) {
     throw new Error(`TREEFOLD_BUILD_VERSION must be valid SemVer, received: ${version}`);
   }
 }
 
-function macOSBundleVersion(version) {
+function macOSBundleVersion(version: string) {
   return version;
 }
 
-function verifyApp(appPath, expectedVersion) {
+function verifyApp(appPath: string, expectedVersion: string) {
   execFileSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath], {
     stdio: "inherit",
   });
@@ -83,7 +83,7 @@ function verifyApp(appPath, expectedVersion) {
   }
 }
 
-function installApp(appPath) {
+function installApp(appPath: string) {
   const installDir = path.resolve(process.env.TREEFOLD_INSTALL_DIR ?? "/Applications");
   const installedApp = path.join(installDir, "Treefold.app");
   const running = spawnSync("pgrep", ["-f", `${installedApp}/Contents/MacOS/`], {

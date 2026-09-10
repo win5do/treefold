@@ -15,17 +15,18 @@
     "build": "npm run typecheck && electron-vite build",
     "build:web": "vite build",
     "prepare:sidecars": "cargo xtask sidecars bundle",
-    "bundle:desktop": "node scripts/bundle-desktop.mjs",
-    "test:ui": "node tests/ui/run.mjs",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "bundle:desktop": "node scripts/bundle-desktop.ts",
+    "test:ui": "node tests/ui/run.ts",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:tools",
     "build:backend": "cargo build --manifest-path src/backend/Cargo.toml",
-    "test:desktop": "npm run build:backend && node --test tests/desktop/*.test.mjs",
+    "test:desktop": "npm run build:backend && node --test tests/desktop/*.test.ts",
     "test:backend": "cargo test --manifest-path src/backend/Cargo.toml",
-    "test:electron": "node --test tests/electron/*.test.mjs",
+    "test:electron": "node --test tests/electron/*.test.ts",
     "start": "electron-vite preview",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
-    "postinstall": "node node_modules/electron/install.js"
+    "postinstall": "node node_modules/electron/install.js",
+    "typecheck:tools": "tsc --noEmit -p tsconfig.tools.json && tsc --noEmit -p tsconfig.ui-tests.json"
   },
   "dependencies": {
     "@azurity/pure-nerd-font": "3.0.5",
@@ -70,5 +71,8 @@
   },
   "main": "out/main/index.cjs",
   "description": "Local-first workspace for parallel coding agents",
-  "author": "Treefold contributors"
+  "author": "Treefold contributors",
+  "engines": {
+    "node": ">=24.12.0"
+  }
 }

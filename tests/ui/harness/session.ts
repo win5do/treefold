@@ -1,5 +1,7 @@
-import { remote } from "webdriverio";
+import { remote, type Browser, type Element, type ChainablePromiseElement } from "webdriverio";
 
+type RemoteOptions = Parameters<typeof remote>[0];
+export type UiElement = Element | ChainablePromiseElement;
 
 const DEFAULT_CHROME_ARGS = [
   "--headless=new",
@@ -30,7 +32,7 @@ const defaultConfig = {
   screenshotDir: process.env.TREEFOLD_UI_SCREENSHOT_DIR || "/tmp",
 };
 
-function parseChromeArgs(rawValue) {
+function parseChromeArgs(rawValue: string | undefined) {
   if (!rawValue) return DEFAULT_CHROME_ARGS;
   return rawValue
     .split(/\s+/)
@@ -38,7 +40,7 @@ function parseChromeArgs(rawValue) {
     .filter(Boolean);
 }
 
-function mergeWindowSizeArg(args, windowSize) {
+function mergeWindowSizeArg(args: string[] | undefined, windowSize: string) {
   const next = (args ?? []).filter(
     (value) =>
       !String(value).startsWith("--window-size=") &&
@@ -48,9 +50,9 @@ function mergeWindowSizeArg(args, windowSize) {
   return next;
 }
 
-function getRemoteOptions(capabilities) {
-  const remoteOptions = {
-    logLevel: defaultConfig.logLevel,
+function getRemoteOptions(capabilities: RemoteOptions["capabilities"]) {
+  const remoteOptions: RemoteOptions = {
+    logLevel: defaultConfig.logLevel as RemoteOptions["logLevel"],
     capabilities,
   };
 
@@ -68,11 +70,11 @@ function getRemoteOptions(capabilities) {
   return remoteOptions;
 }
 
-export function getUiDriverConfig() {
+export function getUiDriverConfig(): typeof defaultConfig {
   return JSON.parse(JSON.stringify(defaultConfig));
 }
 
-export async function createUiSession({ windowSize, sessionName } = {}) {
+export async function createUiSession({ windowSize, sessionName }: { windowSize?: string; sessionName?: string } = {}) {
   if (defaultConfig.transport !== "chrome") throw new Error("TREEFOLD_UI_TRANSPORT must be chrome");
   const capabilities = structuredClone(defaultConfig.browser.capabilities);
   capabilities["goog:chromeOptions"].args = mergeWindowSizeArg(capabilities["goog:chromeOptions"].args, windowSize || DEFAULT_BROWSER_WINDOW_SIZE);
@@ -80,50 +82,52 @@ export async function createUiSession({ windowSize, sessionName } = {}) {
   console.debug(`[ui-test] started Chrome (${sessionName || "ui test"}) => ${browser.sessionId}`);
   return browser;
 }
-export async function selectUiOption(browser, element, value) {
+export async function selectUiOption(browser: Browser, element: UiElement, value: string) {
   await browser.execute(
-    (select, nextValue) => {
+    (select: HTMLSelectElement, nextValue: string) => {
       select.value = nextValue;
       select.dispatchEvent(new Event("input", { bubbles: true }));
       select.dispatchEvent(new Event("change", { bubbles: true }));
     },
-    element,
+    element as unknown as HTMLSelectElement,
     value,
   );
 }
 
-export async function clickUiElement(browser, target) {
-  const element = typeof target === "string" ? await browser.$(target) : target;
+export async function clickUiElement(browser: Browser, target: string | UiElement) {
+  const element = await (typeof target === "string" ? browser.$(target) : target).getElement();
   if ((await element.getAttribute("aria-haspopup")) === "menu") await element.scrollIntoView({ block: "center" });
   await element.click();
 }
-export async function openUiContextMenu(browser, target) {
-  const element = typeof target === "string" ? await browser.$(target) : target;
+export async function openUiContextMenu(browser: Browser, target: string | UiElement) {
+  const element = await (typeof target === "string" ? browser.$(target) : target).getElement();
   await element.click({ button: "right" });
 }
-export async function moveUiPointerTo(browser, target) {
-  const element = typeof target === "string" ? await browser.$(target) : target;
+export async function moveUiPointerTo(browser: Browser, target: string | UiElement) {
+  const element = await (typeof target === "string" ? browser.$(target) : target).getElement();
   await element.moveTo();
   // An unchanged virtual pointer position emits no new mouseenter on reopening.
   if ((await element.getAttribute("aria-haspopup")) === "menu" && (await element.getAttribute("aria-expanded")) !== "true") await element.click();
   await browser.pause(50);
 }
-export async function pressUiEscape(browser) { await browser.keys("\uE00C"); }
-export async function beginUiPointerDrag(browser, source, destination) {
-  const sourceLocation = await source.getLocation();
-  const sourceSize = await source.getSize();
-  const targetLocation = destination?.elementId
-    ? await destination.getLocation()
+export async function pressUiEscape(browser: Browser) { await browser.keys("\uE00C"); }
+export async function beginUiPointerDrag(browser: Browser, source: UiElement, destination: UiElement | { x: number; y: number }) {
+  const sourceElement = await source.getElement();
+  const destinationElement = "elementId" in destination ? await destination.getElement() : destination;
+  const sourceLocation = await sourceElement.getLocation();
+  const sourceSize = await sourceElement.getSize();
+  const targetLocation = "elementId" in destinationElement
+    ? await destinationElement.getLocation()
     : sourceLocation;
-  const targetSize = destination?.elementId
-    ? await destination.getSize()
+  const targetSize = "elementId" in destinationElement
+    ? await destinationElement.getSize()
     : sourceSize;
-  const targetX = destination?.elementId
+  const targetX = "elementId" in destinationElement
     ? Math.round(targetLocation.x + targetSize.width / 2)
-    : Math.round(sourceLocation.x + sourceSize.width / 2 + destination.x);
-  const targetY = destination?.elementId
+    : Math.round(sourceLocation.x + sourceSize.width / 2 + destinationElement.x);
+  const targetY = "elementId" in destinationElement
     ? Math.round(targetLocation.y + targetSize.height / 2)
-    : Math.round(sourceLocation.y + sourceSize.height / 2 + destination.y);
+    : Math.round(sourceLocation.y + sourceSize.height / 2 + destinationElement.y);
   await browser
     .action("pointer")
     .move({
@@ -137,7 +141,7 @@ export async function beginUiPointerDrag(browser, source, destination) {
   return () => browser.releaseActions();
 }
 
-export async function closeUiSession(browser) {
+export async function closeUiSession(browser: Browser | undefined) {
   if (!browser) return;
   try { await browser.deleteSession(); } catch { /* Always allow fixture cleanup. */ }
 }

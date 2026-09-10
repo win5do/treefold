@@ -1,17 +1,18 @@
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
-import { startUiHarness } from "./ui-harness.mjs";
-import { closeUiSession, createUiSession } from "./harness/session.mjs";
-import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
+import { startUiHarness } from "./ui-harness.ts";
+import { closeUiSession, createUiSession } from "./harness/session.ts";
+import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 
 const harness = await startUiHarness();
-let browser;
+let browser!: Browser;
 
 try {
   browser = await createUiSession({ sessionName: "terminal-input" });
   await browser.url(harness.baseUrl);
   await (await browser.$('[data-testid="workspace-sidebar"]')).waitForDisplayed({ timeout: 10_000 });
 
-  const result = await browser.executeAsync(async (done) => {
+  const result = await browser.execute(async () => {
     try {
       const input = await import("/src/features/terminal/inputQueue.ts");
       const runtimeModule = await import("/src/features/terminal/runtime.ts");
@@ -31,7 +32,7 @@ try {
       const frameSizes = [];
       while (framedQueue.hasUnsent) {
         const frame = framedQueue.takeUnsent();
-        frameSizes.push(atob(JSON.parse(frame.wire).data).length);
+        frameSizes.push(atob(JSON.parse(frame!.wire).data).length);
       }
 
       const fullQueue = new input.ReliableTerminalInputQueue();
@@ -51,17 +52,18 @@ try {
         runtimeModule.acceptOutputSequence(runtime, 41n),
         runtimeModule.acceptOutputSequence(runtime, 43n),
       ];
-      done({ oversized, first, second, sent, pendingBeforeAck, acknowledged, pendingAfterAck, resent: resent && JSON.parse(resent.wire), frameSizes, pausesAtHighWater, queued, controllerClientId, controllerClientIdAgain, inputClientId: runtime.inputClientId, decodedSequence: decoded?.sequence.toString(), decodedData: decoded && [...decoded.data], accepted, lastOutputSequence: runtime.lastOutputSequence?.toString() });
+      return { oversized, first, second, sent, pendingBeforeAck, acknowledged, pendingAfterAck, resent: resent && JSON.parse(resent.wire), frameSizes, pausesAtHighWater, queued, controllerClientId, controllerClientIdAgain, inputClientId: runtime.inputClientId, decodedSequence: decoded?.sequence.toString(), decodedData: decoded && [...decoded.data], accepted, lastOutputSequence: runtime.lastOutputSequence?.toString() };
     } catch (error) {
-      done({ error: String(error) });
+      return { error: String(error) };
     }
   });
 
   assert.equal(result.error, undefined);
+  assert.ok(!("error" in result));
   assert.deepEqual(result.oversized, { accepted: false, reason: "single-input-too-large", pauseStdin: false }, "an oversized paste must be rejected atomically without pausing stdin");
   assert.deepEqual(result.first, { accepted: true, byteLength: 5, pauseStdin: false });
   assert.deepEqual(result.second, { accepted: true, byteLength: 7, pauseStdin: false }, "UTF-8 input must retain its byte length");
-  assert.deepEqual(result.sent.map(({ type, sequence }) => ({ type, sequence })), [{ type: "input", sequence: 1 }, { type: "input", sequence: 2 }]);
+  assert.deepEqual(result.sent.map(({ type, sequence }: { type: string; sequence: number }) => ({ type, sequence })), [{ type: "input", sequence: 1 }, { type: "input", sequence: 2 }]);
   assert.equal(result.pendingBeforeAck, 12, "sent input must remain queued until acknowledged");
   assert.equal(result.acknowledged, true);
   assert.equal(result.pendingAfterAck, 7, "a cumulative acknowledgement must release only confirmed bytes");
@@ -87,10 +89,10 @@ try {
       readyState = ControllerTerminalSocket.CONNECTING;
       bufferedAmount = 0;
       binaryType = "blob";
-      onopen = null;
-      onmessage = null;
-      onclose = null;
-      onerror = null;
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onclose: ((event: CloseEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
       constructor() {
         super();
         setTimeout(() => {
@@ -102,7 +104,7 @@ try {
           window.__terminalControllerReady = true;
         }, 0);
       }
-      send(data) {
+      send(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
         if (typeof data !== "string") return;
         let message;
         try { message = JSON.parse(data); } catch { return; }
@@ -119,7 +121,8 @@ try {
         this.onclose?.(new CloseEvent("close"));
       }
     }
-    window.WebSocket = ControllerTerminalSocket;
+    // These test doubles implement only the socket surface used by the terminal.
+    window.WebSocket = ControllerTerminalSocket as unknown as typeof WebSocket;
     window.location.hash = `#/workspaces/${workspaceId}/sessions/${sessionId}`;
   }, FIXTURE_IDS.workspace, FIXTURE_IDS.workspaceShell);
 
@@ -130,12 +133,12 @@ try {
     return window.__terminalControllerReady === true && textarea instanceof HTMLTextAreaElement && !textarea.disabled;
   }), { timeout: 3_000, timeoutMsg: "terminal controller did not enable stdin" });
 
-  const imeResult = await browser.executeAsync(async (done) => {
+  const imeResult = await browser.execute(async () => {
     try {
       const textarea = document.querySelector(".xterm-helper-textarea");
       if (!(textarea instanceof HTMLTextAreaElement)) throw new Error("xterm helper textarea is missing");
-      const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-      const insert = (data) => {
+      const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+      const insert = (data: string) => {
         textarea.value += data;
         textarea.dispatchEvent(new InputEvent("input", {
           bubbles: true,
@@ -145,7 +148,7 @@ try {
           inputType: "insertText",
         }));
       };
-      const key = (type, value, keyCode, isComposing = false) => {
+      const key = (type: string, value: string, keyCode: number, isComposing = false) => {
         const event = new KeyboardEvent(type, {
           bubbles: true,
           cancelable: true,
@@ -208,12 +211,13 @@ try {
       textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, composed: true, data: "拼" }));
       const composition = await takeInput();
 
-      done({ rollover, keydownFirst, modifierOverlap, composition });
+      return { rollover, keydownFirst, modifierOverlap, composition };
     } catch (error) {
-      done({ error: String(error) });
+      return { error: String(error) };
     }
   });
   assert.equal(imeResult.error, undefined);
+  assert.ok(!("error" in imeResult));
   assert.equal(imeResult.rollover, "git", "IME key rollover must emit every character exactly once");
   assert.equal(imeResult.keydownFirst, "a", "keydown-first IME delivery must retain native insertText");
   assert.equal(imeResult.modifierOverlap, "G", "an overlapping modifier must replay only the input xterm dropped");
@@ -230,11 +234,11 @@ try {
       readyState = ReadonlyTerminalSocket.CONNECTING;
       bufferedAmount = 0;
       binaryType = "blob";
-      onopen = null;
-      onmessage = null;
-      onclose = null;
-      onerror = null;
-      constructor(url) {
+      onopen: ((event: Event) => void) | null = null;
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onclose: ((event: CloseEvent) => void) | null = null;
+      onerror: ((event: Event) => void) | null = null;
+      constructor(url: string | URL) {
         super();
         window.__terminalSocketUrls.push(String(url));
         setTimeout(() => {
@@ -245,14 +249,14 @@ try {
           this.onmessage?.(new MessageEvent("message", { data: JSON.stringify({ type: "ownership_state", state: "readonly" }) }));
         }, 0);
       }
-      send(data) { window.__terminalSocketSends.push(String(data)); }
+      send(data: string | ArrayBufferLike | Blob | ArrayBufferView) { window.__terminalSocketSends.push(String(data)); }
       close() {
         if (this.readyState === ReadonlyTerminalSocket.CLOSED) return;
         this.readyState = ReadonlyTerminalSocket.CLOSED;
         this.onclose?.(new CloseEvent("close"));
       }
     }
-    window.WebSocket = ReadonlyTerminalSocket;
+    window.WebSocket = ReadonlyTerminalSocket as unknown as typeof WebSocket;
     window.location.hash = `#/workspaces/${workspaceId}/sessions/${sessionId}`;
   }, FIXTURE_IDS.workspace, FIXTURE_IDS.sessionDevServer);
   const readonly = await browser.$('[data-testid="terminal-readonly-indicator"]');

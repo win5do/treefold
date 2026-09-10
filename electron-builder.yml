@@ -19,7 +19,7 @@ mac:
   category: public.app-category.developer-tools
   icon: build/icons/icon.icns
   identity: '-'
-  sign: scripts/sign-macos.cjs
+  sign: scripts/sign-macos.ts
   target:
     - dmg
     - dir

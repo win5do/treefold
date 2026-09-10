@@ -114,7 +114,7 @@ never imports renderer implementation files for its types.
 | `npm run dev:no-watch` / `just app-dev-no-watch` | Desktop development without main/preload/Rust watching; renderer HMR remains available |
 | `just app-default` | Intentionally use `~/.treefold` for desktop development |
 | `npm run dev:web` / `just web-dev` | Browser-only Vite server; requires a separate API |
-| `npm run typecheck` | Check Electron Node code and React browser code separately |
+| `npm run typecheck` | Check application code, scripts, and tests |
 | `npm run build` | Typecheck and build main/preload/renderer to `out/` |
 | `npm start` | Preview the built desktop; prepare debug sidecars first with `cargo xtask sidecars dev` |
 | `npm run build:web` | Build the standalone renderer to `dist/` |
@@ -133,8 +133,12 @@ development. Electron-only changes do not run Cargo. electron-vite handles
 main restarts and preload reloads. The main process waits for the previous
 instance to finish shutting down its Rust child before acquiring its lock.
 
-The old `scripts/dev.mjs` launcher and `scripts/prepare-sidecars.mjs` forwarding
-script, and their single-use `scripts/xtask.mjs` helper are removed. Packaging, signing and local installation scripts remain
-because they own Treefold's Rust resources and macOS delivery requirements.
-Node.js 24+ is required. electron-vite 5 currently supports Vite 5–7, so this
+Packaging, signing, local installation, and test entry points use TypeScript
+and run directly with Node.js 24.12+ type stripping. No separate TS runner or
+precompilation is required. Use explicit `.ts` runtime imports and `import type`
+for types; avoid enums, parameter properties, and other syntax that requires
+transformation. `npm run typecheck` checks these files separately because Node
+does not check types. UI tests also typecheck their browser-side Vite imports.
+Electron main/preload source remains TS, with `.cjs` build output for the
+desktop runtime. electron-vite 5 currently supports Vite 5–7, so this
 project uses Vite 7 with the compatible React plugin 5.

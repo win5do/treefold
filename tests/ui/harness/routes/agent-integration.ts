@@ -1,6 +1,9 @@
-export function createAgentIntegrationRoutes({ fixture, sendJson }) {
-  const requests = [];
-  const setManagedState = (state) => {
+import type { AgentIntegrationState } from "../../../../src/renderer/src/domain/types.ts";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { RouteDependencies } from "../types.ts";
+export function createAgentIntegrationRoutes({ fixture, sendJson }: Pick<RouteDependencies, "fixture" | "sendJson">) {
+  const requests: string[] = [];
+  const setManagedState = (state: AgentIntegrationState) => {
     fixture.agentIntegration.state = state;
     for (const component of fixture.agentIntegration.components) {
       if (component.install_path) component.state = state === "ready" ? "ready" : "not_installed";
@@ -9,7 +12,7 @@ export function createAgentIntegrationRoutes({ fixture, sendJson }) {
   return {
     requests,
     setState: setManagedState,
-    async handle(request, response, pathname) {
+    async handle(request: IncomingMessage, response: ServerResponse, pathname: string) {
       if (pathname !== "/api/agent-integration") return false;
       if (request.method === "GET") {
         sendJson(response, 200, fixture.agentIntegration);

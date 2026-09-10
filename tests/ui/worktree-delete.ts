@@ -1,10 +1,11 @@
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
-import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
-import { startUiHarness } from "./ui-harness.mjs";
-import { closeUiSession, createUiSession } from "./harness/session.mjs";
+import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
+import { startUiHarness } from "./ui-harness.ts";
+import { closeUiSession, createUiSession } from "./harness/session.ts";
 
 const harness = await startUiHarness();
-let browser;
+let browser!: Browser;
 
 try {
   browser = await createUiSession({ sessionName: "worktree-delete" });
@@ -64,7 +65,7 @@ try {
   );
   assert.equal(
     harness.deleteRequests.some(
-      (request) => request.kind === "worktree" && request.path.includes("unmanaged-worktree"),
+      (request) => request.kind === "worktree" && request.path?.includes("unmanaged-worktree"),
     ),
     true,
     "worktree deletion must reach the API",

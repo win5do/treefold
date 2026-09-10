@@ -1,8 +1,11 @@
-export function createGitDiffRoutes({ fixture, readJson, sendJson }) {
-  const requests = [];
-  const statuses = new Map();
+import type { GitStatus } from "../../../../src/renderer/src/domain/types.ts";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { RouteDependencies } from "../types.ts";
+export function createGitDiffRoutes({ fixture, readJson, sendJson }: RouteDependencies) {
+  const requests: ({ repositoryId: string; action: string; paths?: string[] } & Record<string, unknown>)[] = [];
+  const statuses = new Map<string, GitStatus>();
 
-  function statusFor(repositoryId) {
+  function statusFor(repositoryId: string) {
     if (!statuses.has(repositoryId)) statuses.set(repositoryId, {
       branch: repositoryId.includes("secondary") ? "develop" : "main",
       head: "1111111111111111111111111111111111111111",
@@ -14,10 +17,10 @@ export function createGitDiffRoutes({ fixture, readJson, sendJson }) {
       staged_count: 1,
       unstaged_count: 1,
     });
-    return statuses.get(repositoryId);
+    return statuses.get(repositoryId)!;
   }
 
-  function refreshCounts(status) {
+  function refreshCounts(status: GitStatus) {
     status.staged_count = status.files.filter((file) => file.has_staged_changes).length;
     status.unstaged_count = status.files.filter((file) => file.has_unstaged_changes).length;
     status.snapshot = `fixture-snapshot-${requests.length + 1}`;
@@ -25,7 +28,7 @@ export function createGitDiffRoutes({ fixture, readJson, sendJson }) {
 
   return {
     requests,
-    async handle(request, response, pathname) {
+    async handle(request: IncomingMessage, response: ServerResponse, pathname: string) {
       const match = pathname.match(/^\/api\/(project|workspace)-repositories\/([^/]+)\/(compare|git-status|git-diff|git\/(stage|unstage|commit))$/);
       if (!match) return false;
       const repositoryId = match[2];
@@ -34,7 +37,7 @@ export function createGitDiffRoutes({ fixture, readJson, sendJson }) {
         sendJson(response, 200, statusFor(repositoryId)); return true;
       }
       if (request.method !== "POST") return false;
-      const input = await readJson(request);
+      const input = await readJson<{ end_commit?: string; scope?: string; commit_count?: number; paths: string[]; message?: string; expected_snapshot?: string }>(request);
       requests.push({ repositoryId, action, ...input });
       if (action === "compare" || action === "git-diff") {
         const comparison = fixture.gitComparisons[repositoryId];

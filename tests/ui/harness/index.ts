@@ -1,3 +1,7 @@
+import assert from "node:assert/strict";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { AgentIntegrationState, AppSettings, BackgroundProcess, GitBranches, GitSyncItemResult, Session, WorktreeDeleteOperation, WorktreeDeletePrecheck, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
+import type { FixtureDirectory, FixtureProject, FixtureRepository, FixtureSession, FixtureWorkspace } from "../fixtures/types.ts";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5,18 +9,18 @@ import { createServer as createViteServer } from "vite";
 import {
   createSidebarCoreFixture,
   FIXTURE_IDS,
-} from "../fixtures/sidebar-core.mjs";
-import { createGitDiffRoutes } from "./routes/git-diff.mjs";
-import { createParentOperationRoutes } from "./routes/parent-operations.mjs";
-import { createTodoRoutes } from "./routes/todos.mjs";
-import { createAgentIntegrationRoutes } from "./routes/agent-integration.mjs";
+} from "../fixtures/sidebar-core.ts";
+import { createGitDiffRoutes } from "./routes/git-diff.ts";
+import { createParentOperationRoutes } from "./routes/parent-operations.ts";
+import { createTodoRoutes } from "./routes/todos.ts";
+import { createAgentIntegrationRoutes } from "./routes/agent-integration.ts";
 
 const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../..",
 );
 
-function sendJson(response, status, value) {
+function sendJson(response: ServerResponse, status: number, value: unknown) {
   response.writeHead(status, {
     "Access-Control-Allow-Headers": "Content-Type, X-Request-ID",
     "Access-Control-Allow-Methods": "GET,POST,PATCH,PUT,DELETE,OPTIONS",
@@ -26,7 +30,7 @@ function sendJson(response, status, value) {
   response.end(JSON.stringify(value));
 }
 
-async function readJson(request) {
+async function readJson<T>(request: IncomingMessage): Promise<T> {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
@@ -34,29 +38,29 @@ async function readJson(request) {
 
 async function startFixtureApi() {
   const fixture = createSidebarCoreFixture();
-  const eventStreams = new Set();
+  const eventStreams = new Set<ServerResponse>();
   let runtimeInstanceId = "runtime-ui-fixture-1";
   let runtimeRevision = 0;
-  const publishRuntimeChange = (domains) => {
+  const publishRuntimeChange = (domains: string[]) => {
     runtimeRevision += 1;
     const payload = JSON.stringify({ instance_id: runtimeInstanceId, revision: runtimeRevision, domains });
     for (const response of eventStreams) {
       response.write(`event: runtime.changed\ndata: ${payload}\n\n`);
     }
   };
-  const unexpectedRequests = [];
-  const syncRequests = [];
-  let nextBulkSyncResults = null;
-  const workspaceLocationUpdates = [];
-  const locationRequests = [];
-  const logsRevealRequests = [];
-  let nextLocationError = null;
-  const repositoryUpdateRequests = [];
-  const repositoryBaseRequests = [];
-  const renameRequests = [];
-  const sessionOrderRequests = [];
-  const deleteRequests = [];
-  let worktreeDeletePrecheck = {
+  const unexpectedRequests: string[] = [];
+  const syncRequests: string[] = [];
+  let nextBulkSyncResults: GitSyncItemResult[] | null = null;
+  const workspaceLocationUpdates: (Partial<WorkspaceRepository> & { id: string })[] = [];
+  const locationRequests: { projectId: string; path: string; isGit: boolean }[] = [];
+  const logsRevealRequests: string[] = [];
+  let nextLocationError: { status: number; code: string; message: string } | null = null;
+  const repositoryUpdateRequests: (Partial<FixtureRepository> & { id: string })[] = [];
+  const repositoryBaseRequests: { id: string; branch: string; remote?: string }[] = [];
+  const renameRequests: { kind: string; id: string; name?: string; description?: string }[] = [];
+  const sessionOrderRequests: { workspaceId: string; session_ids: string[] }[] = [];
+  const deleteRequests: { kind: string; id?: string; path?: string; cleanupManaged?: boolean }[] = [];
+  let worktreeDeletePrecheck: WorktreeDeletePrecheck = {
     status: "ready",
     directory_exists: true,
     tracked_changes: 0,
@@ -64,10 +68,10 @@ async function startFixtureApi() {
     blockers: [],
     warnings: [],
   };
-  let worktreeDeleteOperation = null;
+  let worktreeDeleteOperation: WorktreeDeleteOperation | null = null;
   let worktreeDeletePolls = 0;
-  const amuxStopRequests = [];
-  const repositoryBranches = new Map();
+  const amuxStopRequests: string[] = [];
+  const repositoryBranches = new Map<string, GitBranches>();
   const gitDiffRoutes = createGitDiffRoutes({ fixture, readJson, sendJson });
   const parentOperationRoutes = createParentOperationRoutes({
     fixture,
@@ -141,8 +145,8 @@ async function startFixtureApi() {
       return;
     }
     if (request.method === "PATCH" && pathname === "/api/settings") {
-      const input = await readJson(request);
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      const input = await readJson<Partial<AppSettings>>(request);
+      await new Promise<void>((resolve) => setTimeout(resolve, 150));
       const allowed = new Set([
         "language",
         "theme",
@@ -247,7 +251,7 @@ async function startFixtureApi() {
       /^\/api\/project-repositories\/([^/]+)\/worktrees\/delete-precheck$/,
     );
     if (request.method === "POST" && worktreePrecheckMatch) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
       sendJson(response, 200, worktreeDeletePrecheck);
       return;
     }
@@ -268,7 +272,7 @@ async function startFixtureApi() {
         worktreeDeleteOperation.status = "completed";
         for (const detail of Object.values(fixture.projectDetails)) {
           detail.worktrees = detail.worktrees.filter(
-            (item) => item.path !== worktreeDeleteOperation.path,
+            (item) => item.path !== worktreeDeleteOperation!.path,
           );
         }
       }
@@ -276,7 +280,7 @@ async function startFixtureApi() {
       return;
     }
     if (request.method === "DELETE" && worktreeDeleteMatch) {
-      const input = await readJson(request);
+      const input = await readJson<{ path: string }>(request);
       worktreeDeleteOperation = {
         id: "worktree-delete-operation",
         repository_id: worktreeDeleteMatch[1],
@@ -289,8 +293,8 @@ async function startFixtureApi() {
       return;
     }
     if (request.method === "POST" && pathname === "/api/projects") {
-      const input = await readJson(request);
-      const created = {
+      const input = await readJson<{ name: string; description?: string }>(request);
+      const created: FixtureProject = {
         id: "project-created-primary-requirement",
         name: input.name,
         description: input.description ?? "",
@@ -300,7 +304,7 @@ async function startFixtureApi() {
         created_at: "2026-08-09T08:30:00.000Z",
         updated_at: "2026-08-09T08:30:00.000Z",
       };
-      const locations = [];
+      const locations: FixtureDirectory[] = [];
       fixture.projects.push(created);
       fixture.projectDetails[created.id] = {
         ...created,
@@ -358,7 +362,7 @@ async function startFixtureApi() {
       request.method === "POST" &&
       pathname === "/api/project-directories/inspect"
     ) {
-      const input = await readJson(request);
+      const input = await readJson<{ path?: string }>(request);
       const cleanPath = String(input.path ?? "").replace(/\/+$/, "");
       const name = cleanPath.split("/").filter(Boolean).at(-1) || cleanPath;
       const isGit = !/docs|documentation|reference|context/i.test(cleanPath);
@@ -393,7 +397,7 @@ async function startFixtureApi() {
         });
         return;
       }
-      const input = await readJson(request);
+      const input = await readJson<{ path?: string; description?: string; worktree_setup_command?: string }>(request);
       const cleanPath = String(input.path ?? "").replace(/\/+$/, "");
       const name = cleanPath.split("/").filter(Boolean).at(-1) || cleanPath;
       const isGit = !/docs|documentation|reference|context/i.test(cleanPath);
@@ -408,7 +412,7 @@ async function startFixtureApi() {
         });
         return;
       }
-      const location = {
+      const location: FixtureDirectory = {
         id: `location-added-${detail.directories.length}`,
         project_id: projectLocationsMatch[1],
         name,
@@ -427,7 +431,7 @@ async function startFixtureApi() {
         created_at: "2026-08-10T08:20:00.000Z",
       };
       if (isGit) {
-        const repository = {
+        const repository: FixtureRepository = {
           id: `repository-added-${detail.repositories.length}`,
           project_id: projectLocationsMatch[1],
           name,
@@ -440,8 +444,8 @@ async function startFixtureApi() {
           setup_command: input.worktree_setup_command ?? "",
           setup_workdir: ".",
           git_status: "ready",
-          created_at: location.created_at,
-          updated_at: location.created_at,
+          created_at: location.created_at!,
+          updated_at: location.created_at!,
         };
         detail.repositories.push(repository);
         location.repository_id = repository.id;
@@ -460,6 +464,7 @@ async function startFixtureApi() {
         const project = fixture.projects.find(
           (item) => item.id === projectLocationsMatch[1],
         );
+        assert.ok(project);
         project.default_location_id = location.id;
       }
       sendJson(response, 201, location);
@@ -470,7 +475,7 @@ async function startFixtureApi() {
       projectMatch &&
       fixture.projectDetails[projectMatch[1]]
     ) {
-      const input = await readJson(request);
+      const input = await readJson<Partial<FixtureProject>>(request);
       if (
         input.status !== undefined &&
         input.status !== "active" &&
@@ -484,6 +489,7 @@ async function startFixtureApi() {
       const project = fixture.projects.find(
         (item) => item.id === projectMatch[1],
       );
+      assert.ok(project);
       if (
         input.status === "archived" &&
         fixture.projectDetails[projectMatch[1]].workspaces.some(
@@ -550,6 +556,7 @@ async function startFixtureApi() {
       const project = fixture.projects.find(
         (item) => item.id === projectMatch[1],
       );
+      assert.ok(project);
       if (project.status !== "archived") {
         sendJson(response, 400, {
           error: "Archive the Project before permanently deleting it",
@@ -574,7 +581,7 @@ async function startFixtureApi() {
       /^\/api\/project-repositories\/([^/]+)$/,
     );
     if (request.method === "PATCH" && projectRepositoryMatch) {
-      const input = await readJson(request);
+      const input = await readJson<Partial<FixtureRepository>>(request);
       const repository = Object.values(fixture.projectDetails)
         .flatMap((detail) => detail.repositories)
         .find((item) => item.id === projectRepositoryMatch[1]);
@@ -597,7 +604,7 @@ async function startFixtureApi() {
       /^\/api\/project-repositories\/([^/]+)\/base-branch$/,
     );
     if (request.method === "POST" && repositoryBaseBranchMatch) {
-      const input = await readJson(request);
+      const input = await readJson<{ branch: string; remote?: string }>(request);
       const repository = Object.values(fixture.projectDetails)
         .flatMap((detail) => detail.repositories)
         .find((item) => item.id === repositoryBaseBranchMatch[1]);
@@ -635,7 +642,7 @@ async function startFixtureApi() {
         return;
       }
       if (request.method === "POST") {
-        const input = await readJson(request);
+        const input = await readJson<{ kind?: Session["kind"]; project_directory_id?: string }>(request);
         const kind = input.kind || "shell";
         if (
           kind === "codex" &&
@@ -652,7 +659,7 @@ async function startFixtureApi() {
           detail.directories.find(
             (item) => item.id === input.project_directory_id,
           ) ?? detail.directories[0];
-        const created = {
+        const created: FixtureSession = {
           ...detail.sessions[0],
           id:
             kind === "codex"
@@ -722,7 +729,7 @@ async function startFixtureApi() {
       /^\/api\/workspace-repositories\/([^/]+)$/,
     );
     if (request.method === "PATCH" && workspaceLocationMatch) {
-      const input = await readJson(request);
+      const input = await readJson<Partial<WorkspaceRepository>>(request);
       const location = Object.values(fixture.workspaceDetails)
         .flatMap((detail) => detail.repositories)
         .find((item) => item.id === workspaceLocationMatch[1]);
@@ -800,7 +807,7 @@ async function startFixtureApi() {
       /^\/api\/project-directories\/([^/]+)$/,
     );
     if (request.method === "PATCH" && directoryMatch) {
-      const input = await readJson(request);
+      const input = await readJson<Partial<FixtureDirectory>>(request);
       const directory = Object.values(fixture.projectDetails)
         .flatMap((detail) => detail.directories)
         .find((item) => item.id === directoryMatch[1]);
@@ -862,7 +869,7 @@ async function startFixtureApi() {
       /^\/api\/project-repositories\/([^/]+)\/checkout$/,
     );
     if (request.method === "POST" && checkoutMatch) {
-      const input = await readJson(request);
+      const input = await readJson<{ branch: string }>(request);
       const detail = Object.values(fixture.projectDetails).find((candidate) =>
         (candidate.repositories ?? []).some(
           (repository) => repository.id === checkoutMatch[1],
@@ -886,7 +893,7 @@ async function startFixtureApi() {
     }
 
     if (request.method === "DELETE" && branchesMatch) {
-      const input = await readJson(request);
+      const input = await readJson<{ kind: string; branch: string; remote?: string }>(request);
       const state = repositoryBranches.get(branchesMatch[1]);
       if (!state)
         return sendJson(response, 404, { error: "Repository not found" });
@@ -911,7 +918,7 @@ async function startFixtureApi() {
     ) {
       if (slowWorkspaceRefreshesRemaining > 0) {
         slowWorkspaceRefreshesRemaining -= 1;
-        await new Promise((resolve) => setTimeout(resolve, 1_500));
+        await new Promise<void>((resolve) => setTimeout(resolve, 1_500));
       }
       sendJson(response, 200, fixture.workspaceDetails[workspaceMatch[1]]);
       return;
@@ -921,7 +928,7 @@ async function startFixtureApi() {
       workspaceMatch &&
       fixture.workspaceDetails[workspaceMatch[1]]
     ) {
-      const input = await readJson(request);
+      const input = await readJson<Partial<FixtureWorkspace>>(request);
       Object.assign(fixture.workspaceDetails[workspaceMatch[1]], input);
       const projectDetail = Object.values(fixture.projectDetails).find(
         (detail) =>
@@ -981,7 +988,7 @@ async function startFixtureApi() {
         return;
       }
       if (request.method === "POST") {
-        const input = await readJson(request);
+        const input = await readJson<{ kind?: Session["kind"]; project_directory_id?: string; name?: string }>(request);
         const kind = input.kind || "shell";
         if (
           kind === "codex" &&
@@ -995,7 +1002,7 @@ async function startFixtureApi() {
           return;
         }
         const createdId = `session-created-${kind}-ui-fixture`;
-        const created = {
+        const created: FixtureSession = {
           ...detail.sessions[0],
           id: createdId,
           workspace_id: detail.id,
@@ -1033,7 +1040,7 @@ async function startFixtureApi() {
       workspaceSessionOrderMatch &&
       fixture.workspaceDetails[workspaceSessionOrderMatch[1]]
     ) {
-      const input = await readJson(request);
+      const input = await readJson<{ session_ids: string[] }>(request);
       const detail = fixture.workspaceDetails[workspaceSessionOrderMatch[1]];
       const positions = new Map(
         input.session_ids.map((id, index) => [id, index]),
@@ -1130,7 +1137,7 @@ async function startFixtureApi() {
       const session = sessions.find((item) => item.id === sessionMatch[1]);
       if (!session)
         return sendJson(response, 404, { error: "Session not found" });
-      const input = await readJson(request);
+      const input = await readJson<{ name: string }>(request);
       for (const collection of [
         ...Object.values(fixture.projectDetails).map(
           (detail) => detail.sessions,
@@ -1155,7 +1162,7 @@ async function startFixtureApi() {
       preflightMatch &&
       fixture.deliveryPreflights[preflightMatch[1]]
     ) {
-      const input = await readJson(request);
+      const input = await readJson<{ code_action: string }>(request);
       const base = fixture.deliveryPreflights[preflightMatch[1]];
       sendJson(response, 201, {
         ...base,
@@ -1180,7 +1187,7 @@ async function startFixtureApi() {
     socket.destroy();
   });
 
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
   });
@@ -1191,12 +1198,12 @@ async function startFixtureApi() {
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     syncRequests,
-    setNextBulkSyncResults(results) {
+    setNextBulkSyncResults(results: GitSyncItemResult[]) {
       nextBulkSyncResults = results;
     },
     locationRequests,
     logsRevealRequests,
-    setNextLocationError(error) {
+    setNextLocationError(error: { status: number; code: string; message: string }) {
       nextLocationError = error;
     },
     repositoryUpdateRequests,
@@ -1240,13 +1247,13 @@ async function startFixtureApi() {
         });
       }
     },
-    setProjectStatus(id, status) {
+    setProjectStatus(id: string, status: FixtureProject["status"]) {
       const project = fixture.projects.find((item) => item.id === id);
       if (project) project.status = status;
       if (fixture.projectDetails[id])
         fixture.projectDetails[id].status = status;
     },
-    setProcessState(id, state) {
+    setProcessState(id: string, state: BackgroundProcess["state"] & Session["status"]) {
       const process = fixture.processes.find((item) => item.id === id);
       let changed = false;
       if (process && process.state !== state) {
@@ -1267,10 +1274,10 @@ async function startFixtureApi() {
       runtimeInstanceId = `runtime-ui-fixture-${Date.now()}`;
       runtimeRevision = 0;
     },
-    setWorktreeDeletePrecheck(value) {
+    setWorktreeDeletePrecheck(value: Partial<WorktreeDeletePrecheck>) {
       worktreeDeletePrecheck = { ...worktreeDeletePrecheck, ...value };
     },
-    removeProcess(id) {
+    removeProcess(id: string) {
       const processCount = fixture.processes.length;
       fixture.processes = fixture.processes.filter((item) => item.id !== id);
       let changed = fixture.processes.length !== processCount;
@@ -1288,14 +1295,16 @@ async function startFixtureApi() {
     async close() {
       for (const response of eventStreams) response.end();
       eventStreams.clear();
-      await new Promise((resolve, reject) =>
+      await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
     },
   };
 }
 
-export async function startUiHarness() {
+type UiHarness = Omit<Awaited<ReturnType<typeof startFixtureApi>>, "unexpectedRequests"> & { assertNoUnexpectedRequests(): void };
+
+export async function startUiHarness(): Promise<UiHarness> {
   if (process.env.TREEFOLD_UI_URL) {
     return {
       baseUrl: process.env.TREEFOLD_UI_URL,
@@ -1311,6 +1320,8 @@ export async function startUiHarness() {
       sessionOrderRequests: [],
       deleteRequests: [],
       amuxStopRequests: [],
+      agentIntegrationRequests: [],
+      setAgentIntegrationState(_state: AgentIntegrationState) {},
       parentOperationRequests: [],
       todoRequests: [],
       compareRequests: [],

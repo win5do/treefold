@@ -1,10 +1,11 @@
+import type { Browser } from "webdriverio";
 import assert from "node:assert/strict";
-import { FIXTURE_IDS } from "./fixtures/sidebar-core.mjs";
-import { startUiHarness } from "./ui-harness.mjs";
-import { clickUiElement, closeUiSession, createUiSession } from "./harness/session.mjs";
+import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
+import { startUiHarness } from "./ui-harness.ts";
+import { clickUiElement, closeUiSession, createUiSession } from "./harness/session.ts";
 
 const harness = await startUiHarness();
-let browser;
+let browser!: Browser;
 try {
   browser = await createUiSession({ sessionName: "git-changes" });
   await browser.url(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
@@ -31,7 +32,7 @@ try {
   await clickUiElement(browser, 'button[aria-label="Expand src"]');
   await (await browser.$('[data-item-checkbox][aria-label="Stage src/alpha.ts"]')).waitForDisplayed({ timeout: 3_000 });
   await clickUiElement(browser, '[data-item-checkbox][aria-label="Stage src/alpha.ts"]');
-  await browser.waitUntil(() => harness.compareRequests.some((item) => item.action === "git/stage" && item.paths.includes("src/alpha.ts")), { timeout: 3_000 });
+  await browser.waitUntil(() => harness.compareRequests.some((item) => item.action === "git/stage" && item.paths?.includes("src/alpha.ts")), { timeout: 3_000 });
   const message = await browser.$('textarea[aria-label="Commit message"]');
   await message.setValue("Commit fixture changes");
   const commit = await browser.$('button*=Commit 2');

@@ -1,15 +1,18 @@
-import { FIXTURE_IDS } from "../../fixtures/sidebar-core.mjs";
+import type { ParentOperation, Session } from "../../../../src/renderer/src/domain/types.ts";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { RouteDependencies } from "../types.ts";
+import { FIXTURE_IDS } from "../../fixtures/sidebar-core.ts";
 
 const operationTimestamp = "2026-08-10T08:00:00.000Z";
 const targetPath = "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture";
 
-export function createParentOperationRoutes({ fixture, readJson, sendJson }) {
-  const requests = [];
-  const operations = new Map();
+export function createParentOperationRoutes({ fixture, readJson, sendJson }: RouteDependencies) {
+  const requests: string[] = [];
+  const operations = new Map<string, ParentOperation>();
 
   return {
     requests,
-    async handle(request, response, pathname) {
+    async handle(request: IncomingMessage, response: ServerResponse, pathname: string) {
       const previewMatch = pathname.match(
         /^\/api\/workspace-repositories\/([^/]+)\/parent-operation$/,
       );
@@ -26,7 +29,7 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }) {
         if (request.method === "GET") {
           requests.push(`GET ${locationId}:${direction}`);
           sendJson(response, 200, {
-            direction,
+            direction: direction as ParentOperation["direction"],
             repository_name: location?.repository_name ?? "fixture-repository",
             source_path: location?.checkout_path ?? "/tmp/source",
             source_branch: location?.branch ?? "feature/ui-fixture",
@@ -50,12 +53,12 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }) {
           return true;
         }
         if (request.method === "POST") {
-          const input = await readJson(request);
-          const created = {
+          const input = await readJson<{ strategy: ParentOperation["strategy"] }>(request);
+          const created: ParentOperation = {
             id: `parent-${direction}-${locationId}`,
             workspace_repository_id: locationId,
             workspace_id: location?.workspace_id ?? FIXTURE_IDS.workspace,
-            direction,
+            direction: direction as ParentOperation["direction"],
             strategy: input.strategy,
             origin: "standalone",
             source_repository_id: FIXTURE_IDS.primaryRepository,
@@ -127,7 +130,7 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }) {
       const action = actionMatch[2];
       requests.push(`POST ${operation.id}:${action}`);
       if (action === "resolve-with-codex") {
-        const session = {
+        const session: Session = {
           id: "parent-resolver-session-ui-fixture",
           workspace_id:
             operation.target_workspace_id ?? operation.workspace_id,

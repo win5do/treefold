@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Backend } from '../../src/main/backend.ts';
 
 const executable = path.resolve(process.env.TREEFOLD_BACKEND_PATH || 'src/backend/target/debug/treefold-backend');
-function service(home) {
+function service(home: string) {
   return new Backend({ executable, env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' }, timeout: 15000 });
 }
 test('Rust API owns its home, preserves settings, and removes discovery state on exit', { timeout: 60000 }, async () => {
@@ -49,8 +49,8 @@ test('invalid settings surface the cause without rewriting the file', { timeout:
 
 test('unexpected backend exit retains recent stderr for diagnosis', { timeout: 30000 }, async () => {
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-crash-'));
-  let report;
-  const exited = new Promise(resolve => { report = resolve; });
+  let report!: (error: Error) => void;
+  const exited = new Promise<Error>(resolve => { report = resolve; });
   const backend = new Backend({ executable, env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' }, onExit: report });
   try {
     await backend.start();
@@ -71,7 +71,7 @@ test('request IDs correlate real API failures and mutations and are exposed to b
   const backend = service(home);
   try {
     const url = await backend.start();
-    const cases = [
+    const cases: [string, string, string, string | undefined, number][] = [
       ['/api/settings', 'PATCH', 'mutation-1', JSON.stringify({ language: 'en-US' }), 200],
       ['/api/settings', 'PATCH', 'invalid-json-1', '{', 400],
       ['/missing', 'GET', 'missing-1', undefined, 404],
@@ -80,10 +80,10 @@ test('request IDs correlate real API failures and mutations and are exposed to b
       const response = await fetch(`${url}${route}`, { method, headers: { 'x-request-id': id, 'content-type': 'application/json', origin: 'http://localhost:15011' }, body });
       assert.equal(response.status, status);
       assert.equal(response.headers.get('x-request-id'), id);
-      assert.match(response.headers.get('access-control-expose-headers'), /x-request-id/i);
+      assert.match(response.headers.get('access-control-expose-headers')!, /x-request-id/i);
     }
     const generated = await fetch(`${url}/api/health`);
-    assert.match(generated.headers.get('x-request-id'), /^[a-f0-9]{32}$/);
+    assert.match(generated.headers.get('x-request-id')!, /^[a-f0-9]{32}$/);
     const preflight = await fetch(`${url}/api/settings`, { method: 'OPTIONS', headers: { origin: 'http://localhost:15011', 'access-control-request-method': 'PATCH', 'access-control-request-headers': 'x-request-id,content-type' } });
     assert.equal(preflight.status, 200);
     assert.ok(preflight.headers.get('x-request-id'));
