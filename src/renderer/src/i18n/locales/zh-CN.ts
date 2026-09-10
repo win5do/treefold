@@ -159,9 +159,9 @@ export const zhCN = {
     runtime: {
       title: "运行环境",
       description: "Treefold 当前使用的路径、平台与工具版本。",
-      copy: "复制 {{label}}",
-      copied: "已复制 {{label}}",
-      copyFailed: "无法复制 {{label}}",
+      copy: "复制运行环境",
+      copied: "已复制运行环境",
+      copyFailed: "无法复制运行环境",
     },
     codexArguments: {
       title: "Codex 额外参数",

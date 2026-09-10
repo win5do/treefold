@@ -157,9 +157,9 @@ export const enUS = {
     runtime: {
       title: "Runtime",
       description: "Current Treefold paths, platform, and tool versions.",
-      copy: "Copy {{label}}",
-      copied: "{{label}} copied",
-      copyFailed: "Could not copy {{label}}",
+      copy: "Copy runtime information",
+      copied: "Runtime information copied",
+      copyFailed: "Could not copy runtime information",
     },
     codexArguments: {
       title: "Additional Codex arguments",

@@ -122,14 +122,6 @@ export function SettingsDialog({
     if (result.ok) toast.success(t("settings.saved"));
     else toast.error(t("settings.saveFailed", { message: result.error }));
   };
-  const copyRuntimeValue = (label: string, value: string) => {
-    void navigator.clipboard.writeText(value).then(() => {
-      toast.success(t("settings.runtime.copied", { label }));
-    }).catch((cause) => {
-      console.error(`Could not copy ${label}`, cause);
-      toast.error(t("settings.runtime.copyFailed", { label }));
-    });
-  };
   const runtimeItems = [
     { key: "treefold-home", label: "Treefold Home", value: system?.treefold_home ?? "—" },
     { key: "platform", label: "Platform", value: system?.platform ?? "—" },
@@ -141,6 +133,16 @@ export function SettingsDialog({
         : t("common.unavailable"),
     },
   ];
+  const copyRuntime = async () => {
+    const text = runtimeItems.map(({ label, value }) => `${label}: ${value}`).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(t("settings.runtime.copied"));
+    } catch (cause) {
+      console.error("Could not copy runtime information", cause);
+      toast.error(t("settings.runtime.copyFailed"));
+    }
+  };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[86vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
@@ -324,27 +326,27 @@ export function SettingsDialog({
                 <FieldDescription>
                   {t("settings.runtime.description")}
                 </FieldDescription>
+                <Button
+                  className="self-start"
+                  variant="outline"
+                  disabled={!system}
+                  onClick={() => void copyRuntime()}
+                >
+                  <Copy data-icon="inline-start" />
+                  {t("settings.runtime.copy")}
+                </Button>
               </FieldContent>
               <dl className="w-full divide-y overflow-hidden rounded-md border @md/field-group:max-w-sm">
                 {runtimeItems.map((item) => (
                   <div
                     key={item.key}
                     data-testid={`settings-runtime-${item.key}`}
-                    className="grid min-h-10 grid-cols-[7rem_minmax(0,1fr)_2rem] items-center gap-2 px-3"
+                    className="grid min-h-10 grid-cols-[7rem_minmax(0,1fr)] items-center gap-2 px-3"
                   >
                     <dt className="text-sm text-muted-foreground">{item.label}</dt>
                     <dd className="min-w-0 truncate font-mono text-xs" title={item.value}>
                       {item.value}
                     </dd>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={t("settings.runtime.copy", { label: item.label })}
-                      disabled={item.value === "—"}
-                      onClick={() => copyRuntimeValue(item.label, item.value)}
-                    >
-                      <Copy />
-                    </Button>
                   </div>
                 ))}
               </dl>

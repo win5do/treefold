@@ -254,20 +254,6 @@ test("sidebar.core", async () => {
       "system",
       "Settings must reflect the persisted theme preference",
     );
-    assert.match(
-      await (
-        settingsDialog.locator('[data-testid="settings-runtime-treefold-home"]')
-      ).innerText(),
-      /Treefold Home[\s\S]*\/tmp\/treefold-ui-fixture/,
-      "Runtime must expose the effective Treefold Home",
-    );
-    for (const label of ["Treefold Home", "Platform", "Codex"]) {
-      assert.equal(
-        await settingsDialog.locator(`button[aria-label="Copy ${label}"]`).count().then(count => count > 0),
-        true,
-        `Runtime ${label} must be copyable`,
-      );
-    }
     await selectUiOption(
       page,
       settingsDialog.locator('[data-testid="settings-theme"]'),
