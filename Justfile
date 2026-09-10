@@ -60,10 +60,6 @@ clean:
     cargo clean --manifest-path src/backend/Cargo.toml
     rm -rf out dist release
 
-# Browser-only development; desktop integration uses app-dev.
-web-dev:
-    npm run dev:web
-
 # Run Rust, backend lifecycle/install, and deterministic browser tests.
 test: test-backend test-desktop test-ui
 

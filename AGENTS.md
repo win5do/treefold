@@ -63,8 +63,8 @@ task runner but is optional.
   composition. npm scripts own TypeScript, frontend, and Electron tool commands.
   TS scripts own version propagation, artifact paths, and installation rollback.
   Keep calls directed from just to npm/Cargo/TS; npm scripts must not invoke just.
-- `npm run dev` uses electron-vite for desktop development; `npm run dev:web`
-  starts the standalone browser UI. `npm run build` builds main/preload/renderer
+- `npm run dev` uses electron-vite for desktop development.
+  `npm run build` builds main/preload/renderer
   to `out/`; `npm run typecheck` checks application code, scripts, and tests.
 - Run scripts and tests directly with Node type stripping (`node file.ts`).
   Keep runtime imports explicit (`./file.ts`), use type-only imports for types,

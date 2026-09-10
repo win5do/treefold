@@ -11,9 +11,7 @@
   "scripts": {
     "dev": "electron-vite dev --watch",
     "dev:no-watch": "electron-vite dev",
-    "dev:web": "vite --host 127.0.0.1",
     "build": "npm run typecheck && electron-vite build",
-    "build:web": "vite build",
     "test:ui": "node tests/ui/run.ts",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:tools",
     "test:desktop": "node --test tests/desktop/*.test.ts",

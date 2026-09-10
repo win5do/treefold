@@ -115,7 +115,6 @@ Use `just --list` to discover developer commands:
 | `just app-dev` | Desktop development with isolated `.treefold-dev` and hot reload |
 | `just app-dev-no-watch` | Desktop development without main/preload/Rust watching; renderer HMR remains available |
 | `just app-default` | Intentionally use `~/.treefold` for desktop development |
-| `just web-dev` | Browser-only Vite server; requires a separate API |
 | `just check` | TypeScript, SQLx metadata, Rust formatting and compilation |
 | `just typecheck` | Check application code, scripts, and tests |
 | `just test` | Rust, backend lifecycle/install, and deterministic browser tests |
@@ -129,8 +128,8 @@ Use `just --list` to discover developer commands:
 
 `just` owns developer entry points, standalone Cargo tasks, and check/test
 composition. npm scripts own TypeScript, frontend, and Electron tool commands:
-`npm run build` compiles main/preload/renderer to `out/`, `npm run build:web`
-builds the renderer to `dist/`, and `npm start` previews compiled desktop assets
+`npm run build` compiles main/preload/renderer to `out/`, and `npm start`
+previews compiled desktop assets
 (after `just prepare-sidecars`). `npm run test:desktop` runs only the Node tests;
 use `just test-desktop` to also build their backend prerequisite.
 TypeScript scripts own workflows that pass versions, return artifact paths, or
