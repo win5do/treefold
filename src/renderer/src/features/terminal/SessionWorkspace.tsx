@@ -65,6 +65,16 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     terminal.loadAddon(fit);
     terminal.loadAddon(new WebLinksAddon());
     terminal.open(host);
+    if (session.kind === "codex") {
+      // xterm encodes Shift+Enter as ordinary Enter. Use Codex's Ctrl+J
+      // newline fallback until the terminal supports extended keyboard input.
+      terminal.attachCustomKeyEventHandler((event) => {
+        if (event.key !== "Enter" || !event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return true;
+        event.preventDefault();
+        if (event.type === "keydown" && !terminal.options.disableStdin) terminal.input("\n", true);
+        return false;
+      });
+    }
     const disposeIme229Workaround = setupXtermIme229Workaround({ terminal, host });
     try { terminal.loadAddon(new WebglAddon()); } catch { /* canvas renderer is fine */ }
     void document.fonts.load('13px "Pure Nerd Font"').then(() => {
@@ -259,7 +269,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       socket?.close();
       terminal.dispose();
     };
-  }, [session.id, session.status]);
+  }, [session.id, session.kind, session.status]);
   return <div className="relative min-h-0 flex-1">
     {ownership === "readonly" ? <div data-testid="terminal-readonly-indicator" role="status" className="absolute right-4 top-3 z-10 rounded border border-amber-400/30 bg-[#191b1e]/95 px-2 py-1 text-[10px] font-medium text-amber-300">Read only</div> : null}
     <div ref={hostRef} className="h-full min-h-0 p-2" />

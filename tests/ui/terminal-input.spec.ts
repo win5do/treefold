@@ -224,6 +224,25 @@ test("terminal-input", async () => {
     assert.equal(imeResult.modifierOverlap, "G", "an overlapping modifier must replay only the input xterm dropped");
     assert.equal(imeResult.composition, "拼", "real composition input must remain owned by xterm");
 
+    const readInput = () => page.evaluate(() => window.__terminalInputFrames.map((frame) =>
+      new TextDecoder().decode(Uint8Array.from(atob(frame.data), (character) => character.charCodeAt(0))),
+    ).join(""));
+    await page.evaluate(() => { window.__terminalInputFrames = []; });
+    await helperTextarea.press("Shift+Enter");
+    await expect.poll(readInput).toBe("\r");
+
+    harness.setProcessState(FIXTURE_IDS.workspaceCodex, "running");
+    await page.evaluate(([workspaceId, sessionId]) => {
+      window.__terminalControllerReady = false;
+      window.__terminalInputFrames = [];
+      window.location.hash = `#/workspaces/${workspaceId}/sessions/${sessionId}`;
+    }, [FIXTURE_IDS.workspace, FIXTURE_IDS.workspaceCodex]);
+    await expect.poll(() => page.evaluate(() => window.__terminalControllerReady)).toBeTruthy();
+    await helperTextarea.press("Shift+Enter");
+    await helperTextarea.press("Enter");
+    await helperTextarea.press("Control+j");
+    await expect.poll(readInput).toBe("\n\r\n");
+
     await page.evaluate(([workspaceId, sessionId]) => {
       window.__terminalSocketUrls = [];
       window.__terminalSocketSends = [];
@@ -279,4 +298,3 @@ test("terminal-input", async () => {
   }
 
 });
-
