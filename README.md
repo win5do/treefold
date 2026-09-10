@@ -133,12 +133,20 @@ development. Electron-only changes do not run Cargo. electron-vite handles
 main restarts and preload reloads. The main process waits for the previous
 instance to finish shutting down its Rust child before acquiring its lock.
 
-Packaging, signing, local installation, and test entry points use TypeScript
+Packaging, local installation, and test entry points use TypeScript
 and run directly with Node.js 24.12+ type stripping. No separate TS runner or
 precompilation is required. Use explicit `.ts` runtime imports and `import type`
 for types; avoid enums, parameter properties, and other syntax that requires
 transformation. `npm run typecheck` checks these files separately because Node
 does not check types. UI tests also typecheck their browser-side Vite imports.
+`electron-builder.yml` owns ad-hoc signing, entitlements, and strict signature
+verification through electron-builder's built-in macOS signer. No custom signing
+hook is needed. Packaging and `just install-app-local` share one builder API
+entry point and SemVer validation. Local installs default to a UTC timestamped
+version; `TREEFOLD_BUILD_VERSION` overrides it. Installation verifies a temporary
+copy before replacing the old App, and restores the old App if replacement fails.
+`TREEFOLD_INSTALL_DIR` can select an isolated installation directory.
+
 Electron main/preload source remains TS, with `.cjs` build output for the
 desktop runtime. electron-vite 5 currently supports Vite 5–7, so this
 project uses Vite 7 with the compatible React plugin 5.

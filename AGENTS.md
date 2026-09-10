@@ -102,6 +102,9 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
   bridge, and backend process supervision. `src/backend/` owns the Rust
   HTTP/WebSocket service and all business state. Keep business behavior out of Electron IPC handlers.
 - `npm run bundle:desktop` produces the macOS App and DMG under `release/`.
+  Use electron-builder's built-in macOS signing configured in `electron-builder.yml`;
+  do not duplicate its signing pipeline in a custom script. The build and local
+  install entry points share `bundleDesktop()` for versioning and artifact paths.
   `npm run test:desktop` builds and validates the Rust process lifecycle.
   `npm run test:electron` validates the packaged App and electron-vite development
   lifecycle with isolated homes; build the package first.

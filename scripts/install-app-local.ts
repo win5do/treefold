@@ -1,145 +1,65 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-} from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
+import path from 'node:path';
+import { bundleDesktop } from './bundle-desktop.ts';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const packagePath = path.join(root, "package.json");
-const sourceApp = path.join(root, "release", process.arch === "arm64" ? "mac-arm64" : "mac", "Treefold.app");
-
-function timestamp() {
-  const now = new Date();
-  const part = (value: number, width = 2) => String(value).padStart(width, "0");
-  return [
-    part(now.getFullYear(), 4),
-    part(now.getMonth() + 1),
-    part(now.getDate()),
-    part(now.getHours()),
-    part(now.getMinutes()),
-    part(now.getSeconds()),
-  ].join("");
-}
-
-function buildVersion(): string {
-  if (process.env.TREEFOLD_BUILD_VERSION) {
-    return process.env.TREEFOLD_BUILD_VERSION;
-  }
-  const configured = (JSON.parse(readFileSync(packagePath, "utf8")) as { version: string }).version;
-  const base = configured.split(/[+-]/, 1)[0];
-  return `${base}-alpha.${timestamp()}`;
-}
-
-function validateVersion(version: string) {
-  const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
-  if (!semver.test(version)) {
-    throw new Error(`TREEFOLD_BUILD_VERSION must be valid SemVer, received: ${version}`);
-  }
-}
-
-function macOSBundleVersion(version: string) {
-  return version;
+function assertAppStopped(installedApp: string) {
+  const executable = path.join(installedApp, 'Contents/MacOS');
+  const pattern = `${executable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`;
+  const result = spawnSync('pgrep', ['-f', pattern], { stdio: 'ignore' });
+  if (result.status === 0) throw new Error(`Quit the installed Treefold App before replacing ${installedApp}`);
+  if (result.error || result.status !== 1) throw result.error ?? new Error('Could not check whether Treefold is running');
 }
 
 function verifyApp(appPath: string, expectedVersion: string) {
-  execFileSync("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath], {
-    stdio: "inherit",
-  });
-  const signatureResult = spawnSync("codesign", ["-dv", "--verbose=4", appPath], {
-    encoding: "utf8",
-  });
-  if (signatureResult.status !== 0) {
-    throw new Error(signatureResult.stderr || `Could not inspect signature for ${appPath}`);
-  }
-  const signature = `${signatureResult.stdout}${signatureResult.stderr}`;
-  if (!signature.includes("Signature=adhoc")) {
-    throw new Error("Packaged App is not ad-hoc signed");
-  }
-  const packagedVersion = execFileSync(
-    "plutil",
-    ["-extract", "CFBundleShortVersionString", "raw", path.join(appPath, "Contents", "Info.plist")],
-    { encoding: "utf8" },
-  ).trim();
-  if (packagedVersion !== expectedVersion) {
-    throw new Error(`Packaged App version ${packagedVersion} does not match ${expectedVersion}`);
-  }
-  const packagedBundleVersion = execFileSync(
-    "plutil",
-    ["-extract", "CFBundleVersion", "raw", path.join(appPath, "Contents", "Info.plist")],
-    { encoding: "utf8" },
-  ).trim();
-  const expectedBundleVersion = macOSBundleVersion(expectedVersion);
-  if (packagedBundleVersion !== expectedBundleVersion) {
-    throw new Error(
-      `Packaged App bundle version ${packagedBundleVersion} does not match ${expectedBundleVersion}`,
-    );
+  execFileSync('codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'inherit' });
+  const details = spawnSync('codesign', ['-dv', '--verbose=4', appPath], { encoding: 'utf8' });
+  if (details.status !== 0) throw details.error ?? new Error(details.stderr);
+  if (!`${details.stdout}${details.stderr}`.includes('Signature=adhoc')) throw new Error('Packaged App is not ad-hoc signed');
+  for (const key of ['CFBundleShortVersionString', 'CFBundleVersion']) {
+    const actual = execFileSync('plutil', ['-extract', key, 'raw', path.join(appPath, 'Contents/Info.plist')], { encoding: 'utf8' }).trim();
+    if (actual !== expectedVersion) throw new Error(`${key} ${actual} does not match ${expectedVersion}`);
   }
 }
 
-function installApp(appPath: string) {
-  const installDir = path.resolve(process.env.TREEFOLD_INSTALL_DIR ?? "/Applications");
-  const installedApp = path.join(installDir, "Treefold.app");
-  const running = spawnSync("pgrep", ["-f", `${installedApp}/Contents/MacOS/`], {
-    stdio: "ignore",
-  }).status === 0;
-  if (running) {
-    throw new Error(`Quit the installed Treefold App before replacing ${installedApp}`);
-  }
-
+export function installApp(appPath: string, installDir: string, version: string) {
+  const installedApp = path.join(installDir, 'Treefold.app');
+  assertAppStopped(installedApp);
   mkdirSync(installDir, { recursive: true });
-  const transaction = mkdtempSync(path.join(installDir, ".treefold-install-"));
-  const stagedApp = path.join(transaction, "Treefold.app");
-  const previousApp = path.join(transaction, "Treefold.previous.app");
+  const transaction = mkdtempSync(path.join(installDir, '.treefold-install-'));
+  const stagedApp = path.join(transaction, 'Treefold.app');
+  const previousApp = path.join(transaction, 'Treefold.previous.app');
   let previousMoved = false;
   try {
-    execFileSync("ditto", [appPath, stagedApp], { stdio: "inherit" });
+    execFileSync('ditto', [appPath, stagedApp], { stdio: 'inherit' });
+    verifyApp(stagedApp, version);
+    assertAppStopped(installedApp);
     if (existsSync(installedApp)) {
       renameSync(installedApp, previousApp);
       previousMoved = true;
     }
-    renameSync(stagedApp, installedApp);
-    verifyApp(installedApp, version);
-    rmSync(previousApp, { recursive: true, force: true });
+    try {
+      renameSync(stagedApp, installedApp);
+    } catch (error) {
+      if (previousMoved) {
+        renameSync(previousApp, installedApp);
+        previousMoved = false;
+      }
+      throw error;
+    }
     previousMoved = false;
-  } catch (error) {
-    if (existsSync(installedApp)) {
-      rmSync(installedApp, { recursive: true, force: true });
-    }
-    if (previousMoved) {
-      renameSync(previousApp, installedApp);
-      previousMoved = false;
-    }
-    throw error;
   } finally {
-    rmSync(transaction, { recursive: true, force: true });
+    // Preserve the backup if restoring the previous App itself failed.
+    if (!previousMoved) rmSync(transaction, { recursive: true, force: true });
   }
   return installedApp;
 }
 
-if (process.platform !== "darwin") {
-  throw new Error("Ad-hoc App packaging and installation is supported only on macOS");
+if (import.meta.main) {
+  const installDir = path.resolve(process.env.TREEFOLD_INSTALL_DIR ?? '/Applications');
+  assertAppStopped(path.join(installDir, 'Treefold.app'));
+  const { appPath, version, artifacts } = await bundleDesktop({ localInstall: true });
+  const installedApp = installApp(appPath, installDir, version);
+  console.log(`Installed Treefold ${version} at ${installedApp}`);
+  for (const artifact of artifacts) if (artifact.endsWith('.dmg')) console.log(`Packaged DMG: ${artifact}`);
 }
-
-const version = buildVersion();
-validateVersion(version);
-const environment = { ...process.env, TREEFOLD_BUILD_VERSION: version };
-
-execFileSync("npm", ["run", "bundle:desktop"], { cwd: root, env: environment, stdio: "inherit" });
-
-verifyApp(sourceApp, version);
-const installedApp = installApp(sourceApp);
-const dmgDir = path.join(root, "release");
-const dmg = readdirSync(dmgDir)
-  .filter((name) => name.endsWith(".dmg") && name.includes(version))
-  .map((name) => path.join(dmgDir, name))
-  .at(0);
-
-console.log(`Installed Treefold ${version} at ${installedApp}`);
-if (dmg) console.log(`Packaged DMG: ${dmg}`);
