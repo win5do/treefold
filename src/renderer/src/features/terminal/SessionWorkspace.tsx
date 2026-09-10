@@ -11,13 +11,17 @@ import "@azurity/pure-nerd-font/pure-nerd-font.css";
 import { StatusDot } from "@/components/app/StatusDot";
 import { Button } from "@/components/ui/button";
 import type { Session } from "@/domain/types";
-import { acceptOutputSequence, createTerminalRuntime, decodeSequencedOutput, type TerminalOwnership, type TerminalRuntime } from "@/features/terminal/runtime";
+import { acceptOutputSequence, createTerminalRuntime, decodeSequencedOutput, type TerminalOwnership } from "@/features/terminal/runtime";
+import { discardTerminalSession, retainTerminalSession, takeTerminalSession } from "@/features/terminal/sessionCache";
 import { setupXtermIme229Workaround } from "@/features/terminal/xtermIme229Workaround";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
 export function SessionWorkspace({ session, busy, onStop, onRestart, onClose, onExit }: { session: Session; busy: boolean; onStop: () => void; onRestart: () => void; onClose: () => void; onExit: () => void }) {
   const running = session.status === "running";
+  useEffect(() => {
+    if (!running) discardTerminalSession(session.id);
+  }, [running, session.id]);
   const icon = session.kind === "codex" ? <Bot className="size-3.5 shrink-0" /> : session.kind === "command" ? <PanelsTopLeft className="size-3.5 shrink-0" /> : <TerminalSquare className="size-3.5 shrink-0" />;
   return <div className="flex h-full min-h-0 flex-col bg-[#111315]">
     <div className="flex h-10 shrink-0 items-center border-b border-white/10 bg-[#191b1e] px-3">
@@ -34,15 +38,14 @@ export function SessionWorkspace({ session, busy, onStop, onRestart, onClose, on
 function WebTerminal({ session, onExit }: { session: Session; onExit: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
-  const runtimeRef = useRef<TerminalRuntime | null>(null);
-  if (!runtimeRef.current) runtimeRef.current = createTerminalRuntime();
-  const [ownership, setOwnership] = useState<TerminalOwnership>(runtimeRef.current.ownership);
+  const [ownership, setOwnership] = useState<TerminalOwnership>("connecting");
   useEffect(() => { onExitRef.current = onExit; }, [onExit]);
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     let disposed = false;
-    const terminal = new Terminal({
+    const cached = takeTerminalSession(session);
+    const terminal = cached?.terminal ?? new Terminal({
       cursorBlink: true,
       convertEol: false,
       fontFamily: terminalFontFamily,
@@ -61,10 +64,14 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
         scrollbarSliderActiveBackground: "#71717a",
       },
     });
-    const fit = new FitAddon();
-    terminal.loadAddon(fit);
-    terminal.loadAddon(new WebLinksAddon());
-    terminal.open(host);
+    const fit = cached?.fit ?? new FitAddon();
+    if (cached) {
+      host.appendChild(terminal.element!);
+    } else {
+      terminal.loadAddon(fit);
+      terminal.loadAddon(new WebLinksAddon());
+      terminal.open(host);
+    }
     if (session.kind === "codex") {
       // xterm encodes Shift+Enter as ordinary Enter. Use Codex's Ctrl+J
       // newline fallback until the terminal supports extended keyboard input.
@@ -76,7 +83,8 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       });
     }
     const disposeIme229Workaround = setupXtermIme229Workaround({ terminal, host });
-    try { terminal.loadAddon(new WebglAddon()); } catch { /* canvas renderer is fine */ }
+    const webgl = new WebglAddon();
+    try { terminal.loadAddon(webgl); } catch { /* default renderer is fine */ }
     void document.fonts.load('13px "Pure Nerd Font"').then(() => {
       if (disposed) return;
       terminal.clearTextureAtlas();
@@ -84,7 +92,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     }).catch(() => { /* existing font fallbacks remain available */ });
     fit.fit();
     const socketHighWaterBytes = 256 * 1024;
-    const runtime = runtimeRef.current!;
+    const runtime = cached?.runtime ?? createTerminalRuntime();
     const { inputClientId, inputQueue } = runtime;
     runtime.ownership = "connecting";
     setOwnership("connecting");
@@ -154,7 +162,9 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
         session.id,
         runtime.controllerClientId,
         inputClientId,
-        runtime.lastOutputSequence,
+        // A fresh parser needs history from its beginning, never a byte tail
+        // that may start inside an ANSI sequence or a differential repaint.
+        runtime.lastOutputSequence ?? 0n,
       );
       const candidate = new WebSocket(candidateUrl);
       const candidateGeneration = ++generation;
@@ -267,9 +277,12 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       disposeIme229Workaround();
       input.dispose();
       socket?.close();
-      terminal.dispose();
+      webgl.dispose();
+      terminal.blur();
+      terminal.element?.remove();
+      retainTerminalSession(session, { terminal, fit, runtime });
     };
-  }, [session.id, session.kind, session.status]);
+  }, [session.id, session.kind, session.status, session.launch_started_at, session.amux_process_name]);
   return <div className="relative min-h-0 flex-1">
     {ownership === "readonly" ? <div data-testid="terminal-readonly-indicator" role="status" className="absolute right-4 top-3 z-10 rounded border border-amber-400/30 bg-[#191b1e]/95 px-2 py-1 text-[10px] font-medium text-amber-300">Read only</div> : null}
     <div ref={hostRef} className="h-full min-h-0 p-2" />

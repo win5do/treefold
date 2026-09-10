@@ -15,10 +15,12 @@
   "include": [
     "tests/ui/**/*.ts",
     "src/preload/bridge.d.ts",
+    "src/renderer/src/vite-env.d.ts",
     "src/renderer/src/domain/types.ts",
     "src/renderer/src/i18n/**/*.ts",
     "src/renderer/src/features/terminal/inputQueue.ts",
-    "src/renderer/src/features/terminal/runtime.ts"
+    "src/renderer/src/features/terminal/runtime.ts",
+    "src/renderer/src/features/terminal/sessionCache.ts"
   ],
   "exclude": []
 }
