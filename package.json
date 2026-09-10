@@ -10,7 +10,10 @@
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev --watch",
+    "dev:no-watch": "electron-vite dev",
+    "dev:web": "vite --host 127.0.0.1",
     "build": "npm run typecheck && electron-vite build",
+    "build:web": "vite build",
     "prepare:sidecars": "cargo xtask sidecars bundle",
     "bundle:desktop": "node scripts/bundle-desktop.mjs",
     "test:ui": "node tests/ui/run.mjs",
@@ -19,10 +22,7 @@
     "test:desktop": "npm run build:backend && node --test tests/desktop/*.test.mjs",
     "test:backend": "cargo test --manifest-path backend/Cargo.toml",
     "test:electron": "node --test tests/electron/*.test.mjs",
-    "dev:no-watch": "electron-vite dev",
-    "dev:web": "vite --host 127.0.0.1",
     "start": "electron-vite preview",
-    "build:web": "vite build",
     "typecheck:web": "tsc --noEmit",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "postinstall": "node node_modules/electron/install.js"
