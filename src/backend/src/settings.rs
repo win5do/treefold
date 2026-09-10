@@ -33,6 +33,7 @@ pub struct AmuxSettings {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Settings {
     pub schema_version: u32,
+    #[serde(default = "default_language")]
     pub language: String,
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -42,11 +43,11 @@ pub struct Settings {
     pub amux: AmuxSettings,
 }
 
-impl Settings {
-    fn defaults() -> Self {
+impl Default for Settings {
+    fn default() -> Self {
         Self {
             schema_version: SETTINGS_SCHEMA_VERSION,
-            language: "system".into(),
+            language: default_language(),
             theme: default_theme(),
             agents: AgentsSettings {
                 codex: CodexAgentSettings { extra_args: vec![] },
@@ -54,7 +55,9 @@ impl Settings {
             amux: AmuxSettings::default(),
         }
     }
+}
 
+impl Settings {
     fn validate(&self) -> anyhow::Result<()> {
         if self.schema_version != SETTINGS_SCHEMA_VERSION {
             bail!(
@@ -78,6 +81,8 @@ struct SettingsHeader {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SettingsPatch {
+    #[serde(default)]
+    pub reset: Vec<String>,
     pub language: Option<String>,
     pub theme: Option<String>,
     pub agents: Option<AgentsSettingsPatch>,
@@ -104,6 +109,18 @@ pub struct CodexAgentSettingsPatch {
 
 impl SettingsPatch {
     pub fn validate(&self) -> anyhow::Result<()> {
+        for key in &self.reset {
+            if ![
+                "language",
+                "theme",
+                "agents.codex.extra_args",
+                "amux.keep_daemon_running_on_exit",
+            ]
+            .contains(&key.as_str())
+            {
+                bail!("unknown settings key '{key}'");
+            }
+        }
         if let Some(language) = &self.language {
             validate_language(language)?;
         }
@@ -127,6 +144,10 @@ fn validate_language(language: &str) -> anyhow::Result<()> {
         bail!("unsupported language '{language}'; expected system, zh-CN, or en-US");
     }
     Ok(())
+}
+
+fn default_language() -> String {
+    "system".into()
 }
 
 fn default_theme() -> String {
@@ -171,8 +192,7 @@ impl SettingsStore {
             write_lock: Arc::new(Mutex::new(())),
         };
         if !store.path.exists() {
-            let settings = Settings::defaults();
-            store.write_new(&settings)?;
+            store.atomic_write(&format!("schema_version = {SETTINGS_SCHEMA_VERSION}\n"))?;
         }
         store.load()?;
         Ok(store)
@@ -196,7 +216,11 @@ impl SettingsStore {
         let mut document = contents
             .parse::<DocumentMut>()
             .with_context(|| format!("parse Treefold settings from {}", self.path.display()))?;
-        let mut settings = self.parse(&contents)?;
+        self.parse(&contents)?;
+        for key in &patch.reset {
+            remove_key(document.as_item_mut(), &key.split('.').collect::<Vec<_>>());
+        }
+        let mut settings = self.parse(&document.to_string())?;
 
         if let Some(language) = patch.language {
             settings.language = language;
@@ -221,20 +245,6 @@ impl SettingsStore {
         settings.validate()?;
         self.atomic_write(&document.to_string())?;
         Ok(settings)
-    }
-
-    fn write_new(&self, settings: &Settings) -> anyhow::Result<()> {
-        let mut document = DocumentMut::new();
-        document["schema_version"] = value(i64::from(settings.schema_version));
-        document["language"] = value(settings.language.clone());
-        document["theme"] = value(settings.theme.clone());
-        let mut agents = Table::new();
-        agents.set_implicit(true);
-        agents.insert("codex", Item::Table(Table::new()));
-        document["agents"] = Item::Table(agents);
-        set_codex_extra_args(&mut document, &settings.agents.codex.extra_args)?;
-        set_amux_settings(&mut document, settings.amux.keep_daemon_running_on_exit)?;
-        self.atomic_write(&document.to_string())
     }
 
     fn parse(&self, contents: &str) -> anyhow::Result<Settings> {
@@ -265,6 +275,16 @@ impl SettingsStore {
                 .with_context(|| format!("replace Treefold settings {}", self.path.display()));
         }
         Ok(())
+    }
+}
+
+fn remove_key(item: &mut Item, path: &[&str]) {
+    if let Some(table) = item.as_table_like_mut() {
+        if path.len() == 1 {
+            table.remove(path[0]);
+        } else if let Some(child) = table.get_mut(path[0]) {
+            remove_key(child, &path[1..]);
+        }
     }
 }
 
@@ -344,15 +364,9 @@ mod tests {
         );
         let settings_file = treefold_home.join("config/settings.toml");
         assert!(settings_file.is_file());
-        assert!(
-            std::fs::read_to_string(settings_file)
-                .expect("read generated settings")
-                .contains("[agents.codex]\nextra_args = []")
-        );
-        assert!(
-            std::fs::read_to_string(treefold_home.join("config/settings.toml"))
-                .expect("read generated settings")
-                .contains("[amux]\nkeep_daemon_running_on_exit = false")
+        assert_eq!(
+            std::fs::read_to_string(settings_file).unwrap(),
+            "schema_version = 1\n"
         );
 
         std::fs::remove_dir_all(root).expect("remove settings fixture");
@@ -374,6 +388,7 @@ mod tests {
 
         let updated = store
             .update(SettingsPatch {
+                reset: vec![],
                 language: Some("zh-CN".into()),
                 theme: Some("dark".into()),
                 agents: Some(AgentsSettingsPatch {
@@ -405,6 +420,45 @@ mod tests {
         assert!(contents.contains("[amux]\nkeep_daemon_running_on_exit = true"));
 
         std::fs::remove_dir_all(root).expect("remove settings fixture");
+    }
+
+    #[test]
+    fn sparse_overrides_preserve_intent_and_restore_defaults() {
+        let (root, _) = fixture("sparse");
+        let store = SettingsStore::open(&root).unwrap();
+        let path = root.join("config/settings.toml");
+        assert_eq!(store.load().unwrap(), super::Settings::default());
+        store
+            .update(serde_json::from_str(r#"{"theme":"dark"}"#).unwrap())
+            .unwrap();
+        let document = std::fs::read_to_string(&path)
+            .unwrap()
+            .parse::<toml_edit::DocumentMut>()
+            .unwrap();
+        assert_eq!(document.len(), 2);
+        assert_eq!(document["theme"].as_str(), Some("dark"));
+        store
+            .update(serde_json::from_str(r#"{"theme":"system"}"#).unwrap())
+            .unwrap();
+        assert!(
+            std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("theme = \"system\"")
+        );
+        store
+            .update(serde_json::from_str(r#"{"reset":["theme"]}"#).unwrap())
+            .unwrap();
+        assert_eq!(store.load().unwrap().theme, "system");
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("theme"));
+        std::fs::write(&path, "# keep\nschema_version = 1\n[agents.codex]\nextra_args = [\"--search\"]\nfuture = 42\n").unwrap();
+        store
+            .update(serde_json::from_str(r#"{"reset":["agents.codex.extra_args"]}"#).unwrap())
+            .unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("# keep"));
+        assert!(contents.contains("future = 42"));
+        assert!(store.load().unwrap().agents.codex.extra_args.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

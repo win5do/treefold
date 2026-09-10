@@ -166,12 +166,13 @@ hard storage boundary.
   to relocate its own root.
 - Durable user preferences belong in
   `$TREEFOLD_HOME/config/settings.toml`. This file must contain
-  `schema_version`, and currently owns `language`, `worktree_root`, and agent
-  defaults such as `agents.codex.extra_args`.
-- Key bindings will belong in the independent
-  `$TREEFOLD_HOME/config/keymap.toml` described in
-  `docs/keymap-configuration-plan.md`. Do not implement or store keymaps until
-  that deferred feature is explicitly requested.
+  `schema_version`, and owns `language`, `theme`, agent defaults such as
+  `agents.codex.extra_args`, and `amux.keep_daemon_running_on_exit`.
+  Store only explicit overrides; omitted keys inherit application defaults.
+- Key bindings belong in the independent `$TREEFOLD_HOME/config/keymap.toml`
+  described in `docs/keymap-configuration-plan.md`. Strings override default
+  bindings, `false` disables them, and omission follows defaults. Both UI and
+  file edits use that single source of truth.
 - `$TREEFOLD_HOME/data/treefold_<generation>.sqlite` owns Projects, Directories, Workspaces,
   Sessions, Todos, delivery/rebase/reset operations, and similar relational
   runtime records. Do not add user preferences or keymaps to SQLite.

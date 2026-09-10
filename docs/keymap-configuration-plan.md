@@ -1,61 +1,105 @@
-# Keymap configuration plan
+# Settings and keymap configuration
 
-Keymap customization is intentionally deferred. Treefold does not create or read
-`keymap.toml` yet. This document fixes the intended boundary so implementation
-can be added later without expanding `settings.toml` into a mixed-purpose file.
+Treefold stores user overrides in two independent files beneath `$TREEFOLD_HOME/config`.
+Each file requires `schema_version = 1`. New files contain only that header.
+Missing preference keys and command bindings inherit application defaults.
 
-## File ownership
+## Settings
 
-User overrides will live at:
+`settings.toml` supports `language` (`system`, `en-US`, `zh-CN`), `theme`
+(`system`, `light`, `dark`), `agents.codex.extra_args` (an argument array), and
+`amux.keep_daemon_running_on_exit` (boolean). Defaults are `system`, `system`,
+`[]`, and `false`, respectively.
 
-```text
-$TREEFOLD_HOME/config/keymap.toml
+```toml
+schema_version = 1
+theme = "dark"
 ```
 
-The file will have its own `schema_version`, independent of
-`settings.toml`, because command identifiers and binding semantics evolve on a
-different schedule from ordinary preferences. Built-in bindings remain
-application resources; the user file stores overrides only.
+The Settings UI saves only fields changed since loading the form. GET
+`/api/settings` returns the complete effective settings; PATCH accepts partial
+updates. Unspecified keys and unknown file keys are preserved. An explicit
+value remains an override even if it equals the current default. Existing full
+configuration files are not pruned: older writes cannot be distinguished from
+intentional user choices.
 
-An illustrative future format is:
+Restoring defaults removes the override rather than writing today's default:
+
+```json
+{"reset":["theme","agents.codex.extra_args"]}
+```
+
+`reset` accepts those four leaf paths. Values in the same PATCH are applied after
+resets. The UI's Restore defaults button resets all four preferences. Users may
+also remove individual keys directly in the TOML file. Settings are reloaded
+from disk by the backend; reopening Settings refreshes the effective values.
+
+## Keymap
+
+`keymap.toml` maps stable command IDs to shortcuts. Strings override the default,
+`false` disables the shortcut, and omitting the key follows the default:
 
 ```toml
 schema_version = 1
 
 [bindings]
-"session.new_shell" = "Primary+Shift+T"
-"sidebar.toggle" = "Primary+B"
-"command_palette.open" = "Primary+K"
+"session.new" = "cmd+n"
+"session.close" = false
 ```
 
-This example is not a supported runtime contract yet.
+| Command | Default | Availability |
+| --- | --- | --- |
+| `session.new` | `super+t` | Active Project, Workspace, or Fork |
+| `session.close` | `super+w` | Current Session; same action as its close button |
+| `session.next` | `ctrl+tab` | Next visible, running Session in the current scope |
+| `session.previous` | `ctrl+shift+tab` | Previous visible, running Session in the current scope |
 
-## Design constraints
+Switching follows the sidebar order and wraps at either end. New Session opens a
+keyboard-accessible type and directory chooser within the current scope. It
+prefers the current Session's directory, then the Project default if available,
+then the first eligible directory. Type initially follows the selected Session
+or the most recently created type in the current window. Search and arrow keys
+select a directory; Enter creates it. Agent creation requires a ready Git directory.
 
-- Commands use stable semantic IDs rather than labels, routes, or component
-  names.
-- `Primary` maps to Command on macOS and Control on Windows/Linux. Explicit
-  platform overrides may be introduced only if this abstraction is
-  insufficient.
-- Missing bindings fall back to built-in defaults. Users can disable or replace
-  individual defaults without copying the complete built-in map.
-- Loading validates syntax, unknown command IDs, duplicate chords, reserved OS
-  shortcuts, and conflicts within the same UI context.
-- Settings UI and manual file edits share `keymap.toml` as the only source of
-  truth. SQLite must not mirror key bindings.
-- Writes are atomic and preserve unrelated keys and comments where practical.
-- A newer unsupported `schema_version` is never overwritten by an older Treefold
-  build.
+Shortcuts are case-insensitive and normalized to `super+ctrl+alt+shift+key`
+order, omitting modifiers that are absent. `cmd`, `command`, and `meta` are
+aliases of `super`; `control` aliases `ctrl`; `opt` and `option` alias `alt`.
+`super` always means the Super/Command modifier, not platform-dependent Primary.
+The key is a single printable character (following the keyboard layout), F1–F24, or one of `tab`, `enter`, `space`, `backspace`,
+`delete`, `arrowup`, `arrowdown`, `arrowleft`, `arrowright`, `home`, `end`,
+`pageup`, `pagedown`, `plus` (the `+` key). At least one of super, ctrl, or alt is required.
+Sequences and multiple bindings per command are not currently supported.
 
-## Deferred implementation
+The left navigation in Settings opens the Keymap editor. Click a binding to
+record a combination. Escape cancels recording; Tab leaves the recorder.
+Disable writes `false`; Restore default removes the key. Changes save
+immediately. The editor shows default/user/disabled state and reports conflicts.
+The same active chord cannot be assigned to two commands, including defaults;
+disable or rebind the existing command first. Unknown commands, invalid types,
+invalid chords, and a set of reserved OS/window shortcuts are rejected without
+changing the file.
 
-Implementation should begin only when commands have a centralized registry and
-the product has agreed on conflict scopes. The initial delivery should include:
+GET `/api/keymap` returns registered commands, defaults, effective bindings and
+sources. PATCH `/api/keymap` accepts `{"bindings":{"session.close":false}}`;
+a JSON `null` binding removes its override. UI saves and direct file edits share
+one source of truth. The UI refreshes Keymap every two seconds while active.
+Malformed configuration is reported, not silently replaced with defaults.
 
-1. a command registry with IDs, labels, default bindings, and availability
-   contexts;
-2. a typed loader and validator for `keymap.toml`;
-3. a resolver that merges built-in bindings with user overrides;
-4. import, export, reset, and conflict feedback in Settings;
-5. focused unit and UI tests for precedence, platform modifiers, disabled
-   bindings, and ambiguous chords.
+Bound actions consume keyboard input before it reaches the terminal. Disabled
+bindings leave the key available to the terminal. App commands are suspended
+while a dialog/menu/recorder is open, during IME composition, in ordinary text
+fields, or when their context is unavailable. These are application shortcuts,
+not system-wide registrations. OS-reserved shortcuts remain outside Treefold's
+control.
+
+Both files preserve unrelated keys and comments during patches and use atomic
+replacement. Unsupported schema versions are rejected without rewriting the
+file. No preferences or bindings are mirrored into SQLite or browser storage.
+
+## Design references
+
+The command editor, explicit user overrides, reset, and conflict feedback draw
+on [VS Code's keybinding design](https://code.visualstudio.com/docs/configure/keybindings).
+Modifier aliases and consuming only executable terminal actions follow
+[Ghostty's keybinding concepts](https://ghostty.org/docs/config/keybind).
+Treefold uses its own TOML format; it does not import either product's syntax.

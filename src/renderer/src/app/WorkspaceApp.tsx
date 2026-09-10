@@ -1,3 +1,5 @@
+import { useSettingsSave } from "@/features/settings/useSettingsSave";
+import { useSessionShortcuts } from "@/features/terminal/useSessionShortcuts";
 import {
   lazy,
   Suspense,
@@ -32,7 +34,7 @@ import { sessionsApi } from "@/api/sessions";
 import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { applyLanguage, type LanguagePreference } from "@/i18n";
+import { applyLanguage } from "@/i18n";
 import type {
   Directory,
   Project,
@@ -44,7 +46,6 @@ import type {
   RenameTarget,
   Session,
   SessionMenuState,
-  ThemePreference,
   Workspace,
   WorkspaceDetail,
   WorkspaceRepository,
@@ -190,6 +191,7 @@ function Workspace() {
   });
   const systemQueryResult = useQuery(systemQuery());
   const settingsQueryResult = useQuery(settingsQuery());
+  const settingsSave = useSettingsSave();
   const system = systemQueryResult.data ?? null;
   const settings = settingsQueryResult.data ?? null;
   const workspace = workspaceDetail.data
@@ -478,33 +480,6 @@ function Workspace() {
     } catch (cause) {
       toast.errorFrom(cause, feedback?.error ?? "操作失败");
       return false;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveSettings(update: {
-    language: LanguagePreference;
-    theme: ThemePreference;
-    extraArgs: string[];
-    keepDaemonRunningOnExit: boolean;
-  }) {
-    setBusy(true);
-    try {
-      const next = await appApi.updateSettings({
-        language: update.language,
-        theme: update.theme,
-        agents: { codex: { extra_args: update.extraArgs } },
-        amux: { keep_daemon_running_on_exit: update.keepDaemonRunningOnExit },
-      });
-      queryClient.setQueryData(appKeys.settings, next);
-      return { ok: true as const };
-    } catch (cause) {
-      const message =
-        cause instanceof Error
-          ? cause.message
-          : t("settings.saveFailedFallback");
-      return { ok: false as const, error: message };
     } finally {
       setBusy(false);
     }
@@ -1080,6 +1055,22 @@ function Workspace() {
       return next;
     });
   }
+
+  const shortcutDialog = useSessionShortcuts({
+    project: selectedProject, workspace, session: selectedSession, busy,
+    actions: {
+      navigate,
+      close: () => {
+        if (!selectedSession) return;
+        if (workspace) void closeSidebarSession(workspace, selectedSession);
+        else if (selectedProject) void closeProjectSession(selectedProject, selectedSession);
+      },
+      create: (kind, directory) => {
+        if (workspace) void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory));
+        else if (selectedProject) void (kind === "shell" ? createProjectShell(selectedProject, directory) : createProjectCodex(selectedProject, directory));
+      },
+    },
+  });
 
   return (
     <div
@@ -1915,13 +1906,14 @@ function Workspace() {
         }}
         onConfirm={confirmRemoveWorktree}
       />
+      {shortcutDialog}
       <SettingsDialog
         open={settingsOpen}
         system={system}
         settings={settings}
-        busy={busy}
+        busy={busy || settingsSave.saving}
         onOpenChange={setSettingsOpen}
-        onSave={saveSettings}
+        onSave={settingsSave.save}
       />
     </div>
   );

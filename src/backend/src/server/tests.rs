@@ -40,6 +40,7 @@ mod current_workspace_tests {
             store: Store::open(&home.join("data"))
                 .await
                 .expect("open test Store"),
+            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
             settings: SettingsStore::open(&home).expect("open test Settings"),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -1282,6 +1283,7 @@ mod current_workspace_tests {
             store: Store::open(&root.join("home/data"))
                 .await
                 .expect("reopen Store"),
+            keymap: crate::keymap::KeymapStore::open(&root.join("home")).unwrap(),
             settings: SettingsStore::open(&root.join("home")).expect("reopen Settings"),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -2422,6 +2424,7 @@ mod tests {
             store: Store::open(&home.join("data"))
                 .await
                 .expect("open agent API store"),
+            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -2679,6 +2682,7 @@ mod tests {
         std::fs::create_dir_all(&repository).expect("create Project directory");
         let state = AppState {
             store: Store::open(&home.join("data")).await.expect("open store"),
+            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -2891,6 +2895,7 @@ mod tests {
             store: Store::open(&home.join("data"))
                 .await
                 .expect("open rebase store"),
+            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),
@@ -3196,6 +3201,7 @@ mod tests {
 
         let state = AppState {
             store: Store::open(&home.join("data")).await.expect("open store"),
+            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
             settings: test_settings(&home),
             terminals: TerminalManager::default(),
             runtime: RuntimeHub::default(),

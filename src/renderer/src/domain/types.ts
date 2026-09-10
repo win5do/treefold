@@ -518,3 +518,7 @@ export type BackgroundProcess = {
   started_at?: string;
   finished_at?: string;
 };
+
+export type CommandId = "session.new" | "session.close" | "session.next" | "session.previous";
+export type KeymapCommand = { id: CommandId; label: string; default_binding: string; binding: string | false; source: "default" | "user" };
+export type Keymap = { schema_version: number; commands: KeymapCommand[] };

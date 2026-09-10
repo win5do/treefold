@@ -177,6 +177,7 @@ async fn serve_backend(home: &std::path::Path, user_home: &std::path::Path) -> a
         .with_bundled_bin_dir(integration.bundled_bin_dir())
         .with_api_url(api_url.clone());
     let state = server::AppState {
+        keymap: crate::keymap::KeymapStore::open(&settings.treefold_home())?,
         store: store.clone(),
         settings: settings.clone(),
         terminals: terminals.clone(),

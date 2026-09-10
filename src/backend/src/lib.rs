@@ -2,6 +2,7 @@ mod error;
 mod git;
 mod ids;
 mod integration;
+mod keymap;
 mod model;
 mod request_context;
 mod server;

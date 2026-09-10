@@ -47,6 +47,7 @@ use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub keymap: crate::keymap::KeymapStore,
     pub store: Store,
     pub settings: SettingsStore,
     pub terminals: TerminalManager,
@@ -518,6 +519,7 @@ fn app(state: AppState) -> Router {
         .route("/api/sessions/{id}/close", post(close_session))
         .route("/api/sessions/{id}/open", post(open_session))
         .route("/api/sessions/{id}/terminal", get(terminal_socket))
+        .route("/api/keymap", get(keymap::get).patch(keymap::update))
         .route("/api/settings", get(get_settings).patch(update_settings))
         .fallback(route_not_found)
         .method_not_allowed_fallback(method_not_allowed)
@@ -597,6 +599,7 @@ mod fork;
 #[path = "server/git.rs"]
 mod git_routes;
 mod hosting;
+mod keymap;
 mod parent_operation;
 mod session;
 #[cfg(test)]

@@ -95,3 +95,13 @@ just build    # Build a signed App and DMG in release/
 
 See [AGENTS.md](AGENTS.md#development-environment-and-commands) for development,
 testing, and local installation details.
+
+## Preferences and shortcuts
+
+Settings has separate Preferences and Keymap pages. Record a shortcut by pressing
+a combination, disable it, or restore its default. Built-in Session shortcuts are
+Cmd+T (new), Cmd+W (close), Ctrl+Tab (next), and Ctrl+Shift+Tab (previous).
+
+`config/settings.toml` and `config/keymap.toml` under `$TREEFOLD_HOME` store only
+user overrides. Missing keys follow defaults; `false` disables a key binding.
+See [configuration details](docs/keymap-configuration-plan.md) for syntax and APIs.

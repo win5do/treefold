@@ -1,3 +1,4 @@
+import { createKeymapRoutes } from "./routes/keymap.ts";
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AppSettings, BackgroundProcess, GitBranches, GitSyncItemResult, Session, WorktreeDeleteOperation, WorktreeDeletePrecheck, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
@@ -78,6 +79,7 @@ async function startFixtureApi() {
     readJson,
     sendJson,
   });
+  const keymapRoutes = createKeymapRoutes({ readJson, sendJson });
   const todoRoutes = createTodoRoutes({ fixture, readJson, sendJson });
   const agentIntegrationRoutes = createAgentIntegrationRoutes({ fixture, sendJson });
   let slowWorkspaceRefreshesRemaining = 0;
@@ -91,6 +93,7 @@ async function startFixtureApi() {
     const pathname = requestUrl.pathname;
     if (await gitDiffRoutes.handle(request, response, pathname)) return;
     if (await parentOperationRoutes.handle(request, response, pathname)) return;
+    if (await keymapRoutes.handle(request, response, pathname)) return;
     if (await todoRoutes.handle(request, response, pathname)) return;
     if (await agentIntegrationRoutes.handle(request, response, pathname)) return;
     if (request.method === "GET" && pathname === "/api/system") {
@@ -145,9 +148,10 @@ async function startFixtureApi() {
       return;
     }
     if (request.method === "PATCH" && pathname === "/api/settings") {
-      const input = await readJson<Partial<AppSettings>>(request);
+      const input = await readJson<Partial<AppSettings> & { reset?: string[] }>(request);
       await new Promise<void>((resolve) => setTimeout(resolve, 150));
       const allowed = new Set([
+        "reset",
         "language",
         "theme",
         "agents",
@@ -156,6 +160,12 @@ async function startFixtureApi() {
       if (Object.keys(input).some((key) => !allowed.has(key))) {
         sendJson(response, 400, { error: "Unknown settings field" });
         return;
+      }
+      for (const key of input.reset ?? []) {
+        if (key === "language") fixture.settings.language = "system";
+        if (key === "theme") fixture.settings.theme = "system";
+        if (key === "agents.codex.extra_args") fixture.settings.agents.codex.extra_args = [];
+        if (key === "amux.keep_daemon_running_on_exit") fixture.settings.amux.keep_daemon_running_on_exit = false;
       }
       if (input.language !== undefined)
         fixture.settings.language = input.language;
