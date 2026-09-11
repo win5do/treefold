@@ -166,7 +166,7 @@ test("a stopped Codex with a pending identity can retry Restart", async () => {
     const request = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith(`/api/sessions/${FIXTURE_IDS.workspaceCodex}/restart`));
     await restart.click();
     await request;
-    await expect(page.getByRole("button", {name: "Stop", exact: true})).toBeVisible();
+    await expect(page.getByTestId("session-workspace").getByText("running", { exact: true })).toBeVisible();
     harness.assertNoUnexpectedRequests();
   } finally {
     try { await closeUiSession(page); } finally { await harness.close(); }

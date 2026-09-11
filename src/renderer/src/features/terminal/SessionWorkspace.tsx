@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, PanelsTopLeft, RotateCcw, Square, TerminalSquare, X } from "lucide-react";
+import { Bot, PanelsTopLeft, RotateCcw, TerminalSquare, X } from "lucide-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { logStreamState } from "@/api/client";
@@ -17,7 +17,7 @@ import { setupXtermIme229Workaround } from "@/features/terminal/xtermIme229Worka
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
-export function SessionWorkspace({ session, busy, onStop, onRestart, onClose, onExit }: { session: Session; busy: boolean; onStop: () => void; onRestart: () => void; onClose: () => void; onExit: () => void }) {
+export function SessionWorkspace({ session, busy, onRestart, onClose, onExit }: { session: Session; busy: boolean; onRestart: () => void; onClose: () => void; onExit: () => void }) {
   const running = session.status === "running";
   useEffect(() => {
     if (!running) discardTerminalSession(session.id);
@@ -27,7 +27,7 @@ export function SessionWorkspace({ session, busy, onStop, onRestart, onClose, on
     <div className="flex h-10 shrink-0 items-center border-b border-white/10 bg-[#191b1e] px-3">
       <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-neutral-200">{icon}<span className="truncate font-medium">{session.name}</span><StatusDot status={session.status} /><span className="text-[10px] text-neutral-500">{session.status}</span></div>
       <div className="flex items-center gap-1 px-2">
-        {running ? <Button size="sm" variant="terminal" disabled={busy} onClick={onStop}><Square data-icon="inline-start" />Stop</Button> : <Button size="sm" variant="secondary" disabled={busy} onClick={onRestart}><RotateCcw data-icon="inline-start" />Restart</Button>}
+        {!running && <Button size="sm" variant="secondary" disabled={busy} onClick={onRestart}><RotateCcw data-icon="inline-start" />Restart</Button>}
         <Button size="icon-sm" variant="terminal" disabled={busy} aria-label="Close Session" title="Close Session" onClick={onClose}><X /></Button>
       </div>
     </div>

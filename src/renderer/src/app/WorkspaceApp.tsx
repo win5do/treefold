@@ -1373,9 +1373,6 @@ function Workspace() {
                   <SessionWorkspace
                     session={selectedSession}
                     busy={busy}
-                    onStop={() =>
-                      void act(() => sessionsApi.stop(selectedSession.id))
-                    }
                     onRestart={() =>
                       void act(() => sessionsApi.restart(selectedSession.id))
                     }
