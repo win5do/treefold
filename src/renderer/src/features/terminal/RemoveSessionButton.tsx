@@ -25,7 +25,7 @@ export function RemoveSessionButton({ session, disabled }: { session: Session; d
     }
   };
   return <>
-    <Button size="icon-sm" variant="ghost" disabled={disabled || removing} title="Remove from Treefold" aria-label="Remove from Treefold" onClick={() => setOpen(true)}><Trash2 data-icon="inline-start" /></Button>
+    <Button size="icon-sm" variant="destructive-ghost" disabled={disabled || removing} title="Remove from Treefold" aria-label="Remove from Treefold" onClick={() => setOpen(true)}><Trash2 data-icon="inline-start" /></Button>
     <AlertDialog open={open} onOpenChange={(value) => { if (!removing) setOpen(value); }}>
       <AlertDialogContent>
         <AlertDialogTitle>Remove Session from Treefold?</AlertDialogTitle>

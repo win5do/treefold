@@ -238,7 +238,6 @@ export function ProjectHome({
                   </code>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <RemoveSessionButton session={session} disabled={busy} />
                   {project.status === "active" && (
                     <Button
                       size="sm"
@@ -254,6 +253,7 @@ export function ProjectHome({
                       {session.visibility === "visible" ? "Open" : "Resume"}
                     </Button>
                   )}
+                  <RemoveSessionButton session={session} disabled={busy} />
                 </div>
               </div>
             ))}
