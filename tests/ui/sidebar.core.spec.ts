@@ -957,10 +957,9 @@ test("sidebar.core", async () => {
       false,
       "Codex creation must not open a setup dialog",
     );
-    assert.match(
-      await main.innerText(),
-      /codex[\s\S]*running/i,
-      "the created Codex Session must render from the POST response",
+    await expect(main.getByTestId("session-workspace")).toHaveAttribute(
+      "data-session-id",
+      "session-created-codex-ui-fixture",
     );
     await (page.locator('button[aria-label="Show right sidebar"]')).click();
     const codexInspector = page.locator('[data-testid="right-sidebar"]');
@@ -1037,10 +1036,9 @@ test("sidebar.core", async () => {
         message:
           "Shell creation waited for the intentionally slow full Workspace refresh",
       }).toBeTruthy();
-    assert.match(
-      await main.innerText(),
-      /shell[\s\S]*running/i,
-      "the created Shell must render from the POST response without a full refresh",
+    await expect(main.getByTestId("session-workspace")).toHaveAttribute(
+      "data-session-id",
+      "session-created-shell-ui-fixture",
     );
     await renameSession(
       page,
@@ -1061,7 +1059,9 @@ test("sidebar.core", async () => {
       id: "session-created-shell-ui-fixture",
       name: "Renamed Shell Session",
     });
-    await (page.locator('main button[aria-label="Close Session"]')).click();
+    const createdShellRow = page.getByTestId("sidebar-session-session-created-shell-ui-fixture");
+    await createdShellRow.hover();
+    await createdShellRow.getByRole("button", { name: "Close Session", exact: true }).click();
     await expect.poll(async () =>
         (page.url()).endsWith(
           `#/workspaces/${FIXTURE_IDS.workspace}`,
@@ -1439,7 +1439,11 @@ test("sidebar.core", async () => {
         timeout: 1_000,
         message: "Project Shell did not open in the managed Web terminal",
       }).toBeTruthy();
-    const closeProjectShell = page.locator('main button[aria-label="Close Session"]');
+    const expandRestoredProject = page.getByTestId("sidebar-project-node").getByTestId("sidebar-tree-toggle");
+    if (await expandRestoredProject.getAttribute("aria-expanded") === "false") await expandRestoredProject.click();
+    const projectShellRow = page.getByTestId("sidebar-session-session-created-project-shell-ui-fixture");
+    await projectShellRow.hover();
+    const closeProjectShell = projectShellRow.getByRole("button", { name: "Close Session", exact: true });
     await closeProjectShell.waitFor({ timeout: 3_000, state: 'visible' });
     await closeProjectShell.click();
     await expect.poll(async () =>
@@ -1473,10 +1477,9 @@ test("sidebar.core", async () => {
       false,
       "Project Codex creation must not open a setup dialog",
     );
-    assert.match(
-      await main.innerText(),
-      /codex[\s\S]*running/i,
-      "the created Project Codex must render from the POST response",
+    await expect(main.getByTestId("session-workspace")).toHaveAttribute(
+      "data-session-id",
+      "session-created-project-codex-ui-fixture",
     );
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
     const restoredProjectSessionsSection = page.locator('[data-testid="project-sessions-section"]');

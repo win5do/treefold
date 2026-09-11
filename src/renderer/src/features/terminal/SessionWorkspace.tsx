@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Bot, PanelsTopLeft, RotateCcw, TerminalSquare, X } from "lucide-react";
+import { RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { logStreamState } from "@/api/client";
@@ -8,8 +9,6 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import "@azurity/pure-nerd-font/pure-nerd-font.css";
-import { StatusDot } from "@/components/app/StatusDot";
-import { Button } from "@/components/ui/button";
 import type { Session } from "@/domain/types";
 import { acceptOutputSequence, createTerminalRuntime, decodeSequencedOutput, type TerminalOwnership } from "@/features/terminal/runtime";
 import { discardTerminalSession, retainTerminalSession, takeTerminalSession } from "@/features/terminal/sessionCache";
@@ -17,21 +16,13 @@ import { setupXtermIme229Workaround } from "@/features/terminal/xtermIme229Worka
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
-export function SessionWorkspace({ session, busy, onRestart, onClose, onExit }: { session: Session; busy: boolean; onRestart: () => void; onClose: () => void; onExit: () => void }) {
+export function SessionWorkspace({ session, busy, onRestart, onExit }: { session: Session; busy: boolean; onRestart: () => void; onExit: () => void }) {
   const running = session.status === "running";
   useEffect(() => {
     if (!running) discardTerminalSession(session.id);
   }, [running, session.id]);
-  const icon = session.kind === "codex" ? <Bot className="size-3.5 shrink-0" /> : session.kind === "command" ? <PanelsTopLeft className="size-3.5 shrink-0" /> : <TerminalSquare className="size-3.5 shrink-0" />;
   return <div data-testid="session-workspace" data-session-id={session.id} className="flex h-full min-h-0 flex-col bg-[#111315]">
-    <div className="flex h-10 shrink-0 items-center border-b border-white/10 bg-[#191b1e] px-3">
-      <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-neutral-200">{icon}<span className="truncate font-medium">{session.name}</span><StatusDot status={session.status} /><span className="text-[10px] text-neutral-500">{session.status}</span></div>
-      <div className="flex items-center gap-1 px-2">
-        {!running && <Button size="sm" variant="secondary" disabled={busy} onClick={onRestart}><RotateCcw data-icon="inline-start" />Restart</Button>}
-        <Button size="icon-sm" variant="terminal" disabled={busy} aria-label="Close Session" title="Close Session" onClick={onClose}><X /></Button>
-      </div>
-    </div>
-    {running ? <WebTerminal key={session.id} session={session} onExit={onExit} /> : <div data-testid="session-terminal-state" className="grid min-h-0 flex-1 place-items-center p-8 text-neutral-300"><div className="w-full max-w-2xl rounded-lg border border-white/10 bg-white/[0.03] p-5"><p className="text-sm font-medium">Session is {session.status}</p><dl className="mt-4 grid gap-3 text-xs"><div><dt className="text-neutral-500">Command</dt><dd className="mt-1 break-all font-mono">{session.argv.join(" ") || "—"}</dd></div><div><dt className="text-neutral-500">Working directory</dt><dd className="mt-1 break-all font-mono">{session.cwd}</dd></div><div><dt className="text-neutral-500">I/O mode</dt><dd className="mt-1 font-mono">{session.io_mode}</dd></div></dl></div></div>}
+    {running ? <WebTerminal key={session.id} session={session} onExit={onExit} /> : <div data-testid="session-terminal-state" className="grid min-h-0 flex-1 place-items-center p-8 text-neutral-300"><div className="w-full max-w-2xl rounded-lg border border-white/10 bg-white/[0.03] p-5"><div className="flex items-center justify-between gap-3"><p className="text-sm font-medium">Session is {session.status}</p><Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}><RotateCcw data-icon="inline-start" />Restart</Button></div><dl className="mt-4 grid gap-3 text-xs"><div><dt className="text-neutral-500">Command</dt><dd className="mt-1 break-all font-mono">{session.argv.join(" ") || "—"}</dd></div><div><dt className="text-neutral-500">Working directory</dt><dd className="mt-1 break-all font-mono">{session.cwd}</dd></div><div><dt className="text-neutral-500">I/O mode</dt><dd className="mt-1 font-mono">{session.io_mode}</dd></div></dl></div></div>}
   </div>;
 }
 

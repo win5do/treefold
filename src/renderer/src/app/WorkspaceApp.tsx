@@ -201,7 +201,11 @@ function Workspace() {
       }
     : null;
   const projects = useMemo(() => {
-    const values = [...(sidebar.data ?? [])];
+    const values = (sidebar.data ?? []).map((project) =>
+      project.id === params.projectId && projectSessions.data
+        ? { ...project, sessions: projectSessions.data }
+        : project,
+    );
     if (!workspace) return values;
     const projectIndex = values.findIndex(
       (project) => project.id === workspace.project.id,
@@ -221,7 +225,7 @@ function Workspace() {
       ),
     };
     return values;
-  }, [sidebar.data, workspace]);
+  }, [sidebar.data, workspace, params.projectId, projectSessions.data]);
   const loading = params.workspaceId
     ? workspaceDetail.isPending
     : params.projectId
@@ -1368,23 +1372,13 @@ function Workspace() {
                 </Suspense>
               ) : selectedSession ? (
                 <Suspense
-                  fallback={<SessionWorkspaceLoading session={selectedSession} />}
+                  fallback={<SessionWorkspaceLoading />}
                 >
                   <SessionWorkspace
                     session={selectedSession}
                     busy={busy}
                     onRestart={() =>
                       void act(() => sessionsApi.restart(selectedSession.id))
-                    }
-                    onClose={() =>
-                      workspace
-                        ? void closeSidebarSession(workspace, selectedSession)
-                        : selectedProject
-                          ? void closeProjectSession(
-                              selectedProject,
-                              selectedSession,
-                            )
-                          : undefined
                     }
                     onExit={() => {
                       void refresh();
@@ -1932,13 +1926,9 @@ function WorkspaceContentLoading() {
   );
 }
 
-function SessionWorkspaceLoading({ session }: { session: Session }) {
+function SessionWorkspaceLoading() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
-        <span className="truncate font-medium">{session.name}</span>
-        <span className="text-muted-foreground">{session.status}</span>
-      </div>
       <div
         className="grid min-h-0 flex-1 place-items-center"
         aria-busy="true"
