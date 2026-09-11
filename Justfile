@@ -1,4 +1,8 @@
-default: check
+default: help
+
+# List available recipes.
+help:
+    @just --list
 
 default-home := env("HOME") + "/.treefold"
 dev-home := env("TREEFOLD_DEV_HOME", justfile_directory() + "/.treefold-dev")
