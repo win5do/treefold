@@ -38,7 +38,7 @@ impl From<SessionRow> for Session {
         Self {
             id: r.id,
             workspace_id: r.workspace_id,
-            name: r.name,
+            name: crate::codex_metadata::display_name(r.name, r.codex_session_id.as_deref()),
             kind: r.kind,
             cwd: r.cwd,
             original_cwd: r.original_cwd,

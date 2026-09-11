@@ -324,6 +324,16 @@ impl TerminalManager {
                 developer_instructions,
                 codex_extra_args,
             ));
+            if let Some(home) = self.treefold_home.as_ref() {
+                let log_dir = home.join("logs").join("codex").join(&session.id);
+                command.extend([
+                    "-c".into(),
+                    format!(
+                        "log_dir={}",
+                        serde_json::to_string(&log_dir.to_string_lossy())?
+                    ),
+                ]);
+            }
             command
         } else {
             session.argv.clone()

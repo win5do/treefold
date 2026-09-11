@@ -521,10 +521,11 @@ pub(super) async fn delete_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
     if let Ok(session) = state.store.session(&id).await {
-        let _ = state
+        state
             .terminals
             .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
-            .await;
+            .await
+            .map_err(|error| AppError::BadRequest(error.to_string()))?;
     }
     state.store.delete_session(&id).await?;
     state.runtime.publish_session(id);

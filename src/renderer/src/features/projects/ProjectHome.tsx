@@ -1,3 +1,4 @@
+import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
 import {
   Bot,
   ChevronRight,
@@ -236,21 +237,24 @@ export function ProjectHome({
                     {session.cwd}
                   </code>
                 </div>
-                {project.status === "active" && (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={
-                      busy ||
-                      (session.kind === "codex" &&
-                        session.visibility !== "visible" &&
-                        !session.codex_session_id)
-                    }
-                    onClick={() => onOpenSession(session)}
-                  >
-                    {session.visibility === "visible" ? "Open" : "Resume"}
-                  </Button>
-                )}
+                <div className="flex shrink-0 items-center gap-1">
+                  <RemoveSessionButton session={session} disabled={busy} />
+                  {project.status === "active" && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={
+                        busy ||
+                        (session.kind === "codex" &&
+                          session.visibility !== "visible" &&
+                          !session.codex_session_id)
+                      }
+                      onClick={() => onOpenSession(session)}
+                    >
+                      {session.visibility === "visible" ? "Open" : "Resume"}
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
             {project.sessions.length === 0 && (

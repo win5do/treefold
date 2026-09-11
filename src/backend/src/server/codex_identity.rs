@@ -1,4 +1,4 @@
-//! Recover identities from Codex's persisted runtime context, never cwd/time guesses.
+//! Recover identities from scoped launch logs, with exact runtime-context fallback.
 use super::*;
 use std::{
     collections::HashMap,
@@ -6,6 +6,12 @@ use std::{
 };
 
 pub(super) async fn capture_pending_codex_sessions(state: &AppState) -> Result<()> {
+    if tokio::task::spawn_blocking(crate::codex_metadata::refresh_titles)
+        .await
+        .unwrap_or(false)
+    {
+        state.runtime.publish_session_list(None);
+    }
     let sessions = state.store.uncaptured_codex_sessions().await?;
     for (session_id, codex_id) in discover(sessions).await? {
         state
@@ -33,18 +39,26 @@ async fn discover(sessions: Vec<Session>) -> Result<HashMap<String, String>> {
     if sessions.is_empty() {
         return Ok(HashMap::new());
     }
-    let Some(home) = std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))
-    else {
-        return Ok(HashMap::new());
-    };
+    let home = crate::codex_metadata::home();
     tokio::task::spawn_blocking(move || {
+        let mut found = HashMap::new();
         let identities: Vec<_> = sessions
             .into_iter()
-            .map(|s| (s.id, s.original_cwd))
+            .filter_map(|s| {
+                if let Some(id) = crate::codex_metadata::launch_identity(&s.argv, &s.id) {
+                    found.insert(s.id, id);
+                    None
+                } else {
+                    Some((s.id, s.original_cwd))
+                }
+            })
             .collect();
-        scan(&home, &identities)
+        if let Some(home) = home {
+            if !identities.is_empty() {
+                found.extend(scan(&home, &identities));
+            }
+        }
+        found
     })
     .await
     .map_err(|error| anyhow::anyhow!(error).into())

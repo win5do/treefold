@@ -906,6 +906,54 @@ mod current_workspace_tests {
             "Codex remains resumable while Shell history is removed"
         );
 
+        let mut pending = codex.clone();
+        pending.id = "pending-project-codex".into();
+        pending.amux_process_name = pending.id.clone();
+        pending.codex_session_id = None;
+        let log_dir = root.join("logs/codex").join(&pending.id);
+        std::fs::create_dir_all(&log_dir).unwrap();
+        let codex_id = "01a08fff-908b-76b2-8c1c-3826e810b018";
+        std::fs::write(
+            log_dir.join("codex-tui.log"),
+            format!("time INFO session_loop{{thread_id={codex_id}}}: codex_core::session: new\n"),
+        )
+        .unwrap();
+        pending.argv = vec![
+            "codex".into(),
+            "-c".into(),
+            format!(
+                "log_dir={}",
+                serde_json::to_string(&log_dir.to_string_lossy()).unwrap()
+            ),
+        ];
+        state.store.create_session(&pending).await.unwrap();
+        crate::server::capture_codex_session_id(&state.store, &mut pending)
+            .await
+            .unwrap();
+        assert_eq!(
+            state
+                .store
+                .session(&pending.id)
+                .await
+                .unwrap()
+                .codex_session_id
+                .as_deref(),
+            Some(codex_id)
+        );
+        let codex_history = root.join("codex-owned-history.jsonl");
+        std::fs::write(&codex_history, "retained conversation").unwrap();
+        crate::server::delete_session(
+            State(state.clone()),
+            axum::extract::Path(pending.id.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(state.store.session(&pending.id).await.is_err());
+        assert_eq!(
+            std::fs::read_to_string(codex_history).unwrap(),
+            "retained conversation"
+        );
+
         drop(state);
         std::fs::remove_dir_all(root).expect("remove Project Session fixture");
     }

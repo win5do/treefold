@@ -1,3 +1,4 @@
+import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
 import { useEffect, useState } from "react";
 import {
   Bot,
@@ -632,7 +633,8 @@ export function WorkspaceHome({
                 >
                   {session.cwd}
                 </code>
-                <div className="flex justify-end">
+                <div className="flex items-center justify-end gap-1">
+                  <RemoveSessionButton session={session} disabled={busy} />
                   {label && detail.status === "active" && (
                     <Button
                       size="sm"
