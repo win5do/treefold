@@ -2,6 +2,7 @@ import type { SettingsFormPatch } from "./useSettingsSave";
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Copy, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -50,6 +51,28 @@ export function SettingsPreferences({
   const [saveFeedback, setSaveFeedback] = useState<SettingsSaveFeedback>({
     kind: "idle",
   });
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  useEffect(() => {
+    if (!open) setResetOpen(false);
+  }, [open]);
+  const handleReset = async () => {
+    if (busy || resetting) return;
+    setResetting(true);
+    try {
+      const result = await onSave({ reset: ["language", "theme", "agents.codex.extra_args", "amux.keep_daemon_running_on_exit"] });
+      if (result.ok) {
+        setLanguage("system");
+        setTheme("system");
+        setExtraArgs([]);
+        setKeepDaemonRunningOnExit(false);
+        setResetOpen(false);
+        toast.success(t("settings.saved"));
+      } else toast.error(t("settings.saveFailed", { message: result.error }));
+    } finally {
+      setResetting(false);
+    }
+  };
   const configuredArgsKey = JSON.stringify(
     settings?.agents.codex.extra_args ?? [],
   );
@@ -337,10 +360,7 @@ export function SettingsPreferences({
         </div>
         <Separator />
         <div className="flex min-h-16 shrink-0 items-center justify-end gap-3 px-6 py-3">
-          <Button variant="ghost" disabled={busy || saving} onClick={async () => {
-            const result = await onSave({ reset: ["language", "theme", "agents.codex.extra_args", "amux.keep_daemon_running_on_exit"] });
-            if (!result.ok) toast.error(result.error);
-          }}>恢复默认设置</Button>
+          <Button variant="ghost" disabled={busy || saving} onClick={() => setResetOpen(true)}>恢复默认设置</Button>
           <Button
             data-testid="settings-save"
             aria-busy={saving}
@@ -356,6 +376,21 @@ export function SettingsPreferences({
             {t(saving ? "settings.saving" : "common.save")}
           </Button>
         </div>
+      <AlertDialog open={resetOpen} onOpenChange={(nextOpen) => { if (!resetting) setResetOpen(nextOpen); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>恢复默认设置？</AlertDialogTitle>
+            <AlertDialogDescription>将恢复本页所有设置的默认值并立即保存，未保存的修改也会被替换。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={busy || resetting} aria-busy={resetting} onClick={() => void handleReset()}>
+              {resetting && <Spinner data-icon="inline-start" />}
+              确认恢复
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -207,6 +207,19 @@ test("settings Save sends only edited fields and supports resetting overrides", 
     await page
       .getByRole("button", { name: "恢复默认设置", exact: true })
       .click();
+    const confirmation = page.getByRole("alertdialog", { name: "恢复默认设置？" });
+    await expect(confirmation).toBeVisible();
+    await expect(theme).toHaveValue("dark");
+    await page.screenshot({ path: "/tmp/treefold-settings-reset-confirm.png", animations: "disabled" });
+    await confirmation.getByRole("button", { name: "取消", exact: true }).click();
+    await expect(confirmation).toHaveCount(0);
+    const persisted = await page.request.get(`${harness.apiUrl}/api/settings`);
+    expect((await persisted.json()).theme).toBe("dark");
+    await page.getByRole("button", { name: "恢复默认设置", exact: true }).click();
+    const reset = page.waitForRequest((request) => request.method() === "PATCH" && request.url().endsWith("/api/settings"));
+    await confirmation.getByRole("button", { name: "确认恢复", exact: true }).click();
+    expect((await reset).postDataJSON()).toEqual({ reset: ["language", "theme", "agents.codex.extra_args", "amux.keep_daemon_running_on_exit"] });
+    await expect(confirmation).toHaveCount(0);
     await expect(theme).toHaveValue("system");
     await page.screenshot({ path: "/tmp/treefold-preferences.png" });
     harness.assertNoUnexpectedRequests();

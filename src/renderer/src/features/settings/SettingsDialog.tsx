@@ -37,6 +37,7 @@ export function SettingsDialog(
             className="flex w-36 shrink-0 flex-col gap-1 border-r p-3"
           >
             <Button
+              className="justify-start"
               variant={page === "settings" ? "secondary" : "ghost"}
               aria-current={page === "settings" ? "page" : undefined}
               onClick={() => setPage("settings")}
@@ -45,6 +46,7 @@ export function SettingsDialog(
               设置项
             </Button>
             <Button
+              className="justify-start"
               variant={page === "keymap" ? "secondary" : "ghost"}
               aria-current={page === "keymap" ? "page" : undefined}
               onClick={() => setPage("keymap")}
