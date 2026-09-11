@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, mkdir, readFile, writeFile, rm, access } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, access, readdir } from "node:fs/promises";
 import path from "node:path";
 import { Backend } from "../../src/main/backend.ts";
 
@@ -15,6 +15,29 @@ test("Codex waits for the controlling terminal, then probes colors on the same a
   const run = promisify(execFile);
   const sockets: WebSocket[] = [];
   let api: string | undefined;
+  const ownedPids = new Set<number>();
+  const processes = async () => (await run("ps", ["-axo", "pid=,ppid=,stat="])).stdout.trim().split("\n").map(line => {
+    const [pid, parent, state] = line.trim().split(/\s+/);
+    return { pid: Number(pid), parent: Number(parent), state };
+  });
+  const rememberRuntime = async () => {
+    const directory = path.join(root, "home/data/amux/daemons");
+    for (const name of await readdir(directory).catch(() => [] as string[])) {
+      const registration = await readFile(path.join(directory, name, "daemon.json"), "utf8").catch(() => "");
+      if (registration) ownedPids.add(JSON.parse(registration).pid);
+    }
+    const snapshot = await processes();
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const process of snapshot) {
+        if (ownedPids.has(process.parent) && !ownedPids.has(process.pid)) {
+          ownedPids.add(process.pid);
+          changed = true;
+        }
+      }
+    }
+  };
   const backend = new Backend({
     executable: path.resolve(process.env.TREEFOLD_BACKEND_PATH || "src/backend/target/debug/treefold-backend"),
     env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TREEFOLD_HOME: path.join(root, "home"), CODEX_HOME: path.join(root, "codex-home"), TREEFOLD_API_ADDR: "127.0.0.1:0" },
@@ -98,8 +121,8 @@ setTimeout(() => finish(false), 100);
     readonly.socket.send(JSON.stringify({ type: "terminal_ready", rows: 33, cols: 99 }));
     await new Promise(resolve => setTimeout(resolve, 150));
     expect(await exists(started)).toBe(false);
-    const processes = await (await fetch(`${api}/api/processes`)).json();
-    const pid = processes.find((process: { session_id: string }) => process.session_id === session.id)?.pid;
+    const processViews = await (await fetch(`${api}/api/processes`)).json();
+    const pid = processViews.find((process: { session_id: string }) => process.session_id === session.id)?.pid;
     expect(pid).toBeGreaterThan(0);
     controller.socket.send(JSON.stringify({ type: "terminal_ready", rows: 33, cols: 99 }));
     await expect.poll(() => exists(result)).toBe(true);
@@ -127,6 +150,7 @@ setTimeout(() => finish(false), 100);
       {type: "session_meta", payload: {id: shutdownId, cwd: cancelled.original_cwd}},
       {type: "response_item", payload: {role: "developer", content: [{text: `<treefold_runtime_context>${JSON.stringify({session: {id: cancelled.id}})}</treefold_runtime_context>`}]}},
     ].map(value => JSON.stringify(value)).join("\n") + "\n");
+    await rememberRuntime();
     await post("/api/amux/stop");
     const recovered = await (await fetch(`${api}/api/sessions/${cancelled.id}`)).json();
     expect(recovered.codex_session_id).toBe(shutdownId);
@@ -134,7 +158,12 @@ setTimeout(() => finish(false), 100);
 
     // The daemon is offline, but its persisted process still reserves this name.
     // The very first Restart must remove that record after bringing amux online.
-    for (const socket of sockets) socket.close();
+    await rememberRuntime();
+    await Promise.all(sockets.map(socket => new Promise<void>(resolve => {
+      if (socket.readyState === WebSocket.CLOSED) return resolve();
+      socket.addEventListener("close", () => resolve(), {once: true});
+      socket.close();
+    })));
     await expect.poll(async () => (await (await fetch(`${api}/api/amux`)).json()).running, { timeout: 15_000 }).toBe(false);
     const resumed = await post(`/api/sessions/${session.id}/restart`);
     expect(resumed.status).toBe("running");
@@ -148,12 +177,21 @@ setTimeout(() => finish(false), 100);
     await post(`/api/sessions/${session.id}/stop`);
 
   } finally {
-    for (const socket of sockets) socket.close();
     try {
+      await rememberRuntime();
+      await Promise.all(sockets.map(socket => new Promise<void>(resolve => {
+        if (socket.readyState === WebSocket.CLOSED) return resolve();
+        socket.addEventListener("close", () => resolve(), {once: true});
+        socket.close();
+      })));
       if (api) await fetch(`${api}/api/amux/stop`, { method: "POST" });
     } finally {
       await backend.stop();
-      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      // A stop response acknowledges the request; daemon and shims may still write.
+      await expect.poll(async () => (await processes()).filter(process => ownedPids.has(process.pid) && !process.state.startsWith("Z")), {
+        message: "isolated amux daemon and descendants must exit before removing their files", timeout: 15_000,
+      }).toEqual([]);
+      await rm(root, { recursive: true, force: true });
     }
   }
 });

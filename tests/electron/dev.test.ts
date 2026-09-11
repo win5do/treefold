@@ -1,7 +1,7 @@
 import { test } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, utimes } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, utimes } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -27,10 +27,32 @@ async function until(check: () => boolean | Promise<boolean>, description: strin
 test('electron-vite watches main, preload and Rust while releasing the previous backend', async () => {
   test.setTimeout(240000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-vite-'));
+  const externalLog = path.join(home, 'external-open.jsonl');
+  const externalHook = path.join(home, 'external-boundary.cjs');
+  const externalReady = path.join(home, 'external-ready');
+  // Guard the OS boundary even if navigation regresses: record, never launch a browser.
+  await writeFile(externalHook, `
+if (process.versions.electron) {
+  const Module = require('node:module');
+  const load = Module._load;
+  Module._load = function(request, ...args) {
+    const value = load.call(this, request, ...args);
+    if (request === 'electron' && value.shell) {
+      require('node:fs').writeFileSync(${JSON.stringify(externalReady)}, 'ready');
+      value.shell.openExternal = async url => require('node:fs').appendFileSync(${JSON.stringify(externalLog)}, JSON.stringify(url) + '\\n');
+    }
+    return value;
+  };
+}
+`);
+  const assertNoExternalBrowser = async () => assert.equal(await readFile(externalLog, 'utf8').catch(error => {
+    if (error.code === 'ENOENT') return '';
+    throw error;
+  }), '', 'development reload must not request an external browser');
   let output = '';
   const child = spawn(process.execPath, ['node_modules/electron-vite/bin/electron-vite.js', 'dev', '--watch'], {
     detached: true,
-    env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_UI_PORT: String(await availablePort()), TREEFOLD_API_ADDR: '127.0.0.1:0' },
+    env: { ...process.env, NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${externalHook}`].filter(Boolean).join(" "), TREEFOLD_HOME: home, TREEFOLD_UI_PORT: String(await availablePort()), TREEFOLD_API_ADDR: '127.0.0.1:0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout.on('data', chunk => { output += chunk; });
@@ -56,6 +78,8 @@ test('electron-vite watches main, preload and Rust while releasing the previous 
     await runningUntil(async () => await readyCount() >= 3, 'Rust rebuild and restart');
     assert.equal((await fetch(`${endpoints().at(-1)}/api/health`)).status, 200);
     assert.doesNotMatch(output, /Another Treefold backend|couldn't start|Untrusted desktop/);
+    assert.equal(await readFile(externalReady, 'utf8'), 'ready', 'external browser guard must be installed');
+    await assertNoExternalBrowser();
   } catch (error) {
     console.error(output);
     throw error;

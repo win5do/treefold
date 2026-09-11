@@ -23,7 +23,7 @@ export function SessionWorkspace({ session, busy, onStop, onRestart, onClose, on
     if (!running) discardTerminalSession(session.id);
   }, [running, session.id]);
   const icon = session.kind === "codex" ? <Bot className="size-3.5 shrink-0" /> : session.kind === "command" ? <PanelsTopLeft className="size-3.5 shrink-0" /> : <TerminalSquare className="size-3.5 shrink-0" />;
-  return <div className="flex h-full min-h-0 flex-col bg-[#111315]">
+  return <div data-testid="session-workspace" data-session-id={session.id} className="flex h-full min-h-0 flex-col bg-[#111315]">
     <div className="flex h-10 shrink-0 items-center border-b border-white/10 bg-[#191b1e] px-3">
       <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-neutral-200">{icon}<span className="truncate font-medium">{session.name}</span><StatusDot status={session.status} /><span className="text-[10px] text-neutral-500">{session.status}</span></div>
       <div className="flex items-center gap-1 px-2">

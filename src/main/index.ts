@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { mkdirSync } from 'node:fs';
 import { Backend } from './backend';
 import { createLog } from './log';
+import { installNavigation } from './navigation';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
 mkdirSync(path.join(home, 'data', 'electron'), { recursive: true });
@@ -32,9 +33,6 @@ function trusted(event: IpcMainInvokeEvent) {
   }
   const expected = new URL(pageUrl), actual = new URL(url);
   if (actual.protocol !== expected.protocol || actual.host !== expected.host) throw new Error('Untrusted desktop origin');
-}
-async function external(url: string) {
-  if (['https:', 'http:'].includes(new URL(url).protocol)) await shell.openExternal(url);
 }
 async function start() {
   // Development runs inside Electron.app, whose bundle icon is not Treefold's.
@@ -85,8 +83,7 @@ async function start() {
   const allowPermission = (contents: WebContents | null, permission: string) => contents === window.webContents && permissions.has(permission);
   window.webContents.session.setPermissionCheckHandler(allowPermission);
   window.webContents.session.setPermissionRequestHandler((contents, permission, callback) => callback(allowPermission(contents, permission)));
-  window.webContents.setWindowOpenHandler(({ url }) => { void external(url).catch(error => log('error', String(error))); return { action: 'deny' }; });
-  window.webContents.on('will-navigate', (event, url) => { if (url.split('#')[0] !== pageUrl.split('#')[0]) { event.preventDefault(); void external(url).catch(error => log('error', String(error))); } });
+  installNavigation(window.webContents, pageUrl, url => shell.openExternal(url), error => log('error', String(error)));
   window.webContents.on('context-menu', (_event, params) => {
     if (params.isEditable) Menu.buildFromTemplate([{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }]).popup({ window });
   });

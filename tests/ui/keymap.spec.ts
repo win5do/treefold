@@ -157,14 +157,19 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await page.goto(
       `${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}/sessions/${FIXTURE_IDS.workspaceShell}`,
     );
-    await expect(page.locator(".xterm-helper-textarea")).toHaveCount(1);
-    await page.locator(".xterm-helper-textarea").press("Control+Tab");
+    // Hash changes precede the Session query and terminal mount. Target the
+    // committed Session, so keys cannot reach the previous terminal mid-navigation.
+    const terminal = (id: string) => page!.locator(`[data-testid="session-workspace"][data-session-id="${id}"] .xterm-helper-textarea`);
+    await expect(terminal(FIXTURE_IDS.workspaceShell)).toBeAttached();
+    await terminal(FIXTURE_IDS.workspaceShell).press("Control+Tab");
     await expect(page).toHaveURL(
       new RegExp(FIXTURE_IDS.sessionDevServer + "$"),
     );
-    await page.locator(".xterm-helper-textarea").press("Control+Shift+Tab");
+    await expect(terminal(FIXTURE_IDS.sessionDevServer)).toBeAttached();
+    await terminal(FIXTURE_IDS.sessionDevServer).press("Control+Shift+Tab");
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
-    await page.locator(".xterm-helper-textarea").press("Meta+t");
+    await expect(terminal(FIXTURE_IDS.workspaceShell)).toBeAttached();
+    await terminal(FIXTURE_IDS.workspaceShell).press("Meta+t");
     const dialog = page.getByRole("dialog", { name: "新建 Session" });
     await expect(dialog).toBeVisible();
     await expect(
