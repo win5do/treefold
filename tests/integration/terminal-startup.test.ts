@@ -17,7 +17,7 @@ test("Codex waits for the controlling terminal, then probes colors on the same a
   let api: string | undefined;
   const backend = new Backend({
     executable: path.resolve(process.env.TREEFOLD_BACKEND_PATH || "src/backend/target/debug/treefold-backend"),
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TREEFOLD_HOME: path.join(root, "home"), TREEFOLD_API_ADDR: "127.0.0.1:0" },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, TREEFOLD_HOME: path.join(root, "home"), CODEX_HOME: path.join(root, "codex-home"), TREEFOLD_API_ADDR: "127.0.0.1:0" },
   });
   try {
     await mkdir(bin);
@@ -28,6 +28,15 @@ test("Codex waits for the controlling terminal, then probes colors on the same a
 const fs = require('node:fs');
 const started = ${JSON.stringify(started)};
 const result = ${JSON.stringify(result)};
+const dir = require('node:path').join(process.env.CODEX_HOME, 'sessions');
+fs.mkdirSync(dir, {recursive: true});
+const instructions = JSON.parse(process.argv.find(arg => arg.startsWith('developer_instructions=')).slice('developer_instructions='.length));
+const meta = id => JSON.stringify({type: 'session_meta', timestamp: new Date().toISOString(), payload: {id, cwd: process.cwd(), timestamp: new Date().toISOString()}}) + '\\n';
+// A simultaneous standalone Codex in the same cwd must never be associated.
+fs.writeFileSync(dir + '/ghostty.jsonl', meta('standalone-codex'));
+fs.writeFileSync(dir + '/managed.jsonl', meta('managed-codex'));
+setTimeout(() => fs.appendFileSync(dir + '/managed.jsonl', JSON.stringify({type: 'response_item', payload: {role: 'developer', content: [{type: 'input_text', text: instructions}]}}) + '\\n'), 350);
+
 fs.writeFileSync(started, JSON.stringify({pid: process.pid, rows: process.stdout.rows, cols: process.stdout.columns}));
 process.stdin.setRawMode(true);
 process.stdin.resume();
@@ -96,20 +105,39 @@ setTimeout(() => finish(false), 100);
     await expect.poll(() => exists(result)).toBe(true);
     expect(JSON.parse(await readFile(started, "utf8"))).toEqual({ pid, rows: 33, cols: 99 });
     expect(JSON.parse(await readFile(result, "utf8")).ok).toBe(true);
+    const currentSession = async () => (await fetch(`${api}/api/sessions/${session.id}`)).json();
+    await expect.poll(async () => (await currentSession()).codex_session_id, { timeout: 10_000 }).toBe("managed-codex");
+    expect((await currentSession()).status).toBe("running");
     await post(`/api/sessions/${session.id}/stop`);
+    expect((await currentSession()).codex_session_id).toBe("managed-codex");
 
     // Stopping a still-waiting Session must not launch the target afterward.
     await rm(started);
     const cancelled = await post(`/api/projects/${project.id}/sessions`, { kind: "codex" });
     await post(`/api/sessions/${cancelled.id}/stop`);
     expect(await exists(started)).toBe(false);
+    const restart = await fetch(`${api}/api/sessions/${cancelled.id}/restart`, {method: "POST"});
+    expect(restart.status).toBe(409);
+    expect((await restart.json()).error.code).toBe("CODEX_SESSION_ID_PENDING");
+    expect(await exists(started)).toBe(false);
+
+    // Metadata flushed at shutdown must also be recovered for a stopped Session.
+    const shutdownId = "shutdown-codex";
+    await writeFile(path.join(root, "codex-home/sessions/shutdown.jsonl"), [
+      {type: "session_meta", payload: {id: shutdownId, cwd: cancelled.original_cwd}},
+      {type: "response_item", payload: {role: "developer", content: [{text: `<treefold_runtime_context>${JSON.stringify({session: {id: cancelled.id}})}</treefold_runtime_context>`}]}},
+    ].map(value => JSON.stringify(value)).join("\n") + "\n");
+    await post("/api/amux/stop");
+    const recovered = await (await fetch(`${api}/api/sessions/${cancelled.id}`)).json();
+    expect(recovered.codex_session_id).toBe(shutdownId);
+    expect(recovered.status).toBe("stopped");
   } finally {
     for (const socket of sockets) socket.close();
     try {
       if (api) await fetch(`${api}/api/amux/stop`, { method: "POST" });
     } finally {
       await backend.stop();
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   }
 });

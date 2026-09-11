@@ -3,7 +3,6 @@
 use std::{
     collections::{HashMap, HashSet},
     env,
-    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::Command,
     time::Duration,
@@ -211,6 +210,8 @@ pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> anyhow
     tokio::spawn(async move {
         let mut fallback = tokio::time::interval(Duration::from_secs(30));
         fallback.tick().await;
+        let mut identity_poll = tokio::time::interval(Duration::from_secs(2));
+        identity_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
                 event = process_events.recv() => match event {
@@ -230,6 +231,11 @@ pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> anyhow
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 },
+                _ = identity_poll.tick() => {
+                    if let Err(error) = capture_pending_codex_sessions(&bridge_state).await {
+                        log::error!("failed to capture Codex session identity: {error}");
+                    }
+                }
                 _ = fallback.tick() => {
                     let _ = reconcile_daemon_sessions(&bridge_state).await;
                 }
@@ -594,6 +600,7 @@ async fn list_background_processes(
 }
 
 mod agent;
+mod codex_identity;
 mod delivery;
 mod fork;
 #[path = "server/git.rs"]
@@ -608,6 +615,7 @@ mod verification;
 mod workspace;
 
 use agent::*;
+use codex_identity::*;
 use delivery::*;
 use fork::*;
 use git_routes::*;

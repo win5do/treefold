@@ -136,3 +136,39 @@ test("terminal preserves cleared screen and split ANSI state across Session swit
     try { await closeUiSession(page); } finally { await harness.close(); }
   }
 });
+
+test("a stopped Codex with a pending identity can retry Restart", async () => {
+  const harness = await startUiHarness();
+  harness.setProcessState(FIXTURE_IDS.workspaceCodex, "exited");
+  let page: Page | undefined;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "codex-restart" });
+    await page.route("**/api/**", async route => {
+      if (route.request().method() !== "GET" || new URL(route.request().url()).pathname === "/api/events") return route.continue();
+      const response = await route.fetch();
+      if (!response.headers()["content-type"]?.includes("application/json")) return route.fulfill({ response });
+      const body = await response.json();
+      const visit = (value: unknown): void => {
+        if (!value || typeof value !== "object") return;
+        const record = value as Record<string, unknown>;
+        if (record.id === FIXTURE_IDS.workspaceCodex) {
+          record.codex_session_id = null;
+          if (record.status === "exited") record.status = "stopped";
+        }
+        Object.values(record).forEach(visit);
+      };
+      visit(body);
+      await route.fulfill({ response, json: body });
+    });
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}/sessions/${FIXTURE_IDS.workspaceCodex}`);
+    const restart = page.getByRole("button", { name: "Restart", exact: true });
+    await expect(restart).toBeEnabled();
+    const request = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith(`/api/sessions/${FIXTURE_IDS.workspaceCodex}/restart`));
+    await restart.click();
+    await request;
+    await expect(page.getByRole("button", {name: "Stop", exact: true})).toBeVisible();
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});

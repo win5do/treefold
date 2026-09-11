@@ -230,8 +230,14 @@ impl Store {
             .await?;
         Ok(())
     }
+    pub async fn uncaptured_codex_sessions(&self) -> Result<Vec<Session>> {
+        let sql = format!(
+            "SELECT {SESSION_COLUMNS} FROM sessions WHERE kind=? AND codex_session_id IS NULL"
+        );
+        self.session_rows(&sql, "codex").await
+    }
     pub async fn set_codex_session_id(&self, id: &str, codex_session_id: &str) -> Result<()> {
-        sqlx::query("UPDATE sessions SET codex_session_id=?,updated_at=? WHERE id=?")
+        sqlx::query("UPDATE sessions SET codex_session_id=?,updated_at=? WHERE id=? AND codex_session_id IS NULL")
             .bind(codex_session_id)
             .bind(now())
             .bind(id)

@@ -399,12 +399,13 @@ pub(super) async fn stop_session(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
-    let session = state.store.session(&id).await?;
+    let mut session = state.store.session(&id).await?;
     state
         .terminals
         .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    capture_codex_session_id(&state.store, &mut session).await?;
     state.store.set_session_status(&id, "stopped").await?;
     state.runtime.publish_session(id);
     Ok(StatusCode::NO_CONTENT)
@@ -416,6 +417,13 @@ pub(super) async fn restart_session(
     let mut session = state.store.session(&id).await?;
     ensure_session_owner_active(&state, &session).await?;
     capture_codex_session_id(&state.store, &mut session).await?;
+    if session.kind == "codex" && session.codex_session_id.is_none() {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "CODEX_SESSION_ID_PENDING",
+            "Codex has not saved an identifiable conversation yet. Retry after its session file is available. The existing Session has been preserved; create a new Session if Codex never started.",
+        ));
+    }
     state
         .terminals
         .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
@@ -1055,72 +1063,4 @@ pub(super) async fn proxy_terminal(
             state.runtime.publish_session(id);
         }
     }
-}
-
-pub(super) fn discover_codex_session_id(session: &Session) -> Option<String> {
-    let codex_home = std::env::var_os("CODEX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".codex")))?;
-    let launch = chrono::DateTime::parse_from_rfc3339(&session.launch_started_at).ok()?;
-    let mut pending = vec![codex_home.join("sessions")];
-    let mut best: Option<(i64, String)> = None;
-    while let Some(directory) = pending.pop() {
-        let Ok(entries) = std::fs::read_dir(directory) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                pending.push(path);
-                continue;
-            }
-            if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
-                continue;
-            }
-            let Ok(file) = std::fs::File::open(path) else {
-                continue;
-            };
-            let Some(Ok(line)) = BufReader::new(file).lines().next() else {
-                continue;
-            };
-            let Ok(value) = serde_json::from_str::<Value>(&line) else {
-                continue;
-            };
-            let payload = &value["payload"];
-            if payload["cwd"].as_str() != Some(session.original_cwd.as_str()) {
-                continue;
-            }
-            let Some(session_id) = payload["session_id"]
-                .as_str()
-                .or_else(|| payload["id"].as_str())
-            else {
-                continue;
-            };
-            let Some(timestamp) = payload["timestamp"]
-                .as_str()
-                .or_else(|| value["timestamp"].as_str())
-                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-            else {
-                continue;
-            };
-            let distance = (timestamp.timestamp() - launch.timestamp()).abs();
-            if distance <= 300 && best.as_ref().is_none_or(|current| distance < current.0) {
-                best = Some((distance, session_id.to_owned()));
-            }
-        }
-    }
-    best.map(|(_, session_id)| session_id)
-}
-
-pub(super) async fn capture_codex_session_id(store: &Store, session: &mut Session) -> Result<()> {
-    if session.kind != "codex" || session.codex_session_id.is_some() {
-        return Ok(());
-    }
-    if let Some(codex_session_id) = discover_codex_session_id(session) {
-        store
-            .set_codex_session_id(&session.id, &codex_session_id)
-            .await?;
-        session.codex_session_id = Some(codex_session_id);
-    }
-    Ok(())
 }
