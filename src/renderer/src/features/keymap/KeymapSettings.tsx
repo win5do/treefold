@@ -2,7 +2,17 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Keyboard, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 import {
   Field,
   FieldLabel,
@@ -20,15 +30,18 @@ export function KeymapSettings() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState("");
-  const save = async (id: string, binding: string | false | null) => {
+  const [resetOpen, setResetOpen] = useState(false);
+  const save = async (bindings: Record<string, string | false | null>) => {
     setBusy(true);
     setError("");
     try {
       await client.cancelQueries({ queryKey: keymapKey });
-      client.setQueryData(keymapKey, await updateKeymap({ [id]: binding }));
+      client.setQueryData(keymapKey, await updateKeymap(bindings));
       setRecording(null);
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -36,7 +49,21 @@ export function KeymapSettings() {
   return (
     <div className="flex flex-col gap-5 p-6">
       <Field>
-        <FieldLabel htmlFor="keymap-search">快捷键 / Keymap</FieldLabel>
+        <div className="flex items-center justify-between gap-3">
+          <FieldLabel htmlFor="keymap-search">快捷键 / Keymap</FieldLabel>
+          <ActionMenu
+            label="Keymap 操作"
+            testId="keymap-actions"
+            disabled={busy || !query.data}
+          >
+            <ActionMenuItem
+              icon={<RotateCcw className="size-4" />}
+              onClick={() => setResetOpen(true)}
+            >
+              恢复全部默认快捷键
+            </ActionMenuItem>
+          </ActionMenu>
+        </div>
         <FieldDescription>
           点击录入后按组合键。cmd 与 super 等价；更改立即保存。Esc 取消录入。
         </FieldDescription>
@@ -58,21 +85,16 @@ export function KeymapSettings() {
             .includes(search.toLowerCase()),
         )
         .map((command) => (
-          <Field key={command.id} data-testid={`keymap-${command.id}`}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          <div
+            key={command.id}
+            data-testid={`keymap-${command.id}`}
+            className="flex items-center justify-between gap-4"
+          >
+            <Field className="min-w-0 flex-1">
               <FieldLabel>{command.label}</FieldLabel>
-              <Badge variant="secondary">
-                {command.binding === false
-                  ? "已禁用"
-                  : command.source === "default"
-                    ? "默认"
-                    : "自定义"}
-              </Badge>
-            </div>
-            <FieldDescription>
-              {command.id} · 默认 {command.default_binding}
-            </FieldDescription>
-            <div className="flex flex-wrap items-center gap-2">
+              <FieldDescription>{command.id}</FieldDescription>
+            </Field>
+            <div className="flex shrink-0 items-center gap-2">
               {recording === command.id ? (
                 <Input
                   className="w-56"
@@ -102,7 +124,7 @@ export function KeymapSettings() {
                     }
                     if (busy || event.repeat) return;
                     const chord = keyboardChord(event.nativeEvent);
-                    if (chord) void save(command.id, chord);
+                    if (chord) void save({ [command.id]: chord });
                   }}
                 />
               ) : (
@@ -119,27 +141,63 @@ export function KeymapSettings() {
                   {command.binding || "未绑定"}
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                disabled={busy || command.binding === false}
-                aria-label={`禁用 ${command.label}`}
-                onClick={() => void save(command.id, false)}
+              <ActionMenu
+                label={`${command.label} 操作`}
+                testId={`keymap-${command.id}-actions`}
+                disabled={busy}
               >
-                <X data-icon="inline-start" />
-                禁用
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={busy || command.source === "default"}
-                aria-label={`恢复默认 ${command.label}`}
-                onClick={() => void save(command.id, null)}
-              >
-                <RotateCcw data-icon="inline-start" />
-                恢复默认
-              </Button>
+                {command.binding !== false && (
+                  <ActionMenuItem
+                    icon={<X className="size-4" />}
+                    onClick={() => void save({ [command.id]: false })}
+                  >
+                    禁用快捷键
+                  </ActionMenuItem>
+                )}
+                <ActionMenuItem
+                  icon={<RotateCcw className="size-4" />}
+                  onClick={() => void save({ [command.id]: null })}
+                >
+                  恢复默认
+                </ActionMenuItem>
+              </ActionMenu>
             </div>
-          </Field>
+          </div>
         ))}
+      <AlertDialog
+        open={resetOpen}
+        onOpenChange={(open) => {
+          if (!busy) setResetOpen(open);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>恢复全部默认快捷键？</AlertDialogTitle>
+            <AlertDialogDescription>
+              所有自定义绑定和禁用项都会恢复默认，并立即保存。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy || !query.data}
+              onClick={() => {
+                if (query.data)
+                  void save(
+                    Object.fromEntries(
+                      query.data.commands.map((command) => [command.id, null]),
+                    ),
+                  ).then((ok) => {
+                    if (ok) setResetOpen(false);
+                  });
+              }}
+            >
+              确认恢复
+            </AlertDialogAction>
+          </AlertDialogFooter>
+          {error && <FieldError role="alert">{error}</FieldError>}
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -72,7 +72,6 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
       .getByRole("textbox", { name: "录入 Close Session", exact: true })
       .press("Control+w");
     await expect(close).toContainText("ctrl+w");
-    await expect(close).toContainText("自定义");
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await page
       .getByRole("button", { name: "录入 New Session", exact: true })
@@ -82,10 +81,13 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
       .press("Control+w");
     await expect(page.getByRole("alert")).toContainText("conflicts");
     await page.keyboard.press("Escape");
-    await close
-      .getByRole("button", { name: "禁用 Close Session", exact: true })
+    await page
+      .getByRole("button", { name: "Close Session 操作", exact: true })
       .click();
-    await expect(close).toContainText("已禁用");
+    await page
+      .getByRole("menuitem", { name: "禁用快捷键", exact: true })
+      .click();
+    await expect(close).toContainText("未绑定");
     await page.screenshot({ path: "/tmp/treefold-keymap-settings.png" });
     await page
       .getByRole("dialog")
@@ -99,11 +101,12 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await page.getByTestId("open-settings").click();
     await expect(page.getByTestId("keymap-session.close")).toContainText(
-      "已禁用",
+      "未绑定",
     );
     await page
-      .getByRole("button", { name: "恢复默认 Close Session", exact: true })
+      .getByRole("button", { name: "Close Session 操作", exact: true })
       .click();
+    await page.getByRole("menuitem", { name: "恢复默认", exact: true }).click();
     await expect(page.getByTestId("keymap-session.close")).toContainText(
       "super+w",
     );
@@ -207,18 +210,39 @@ test("settings Save sends only edited fields and supports resetting overrides", 
     await page
       .getByRole("button", { name: "恢复默认设置", exact: true })
       .click();
-    const confirmation = page.getByRole("alertdialog", { name: "恢复默认设置？" });
+    const confirmation = page.getByRole("alertdialog", {
+      name: "恢复默认设置？",
+    });
     await expect(confirmation).toBeVisible();
     await expect(theme).toHaveValue("dark");
-    await page.screenshot({ path: "/tmp/treefold-settings-reset-confirm.png", animations: "disabled" });
-    await confirmation.getByRole("button", { name: "取消", exact: true }).click();
+    await page.screenshot({
+      path: "/tmp/treefold-settings-reset-confirm.png",
+      animations: "disabled",
+    });
+    await confirmation
+      .getByRole("button", { name: "取消", exact: true })
+      .click();
     await expect(confirmation).toHaveCount(0);
     const persisted = await page.request.get(`${harness.apiUrl}/api/settings`);
     expect((await persisted.json()).theme).toBe("dark");
-    await page.getByRole("button", { name: "恢复默认设置", exact: true }).click();
-    const reset = page.waitForRequest((request) => request.method() === "PATCH" && request.url().endsWith("/api/settings"));
-    await confirmation.getByRole("button", { name: "确认恢复", exact: true }).click();
-    expect((await reset).postDataJSON()).toEqual({ reset: ["language", "theme", "agents.codex.extra_args", "amux.keep_daemon_running_on_exit"] });
+    await page
+      .getByRole("button", { name: "恢复默认设置", exact: true })
+      .click();
+    const reset = page.waitForRequest(
+      (request) =>
+        request.method() === "PATCH" && request.url().endsWith("/api/settings"),
+    );
+    await confirmation
+      .getByRole("button", { name: "确认恢复", exact: true })
+      .click();
+    expect((await reset).postDataJSON()).toEqual({
+      reset: [
+        "language",
+        "theme",
+        "agents.codex.extra_args",
+        "amux.keep_daemon_running_on_exit",
+      ],
+    });
     await expect(confirmation).toHaveCount(0);
     await expect(theme).toHaveValue("system");
     await page.screenshot({ path: "/tmp/treefold-preferences.png" });
@@ -284,3 +308,73 @@ declare global {
     __keymapInputs: string[];
   }
 }
+
+test("Keymap resets all bindings only after confirmation, including filtered commands", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  try {
+    page = await createUiSession({
+      apiUrl: harness.apiUrl,
+      sessionName: "keymap-reset-all",
+    });
+    await page.goto(harness.baseUrl);
+    await page.request.patch(`${harness.apiUrl}/api/keymap`, {
+      data: { bindings: { "session.close": false, "session.new": "ctrl+n" } },
+    });
+    await page.getByTestId("open-settings").click();
+    await page.getByRole("button", { name: "Keymap", exact: true }).click();
+    await expect(page.getByTestId("keymap-session.close")).toContainText(
+      "未绑定",
+    );
+    await page.screenshot({
+      path: "/tmp/treefold-keymap-layout.png",
+      animations: "disabled",
+    });
+    await page.getByPlaceholder("搜索命令或快捷键").fill("New Session");
+    const openReset = async () => {
+      await page!
+        .getByRole("button", { name: "Keymap 操作", exact: true })
+        .click();
+      await page!
+        .getByRole("menuitem", { name: "恢复全部默认快捷键", exact: true })
+        .click();
+    };
+    await openReset();
+    const dialog = page.getByRole("alertdialog", {
+      name: "恢复全部默认快捷键？",
+    });
+    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByTestId("keymap-session.new")).toContainText(
+      "ctrl+n",
+    );
+    await openReset();
+    const reset = page.waitForRequest(
+      (r) => r.method() === "PATCH" && r.url().endsWith("/api/keymap"),
+    );
+    await dialog.getByRole("button", { name: "确认恢复", exact: true }).click();
+    expect((await reset).postDataJSON()).toEqual({
+      bindings: {
+        "session.new": null,
+        "session.close": null,
+        "session.next": null,
+        "session.previous": null,
+      },
+    });
+    await expect(dialog).toHaveCount(0);
+    await page.getByPlaceholder("搜索命令或快捷键").fill("");
+    await expect(page.getByTestId("keymap-session.new")).toContainText(
+      "super+t",
+    );
+    await expect(page.getByTestId("keymap-session.close")).toContainText(
+      "super+w",
+    );
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try {
+      await closeUiSession(page);
+    } finally {
+      await harness.close();
+    }
+  }
+});
