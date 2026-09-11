@@ -96,6 +96,18 @@ just build    # Build a signed App and DMG in release/
 See [AGENTS.md](AGENTS.md#development-environment-and-commands) for development,
 testing, and local installation details.
 
+Deterministic UI tests run in hidden Electron windows by default, without
+activating the macOS App or showing a Dock icon. Rendering remains active for
+automated input and screenshots. To show test windows when debugging:
+
+```bash
+just test-ui
+TREEFOLD_TEST_HEADED=1 npm run test:ui -- tests/ui/keymap.spec.ts
+```
+
+`just test-electron` separately exercises the real App's native window and
+lifecycle behavior and can show windows and take focus.
+
 ## Preferences and shortcuts
 
 Settings has separate Preferences and Keymap pages. Record a shortcut by pressing

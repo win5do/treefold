@@ -22,8 +22,9 @@ test("resources", async () => {
 
     const settingsButton = page.locator('[data-testid="open-settings"]');
     const resourcesButton = page.locator('[data-testid="open-resources"]');
-    assert.equal(await settingsButton.getAttribute("aria-label"), "Settings");
-    assert.equal(await resourcesButton.getAttribute("aria-label"), "Resources");
+    // Settings (including the fixture language) load asynchronously.
+    await expect(settingsButton).toHaveAccessibleName("Settings");
+    await expect(resourcesButton).toHaveAccessibleName("Resources");
 
     await settingsButton.click();
     let dialog = page.locator('[role="dialog"]');
@@ -74,4 +75,3 @@ test("resources", async () => {
   }
 
 });
-

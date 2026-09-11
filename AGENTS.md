@@ -257,6 +257,12 @@ commands, exercised Electron scenarios, and any remaining verification gaps.
 
 ### Deterministic UI fixture
 
+UI fixture windows are hidden by default and must not activate the macOS App.
+Keep background rendering enabled so automated input and screenshots still work.
+Use `TREEFOLD_TEST_HEADED=1` only when explicitly requested for visible debugging.
+Native window activation and lifecycle coverage belongs in `tests/electron/`;
+do not replace hidden fixture windows with visible ones to fix a test failure.
+
 `npm run test:ui` must be self-contained by default. It must not depend on the user's Treefold database, existing Projects, fixed local directories, Git worktrees, or an already-running Electron backend.
 
 - `tests/ui/ui-harness.ts` starts the fixture API and renderer asset server on
