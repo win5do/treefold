@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { Copy, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/lib/toast";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { logStreamState } from "@/api/client";
@@ -22,8 +23,47 @@ export function SessionWorkspace({ session, busy, onRestart, onExit }: { session
     if (!running) discardTerminalSession(session.id);
   }, [running, session.id]);
   return <div data-testid="session-workspace" data-session-id={session.id} className="flex h-full min-h-0 flex-col bg-[#111315]">
-    {running ? <WebTerminal key={session.id} session={session} onExit={onExit} /> : <div data-testid="session-terminal-state" className="grid min-h-0 flex-1 place-items-center p-8 text-neutral-300"><div className="w-full max-w-2xl rounded-lg border border-white/10 bg-white/[0.03] p-5"><div className="flex items-center justify-between gap-3"><p className="text-sm font-medium">Session is {session.status}</p><Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}><RotateCcw data-icon="inline-start" />Restart</Button></div><dl className="mt-4 grid gap-3 text-xs"><div><dt className="text-neutral-500">Command</dt><dd className="mt-1 break-all font-mono">{session.argv.join(" ") || "—"}</dd></div><div><dt className="text-neutral-500">Working directory</dt><dd className="mt-1 break-all font-mono">{session.cwd}</dd></div><div><dt className="text-neutral-500">I/O mode</dt><dd className="mt-1 font-mono">{session.io_mode}</dd></div></dl></div></div>}
+    {running ? <WebTerminal key={session.id} session={session} onExit={onExit} /> : <StoppedSession session={session} busy={busy} onRestart={onRestart} />}
   </div>;
+}
+
+function StoppedSession({ session, busy, onRestart }: { session: Session; busy: boolean; onRestart: () => void }) {
+  const command = session.argv.join(" ");
+  const copyCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      toast.success("Command copied");
+    } catch (cause) {
+      toast.errorFrom(cause, "Could not copy command");
+    }
+  };
+  return (
+    <div data-testid="session-terminal-state" className="grid min-h-0 flex-1 overflow-y-auto place-items-center p-8 text-terminal-muted">
+      <div className="w-full min-w-0 max-w-2xl rounded-lg border border-terminal-accent bg-terminal-accent p-5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium">Session is {session.status}</p>
+          <Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}>
+            <RotateCcw data-icon="inline-start" />Restart
+          </Button>
+        </div>
+        <dl className="mt-4 grid min-w-0 gap-3 text-xs">
+          <div className="min-w-0">
+            <dt className="flex items-center justify-between gap-2 text-terminal-muted">
+              Command
+              <Button size="icon-sm" variant="terminal" aria-label="Copy command" title="Copy command" disabled={!command} onClick={() => void copyCommand()}>
+                <Copy data-icon="inline-start" />
+              </Button>
+            </dt>
+            <dd aria-label="Command" tabIndex={0} className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-md border border-terminal-accent p-3 font-mono [scrollbar-gutter:stable]">
+              {command || "—"}
+            </dd>
+          </div>
+          <div><dt className="text-terminal-muted">Working directory</dt><dd className="mt-1 break-all font-mono">{session.cwd}</dd></div>
+          <div><dt className="text-terminal-muted">I/O mode</dt><dd className="mt-1 font-mono">{session.io_mode}</dd></div>
+        </dl>
+      </div>
+    </div>
+  );
 }
 
 function WebTerminal({ session, onExit }: { session: Session; onExit: () => void }) {

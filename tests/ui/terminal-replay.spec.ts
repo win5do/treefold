@@ -137,7 +137,9 @@ test("terminal preserves cleared screen and split ANSI state across Session swit
   }
 });
 
-test("a stopped Codex with a pending identity can retry Restart", async () => {
+test("a stopped Codex can copy its full command and retry Restart", async () => {
+  const command = ["codex", "-c", "developer_instructions=" + "Long runtime context. ".repeat(500)];
+  const copied: string[] = [];
   const harness = await startUiHarness();
   harness.setProcessState(FIXTURE_IDS.workspaceCodex, "exited");
   let page: Page | undefined;
@@ -153,6 +155,7 @@ test("a stopped Codex with a pending identity can retry Restart", async () => {
         const record = value as Record<string, unknown>;
         if (record.id === FIXTURE_IDS.workspaceCodex) {
           record.codex_session_id = null;
+          record.argv = command;
           if (record.status === "exited") record.status = "stopped";
         }
         Object.values(record).forEach(visit);
@@ -161,6 +164,15 @@ test("a stopped Codex with a pending identity can retry Restart", async () => {
       await route.fulfill({ response, json: body });
     });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}/sessions/${FIXTURE_IDS.workspaceCodex}`);
+    await page.exposeFunction("recordCommandCopy", (value: string) => { copied.push(value); });
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: { writeText: (value: string) => (window as unknown as { recordCommandCopy(value: string): Promise<void> }).recordCommandCopy(value) },
+      });
+    });
+    await page.getByRole("button", { name: "Copy command", exact: true }).click();
+    await expect.poll(() => copied).toEqual([command.join(" ")]);
     const restart = page.getByTestId("session-terminal-state").getByRole("button", { name: "Restart", exact: true });
     await expect(restart).toBeEnabled();
     const request = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith(`/api/sessions/${FIXTURE_IDS.workspaceCodex}/restart`));
