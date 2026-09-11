@@ -55,8 +55,14 @@ button { cursor: pointer; }
 code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 .xterm { height: 100%; padding: 4px; }
 
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--border); background-clip: padding-box; }
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+/* Keep xterm's drag target while narrowing its painted slider. */
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  border-inline: 4px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box !important;
+}
 
 .location-list-dialog { max-width: min(94vw, 51.25rem); }
 
