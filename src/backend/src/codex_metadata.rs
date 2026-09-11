@@ -3,12 +3,7 @@ use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock, RwLock},
 };
-
-static INDEX_VERSION: Mutex<Option<(PathBuf, u64, std::time::SystemTime)>> = Mutex::new(None);
-
-static TITLES: OnceLock<RwLock<HashMap<String, String>>> = OnceLock::new();
 
 pub fn home() -> Option<PathBuf> {
     std::env::var_os("CODEX_HOME")
@@ -16,45 +11,14 @@ pub fn home() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".codex")))
 }
 
-pub fn display_name(name: String, id: Option<&str>) -> String {
-    if name != "codex" {
-        return name;
-    }
-    id.and_then(|id| TITLES.get()?.read().ok()?.get(id).cloned())
-        .unwrap_or(name)
-}
-
-pub fn refresh_titles() -> bool {
+pub fn load_titles() -> HashMap<String, String> {
     let Some(home) = home() else {
-        return false;
+        return HashMap::new();
     };
-    let path = home.join("session_index.jsonl");
-    let Ok(metadata) = std::fs::metadata(&path) else {
-        return false;
+    let Ok(file) = std::fs::File::open(home.join("session_index.jsonl")) else {
+        return HashMap::new();
     };
-    let Ok(modified) = metadata.modified() else {
-        return false;
-    };
-    let Ok(mut version) = INDEX_VERSION.lock() else {
-        return false;
-    };
-    let signature = (path.clone(), metadata.len(), modified);
-    if version.as_ref() == Some(&signature) || metadata.len() > 64 * 1024 * 1024 {
-        return false;
-    }
-    let Ok(file) = std::fs::File::open(path) else {
-        return false;
-    };
-    let titles = read_titles(BufReader::new(file.take(64 * 1024 * 1024)));
-    let Ok(mut cached) = TITLES.get_or_init(Default::default).write() else {
-        return false;
-    };
-    *version = Some(signature);
-    if *cached == titles {
-        return false;
-    }
-    *cached = titles;
-    true
+    read_titles(BufReader::new(file.take(64 * 1024 * 1024)))
 }
 
 fn read_titles(reader: impl BufRead) -> HashMap<String, String> {
@@ -135,22 +99,7 @@ mod tests {
             read_titles(text.as_bytes()).get("a").map(String::as_str),
             Some("new")
         );
-        assert_eq!(display_name("My name".into(), Some("a")), "My name");
     }
-    #[test]
-    fn automatic_title_fills_default_name_but_not_manual_name() {
-        let id = "title-test-session";
-        TITLES
-            .get_or_init(Default::default)
-            .write()
-            .unwrap()
-            .insert(id.into(), "Generated title".into());
-        assert_eq!(display_name("codex".into(), Some(id)), "Generated title");
-        assert_eq!(display_name("Custom name".into(), Some(id)), "Custom name");
-        assert_eq!(display_name("codex".into(), None), "codex");
-        TITLES.get().unwrap().write().unwrap().remove(id);
-    }
-
     #[test]
     fn launch_log_identifies_empty_conversation_without_accepting_nested_spans() {
         let dir = tempfile::tempdir().unwrap();

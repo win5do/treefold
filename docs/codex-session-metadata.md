@@ -15,11 +15,16 @@ infers ownership from a working directory or timestamp alone. Existing records
 without either source of evidence remain unidentified.
 
 Codex automatic titles come from `$CODEX_HOME/session_index.jsonl` (default
-`~/.codex/session_index.jsonl`). Treefold reads it only when the file changes,
-keeps the latest valid title per ID in memory, and refreshes session lists when
-those titles change. A title replaces only the default `codex` display name;
-manual names and the stored Treefold name remain unchanged. Missing titles use
-the existing name. Neither Codex's index nor its chat history is modified.
+`~/.codex/session_index.jsonl`). Treefold imports the first available valid title
+into the Session's database name and records `codex_title_imported=1`. Later
+Codex title changes do not affect that Session, including across backend restarts.
+Manual renames also mark the title as handled, even when renamed back to `codex`.
+
+Only Sessions with a captured Codex ID, the default name, and no imported title
+are eligible. While any eligible Sessions remain, the metadata worker checks for
+their first title; missing titles leave them pending. With no eligible Sessions,
+it does not read or stat the title index. Neither Codex's index nor chat history
+is modified. The independent ID-capture worker continues to run.
 
 Project and Workspace Session lists offer **Remove from Treefold** for Codex,
 including history records without a captured ID. Confirmation removes the

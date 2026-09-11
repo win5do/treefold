@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sessions SET name=?,codex_title_imported=1,updated_at=? WHERE id=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "e25be1068e0b6e8d0385c38b9a797ad36fa35f95b1ad180452b1533a8dfb0b3c"
+}

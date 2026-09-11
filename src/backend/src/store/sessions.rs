@@ -38,7 +38,7 @@ impl From<SessionRow> for Session {
         Self {
             id: r.id,
             workspace_id: r.workspace_id,
-            name: crate::codex_metadata::display_name(r.name, r.codex_session_id.as_deref()),
+            name: r.name,
             kind: r.kind,
             cwd: r.cwd,
             original_cwd: r.original_cwd,
@@ -188,12 +188,15 @@ impl Store {
         Ok(row.map(Into::into))
     }
     pub async fn rename_session(&self, id: &str, name: &str) -> Result<()> {
-        let r = sqlx::query("UPDATE sessions SET name=?,updated_at=? WHERE id=?")
-            .bind(name)
-            .bind(now())
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
+        let timestamp = now();
+        let r = sqlx::query!(
+            "UPDATE sessions SET name=?,codex_title_imported=1,updated_at=? WHERE id=?",
+            name,
+            timestamp,
+            id
+        )
+        .execute(&self.pool)
+        .await?;
         if r.rows_affected() == 0 {
             return Err(AppError::NotFound);
         }
@@ -230,6 +233,21 @@ impl Store {
             .await?;
         Ok(())
     }
+    pub async fn pending_codex_titles(&self) -> Result<Vec<(String, String)>> {
+        Ok(sqlx::query!("SELECT id, codex_session_id AS 'codex_session_id!' FROM sessions WHERE kind='codex' AND name='codex' AND codex_session_id IS NOT NULL AND codex_title_imported=0")
+            .fetch_all(&self.pool).await?.into_iter().map(|row| (row.id, row.codex_session_id)).collect())
+    }
+
+    pub async fn import_codex_title(&self, id: &str, codex_id: &str, title: &str) -> Result<bool> {
+        let title = title.trim();
+        if title.is_empty() {
+            return Ok(false);
+        }
+        let timestamp = now();
+        Ok(sqlx::query!("UPDATE sessions SET name=?,codex_title_imported=1,updated_at=? WHERE id=? AND kind='codex' AND name='codex' AND codex_session_id=? AND codex_title_imported=0", title, timestamp, id, codex_id)
+            .execute(&self.pool).await?.rows_affected() == 1)
+    }
+
     pub async fn uncaptured_codex_sessions(&self) -> Result<Vec<Session>> {
         let sql = format!(
             "SELECT {SESSION_COLUMNS} FROM sessions WHERE kind=? AND codex_session_id IS NULL"

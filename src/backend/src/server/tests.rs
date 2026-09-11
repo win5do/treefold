@@ -908,6 +908,7 @@ mod current_workspace_tests {
 
         let mut pending = codex.clone();
         pending.id = "pending-project-codex".into();
+        pending.name = "codex".into();
         pending.amux_process_name = pending.id.clone();
         pending.codex_session_id = None;
         let log_dir = root.join("logs/codex").join(&pending.id);
@@ -940,6 +941,80 @@ mod current_workspace_tests {
                 .as_deref(),
             Some(codex_id)
         );
+        assert!(
+            state
+                .store
+                .pending_codex_titles()
+                .await
+                .unwrap()
+                .iter()
+                .any(|(id, _)| id == &pending.id)
+        );
+        assert!(
+            !state
+                .store
+                .import_codex_title(&pending.id, codex_id, " ")
+                .await
+                .unwrap()
+        );
+        assert!(
+            !state
+                .store
+                .import_codex_title(&pending.id, "wrong-id", "Wrong title")
+                .await
+                .unwrap()
+        );
+        assert!(
+            state
+                .store
+                .import_codex_title(&pending.id, codex_id, "Generated title")
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            state.store.session(&pending.id).await.unwrap().name,
+            "Generated title"
+        );
+        assert!(
+            !state
+                .store
+                .import_codex_title(&pending.id, codex_id, "Later Codex title")
+                .await
+                .unwrap()
+        );
+        state
+            .store
+            .rename_session(&pending.id, "codex")
+            .await
+            .unwrap();
+        assert!(
+            !state
+                .store
+                .import_codex_title(&pending.id, codex_id, "Later Codex title")
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            state.store.session(&pending.id).await.unwrap().name,
+            "codex"
+        );
+        assert!(
+            !state
+                .store
+                .pending_codex_titles()
+                .await
+                .unwrap()
+                .iter()
+                .any(|(id, _)| id == &pending.id)
+        );
+        assert!(
+            !state
+                .store
+                .import_codex_title(&codex.id, "codex-session-id", "Replace custom name")
+                .await
+                .unwrap()
+        );
+
         let codex_history = root.join("codex-owned-history.jsonl");
         std::fs::write(&codex_history, "retained conversation").unwrap();
         crate::server::delete_session(

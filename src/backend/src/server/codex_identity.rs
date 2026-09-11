@@ -6,12 +6,6 @@ use std::{
 };
 
 pub(super) async fn capture_pending_codex_sessions(state: &AppState) -> Result<()> {
-    if tokio::task::spawn_blocking(crate::codex_metadata::refresh_titles)
-        .await
-        .unwrap_or(false)
-    {
-        state.runtime.publish_session_list(None);
-    }
     let sessions = state.store.uncaptured_codex_sessions().await?;
     for (session_id, codex_id) in discover(sessions).await? {
         state
@@ -19,6 +13,23 @@ pub(super) async fn capture_pending_codex_sessions(state: &AppState) -> Result<(
             .set_codex_session_id(&session_id, &codex_id)
             .await?;
         state.runtime.publish_session_list(Some(session_id));
+    }
+    let pending = state.store.pending_codex_titles().await?;
+    if !pending.is_empty() {
+        let titles = tokio::task::spawn_blocking(crate::codex_metadata::load_titles)
+            .await
+            .map_err(|error| anyhow::anyhow!(error))?;
+        for (session_id, codex_id) in pending {
+            if let Some(title) = titles.get(&codex_id) {
+                if state
+                    .store
+                    .import_codex_title(&session_id, &codex_id, title)
+                    .await?
+                {
+                    state.runtime.publish_session_list(Some(session_id));
+                }
+            }
+        }
     }
     Ok(())
 }
