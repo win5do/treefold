@@ -322,8 +322,8 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       retainTerminalSession(session, { terminal, fit, runtime });
     };
   }, [session.id, session.kind, session.status, session.launch_started_at, session.amux_process_name]);
-  return <div className="relative min-h-0 flex-1">
+  return <div className="relative min-h-0 flex-1 p-2">
     {ownership === "readonly" ? <div data-testid="terminal-readonly-indicator" role="status" className="absolute right-4 top-3 z-10 rounded border border-amber-400/30 bg-[#191b1e]/95 px-2 py-1 text-[10px] font-medium text-amber-300">Read only</div> : null}
-    <div ref={hostRef} className="h-full min-h-0 p-2" />
+    <div ref={hostRef} className="h-full min-h-0" />
   </div>;
 }
