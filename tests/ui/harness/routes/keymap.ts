@@ -44,7 +44,11 @@ export function createKeymapRoutes({
       const next = { ...overrides };
       for (const [id, binding] of Object.entries(input.bindings)) {
         if (binding === null) delete next[id];
-        else next[id] = binding;
+        else
+          next[id] =
+            typeof binding === "string"
+              ? binding.replace(/^(cmd|command|win|meta)\+/, "super+")
+              : binding;
       }
       const chords = defaults
         .map(([id, , fallback]) => next[id] ?? fallback)

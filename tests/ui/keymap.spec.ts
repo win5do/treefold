@@ -71,7 +71,7 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
     await page
       .getByRole("textbox", { name: "录入 Close Session", exact: true })
       .press("Control+w");
-    await expect(close).toContainText("ctrl+w");
+    await expect(close).toContainText("ctrl W");
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await page
       .getByRole("button", { name: "录入 New Session", exact: true })
@@ -107,9 +107,20 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
       .getByRole("button", { name: "Close Session 操作", exact: true })
       .click();
     await page.getByRole("menuitem", { name: "恢复默认", exact: true }).click();
-    await expect(page.getByTestId("keymap-session.close")).toContainText(
-      "super+w",
+    await expect(page.getByTestId("keymap-session.close")).toContainText("⌘ W");
+    await close
+      .getByRole("button", { name: "录入 Close Session", exact: true })
+      .click();
+    const recorded = page.waitForRequest(
+      (r) => r.method() === "PATCH" && r.url().endsWith("/api/keymap"),
     );
+    await page
+      .getByRole("textbox", { name: "录入 Close Session", exact: true })
+      .press("Meta+w");
+    expect((await recorded).postDataJSON()).toEqual({
+      bindings: { "session.close": "cmd+w" },
+    });
+    await expect(close).toContainText("⌘ W");
     await page.keyboard.press("Meta+w");
     await expect(page.getByRole("dialog")).toBeVisible();
     await page
@@ -346,7 +357,7 @@ test("Keymap resets all bindings only after confirmation, including filtered com
     await dialog.getByRole("button", { name: "取消", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId("keymap-session.new")).toContainText(
-      "ctrl+n",
+      "ctrl N",
     );
     await openReset();
     const reset = page.waitForRequest(
@@ -363,12 +374,8 @@ test("Keymap resets all bindings only after confirmation, including filtered com
     });
     await expect(dialog).toHaveCount(0);
     await page.getByPlaceholder("搜索命令或快捷键").fill("");
-    await expect(page.getByTestId("keymap-session.new")).toContainText(
-      "super+t",
-    );
-    await expect(page.getByTestId("keymap-session.close")).toContainText(
-      "super+w",
-    );
+    await expect(page.getByTestId("keymap-session.new")).toContainText("⌘ T");
+    await expect(page.getByTestId("keymap-session.close")).toContainText("⌘ W");
     harness.assertNoUnexpectedRequests();
   } finally {
     try {

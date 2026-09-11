@@ -103,3 +103,10 @@ on [VS Code's keybinding design](https://code.visualstudio.com/docs/configure/ke
 Modifier aliases and consuming only executable terminal actions follow
 [Ghostty's keybinding concepts](https://ghostty.org/docs/config/keybind).
 Treefold uses its own TOML format; it does not import either product's syntax.
+
+### Platform key names
+
+Matching and API responses use canonical `super`. Configuration accepts `cmd`,
+`command`, `meta`, and `win` as aliases. UI recording writes `cmd` on macOS,
+`win` on Windows, and `super` elsewhere. The UI displays `⌘` on macOS and
+`Win` on Windows. Updating a binding preserves other entries' original spelling.

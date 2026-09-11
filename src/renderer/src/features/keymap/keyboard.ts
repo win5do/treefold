@@ -32,3 +32,34 @@ export function shortcutOverlayOpen(): boolean {
     ),
   );
 }
+
+// Keep event matching canonical; platform names belong at the UI/config boundary.
+export function configuredChord(
+  chord: string,
+  platform = navigator.platform,
+): string {
+  const modifier = /mac/i.test(platform)
+    ? "cmd"
+    : /win/i.test(platform)
+      ? "win"
+      : "super";
+  return chord
+    .split("+")
+    .map((part) => (part === "super" ? modifier : part))
+    .join("+");
+}
+
+export function displayedChord(
+  chord: string,
+  platform = navigator.platform,
+): string {
+  if (/mac/i.test(platform)) {
+    return chord
+      .split("+")
+      .map((part) =>
+        part === "super" ? "⌘" : part.length === 1 ? part.toUpperCase() : part,
+      )
+      .join(" ");
+  }
+  return configuredChord(chord, platform).replace(/^win\+/, "Win+");
+}

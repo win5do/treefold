@@ -60,7 +60,7 @@ pub fn normalize_shortcut(input: &str) -> anyhow::Result<String> {
     }
     for part in &parts[..parts.len() - 1] {
         let index = match part.as_str() {
-            "cmd" | "command" | "super" | "meta" => 0,
+            "cmd" | "command" | "win" | "super" | "meta" => 0,
             "ctrl" | "control" => 1,
             "alt" | "opt" | "option" => 2,
             "shift" => 3,
@@ -218,7 +218,8 @@ impl KeymapStore {
                     bindings.insert(&id, value(disabled));
                 }
                 Some(Binding::Shortcut(chord)) => {
-                    bindings.insert(&id, value(normalize_shortcut(&chord)?));
+                    normalize_shortcut(&chord)?;
+                    bindings.insert(&id, value(chord));
                 }
             }
         }
@@ -265,6 +266,13 @@ mod tests {
             Binding::Shortcut("super+n".into())
         );
         assert_eq!(next.commands[1].binding, Binding::Disabled(false));
+        assert!(fs::read_to_string(&store.path).unwrap().contains("CMD+N"));
+        update(r#"{"bindings":{"session.close":"win+w"}}"#).unwrap();
+        let persisted = fs::read_to_string(&store.path).unwrap();
+        assert!(persisted.contains("CMD+N"));
+        assert!(persisted.contains("win+w"));
+        assert_eq!(normalize_shortcut("win+n").unwrap(), "super+n");
+        update(r#"{"bindings":{"session.close":false}}"#).unwrap();
         let before = fs::read_to_string(&store.path).unwrap();
         for json in [
             r#"{"bindings":{"session.close":"super+n"}}"#,

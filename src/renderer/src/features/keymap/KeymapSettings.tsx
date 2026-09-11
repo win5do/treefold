@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { keymapKey, keymapQuery, updateKeymap } from "./api";
-import { keyboardChord } from "./keyboard";
+import { keyboardChord, configuredChord, displayedChord } from "./keyboard";
 
 export function KeymapSettings() {
   const query = useQuery(keymapQuery());
@@ -65,7 +65,7 @@ export function KeymapSettings() {
           </ActionMenu>
         </div>
         <FieldDescription>
-          点击录入后按组合键。cmd 与 super 等价；更改立即保存。Esc 取消录入。
+          点击录入后按组合键，更改立即保存。Esc 取消录入。
         </FieldDescription>
         <Input
           id="keymap-search"
@@ -80,7 +80,7 @@ export function KeymapSettings() {
       {query.isPending && <p role="status">加载快捷键…</p>}
       {query.data?.commands
         .filter((command) =>
-          `${command.id} ${command.label} ${command.binding}`
+          `${command.id} ${command.label} ${command.binding} ${command.binding && configuredChord(command.binding)} ${command.binding && displayedChord(command.binding)}`
             .toLowerCase()
             .includes(search.toLowerCase()),
         )
@@ -124,7 +124,8 @@ export function KeymapSettings() {
                     }
                     if (busy || event.repeat) return;
                     const chord = keyboardChord(event.nativeEvent);
-                    if (chord) void save({ [command.id]: chord });
+                    if (chord)
+                      void save({ [command.id]: configuredChord(chord) });
                   }}
                 />
               ) : (
@@ -138,7 +139,7 @@ export function KeymapSettings() {
                   }}
                 >
                   <Keyboard data-icon="inline-start" />
-                  {command.binding || "未绑定"}
+                  {command.binding ? displayedChord(command.binding) : "未绑定"}
                 </Button>
               )}
               <ActionMenu
