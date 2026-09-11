@@ -17,7 +17,9 @@ type PendingInsert = {
 const matchingKeyWindowMs = 100;
 
 /**
- * Works around xterm 6 dropping macOS IME insertText events when printable
+ * Preserves native macOS IME punctuation commits instead of sending the
+ * physical ASCII key before the input method can transform it. Also works
+ * around xterm 6 dropping IME insertText events when printable
  * keys are reported as keyCode 229 outside a real composition session.
  *
  * The host capture listener prevents the affected keydown from reaching
@@ -32,13 +34,16 @@ export function setupXtermIme229Workaround({
 }: SetupXtermIme229WorkaroundOptions): () => void {
   const textarea = terminal.textarea;
   if (!textarea) return () => {};
+  const isMac = navigator.platform.startsWith("Mac");
 
   let pendingInsert: PendingInsert | null = null;
+  let nativePunctuation = false;
 
   const isTextareaEvent = (event: Event) => event.target === textarea;
 
   const clearPendingInsert = () => {
     pendingInsert = null;
+    nativePunctuation = false;
   };
 
   const observedData = terminal.onData((data) => {
@@ -47,6 +52,16 @@ export function setupXtermIme229Workaround({
 
   const onInput = (event: Event) => {
     if (!isTextareaEvent(event) || !(event instanceof InputEvent)) return;
+    if (nativePunctuation && !event.isComposing && event.inputType === "insertText" && event.data) {
+      // Third-party macOS IMEs report the physical ASCII key at keydown,
+      // then commit the actual punctuation through input (e.g. "." -> "。").
+      // Shift may already have reached xterm, so its input gate cannot be used.
+      clearPendingInsert();
+      terminal.input(event.data, true);
+      textarea.value = "";
+      event.stopPropagation();
+      return;
+    }
     if (
       terminal.options.screenReaderMode ||
       !event.composed ||
@@ -66,6 +81,17 @@ export function setupXtermIme229Workaround({
 
   const onKeyDown = (event: KeyboardEvent) => {
     if (!isTextareaEvent(event)) return;
+    if (
+      isMac && !terminal.options.screenReaderMode && !event.isComposing && event.keyCode !== 229 &&
+      !event.ctrlKey && !event.metaKey && !event.altKey &&
+      /^[!-/:-@\[-`{-~]$/.test(event.key)
+    ) {
+      pendingInsert = null;
+      nativePunctuation = true;
+      // Allow the browser/IME default insertion, but not xterm's early send.
+      event.stopPropagation();
+      return;
+    }
     const affectedPrintableKey =
       !terminal.options.screenReaderMode &&
       event.keyCode === 229 &&
@@ -102,8 +128,13 @@ export function setupXtermIme229Workaround({
     if (isTextareaEvent(event)) clearPendingInsert();
   };
 
+  const onKeyPress = (event: KeyboardEvent) => {
+    if (isTextareaEvent(event) && nativePunctuation) event.stopPropagation();
+  };
+
   host.addEventListener("input", onInput, { capture: true });
   host.addEventListener("keydown", onKeyDown, { capture: true });
+  host.addEventListener("keypress", onKeyPress, { capture: true });
   host.addEventListener("keyup", clearForTextareaEvent, { capture: true });
   host.addEventListener("compositionstart", clearForTextareaEvent, { capture: true });
   host.addEventListener("compositionend", clearForTextareaEvent, { capture: true });
@@ -112,6 +143,7 @@ export function setupXtermIme229Workaround({
   return () => {
     host.removeEventListener("input", onInput, { capture: true });
     host.removeEventListener("keydown", onKeyDown, { capture: true });
+    host.removeEventListener("keypress", onKeyPress, { capture: true });
     host.removeEventListener("keyup", clearForTextareaEvent, { capture: true });
     host.removeEventListener("compositionstart", clearForTextareaEvent, { capture: true });
     host.removeEventListener("compositionend", clearForTextareaEvent, { capture: true });
