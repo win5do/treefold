@@ -240,16 +240,70 @@ runs packaged App and development lifecycle coverage against the real main proce
 Rust unit tests remain in Cargo. Standalone backend and installation tests use
 the Playwright `integration` project without launching a renderer.
 
-### Default checks
+### Scope-based validation
 
-1. Run `just typecheck` after every TypeScript or React change.
-2. Run `npm run build` for dependency, production build, substantial frontend,
-   routing, or broad layout changes.
-3. Run `just test-ui` for user-visible behavior changes and broader frontend work.
-   Use focused Playwright Electron diagnostics and screenshots for presentation
-   changes that do not pass the automated test admission gate below.
-4. For main process, native integration, or lifecycle changes, run
-   `just test-electron` after building the current App with `just build`.
+Select validation from the affected contracts and dependencies, not the number
+of changed lines or conversation turns. A user-visible change alone does not
+require UI tests, screenshots, a full build, or the complete test suite. These
+rules also apply to backend and tooling work.
+
+| Change scope | Validation at the end of the batch |
+| --- | --- |
+| Documentation or comments only | Review the diff and run `git diff --check`; no build or tests. |
+| Local presentation or static copy, with no behavior or accessibility change | Review the diff; run `just typecheck` if TypeScript/React changed. No UI tests or screenshots by default. |
+| Behavior confined to one feature | Run relevant type/compile checks and the smallest existing test files or cases covering the changed contract. |
+| Rust service or module | Run `just check-backend` and focused Cargo tests for the affected behavior. |
+| SQL queries, migrations, or persistence contracts | Follow the SQLx workflow above and run database validation and relevant backend/upgrade tests. |
+| Shared components, routing, public contracts, or test harness | Check affected consumers and run the relevant suites; run the full UI suite when the impact spans the renderer or UI harness. |
+| Dependencies, production build configuration, or broad frontend changes | Run type checks and `npm run build`, plus affected suites. |
+| Native main/preload behavior, process lifecycle, or packaging | Build the current App with `just build` and run relevant `tests/electron/` cases; use the full Electron suite for shared lifecycle or packaging changes. |
+
+Use existing runner filters for focused verification, for example
+`npm run test:ui -- tests/ui/keymap.spec.ts` or
+`npm run test:ui -- tests/ui/keymap.spec.ts -g 'Session shortcuts'`.
+For Rust, use `cargo test --manifest-path src/backend/Cargo.toml <test-filter>`.
+Check that the selected command actually discovered and ran the intended tests.
+
+Reserve `just check`, `just test`, and full packaging/lifecycle validation for
+cross-cutting changes, release/merge acceptance that warrants them, or an explicit
+user request. Explain the concrete impact that requires expanding validation;
+do not run every suite merely for reassurance. Final validation means completing
+all checks required by the accumulated scope, not automatically running every
+repository test.
+
+### Batch validation across conversation turns
+
+- Small, low-risk edits in the same session may accumulate across multiple turns.
+  Review each diff, but defer type checks, tests, builds, and screenshots until
+  the batch is ready. The user need not specify all edits in one message or ask
+  to defer tests on every turn.
+- Keep track of the accumulated affected features, pending checks, and checks
+  already passed. Briefly report deferred validation at each handoff; never
+  describe an untested change as verified. If context is handed off, preserve
+  this pending scope in the handoff.
+- Validate once the user asks to test, finalize, merge, or release, or when the
+  requested implementation is complete and no further iteration is indicated.
+  A conversation turn ending is not by itself a batch boundary. Do not leave
+  required checks deferred indefinitely or require a special phrase to finish.
+- Run a minimal relevant check immediately when its result is needed to guide a
+  fix or when a change affects data integrity, migrations, permissions, public
+  interfaces, or process lifecycle. Small diffs can still carry high risk.
+- After a check passes, repeat it only if subsequent edits affect what it
+  validated. After a local failure fix, rerun the failed case and affected
+  checks; do not automatically restart all previously passing suites.
+- A checkpoint commit alone does not require a full test run or turn deferred
+  checks into completed checks. Before final delivery or merge, complete the
+  applicable checks and report failures or verification gaps explicitly.
+
+### Visual verification threshold
+
+Simple copy, color, or small spacing adjustments do not require launching
+Electron or capturing screenshots. Use focused hidden Electron diagnostics and
+inspect representative screenshots only when there is a concrete risk such as
+text truncation, overflow, clipping, overlap, scroll reachability, overlay
+positioning/stacking, or a substantial layout change, or when the user requests
+visual verification. State the risk being checked and batch related visual
+changes into one pass. Code review and type checks are not visual acceptance.
 
 Do not use Computer Use or perform manual desktop acceptance unless explicitly
 requested. Automated Electron runs use isolated temporary homes. Report passed
@@ -297,7 +351,7 @@ Add or update an automated UI test only when the regression would change at leas
 - keyboard behavior or another accessibility semantic;
 - shared overlay reachability or occlusion behavior covered under the representative-overlay rules below.
 
-Do not add or update automated tests for presentation-only changes, including spacing, alignment, centering, dimensions, colors, typography, icon placement, animation names, static copy, or visual hierarchy. A useful test must survive a pure CSS refactor that preserves behavior and accessibility. Verify presentation changes with focused Playwright Electron diagnostics and screenshots. Inspect the current Treefold App only when the user explicitly requests manual App verification.
+Do not add or update automated tests for presentation-only changes, including spacing, alignment, centering, dimensions, colors, typography, icon placement, animation names, static copy, or visual hierarchy. A useful test must survive a pure CSS refactor that preserves behavior and accessibility. Apply the visual verification threshold above before running focused Playwright Electron diagnostics or screenshots. Inspect the current Treefold App only when the user explicitly requests manual App verification.
 
 Outside the representative overlay helper, automated tests must not assert exact pixels, element coordinates, computed CSS properties, DOM sibling order, or animation implementation details. Do not use `getLocation`, `getSize`, `getCSSProperty`, or `compareDocumentPosition` to encode visual design. Functional resize limits may assert the resulting persisted value, but not incidental page offsets.
 
