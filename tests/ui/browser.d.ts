@@ -7,6 +7,6 @@ declare global {
     __terminalControllerReady: boolean;
     __terminalSocketUrls: string[];
     __terminalSocketSends: string[];
-    __terminalReplay: { outputs: string[]; cursors: string[]; delivered: number };
+    __terminalReplay: { outputs: string[]; cursors: string[]; delivered: number; responses: string };
   }
 }

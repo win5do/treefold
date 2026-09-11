@@ -714,7 +714,7 @@ pub(super) fn apply_amux_process(session: &mut Session, process: amux::model::Pr
         strict_process_status(&format!("{:?}", process.state).to_ascii_lowercase()).into();
     session.exit_code = process.exit_code.map(Into::into);
     session.exit_signal = process.exit_signal;
-    session.argv = process.command;
+    session.argv = crate::terminal::launch_gate::logical_command(&process.command);
 }
 
 pub(super) fn strict_process_status(status: &str) -> &'static str {
@@ -959,6 +959,7 @@ pub(super) async fn proxy_terminal(
     let Ok(session) = state.store.session(&id).await else {
         return;
     };
+    let launch_token = state.terminals.terminal_launch_token(&id);
     let Ok(Some(amux_socket)) = state
         .terminals
         .attach_existing(
@@ -975,11 +976,24 @@ pub(super) async fn proxy_terminal(
     let _ = state.store.touch_session(&id);
     let (mut front_tx, mut front_rx) = socket.split();
     let (mut back_tx, mut back_rx) = amux_socket.split();
+    let controls_terminal = std::sync::atomic::AtomicBool::new(false);
     let front_to_back = async {
         while let Some(message) = front_rx.next().await {
             let message = match message {
                 Ok(Message::Binary(data)) => tokio_tungstenite::tungstenite::Message::Binary(data),
                 Ok(Message::Text(text)) => {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+                        && value.get("type").and_then(|value| value.as_str())
+                            == Some("terminal_ready")
+                    {
+                        if controls_terminal.load(std::sync::atomic::Ordering::Acquire)
+                            && let Some(token) = launch_token.as_deref()
+                            && let Ok(size) = serde_json::from_value(value)
+                        {
+                            state.terminals.terminal_ready(&id, token, size);
+                        }
+                        continue;
+                    }
                     tokio_tungstenite::tungstenite::Message::Text(text.to_string().into())
                 }
                 Ok(Message::Ping(data)) => tokio_tungstenite::tungstenite::Message::Ping(data),
@@ -997,6 +1011,16 @@ pub(super) async fn proxy_terminal(
             let message = match message {
                 Ok(tokio_tungstenite::tungstenite::Message::Binary(data)) => Message::Binary(data),
                 Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
+                        && value.get("type").and_then(|value| value.as_str())
+                            == Some("ownership_state")
+                    {
+                        controls_terminal.store(
+                            value.get("state").and_then(|value| value.as_str())
+                                == Some("controller"),
+                            std::sync::atomic::Ordering::Release,
+                        );
+                    }
                     Message::Text(text.to_string().into())
                 }
                 Ok(tokio_tungstenite::tungstenite::Message::Ping(data)) => Message::Ping(data),

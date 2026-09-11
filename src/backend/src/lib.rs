@@ -20,3 +20,4 @@ mod runtime;
 
 pub use runtime::run;
 pub use runtime::{run_amux_daemon, run_amux_group_shim};
+pub use terminal::launch_gate::run as run_terminal_launch_gate;

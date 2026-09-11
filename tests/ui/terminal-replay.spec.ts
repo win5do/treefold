@@ -13,8 +13,8 @@ test("terminal preserves cleared screen and split ANSI state across Session swit
     await page.addInitScript((sessionId) => {
       window.__terminalReplay = {
         // Larger than the former byte-tail limit, with state at the beginning.
-        outputs: ["\x1b[2J\x1b[HBefore clear" + "\x1b[0m".repeat(20_000)],
-        cursors: [], delivered: 0,
+        outputs: ["\x1b]10;?\x1b\\\x1b]11;?\x1b\\\x1b[2J\x1b[HBefore clear" + "\x1b[0m".repeat(20_000)],
+        cursors: [], delivered: 0, responses: "",
       };
       class ReplaySocket extends EventTarget {
         static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
@@ -27,12 +27,15 @@ test("terminal preserves cleared screen and split ANSI state across Session swit
         onerror: ((event: Event) => void) | null = null;
         target: boolean;
         clientId: string | null;
+        cursor: string | null;
+        prepared = false;
         constructor(value: string | URL) {
           super();
           const url = new URL(value);
           this.clientId = url.searchParams.get("input_client_id");
           this.target = url.pathname.includes(sessionId);
           const cursor = url.searchParams.get("after_output_sequence");
+          this.cursor = cursor;
           setTimeout(() => {
             if (this.readyState !== 0) return;
             this.readyState = 1;
@@ -40,9 +43,6 @@ test("terminal preserves cleared screen and split ANSI state across Session swit
             if (this.target) {
               window.__terminalReplay.cursors.push(cursor ?? "missing");
               this.control({ type: "output_cursor", sequence: cursor ?? "0" });
-              window.__terminalReplay.outputs.forEach((output, index) => {
-                if (index + 1 > Number(cursor ?? 0)) this.output(index + 1, output);
-              });
             }
             this.control({ type: "ownership_state", state: "controller" });
           }, 0);
@@ -60,7 +60,14 @@ test("terminal preserves cleared screen and split ANSI state across Session swit
         }
         send(value: string) {
           const message = JSON.parse(value);
+          if (message.type === "terminal_ready" && this.target && !this.prepared) {
+            this.prepared = true;
+            window.__terminalReplay.outputs.forEach((output, index) => {
+              if (index + 1 > Number(this.cursor ?? 0)) this.output(index + 1, output);
+            });
+          }
           if (message.type !== "input") return;
+          window.__terminalReplay.responses += atob(message.data);
           this.control({ type: "input_ack", client_id: this.clientId, sequence: message.sequence });
           if (this.target && atob(message.data) === "\x0c") {
             // Simulate the application's Ctrl+L repaint, then detach mid-SGR.
@@ -76,6 +83,7 @@ test("terminal preserves cleared screen and split ANSI state across Session swit
     }, FIXTURE_IDS.workspaceCodex);
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}/sessions/${FIXTURE_IDS.workspaceCodex}`);
     await expect.poll(() => page!.evaluate(() => window.__terminalReplay.delivered)).toBe(1);
+    await expect.poll(() => page!.evaluate(() => window.__terminalReplay.responses)).toMatch(/\x1b\]11;rgb:[0-9a-f]+\/[0-9a-f]+\/[0-9a-f]+/i);
     await page.locator(".xterm-helper-textarea").press("Control+l");
     await expect.poll(() => page!.evaluate(() => window.__terminalReplay.delivered)).toBe(3);
 

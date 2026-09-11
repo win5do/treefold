@@ -201,11 +201,19 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
             if (message.type === "ownership_state" && message.state === "controller") {
               runtime.ownership = "controller";
               setOwnership("controller");
-              inputPaused = inputQueue.shouldPauseStdin;
-              terminal.options.disableStdin = inputPaused;
+              inputPaused = true;
+              terminal.options.disableStdin = true;
               sendResize(candidate, true);
-              flushInput();
-              terminal.focus();
+              // Drain replay into xterm before allowing a waiting Codex to
+              // start its short terminal capability probe window.
+              terminal.write("", () => {
+                if (disposed || socket !== candidate || runtime.ownership !== "controller" || candidate.readyState !== WebSocket.OPEN) return;
+                inputPaused = inputQueue.shouldPauseStdin;
+                terminal.options.disableStdin = inputPaused;
+                candidate.send(JSON.stringify({ type: "terminal_ready", rows: terminal.rows, cols: terminal.cols }));
+                flushInput();
+                terminal.focus();
+              });
             }
             if (message.type === "ownership_state" && message.state === "readonly") {
               runtime.ownership = "readonly";

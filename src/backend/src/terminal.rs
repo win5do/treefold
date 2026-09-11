@@ -28,6 +28,7 @@ use tokio_tungstenite::WebSocketStream;
 use crate::{DEFAULT_API_URL, model::Session};
 
 const REPLAY_BYTES: usize = 64 * 1024;
+pub(crate) mod launch_gate;
 type ProcessStateMap = Arc<tokio::sync::RwLock<BTreeMap<String, (ProcessView, Option<String>)>>>;
 const SETUP_SHELL_WRAPPER: &str = r#"set +e
 "$SHELL" -lc "$TREEFOLD_SETUP_COMMAND"
@@ -51,6 +52,7 @@ pub struct TerminalManager {
     amux_socket: Arc<PathBuf>,
     treefold_home: Arc<Option<PathBuf>>,
     bundled_bin_dir: Arc<Option<PathBuf>>,
+    launch_gates: launch_gate::LaunchGates,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +124,7 @@ impl TerminalManager {
             api_url: Arc::new(DEFAULT_API_URL.into()),
             treefold_home: Arc::new(None),
             bundled_bin_dir: Arc::new(None),
+            launch_gates: launch_gate::LaunchGates::default(),
         }
     }
 
@@ -367,6 +370,11 @@ impl TerminalManager {
                 session.initial_prompt.clone(),
             );
         }
+        let command = if session.kind == "codex" {
+            self.launch_gates.prepare(&session.id, command)?
+        } else {
+            command
+        };
         let bytes = self
             .client
             .do_json(
@@ -388,8 +396,28 @@ impl TerminalManager {
                     initial_cols: 120,
                 }),
             )
-            .await?;
+            .await;
+        let bytes = match bytes {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                self.launch_gates.cancel(&session.id);
+                return Err(error);
+            }
+        };
         response_process(&bytes)
+    }
+
+    pub fn terminal_launch_token(&self, id: &str) -> Option<PathBuf> {
+        self.launch_gates.token(id)
+    }
+
+    pub fn terminal_ready(
+        &self,
+        id: &str,
+        token: &std::path::Path,
+        size: launch_gate::TerminalSize,
+    ) {
+        self.launch_gates.ready(id, token, size);
     }
 
     pub fn workspace_name(root_dir: &str) -> String {
@@ -443,6 +471,7 @@ impl TerminalManager {
     }
 
     pub async fn stop_existing(&self, workspace: &str, process: &str) -> anyhow::Result<bool> {
+        self.launch_gates.cancel(process);
         let Some(current) = self.inspect_existing(workspace, process).await? else {
             return Ok(false);
         };
@@ -545,7 +574,7 @@ pub(crate) fn treefold_process_view(
             .is_some_and(|value| !value.is_empty()),
         workspace_name: view.workspace_name.clone(),
         name: process.name.clone(),
-        command: process.command.clone(),
+        command: launch_gate::logical_command(&process.command),
         cwd: process.cwd.clone(),
         io_mode: format!("{:?}", process.io_mode).to_ascii_lowercase(),
         state: process_state_name(&process.state).into(),
@@ -606,6 +635,7 @@ impl Default for TerminalManager {
             amux_socket: Arc::new(root.join("amuxd.sock")),
             treefold_home: Arc::new(None),
             bundled_bin_dir: Arc::new(None),
+            launch_gates: launch_gate::LaunchGates::default(),
         }
     }
 }
@@ -625,7 +655,11 @@ fn process_path(target: &str, action: &str) -> String {
 fn response_process(bytes: &[u8]) -> anyhow::Result<Process> {
     serde_json::from_slice::<Response>(bytes)?
         .process
-        .map(|view| view.process)
+        .map(|view| {
+            let mut process = view.process;
+            process.command = launch_gate::logical_command(&process.command);
+            process
+        })
         .ok_or_else(|| anyhow!("amux response did not include a process"))
         .context("decode amux process response")
 }
