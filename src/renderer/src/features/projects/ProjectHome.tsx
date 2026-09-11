@@ -242,15 +242,10 @@ export function ProjectHome({
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={
-                        busy ||
-                        (session.kind === "codex" &&
-                          session.visibility !== "visible" &&
-                          !session.codex_session_id)
-                      }
+                      disabled={busy}
                       onClick={() => onOpenSession(session)}
                     >
-                      {session.visibility === "visible" ? "Open" : "Resume"}
+                      Open
                     </Button>
                   )}
                   <RemoveSessionButton session={session} disabled={busy} />

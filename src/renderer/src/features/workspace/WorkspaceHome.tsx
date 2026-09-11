@@ -98,11 +98,6 @@ export function WorkspaceHome({
       setTodoBusy(false);
     }
   };
-  const actionLabel = (session: Session) => {
-    if (session.visibility !== "visible" && session.kind === "codex")
-      return session.status === "running" ? "Show in sidebar" : "Open";
-    return "Open";
-  };
   const displayStatus = (session: Session) => {
     if (
       session.visibility !== "visible" &&
@@ -577,7 +572,6 @@ export function WorkspaceHome({
             <span className="text-right">Actions</span>
           </div>
           {sessions.map((session) => {
-            const label = actionLabel(session);
             return (
               <div
                 key={session.id}
@@ -634,19 +628,14 @@ export function WorkspaceHome({
                   {session.cwd}
                 </code>
                 <div className="flex items-center justify-end gap-1">
-                  {label && detail.status === "active" && (
+                  {detail.status === "active" && (
                     <Button
                       size="sm"
                       variant="secondary"
-                      disabled={
-                        busy ||
-                        (session.kind === "codex" &&
-                          session.visibility !== "visible" &&
-                          !session.codex_session_id)
-                      }
+                      disabled={busy}
                       onClick={() => onOpen(session)}
                     >
-                      {label}
+                      Open
                     </Button>
                   )}
                   <RemoveSessionButton session={session} disabled={busy} />

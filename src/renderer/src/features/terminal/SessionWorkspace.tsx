@@ -43,7 +43,7 @@ function StoppedSession({ session, busy, onRestart }: { session: Session; busy: 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-medium">Session is {session.status}</p>
           <Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}>
-            <RotateCcw data-icon="inline-start" />Restart
+            <RotateCcw data-icon="inline-start" />Resume
           </Button>
         </div>
         <dl className="mt-4 grid min-w-0 gap-3 text-xs">

@@ -1261,9 +1261,9 @@ test("sidebar.core", async () => {
       "archived Project details must not expose location edits",
     );
     assert.equal(
-      await (archivedProjectPage.locator("button:text-is(\"Resume\")")).count().then(count => count > 0),
+      await archivedProjectPage.locator('[data-testid^="project-session-"]').getByRole("button", { name: "Open", exact: true }).count().then(count => count > 0),
       false,
-      "archived Project details must not resume Sessions",
+      "archived Project details must not open Sessions",
     );
     await (page.locator('[data-testid="breadcrumb-projects"]')).click();
     overviewRow = page.locator('[data-testid="project-overview-row"]');
@@ -2331,4 +2331,3 @@ test("sidebar.core", async () => {
   }
 
 });
-

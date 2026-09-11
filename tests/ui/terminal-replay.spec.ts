@@ -137,7 +137,7 @@ test("terminal preserves cleared screen and split ANSI state across Session swit
   }
 });
 
-test("a stopped Codex can copy its full command and retry Restart", async () => {
+test("a stopped Codex can copy its full command and resume", async () => {
   const command = ["codex", "-c", "developer_instructions=" + "Long runtime context. ".repeat(500)];
   const copied: string[] = [];
   const harness = await startUiHarness();
@@ -173,10 +173,10 @@ test("a stopped Codex can copy its full command and retry Restart", async () => 
     });
     await page.getByRole("button", { name: "Copy command", exact: true }).click();
     await expect.poll(() => copied).toEqual([command.join(" ")]);
-    const restart = page.getByTestId("session-terminal-state").getByRole("button", { name: "Restart", exact: true });
-    await expect(restart).toBeEnabled();
+    const resume = page.getByTestId("session-terminal-state").getByRole("button", { name: "Resume", exact: true });
+    await expect(resume).toBeEnabled();
     const request = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith(`/api/sessions/${FIXTURE_IDS.workspaceCodex}/restart`));
-    await restart.click();
+    await resume.click();
     await request;
     await expect(page.getByTestId(`sidebar-session-${FIXTURE_IDS.workspaceCodex}`).getByText("running", { exact: true })).toBeVisible();
     harness.assertNoUnexpectedRequests();
