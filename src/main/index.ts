@@ -35,8 +35,6 @@ function trusted(event: IpcMainInvokeEvent) {
   if (actual.protocol !== expected.protocol || actual.host !== expected.host) throw new Error('Untrusted desktop origin');
 }
 async function start() {
-  // Development runs inside Electron.app, whose bundle icon is not Treefold's.
-  if (!app.isPackaged && app.dock) app.dock.setIcon(path.join(root, 'build/icons/icon.png'));
   const resources = app.isPackaged ? process.resourcesPath : path.join(root, 'src/backend', 'bundle-staging');
   const bin = app.isPackaged ? path.join(resources, 'bin') : path.join(resources, 'dev-sidecars', 'bin');
   backend = new Backend({
