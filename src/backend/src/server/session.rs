@@ -426,7 +426,7 @@ pub(super) async fn restart_session(
     }
     state
         .terminals
-        .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
+        .prepare_restart(&session.amux_workspace_name, &session.amux_process_name)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
     let mut workspace = state.store.workspace(&session.workspace_id).await?;

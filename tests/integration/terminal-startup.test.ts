@@ -131,6 +131,22 @@ setTimeout(() => finish(false), 100);
     const recovered = await (await fetch(`${api}/api/sessions/${cancelled.id}`)).json();
     expect(recovered.codex_session_id).toBe(shutdownId);
     expect(recovered.status).toBe("stopped");
+
+    // The daemon is offline, but its persisted process still reserves this name.
+    // The very first Restart must remove that record after bringing amux online.
+    for (const socket of sockets) socket.close();
+    await expect.poll(async () => (await (await fetch(`${api}/api/amux`)).json()).running, { timeout: 15_000 }).toBe(false);
+    const resumed = await post(`/api/sessions/${session.id}/restart`);
+    expect(resumed.status).toBe("running");
+    expect(resumed.codex_session_id).toBe("managed-codex");
+    expect(resumed.argv).toContain("resume");
+    expect(resumed.argv).toContain("managed-codex");
+    expect(await exists(started)).toBe(false);
+    const resumedController = await attach("resumed-controller");
+    resumedController.socket.send(JSON.stringify({ type: "terminal_ready", rows: 33, cols: 99 }));
+    await expect.poll(() => exists(started)).toBe(true);
+    await post(`/api/sessions/${session.id}/stop`);
+
   } finally {
     for (const socket of sockets) socket.close();
     try {

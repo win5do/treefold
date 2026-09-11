@@ -491,6 +491,14 @@ impl TerminalManager {
         Ok(true)
     }
 
+    /// Restart must inspect persisted process names after the daemon is online.
+    /// Ordinary removal stays non-starting for Close and cleanup operations.
+    pub async fn prepare_restart(&self, workspace: &str, process_name: &str) -> anyhow::Result<()> {
+        self.ensure_runtime().await?;
+        self.remove_existing(workspace, process_name).await?;
+        Ok(())
+    }
+
     /// Removes a process only when its daemon already exists.
     pub async fn remove_existing(
         &self,
