@@ -1322,7 +1322,7 @@ function Workspace() {
           className={cn(
             "flex h-full min-w-0 flex-col",
             !resizingSidebar && "transition-[margin] duration-200",
-            sidebarHidden ? "md:ml-12" : "md:ml-[var(--sidebar-width)]",
+            sidebarHidden ? "md:ml-0" : "md:ml-[var(--sidebar-width)]",
           )}
         >
           {warning && (
