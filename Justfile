@@ -24,7 +24,15 @@ app-default-no-watch:
     TREEFOLD_HOME="{{ default-home }}" npm run dev:no-watch
 
 # Run TypeScript, database, and Rust checks.
-check: typecheck database-check check-backend
+check: actions-check typecheck database-check check-backend
+
+# Generate the Rust keymap declaration from the TypeScript action model.
+actions-generate:
+    npm run actions:generate
+
+# Ensure committed Rust action metadata matches its TypeScript source.
+actions-check:
+    npm run actions:check
 
 # Check application, tooling, and test TypeScript.
 typecheck:

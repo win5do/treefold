@@ -72,6 +72,11 @@ task runner but is optional.
   and avoid syntax requiring transformation. Node does not run type checks.
   `tsconfig.tools.json` checks direct Node entry points; `tsconfig.ui-tests.json`
   also resolves browser-only Vite imports inside UI-test callbacks.
+- Action metadata is declared in `src/renderer/src/features/actions/model/`.
+  After changing keymap declarations, run `just actions-generate` and commit the
+  generated `src/backend/src/keymap/action_definitions.rs`. `just actions-check`
+  (included in `just check`) detects drift. Rust builds consume the committed
+  module and do not execute Node.
 - Run `just app-dev` for hot reload with repository-local state under
   `.treefold-dev/`; use `just app-default` only when intentionally developing
   against `~/.treefold`.

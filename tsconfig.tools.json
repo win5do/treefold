@@ -21,6 +21,10 @@
   },
   "include": [
     "scripts/**/*.ts",
+    "src/renderer/src/features/actions/model/app.ts",
+    "src/renderer/src/features/actions/model/session.ts",
+    "src/renderer/src/features/actions/model/metadata.ts",
+    "src/renderer/src/features/actions/model/registry.ts",
     "tests/integration/**/*.ts",
     "tests/electron/**/*.ts",
     "src/preload/bridge.d.ts",

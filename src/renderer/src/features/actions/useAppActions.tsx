@@ -9,10 +9,15 @@ import type {
 import { keymapQuery } from "@/features/keymap/api";
 import { keyboardChord, shortcutOverlayOpen } from "@/features/keymap/keyboard";
 import { NewSessionDialog } from "@/features/terminal/NewSessionDialog";
-import { sessionActions } from "@/features/terminal/sessionActions";
+import { sessionActionHandlers } from "@/features/terminal/sessionActions";
+import { appActionHandlers } from "@/features/app/actions";
 import { toast } from "@/lib/toast";
 import { CommandPalette } from "./CommandPalette";
-import type { ActionContext, ActionInvocation, AppAction } from "./model";
+import {
+  bindActions,
+  type ActionContext,
+  type ActionInvocation,
+} from "./model";
 
 type Scope = {
   project: ProjectDetail | null;
@@ -69,75 +74,38 @@ export function useAppActions(scope: Scope) {
                 ? "project"
                 : "global",
       });
-      const globalActions: AppAction[] = [
-        {
-          id: "app.settings.open",
-          name: "Open Settings",
-          scope: "global",
-          available: () => true,
-          run: actions.global.settings,
-        },
-        {
-          id: "app.projects.open",
-          name: "Open Projects",
-          scope: "global",
-          available: () => true,
-          run: () => actions.navigate("/projects"),
-        },
-        {
-          id: "app.leftSidebar.toggle",
-          name: "Toggle Left Sidebar",
-          scope: "global",
-          available: () => true,
-          run: actions.global.toggleLeftSidebar,
-        },
-        {
-          id: "app.rightSidebar.toggle",
-          name: "Toggle Right Sidebar",
-          scope: "global",
-          available: (context) => !!context.project,
-          run: actions.global.toggleRightSidebar,
-        },
-      ];
-      return {
+      const invocation: ActionInvocation = {
         context,
         returnFocus:
           document.activeElement instanceof HTMLElement
             ? document.activeElement
             : null,
-        actions: [
-          ...globalActions,
-          ...sessionActions(
+        actions: bindActions({
+          ...appActionHandlers({
+            ...actions.global,
+            navigate: actions.navigate,
+            openPalette: () => setPalette(invocation),
+          }),
+          ...sessionActionHandlers(
             {
               navigate: actions.navigate,
               close: actions.session.close,
               create: (captured) =>
-                setCreating({ context: captured, create: actions.session.create }),
+                setCreating({
+                  context: captured,
+                  create: actions.session.create,
+                }),
             },
             source.busy,
           ),
-        ],
+        }),
       };
+      return invocation;
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || shortcutOverlayOpen()) return;
       const chord = keyboardChord(event);
-      const paletteBinding = query.data?.commands.find(
-        (command) => command.id === "app.palette.open",
-      )?.binding;
-      if (!query.error && paletteBinding && chord === paletteBinding) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (!event.repeat) setPalette(capture());
-        return;
-      }
       const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        target.closest('input, textarea, [contenteditable="true"]') &&
-        !target.classList.contains("xterm-helper-textarea")
-      )
-        return;
       if (!query.data || query.error) return;
       const command = query.data.commands.find(
         (candidate) => candidate.binding === chord,
@@ -150,6 +118,13 @@ export function useAppActions(scope: Scope) {
           candidate.available(invocation.context),
       );
       if (!action) return;
+      if (
+        !action.allowInInput &&
+        target instanceof HTMLElement &&
+        target.closest('input, textarea, [contenteditable="true"]') &&
+        !target.classList.contains("xterm-helper-textarea")
+      )
+        return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (!event.repeat) action.run(invocation.context);

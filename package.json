@@ -7,6 +7,8 @@
   },
   "type": "module",
   "scripts": {
+    "actions:generate": "node scripts/generate-action-keymap.ts",
+    "actions:check": "node scripts/generate-action-keymap.ts --check",
     "dev": "electron-vite dev --watch",
     "dev:no-watch": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",

@@ -1,13 +1,17 @@
-import type { AppAction, ActionContext } from "@/features/actions/model";
+import type {
+  ActionHandlers,
+  SessionActionId,
+  ActionContext,
+} from "@/features/actions/model";
 
-export function sessionActions(
+export function sessionActionHandlers(
   handlers: {
     create: (context: ActionContext) => void;
     close: () => void;
     navigate: (path: string) => void;
   },
   busy: boolean,
-): AppAction[] {
+): ActionHandlers<SessionActionId> {
   const active = (context: ActionContext) =>
     !busy &&
     context.project?.status === "active" &&
@@ -35,38 +39,22 @@ export function sessionActions(
       `${context.workspace ? `/workspaces/${context.workspace.id}` : `/projects/${context.project!.id}`}/sessions/${next.id}`,
     );
   }
-  return [
-    {
-      id: "session.create.new",
-      name: "New Session",
-      scope: "session",
-      keymapId: "session.new",
+  return {
+    "session.create.new": {
       available: active,
       run: handlers.create,
     },
-    {
-      id: "session.lifecycle.close",
-      name: "Close Session",
-      scope: "session",
-      keymapId: "session.close",
+    "session.lifecycle.close": {
       available: (context) => active(context) && !!context.session,
       run: handlers.close,
     },
-    {
-      id: "session.navigate.next",
-      name: "Next Session",
-      scope: "session",
-      keymapId: "session.next",
+    "session.navigate.next": {
       available: (context) => active(context) && sessions(context).length > 0,
       run: (context) => cycle(context, 1),
     },
-    {
-      id: "session.navigate.previous",
-      name: "Previous Session",
-      scope: "session",
-      keymapId: "session.previous",
+    "session.navigate.previous": {
       available: (context) => active(context) && sessions(context).length > 0,
       run: (context) => cycle(context, -1),
     },
-  ];
+  };
 }

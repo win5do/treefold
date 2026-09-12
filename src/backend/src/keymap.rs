@@ -11,13 +11,8 @@ use toml_edit::{DocumentMut, Item, Table, value};
 
 const KEYMAP_SCHEMA_VERSION: u32 = 1;
 
-const COMMANDS: [(&str, &str, &str); 5] = [
-    ("session.new", "New Session", "super+t"),
-    ("session.close", "Close Session", "super+w"),
-    ("session.next", "Next Session", "ctrl+tab"),
-    ("session.previous", "Previous Session", "ctrl+shift+tab"),
-    ("app.palette.open", "Command Palette", "super+shift+p"),
-];
+mod action_definitions;
+use action_definitions::COMMANDS;
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
 pub enum Binding {
@@ -140,7 +135,7 @@ fn parse(contents: &str) -> anyhow::Result<Keymap> {
     }
     let mut chords = BTreeMap::new();
     let mut commands = vec![];
-    for (id, label, default_binding) in COMMANDS {
+    for &(id, label, default_binding) in COMMANDS {
         let binding = file
             .bindings
             .get(id)

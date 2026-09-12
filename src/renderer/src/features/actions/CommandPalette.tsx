@@ -16,15 +16,7 @@ import {
 } from "@/components/ui/command";
 import { displayedChord } from "@/features/keymap/keyboard";
 import type { Keymap } from "@/features/keymap/api";
-import type { ActionInvocation, ActionScope, AppAction } from "./model";
-
-const scopes: ActionScope[] = [
-  "global",
-  "project",
-  "workspace",
-  "fork",
-  "session",
-];
+import { actionScopes, type ActionInvocation, type AppAction } from "./model";
 export function CommandPalette({
   invocation,
   keymap,
@@ -67,10 +59,11 @@ export function CommandPalette({
           />
           <CommandList aria-label="Actions">
             <CommandEmpty>No actions found.</CommandEmpty>
-            {scopes.map((scope) => {
+            {actionScopes.map((scope) => {
               const actions = invocation.actions.filter(
                 (action) =>
                   action.scope === scope &&
+                  action.showInPalette !== false &&
                   action.available(invocation.context),
               );
               return (

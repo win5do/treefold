@@ -14,6 +14,7 @@
   },
   "include": [
     "tests/ui/**/*.ts",
+    "src/renderer/src/features/actions/model/**/*.ts",
     "src/preload/bridge.d.ts",
     "src/renderer/src/vite-env.d.ts",
     "src/renderer/src/domain/types.ts",
