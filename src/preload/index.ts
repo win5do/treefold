@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopBridge } from './bridge';
 const bridge: DesktopBridge = {
 
+  listOpenInApps: () => ipcRenderer.invoke('treefold:open-in-apps'),
+  openInApp: (id, directory) => ipcRenderer.invoke('treefold:open-in-app', id, directory),
   apiUrl: () => ipcRenderer.invoke('treefold:api-url'),
   openDirectory: options => ipcRenderer.invoke('treefold:open-directory', { title: options?.title }),
   log: (level, message) => ipcRenderer.invoke('treefold:log', level, message),

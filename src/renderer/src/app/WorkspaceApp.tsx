@@ -727,12 +727,6 @@ function Workspace() {
     }
   }
 
-  async function openInFinder(project: ProjectDetail, stream?: Workspace) {
-    await act(() =>
-      stream ? workspacesApi.reveal(stream.id) : projectsApi.reveal(project.id),
-    );
-  }
-
   async function rename(
     target: RenameTarget,
     name: string,
@@ -1268,9 +1262,6 @@ function Workspace() {
           }
           onCreateBaseCodex={(project, directory) =>
             void createProjectCodex(project, directory)
-          }
-          onOpenInFinder={(project, stream) =>
-            void openInFinder(project, stream)
           }
           onSyncProject={(project, action) =>
             void gitSync("projects", project.id, action)

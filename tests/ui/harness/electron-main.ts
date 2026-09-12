@@ -1,3 +1,4 @@
+import { installOpenInFixture } from './open-in.ts';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 
@@ -7,6 +8,7 @@ const headed = process.env.TREEFOLD_TEST_HEADED === '1';
 if (process.platform === 'darwin' && !headed) app.setActivationPolicy('prohibited');
 app.setPath('userData', process.env.TREEFOLD_TEST_HOME!);
 app.whenReady().then(() => {
+  installOpenInFixture();
   ipcMain.handle('treefold:api-url', () => process.env.TREEFOLD_TEST_API_URL!);
   ipcMain.handle('treefold:open-directory', () => null);
   ipcMain.handle('treefold:log', () => {});

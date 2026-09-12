@@ -25,6 +25,7 @@
     "tests/electron/**/*.ts",
     "src/preload/bridge.d.ts",
     "src/main/backend.ts",
+    "src/main/open-in/**/*.ts",
     "playwright.config.ts"
   ],
   "exclude": [
