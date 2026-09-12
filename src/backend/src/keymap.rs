@@ -11,11 +11,12 @@ use toml_edit::{DocumentMut, Item, Table, value};
 
 const KEYMAP_SCHEMA_VERSION: u32 = 1;
 
-const COMMANDS: [(&str, &str, &str); 4] = [
+const COMMANDS: [(&str, &str, &str); 5] = [
     ("session.new", "New Session", "super+t"),
     ("session.close", "Close Session", "super+w"),
     ("session.next", "Next Session", "ctrl+tab"),
     ("session.previous", "Previous Session", "ctrl+shift+tab"),
+    ("app.palette.open", "Command Palette", "super+shift+p"),
 ];
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(untagged)]
@@ -242,6 +243,25 @@ impl KeymapStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn palette_binding_is_configurable_and_participates_in_conflicts() {
+        let defaults = parse("schema_version = 1\n").unwrap();
+        let palette = defaults
+            .commands
+            .iter()
+            .find(|command| command.id == "app.palette.open")
+            .unwrap();
+        assert_eq!(palette.binding, Binding::Shortcut("super+shift+p".into()));
+        assert!(
+            parse("schema_version = 1\n[bindings]\n\"session.new\" = \"cmd+shift+p\"\n").is_err()
+        );
+        let disabled =
+            parse("schema_version = 1\n[bindings]\n\"app.palette.open\" = false\n").unwrap();
+        assert_eq!(
+            disabled.commands.last().unwrap().binding,
+            Binding::Disabled(false)
+        );
+    }
     #[test]
     fn overrides_disable_reset_and_validation() {
         let home = std::env::temp_dir().join(format!("treefold-keymap-{}", uuid::Uuid::new_v4()));

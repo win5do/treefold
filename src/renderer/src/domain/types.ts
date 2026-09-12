@@ -519,6 +519,6 @@ export type BackgroundProcess = {
   finished_at?: string;
 };
 
-export type CommandId = "session.new" | "session.close" | "session.next" | "session.previous";
+export type CommandId = "session.new" | "session.close" | "session.next" | "session.previous" | "app.palette.open";
 export type KeymapCommand = { id: CommandId; label: string; default_binding: string; binding: string | false; source: "default" | "user" };
 export type Keymap = { schema_version: number; commands: KeymapCommand[] };

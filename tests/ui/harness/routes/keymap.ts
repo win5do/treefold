@@ -13,6 +13,7 @@ export function createKeymapRoutes({
     ["session.close", "Close Session", "super+w"],
     ["session.next", "Next Session", "ctrl+tab"],
     ["session.previous", "Previous Session", "ctrl+shift+tab"],
+    ["app.palette.open", "Command Palette", "super+shift+p"],
   ];
   const overrides: Record<string, string | false> = {};
   const snapshot = () =>

@@ -375,6 +375,7 @@ test("Keymap resets all bindings only after confirmation, including filtered com
         "session.close": null,
         "session.next": null,
         "session.previous": null,
+        "app.palette.open": null,
       },
     });
     await expect(dialog).toHaveCount(0);

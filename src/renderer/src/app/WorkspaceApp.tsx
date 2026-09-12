@@ -1,5 +1,5 @@
 import { useSettingsSave } from "@/features/settings/useSettingsSave";
-import { useSessionShortcuts } from "@/features/terminal/useSessionShortcuts";
+import { useAppActions } from "@/features/actions/useAppActions";
 import {
   lazy,
   Suspense,
@@ -1060,18 +1060,25 @@ function Workspace() {
     });
   }
 
-  const shortcutDialog = useSessionShortcuts({
+  const shortcutDialog = useAppActions({
     project: selectedProject, workspace, session: selectedSession, busy,
+    pathname: location.pathname,
     actions: {
       navigate,
-      close: () => {
-        if (!selectedSession) return;
-        if (workspace) void closeSidebarSession(workspace, selectedSession);
-        else if (selectedProject) void closeProjectSession(selectedProject, selectedSession);
+      global: {
+        settings: () => setSettingsOpen(true),
+        toggleSidebar: () => setSidebarHidden((hidden) => !hidden),
       },
-      create: (kind, directory) => {
-        if (workspace) void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory));
-        else if (selectedProject) void (kind === "shell" ? createProjectShell(selectedProject, directory) : createProjectCodex(selectedProject, directory));
+      session: {
+        close: () => {
+          if (!selectedSession) return;
+          if (workspace) void closeSidebarSession(workspace, selectedSession);
+          else if (selectedProject) void closeProjectSession(selectedProject, selectedSession);
+        },
+        create: (kind, directory) => {
+          if (workspace) void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory));
+          else if (selectedProject) void (kind === "shell" ? createProjectShell(selectedProject, directory) : createProjectCodex(selectedProject, directory));
+        },
       },
     },
   });
