@@ -41,6 +41,13 @@ test('packaged Electron loads Rust API, persists settings, and preserves close-t
     // Exercise the isolated preload-to-main bridge; mock only the native picker.
     await desktop.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ['/tmp/treefold-picker-test'] }); });
     assert.equal(await page.evaluate(() => window.treefoldDesktop!.openDirectory({ title: 'Test picker', directory: true, multiple: false })), '/tmp/treefold-picker-test');
+    const openInApps = await page.evaluate(() => window.treefoldDesktop!.listOpenInApps());
+    assert.ok(openInApps.some(app => app.id === 'finder'));
+    assert.ok(openInApps.some(app => app.id === 'terminal'));
+    assert.equal(new Set(openInApps.map(app => app.id)).size, openInApps.length);
+    // Verify the production IPC validation boundary without launching external applications.
+    await assert.rejects(page.evaluate(() => window.treefoldDesktop!.openInApp('untrusted-command', '/tmp')), /Unknown application/);
+    await assert.rejects(page.evaluate(() => window.treefoldDesktop!.openInApp('finder', 'relative-path')), /target directory/);
     await page.evaluate(() => window.treefoldDesktop!.log('info', 'desktop-smoke-log'));
     const desktopLog = await readFile(path.join(home, 'logs/desktop.log'), 'utf8');
     assert.match(desktopLog, /INFO \[renderer\] desktop-smoke-log/);

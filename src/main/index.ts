@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { mkdirSync } from 'node:fs';
 import { Backend } from './backend';
 import { createLog } from './log';
+import { listOpenInApps, openInApp } from './open-in/service';
 import { installNavigation } from './navigation';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
@@ -59,6 +60,8 @@ async function start() {
     if (!file.startsWith(assetRoot + path.sep)) return new Response('Forbidden', { status: 403 });
     return net.fetch(pathToFileURL(file).toString());
   });
+  ipcMain.handle('treefold:open-in-apps', event => { trusted(event); return listOpenInApps(); });
+  ipcMain.handle('treefold:open-in-app', (event, id, directory) => { trusted(event); return openInApp(id, directory); });
   ipcMain.handle('treefold:api-url', event => { trusted(event); return apiUrl; });
   ipcMain.handle('treefold:open-directory', async (event, options) => {
     trusted(event);

@@ -1,3 +1,4 @@
+import { OpenInMenu } from "@/features/open-in/OpenInMenu";
 import { useEffect, useRef, useState } from "react";
 import type * as React from "react";
 import { createPortal } from "react-dom";
@@ -79,7 +80,6 @@ export function WorkspaceSidebar({
   onCreateCodex,
   onCreateBaseShell,
   onCreateBaseCodex,
-  onOpenInFinder,
   onSyncProject,
   onSyncDirectory,
   onSyncWorkspace,
@@ -120,7 +120,6 @@ export function WorkspaceSidebar({
   onCreateCodex: (stream: Workspace, directory?: Directory) => void;
   onCreateBaseShell: (project: ProjectDetail, directory?: Directory) => void;
   onCreateBaseCodex: (project: ProjectDetail, directory?: Directory) => void;
-  onOpenInFinder: (project: ProjectDetail, stream?: Workspace) => void;
   onSyncProject: (project: ProjectDetail, action: "pull" | "push") => void;
   onSyncDirectory: (
     repository: ProjectRepository,
@@ -190,7 +189,6 @@ export function WorkspaceSidebar({
           ? onCreateCodex(stream, directory)
           : onCreateBaseCodex(project, directory)
       }
-      onOpenInFinder={() => onOpenInFinder(project, stream)}
       onSync={(targetId, action) => {
         if (!stream) {
           const repository = project.repositories.find(
@@ -595,7 +593,6 @@ function SidebarOwnerContextMenu({
   onCreateFork,
   onCreateShell,
   onCreateCodex,
-  onOpenInFinder,
   onSync,
   onRename,
   onFinish,
@@ -609,7 +606,6 @@ function SidebarOwnerContextMenu({
   onCreateFork: (stream: Workspace) => void;
   onCreateShell: (directory: Directory) => void;
   onCreateCodex: (directory: Directory) => void;
-  onOpenInFinder: () => void;
   onSync: (targetId: string | null, action: "pull" | "push") => void;
   onRename: () => void;
   onFinish: () => void;
@@ -795,10 +791,7 @@ function SidebarOwnerContextMenu({
               />
             </ContextMenuSubContent>
           </ContextMenuSub>
-          <ContextMenuItem onClick={onOpenInFinder}>
-            <FolderOpen />
-            {t("sidebar.openInFinder")}
-          </ContextMenuItem>
+          <OpenInMenu project={project} workspaceId={stream?.id} disabled={busy} />
           <ContextMenuItem data-testid="rename-node-action" onClick={onRename}>
             <Pencil />
             {t("sidebar.rename")}
