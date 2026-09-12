@@ -28,7 +28,8 @@ type Scope = {
     };
     global: {
       settings: () => void;
-      toggleSidebar: () => void;
+      toggleLeftSidebar: () => void;
+      toggleRightSidebar: () => void;
     };
   };
 };
@@ -84,11 +85,18 @@ export function useAppActions(scope: Scope) {
           run: () => actions.navigate("/projects"),
         },
         {
-          id: "app.sidebar.toggle",
-          name: "Toggle Sidebar",
+          id: "app.leftSidebar.toggle",
+          name: "Toggle Left Sidebar",
           scope: "global",
           available: () => true,
-          run: actions.global.toggleSidebar,
+          run: actions.global.toggleLeftSidebar,
+        },
+        {
+          id: "app.rightSidebar.toggle",
+          name: "Toggle Right Sidebar",
+          scope: "global",
+          available: (context) => !!context.project,
+          run: actions.global.toggleRightSidebar,
         },
       ];
       return {

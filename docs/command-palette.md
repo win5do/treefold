@@ -22,7 +22,10 @@ keys remain stable through `keymapId` mappings:
 | session.navigate.previous | session.previous |
 
 Global palette actions currently include `app.settings.open`, `app.projects.open`,
-and `app.sidebar.toggle`; these do not have assigned shortcuts.
+`app.leftSidebar.toggle`, and `app.rightSidebar.toggle`; these do not have assigned
+shortcuts. Left and right sidebars toggle independently. The right sidebar action
+is available only in a Project, Workspace, or Session context, matching the
+inspector's toolbar control.
 
 Opening the palette captures the current route, Project, Workspace (including
 Fork identity through `parent_workspace_id`), Session, Session directory, and

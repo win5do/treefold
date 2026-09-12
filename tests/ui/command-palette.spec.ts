@@ -83,6 +83,7 @@ test("palette searches global actions, restores focus, and honors keymap overrid
       exact: true,
     });
     await expect(palette).toBeVisible();
+    await expect(palette.getByRole("option", { name: "Toggle Right Sidebar", exact: true })).toHaveCount(0);
     await expect(
       palette.getByRole("option", { name: /New Session/ }),
     ).toHaveCount(0);
@@ -109,6 +110,37 @@ test("palette searches global actions, restores focus, and honors keymap overrid
     } finally {
       await harness.close();
     }
+  }
+});
+
+test("palette toggles left and right sidebars independently", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-sidebars" });
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    const right = page.getByTestId("right-sidebar");
+    await expect(right).toHaveAttribute("aria-hidden", "true");
+    async function toggle(name: string) {
+      await page!.keyboard.press("Meta+Shift+p");
+      const palette = page!.getByRole("dialog", { name: "Command Palette", exact: true });
+      await palette.getByRole("option", { name, exact: true }).click();
+      await expect(palette).toHaveCount(0);
+    }
+    await toggle("Toggle Left Sidebar");
+    await expect(page.getByRole("button", { name: "Show left sidebar", exact: true })).toBeVisible();
+    await expect(right).toHaveAttribute("aria-hidden", "true");
+    await toggle("Toggle Right Sidebar");
+    await expect(right).toHaveAttribute("aria-hidden", "false");
+    await expect(page.getByRole("button", { name: "Show left sidebar", exact: true })).toBeVisible();
+    await toggle("Toggle Left Sidebar");
+    await expect(page.getByRole("button", { name: "Hide left sidebar", exact: true })).toBeVisible();
+    await expect(right).toHaveAttribute("aria-hidden", "false");
+    await toggle("Toggle Right Sidebar");
+    await expect(right).toHaveAttribute("aria-hidden", "true");
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
   }
 });
 

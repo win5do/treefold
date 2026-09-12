@@ -1067,7 +1067,8 @@ function Workspace() {
       navigate,
       global: {
         settings: () => setSettingsOpen(true),
-        toggleSidebar: () => setSidebarHidden((hidden) => !hidden),
+        toggleLeftSidebar: () => setSidebarHidden((hidden) => !hidden),
+        toggleRightSidebar: () => setInspectorOpen((open) => !open),
       },
       session: {
         close: () => {
