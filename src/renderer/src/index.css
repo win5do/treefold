@@ -70,6 +70,21 @@ code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
   border-inline: 4px solid transparent;
   border-radius: 999px;
   background-clip: padding-box !important;
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+}
+
+.xterm[data-scrollbar-active] .xterm-scrollable-element > .scrollbar.vertical > .slider,
+.xterm .xterm-scrollable-element > .scrollbar.vertical:hover > .slider,
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
+  opacity: 1;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+    transition: none;
+  }
 }
 
 .location-list-dialog { max-width: min(94vw, 51.25rem); }

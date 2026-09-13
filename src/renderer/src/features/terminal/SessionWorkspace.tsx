@@ -14,6 +14,7 @@ import type { Session } from "@/domain/types";
 import { acceptOutputSequence, createTerminalRuntime, decodeSequencedOutput, type TerminalOwnership } from "@/features/terminal/runtime";
 import { discardTerminalSession, retainTerminalSession, takeTerminalSession } from "@/features/terminal/sessionCache";
 import { setupXtermIme229Workaround } from "@/features/terminal/xtermIme229Workaround";
+import { setupTerminalScrollbar } from "@/features/terminal/terminalScrollbar";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
@@ -114,6 +115,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       });
     }
     const disposeIme229Workaround = setupXtermIme229Workaround({ terminal, host });
+    const disposeScrollbar = setupTerminalScrollbar(terminal);
     const webgl = new WebglAddon();
     try { terminal.loadAddon(webgl); } catch { /* default renderer is fine */ }
     void document.fonts.load('13px "Pure Nerd Font"').then(() => {
@@ -314,6 +316,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       window.cancelAnimationFrame(resizeFrame);
       resizeObserver.disconnect();
       disposeIme229Workaround();
+      disposeScrollbar();
       input.dispose();
       socket?.close();
       webgl.dispose();
