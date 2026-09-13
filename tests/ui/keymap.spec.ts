@@ -175,7 +175,25 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await expect(
       dialog.getByRole("button", { name: "Shell", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
+    const directoryInput = dialog.getByLabel("目录", { exact: true });
+    await expect(directoryInput).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(dialog.getByRole("button", { name: "Agent", exact: true }))
+      .toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowRight");
+    await expect(dialog.getByRole("button", { name: "Shell", exact: true }))
+      .toHaveAttribute("aria-pressed", "true");
+    await dialog.getByRole("button", { name: "Shell", exact: true }).focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(dialog.getByRole("button", { name: "Agent", exact: true }))
+      .toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowRight");
+    await expect(dialog.getByRole("button", { name: "Shell", exact: true }))
+      .toHaveAttribute("aria-pressed", "true");
     await dialog.getByLabel("目录", { exact: true }).fill("fixture-api");
+    await directoryInput.press("ArrowLeft");
+    await expect(dialog.getByRole("button", { name: "Shell", exact: true }))
+      .toHaveAttribute("aria-pressed", "true");
     await page.screenshot({ path: "/tmp/treefold-new-session.png" });
     const creation = page.waitForRequest(
       (request) =>

@@ -94,8 +94,12 @@ export function NewSessionDialog({
           }}
           aria-label="Session 类型"
         >
-          <ToggleGroupItem value="codex">Agent</ToggleGroupItem>
-          <ToggleGroupItem value="shell">Shell</ToggleGroupItem>
+          <ToggleGroupItem value="codex" onFocus={() => setKind("codex")}>
+            Agent
+          </ToggleGroupItem>
+          <ToggleGroupItem value="shell" onFocus={() => setKind("shell")}>
+            Shell
+          </ToggleGroupItem>
         </ToggleGroup>
         <Field>
           <FieldLabel htmlFor="new-session-directory">目录</FieldLabel>
@@ -103,9 +107,23 @@ export function NewSessionDialog({
             autoFocus
             id="new-session-directory"
             value={search}
-            placeholder="搜索目录，↑↓ 选择，Enter 创建"
+            placeholder="←→ 切换类型，搜索目录，↑↓ 选择，Enter 创建"
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+              // Keep cursor movement intact once the user starts searching.
+              if (
+                !search &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.shiftKey &&
+                (event.key === "ArrowLeft" || event.key === "ArrowRight")
+              ) {
+                event.preventDefault();
+                setKind(kind === "shell" ? "codex" : "shell");
+                return;
+              }
               if (
                 event.key === "Enter" &&
                 !event.nativeEvent.isComposing &&
