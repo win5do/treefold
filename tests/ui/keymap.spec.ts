@@ -176,25 +176,44 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
       dialog.getByRole("button", { name: "Shell", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
     const directoryInput = dialog.getByLabel("目录", { exact: true });
+    const shellType = dialog.getByRole("button", { name: "Shell", exact: true });
+    const agentType = dialog.getByRole("button", { name: "Agent", exact: true });
+    const directories = dialog.getByRole("group", { name: "可用目录" });
+    await expect(shellType).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(agentType).toBeFocused();
+    await expect(agentType).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowRight");
+    await expect(shellType).toBeFocused();
+    await expect(shellType).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Tab");
     await expect(directoryInput).toBeFocused();
     await page.keyboard.press("ArrowLeft");
-    await expect(dialog.getByRole("button", { name: "Agent", exact: true }))
-      .toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("ArrowRight");
-    await expect(dialog.getByRole("button", { name: "Shell", exact: true }))
-      .toHaveAttribute("aria-pressed", "true");
-    await dialog.getByRole("button", { name: "Shell", exact: true }).focus();
-    await page.keyboard.press("ArrowLeft");
-    await expect(dialog.getByRole("button", { name: "Agent", exact: true }))
-      .toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("ArrowRight");
-    await expect(dialog.getByRole("button", { name: "Shell", exact: true }))
-      .toHaveAttribute("aria-pressed", "true");
-    await dialog.getByLabel("目录", { exact: true }).fill("fixture-api");
+    await expect(shellType).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Shift+Tab");
+    await expect(shellType).toBeFocused();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
+    const firstDirectory = await directories.getByRole("button", { pressed: true }).innerText();
+    await page.keyboard.press("ArrowDown");
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
+    expect(await directories.getByRole("button", { pressed: true }).innerText()).not.toBe(firstDirectory);
+    await page.keyboard.press("ArrowUp");
+    await expect(directories.getByRole("button", { pressed: true })).toHaveText(firstDirectory, { useInnerText: true });
+    await page.keyboard.press("Tab");
+    await expect(dialog.getByRole("button", { name: "创建 Session", exact: true })).toBeFocused();
+    await page.keyboard.press("Meta+f");
+    await expect(directoryInput).toBeFocused();
+    await directoryInput.fill("replace me");
+    await page.keyboard.press("Meta+f");
+    await page.keyboard.type("fixture-api");
+    await expect(directoryInput).toHaveValue("fixture-api");
     await directoryInput.press("ArrowLeft");
-    await expect(dialog.getByRole("button", { name: "Shell", exact: true }))
-      .toHaveAttribute("aria-pressed", "true");
-    await page.screenshot({ path: "/tmp/treefold-new-session.png" });
+    await expect(shellType).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("ArrowDown");
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
+    await expect(directoryInput).toHaveValue("fixture-api");
     const creation = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
@@ -202,7 +221,7 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
           .url()
           .endsWith(`/api/workspaces/${FIXTURE_IDS.workspace}/sessions`),
     );
-    await dialog.getByLabel("目录", { exact: true }).press("Enter");
+    await page.keyboard.press("Enter");
     const request = await creation;
     expect(request.postDataJSON()).toEqual({
       kind: "shell",

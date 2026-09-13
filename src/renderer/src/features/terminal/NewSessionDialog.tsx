@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Directory } from "@/domain/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,11 @@ export function NewSessionDialog({
   // Router transitions can settle just after the shortcut opens this dialog.
   const [chosenKind, setKind] = useState<"shell" | "codex" | null>(null);
   const kind = chosenKind ?? initialKind;
+  const typeRefs = useRef<
+    Partial<Record<"shell" | "codex", HTMLButtonElement | null>>
+  >({});
+  const searchRef = useRef<HTMLInputElement>(null);
+  const directoryRefs = useRef(new Map<string, HTMLButtonElement>());
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | undefined>();
   const filtered = useMemo(
@@ -62,24 +67,19 @@ export function NewSessionDialog({
       }}
     >
       <DialogContent
-        onKeyDown={(event) => {
+        initialFocus={() => typeRefs.current[kind] ?? null}
+        onKeyDownCapture={(event) => {
           if (event.nativeEvent.isComposing || event.keyCode === 229) return;
           if (
-            (event.key === "ArrowDown" || event.key === "ArrowUp") &&
-            event.target instanceof HTMLInputElement
+            event.metaKey &&
+            !event.altKey &&
+            !event.ctrlKey &&
+            event.key.toLowerCase() === "f"
           ) {
             event.preventDefault();
-            if (available.length)
-              setSelected(
-                available[
-                  (available.findIndex(
-                    (directory) => directory.id === active?.id,
-                  ) +
-                    (event.key === "ArrowDown" ? 1 : -1) +
-                    available.length) %
-                    available.length
-                ].id,
-              );
+            event.stopPropagation();
+            searchRef.current?.focus();
+            searchRef.current?.select();
           }
         }}
       >
@@ -92,36 +92,46 @@ export function NewSessionDialog({
           onValueChange={(values) => {
             if (values[0]) setKind(values[0] as "shell" | "codex");
           }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              if (active) directoryRefs.current.get(active.id)?.focus();
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              create();
+            }
+          }}
           aria-label="Session 类型"
         >
-          <ToggleGroupItem value="codex" onFocus={() => setKind("codex")}>
+          <ToggleGroupItem
+            ref={(node) => { typeRefs.current.codex = node; }}
+            value="codex"
+            onFocus={() => setKind("codex")}
+          >
             Agent
           </ToggleGroupItem>
-          <ToggleGroupItem value="shell" onFocus={() => setKind("shell")}>
+          <ToggleGroupItem
+            ref={(node) => { typeRefs.current.shell = node; }}
+            value="shell"
+            onFocus={() => setKind("shell")}
+          >
             Shell
           </ToggleGroupItem>
         </ToggleGroup>
         <Field>
           <FieldLabel htmlFor="new-session-directory">目录</FieldLabel>
           <Input
-            autoFocus
+            ref={searchRef}
             id="new-session-directory"
             value={search}
-            placeholder="←→ 切换类型，搜索目录，↑↓ 选择，Enter 创建"
+            placeholder="搜索目录（⌘ F）"
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-              // Keep cursor movement intact once the user starts searching.
-              if (
-                !search &&
-                !event.altKey &&
-                !event.ctrlKey &&
-                !event.metaKey &&
-                !event.shiftKey &&
-                (event.key === "ArrowLeft" || event.key === "ArrowRight")
-              ) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                 event.preventDefault();
-                setKind(kind === "shell" ? "codex" : "shell");
+                if (active) directoryRefs.current.get(active.id)?.focus();
                 return;
               }
               if (
@@ -139,6 +149,24 @@ export function NewSessionDialog({
           className="flex max-h-64 flex-col gap-1 overflow-y-auto"
           role="group"
           aria-label="可用目录"
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+              event.preventDefault();
+              if (!available.length) return;
+              const index = available.findIndex(
+                (directory) => directory.id === active?.id,
+              );
+              const next = available[
+                (index + (event.key === "ArrowDown" ? 1 : -1) + available.length) %
+                available.length
+              ];
+              directoryRefs.current.get(next.id)?.focus();
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              create();
+            }
+          }}
         >
           {filtered.map((directory) => {
             const disabled =
@@ -147,6 +175,12 @@ export function NewSessionDialog({
             return (
               <Button
                 key={directory.id}
+                ref={(node) => {
+                  if (node) directoryRefs.current.set(directory.id, node);
+                  else directoryRefs.current.delete(directory.id);
+                }}
+                tabIndex={active?.id === directory.id ? 0 : -1}
+                onFocus={() => setSelected(directory.id)}
                 variant={active?.id === directory.id ? "secondary" : "ghost"}
                 className="h-auto justify-start"
                 disabled={disabled}
