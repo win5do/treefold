@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Directory } from "@/domain/types";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +35,8 @@ export function NewSessionDialog({
     Partial<Record<"shell" | "codex", HTMLButtonElement | null>>
   >({});
   const searchRef = useRef<HTMLInputElement>(null);
+  const searchReturnFocus = useRef<HTMLElement | null>(null);
+  const restoreDirectoryFocus = useRef(false);
   const directoryRefs = useRef(new Map<string, HTMLButtonElement>());
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | undefined>();
@@ -59,10 +61,38 @@ export function NewSessionDialog({
   const create = () => {
     if (active) onCreate(kind, active);
   };
+  useLayoutEffect(() => {
+    if (!restoreDirectoryFocus.current) return;
+    restoreDirectoryFocus.current = false;
+    const target = active
+      ? directoryRefs.current.get(active.id)
+      : typeRefs.current[kind];
+    target?.focus();
+  }, [kind, active?.id]);
+  const leaveSearch = () => {
+    const previous = searchReturnFocus.current;
+    if (previous?.isConnected && !previous.matches(":disabled")) {
+      previous.focus();
+    } else {
+      (active ? directoryRefs.current.get(active.id) : null)?.focus();
+    }
+    if (document.activeElement === searchRef.current) {
+      typeRefs.current[kind]?.focus();
+    }
+  };
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
+      onOpenChange={(open, details) => {
+        if (
+          !open &&
+          details.reason === "escape-key" &&
+          document.activeElement === searchRef.current
+        ) {
+          details.cancel();
+          leaveSearch();
+          return;
+        }
         if (!open) onClose();
       }}
     >
@@ -126,6 +156,11 @@ export function NewSessionDialog({
             id="new-session-directory"
             value={search}
             placeholder="搜索目录（⌘ F）"
+            onFocus={(event) => {
+              if (event.relatedTarget instanceof HTMLElement) {
+                searchReturnFocus.current = event.relatedTarget;
+              }
+            }}
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -151,7 +186,11 @@ export function NewSessionDialog({
           aria-label="可用目录"
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+              event.preventDefault();
+              restoreDirectoryFocus.current = true;
+              setKind(kind === "shell" ? "codex" : "shell");
+            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               event.preventDefault();
               if (!available.length) return;
               const index = available.findIndex(

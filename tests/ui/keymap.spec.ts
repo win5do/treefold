@@ -196,6 +196,13 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await page.keyboard.press("Tab");
     await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
     const firstDirectory = await directories.getByRole("button", { pressed: true }).innerText();
+    await page.keyboard.press("ArrowLeft");
+    await expect(agentType).toHaveAttribute("aria-pressed", "true");
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
+    await expect(directories.getByRole("button", { pressed: true })).toHaveText(firstDirectory, { useInnerText: true });
+    await page.keyboard.press("ArrowRight");
+    await expect(shellType).toHaveAttribute("aria-pressed", "true");
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
     expect(await directories.getByRole("button", { pressed: true }).innerText()).not.toBe(firstDirectory);
@@ -209,11 +216,30 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await page.keyboard.press("Meta+f");
     await page.keyboard.type("fixture-api");
     await expect(directoryInput).toHaveValue("fixture-api");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "创建 Session", exact: true })).toBeFocused();
+    await expect(directoryInput).toHaveValue("fixture-api");
+    await page.keyboard.press("Meta+f");
     await directoryInput.press("ArrowLeft");
     await expect(shellType).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("ArrowDown");
     await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
     await expect(directoryInput).toHaveValue("fixture-api");
+    await page.keyboard.press("Meta+f");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await terminal(FIXTURE_IDS.workspaceShell).press("Meta+t");
+    await expect(shellType).toBeFocused();
+    await page.keyboard.press("Meta+f");
+    await page.keyboard.press("Escape");
+    await expect(shellType).toBeFocused();
+    await page.keyboard.press("Meta+f");
+    await directoryInput.fill("fixture-api");
+    await page.keyboard.press("ArrowDown");
     const creation = page.waitForRequest(
       (request) =>
         request.method() === "POST" &&
