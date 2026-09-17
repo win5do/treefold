@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiUrl } from "@/api/client";
 import type { Session } from "@/domain/types";
+import { linkifySessionOutput } from "@/features/terminal/sessionLinks";
 
 type LogRecord = {
   type?: string;
@@ -33,6 +34,7 @@ function decodeRecord(line: string, cursor: { value: string }, formatGap: (seque
 export function PipeLogSession({ session, busy, onRestart }: { session: Session; busy: boolean; onRestart: () => void }) {
   const { t } = useTranslation();
   const [output, setOutput] = useState("");
+  const linkedOutput = useMemo(() => linkifySessionOutput(output), [output]);
   const logRef = useRef<HTMLPreElement>(null);
   const followBottom = useRef(true);
   useEffect(() => {
@@ -98,6 +100,6 @@ export function PipeLogSession({ session, busy, onRestart }: { session: Session;
     <pre ref={logRef} role="log" aria-label={t("terminalUi.processOutput")} onScroll={(event) => {
       const element = event.currentTarget;
       followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;
-    }} className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-[13px] leading-5 text-terminal-foreground">{output}</pre>
+    }} className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-[13px] leading-5 text-terminal-foreground">{linkedOutput}</pre>
   </div>;
 }

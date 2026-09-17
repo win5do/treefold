@@ -17,6 +17,7 @@ import { discardTerminalSession, retainTerminalSession, takeTerminalSession } fr
 import { setupXtermIme229Workaround } from "@/features/terminal/xtermIme229Workaround";
 import { setupTerminalScrollbar } from "@/features/terminal/terminalScrollbar";
 import { PipeLogSession } from "@/features/terminal/PipeLogSession";
+import { openSessionLink } from "@/features/terminal/sessionLinks";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
@@ -106,7 +107,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       host.appendChild(terminal.element!);
     } else {
       terminal.loadAddon(fit);
-      terminal.loadAddon(new WebLinksAddon());
+      terminal.loadAddon(new WebLinksAddon(openSessionLink));
       terminal.open(host);
     }
     if (session.kind === "codex") {
