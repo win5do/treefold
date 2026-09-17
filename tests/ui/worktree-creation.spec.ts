@@ -10,6 +10,19 @@ for (const kind of ["workspace", "fork"] as const) {
     const requests: { branch: string; generated_branch: string }[] = [];
     try {
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: `create-${kind}` });
+      await page.addInitScript(() => {
+        const original = crypto.getRandomValues.bind(crypto);
+        let sequence = 0;
+        crypto.getRandomValues = ((array: Parameters<typeof crypto.getRandomValues>[0]) => {
+          if (array instanceof Uint8Array && array.length === 2) {
+            sequence += 1;
+            array[0] = sequence >>> 8;
+            array[1] = sequence & 255;
+            return array;
+          }
+          return original(array);
+        }) as typeof crypto.getRandomValues;
+      });
       const endpoint = kind === "workspace"
         ? `/api/projects/${FIXTURE_IDS.project}/workspaces`
         : `/api/workspaces/${FIXTURE_IDS.workspace}/forks`;

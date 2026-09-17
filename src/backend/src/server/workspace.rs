@@ -2154,6 +2154,7 @@ pub(super) fn managed_repository_source_path(
 }
 
 /// Resolve the Repository root for a Project Directory scope.
+#[cfg(test)]
 pub(super) async fn repository_root_for_directory(
     state: &AppState,
     directory_id: &str,

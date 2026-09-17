@@ -6,7 +6,7 @@ mod current_workspace_tests {
 
     use axum::{
         Json,
-        body::Body,
+        body::{Body, to_bytes},
         extract::{Query, State},
         http::{Request, StatusCode},
     };
@@ -15,15 +15,16 @@ mod current_workspace_tests {
     use super::{
         ApiJson, AppState, CloneProjectRepository, CreateDeliveryPreflight, CreateDirectory,
         CreateFork, CreateProject, CreateSession, CreateWorkspace, DeleteProject, FinishWorkspace,
-        RuntimeDomain, RuntimeHub, UpdateProject, UpdateWorkspaceRepository,
+        ParsedGitWorktree, RuntimeDomain, RuntimeHub, UpdateProject, UpdateWorkspaceRepository,
         abort_parent_operation_impl, app, clone_project_repository_impl, close_session,
         command_output, create_delivery_preflight_impl, create_directory, create_fork,
         create_project, create_project_session, create_session, create_workspace,
         create_workspace_repository_preflight_impl, delete_project, delete_project_directory,
         finish_workspace_impl, finish_workspace_repository_impl, get_project, git_head,
         git_is_ancestor, git_worktrees, managed_repository_source_path, normalized_path,
-        pull_workspace, push_workspace, reconcile_parent_operation, reconcile_process,
-        refresh_project_directory, repository_name_from_url, repository_slug,
+        parse_git_history, parse_git_worktrees, pull_workspace, push_workspace,
+        reconcile_parent_operation, reconcile_process, refresh_project_directory,
+        repository_name_from_url, repository_slug, reveal_in_file_manager, slug,
         start_parent_operation_impl, stop_amux, stop_session, undo_parent_operation_impl,
         update_project, update_workspace_repository,
     };
@@ -2595,64 +2596,69 @@ mod current_workspace_tests {
             "My-Repo"
         );
     }
-}
+    #[test]
+    fn slug_is_safe_for_worktree_paths() {
+        assert_eq!(slug("Desktop Migration / Rust"), "desktop-migration-rust");
+        assert_eq!(slug("你好"), "workspace");
+        assert!(slug(&"a".repeat(80)).len() <= 32);
+    }
 
-#[cfg(any())]
-mod tests {
-    use std::path::{Path, PathBuf};
+    #[test]
+    fn parses_git_worktree_porcelain_output() {
+        let output = "worktree /repo\nHEAD 1234567890abcdef\nbranch refs/heads/main\n\nworktree /repo-feature\nHEAD abcdef1234567890\ndetached";
+        assert_eq!(
+            parse_git_worktrees(output),
+            vec![
+                ParsedGitWorktree {
+                    path: "/repo".into(),
+                    branch: "main".into(),
+                    head_commit: "1234567890".into(),
+                    is_main: true,
+                },
+                ParsedGitWorktree {
+                    path: "/repo-feature".into(),
+                    branch: "detached HEAD".into(),
+                    head_commit: "abcdef1234".into(),
+                    is_main: false,
+                },
+            ]
+        );
+    }
 
-    use axum::{
-        Json,
-        body::{Body, to_bytes},
-        extract::State,
-        http::{Request, StatusCode},
-    };
-    use tower::ServiceExt;
+    #[test]
+    fn parses_git_history_records() {
+        let output = "f5377ee123456789\x1ff5377ee\x1fwin5do\x1f2026-08-07T11:17:00+08:00\x1fReplace Makefile with Justfile\x1e\n3cddb0b123456789\x1f3cddb0b\x1fwin5do\x1f2026-08-07T10:42:00+08:00\x1fReimplement amux runtime in Rust\x1e";
+        let commits = parse_git_history(output);
+        assert_eq!(commits.len(), 2);
+        assert_eq!(commits[0].short_hash, "f5377ee");
+        assert_eq!(commits[0].subject, "Replace Makefile with Justfile");
+        assert_eq!(commits[1].author, "win5do");
+        assert_eq!(commits[1].authored_at, "2026-08-07T10:42:00+08:00");
+    }
 
-    use super::{
-        ApiJson, AppState, CreateDeliveryPreflight, CreateFork, CreateProject, CreateSession,
-        CreateTodo, CreateWorkspace, DeleteProject, FinishWorkspace, ParsedGitWorktree,
-        UpdateProject, app, command_output, create_delivery_preflight_impl, create_fork,
-        create_project, create_project_session, create_session, create_todo, create_workspace,
-        delete_project, finish_workspace, finish_workspace_impl, git_head, git_is_ancestor,
-        git_worktrees, id_for_operation, normalized_path, parse_git_history, parse_git_worktrees,
-        rebase_in_progress, reveal_in_file_manager, slug, treefold_developer_instructions,
-        update_project,
-    };
-
-    use crate::{
-        model::{Directory, Session, Workspace},
-        settings::{AgentsSettingsPatch, CodexAgentSettingsPatch, SettingsPatch, SettingsStore},
-        store::{Store, now},
-        terminal::TerminalManager,
-    };
-
-    fn test_settings(home: &Path) -> SettingsStore {
-        SettingsStore::open(home).expect("open test settings")
+    #[test]
+    fn reveal_rejects_a_missing_path() {
+        let path =
+            std::env::temp_dir().join(format!("treefold-missing-reveal-{}", uuid::Uuid::new_v4()));
+        assert!(reveal_in_file_manager(&path.to_string_lossy()).is_err());
     }
 
     async fn agent_api_fixture() -> (PathBuf, AppState, Session, Session) {
         let root =
             std::env::temp_dir().join(format!("treefold-agent-api-test-{}", uuid::Uuid::new_v4()));
         let repository = root.join("repository");
-        let home = root.join("home");
-        std::fs::create_dir_all(&repository).expect("create agent API repository");
-        let state = AppState {
-            store: Store::open(&home.join("data"))
-                .await
-                .expect("open agent API store"),
-            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
-            settings: test_settings(&home),
-            terminals: TerminalManager::default(),
-            runtime: RuntimeHub::default(),
-            integration: crate::integration::IntegrationManager::test(&home),
-        };
+        initialize_repository(&repository);
+        let state = test_state(&root).await;
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
                 name: Some("Agent API".into()),
                 description: None,
-                path: repository.to_string_lossy().into_owned(),
+                path: Some(repository.to_string_lossy().into_owned()),
+                preferred_remote: None,
+                default_target_branch: None,
+                default_base_branch: Some("main".into()),
+                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -2665,8 +2671,9 @@ mod tests {
             ApiJson(CreateWorkspace {
                 generated_branch: None,
                 description: None,
-                checkout_mode: Some("in_place".into()),
-                target_branch: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
             }),
         )
         .await
@@ -2704,10 +2711,12 @@ mod tests {
         state
             .store
             .create_session(&first)
+            .await
             .expect("create first Session");
         state
             .store
             .create_session(&second)
+            .await
             .expect("create second Session");
         (root, state, first, second)
     }
@@ -2760,7 +2769,9 @@ mod tests {
         )
         .expect("decode current context");
         assert_eq!(value["session"]["id"], first.id);
-        assert_eq!(value["workspace"]["path"], first.cwd);
+        assert_eq!(value["session"]["cwd"], first.cwd);
+        assert_eq!(value["working_directory"]["path"], first.cwd);
+        assert_eq!(value["workspace"]["locations"][0]["path"], first.cwd);
         assert_eq!(value["runtime"]["type"], "amux");
         assert!(
             value["runtime"]["workspace"]
@@ -2874,1005 +2885,10 @@ mod tests {
             .expect("remove Todo");
         assert_eq!(removed.status(), StatusCode::OK);
         assert!(matches!(
-            state.store.todo(todo_id),
+            state.store.todo(todo_id).await,
             Err(crate::error::AppError::NotFound)
         ));
         drop(state);
         std::fs::remove_dir_all(root).expect("remove agent Todo fixture");
-    }
-
-    #[test]
-    fn reveal_rejects_a_missing_path() {
-        let path =
-            std::env::temp_dir().join(format!("treefold-missing-reveal-{}", uuid::Uuid::new_v4()));
-        assert!(reveal_in_file_manager(&path.to_string_lossy()).is_err());
-    }
-
-    #[tokio::test]
-    async fn project_archive_closes_sessions_and_is_required_before_delete() {
-        let root = std::env::temp_dir().join(format!(
-            "treefold-project-archive-test-{}",
-            uuid::Uuid::new_v4()
-        ));
-        let repository = root.join("repository");
-        let home = root.join("home");
-        std::fs::create_dir_all(&repository).expect("create Project directory");
-        let state = AppState {
-            store: Store::open(&home.join("data")).await.expect("open store"),
-            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
-            settings: test_settings(&home),
-            terminals: TerminalManager::default(),
-            runtime: RuntimeHub::default(),
-            integration: crate::integration::IntegrationManager::test(&home),
-        };
-        let (_, Json(project)) = create_project(
-            State(state.clone()),
-            ApiJson(CreateProject {
-                name: Some("Archive lifecycle".into()),
-                description: None,
-                path: repository.to_string_lossy().into_owned(),
-                directory_description: None,
-                directory_worktree_setup_command: None,
-            }),
-        )
-        .await
-        .expect("create Project");
-        let (_, Json(shell)) = create_project_session(
-            State(state.clone()),
-            axum::extract::Path(project.id.clone()),
-            ApiJson(CreateSession {
-                name: Some("Archive shell".into()),
-                kind: Some("shell".into()),
-                project_directory_id: None,
-                initial_prompt: None,
-            }),
-        )
-        .await
-        .expect("create Shell Session");
-        assert!(state.terminals.is_running(&shell.id).await);
-
-        let mut codex = shell.clone();
-        codex.id = uuid::Uuid::new_v4().simple().to_string();
-        codex.name = "Archive Codex".into();
-        codex.kind = "codex".into();
-        codex.codex_session_id = Some("archive-codex-session".into());
-        codex.amux_process_name = codex.id.clone();
-        codex.status = "exited".into();
-        codex.exit_code = Some(0);
-        codex.argv.clear();
-        state
-            .store
-            .create_session(&codex)
-            .expect("create retained Codex Session");
-
-        let Json(archived) = update_project(
-            State(state.clone()),
-            axum::extract::Path(project.id.clone()),
-            ApiJson(UpdateProject {
-                name: None,
-                description: None,
-                status: Some("archived".into()),
-                default_location_id: None,
-                default_base_branch: None,
-                default_delivery_mode: None,
-            }),
-        )
-        .await
-        .expect("archive Project");
-        assert_eq!(archived.status, "archived");
-        assert!(!state.terminals.is_running(&shell.id).await);
-        assert_eq!(
-            state
-                .store
-                .session(&shell.id)
-                .expect("read Shell")
-                .visibility,
-            "visible"
-        );
-        assert_eq!(
-            state
-                .store
-                .session(&shell.id)
-                .await
-                .expect("read Shell")
-                .status,
-            "stopped"
-        );
-        assert_eq!(
-            state
-                .store
-                .session(&codex.id)
-                .expect("read Codex")
-                .visibility,
-            "visible"
-        );
-        assert!(
-            update_project(
-                State(state.clone()),
-                axum::extract::Path(project.id.clone()),
-                ApiJson(UpdateProject {
-                    name: Some("Archived edit".into()),
-                    description: None,
-                    status: None,
-                    default_location_id: None,
-                    default_base_branch: None,
-                    default_delivery_mode: None,
-                }),
-            )
-            .await
-            .is_err()
-        );
-
-        let Json(restored) = update_project(
-            State(state.clone()),
-            axum::extract::Path(project.id.clone()),
-            ApiJson(UpdateProject {
-                name: None,
-                description: None,
-                status: Some("active".into()),
-                default_location_id: None,
-                default_base_branch: None,
-                default_delivery_mode: None,
-            }),
-        )
-        .await
-        .expect("restore Project");
-        assert_eq!(restored.status, "active");
-        assert_eq!(
-            state
-                .store
-                .session(&shell.id)
-                .expect("read Shell")
-                .visibility,
-            "visible"
-        );
-        assert!(
-            delete_project(
-                State(state.clone()),
-                axum::extract::Path(project.id.clone()),
-                Query(DeleteProject {
-                    cleanup_managed: false
-                }),
-            )
-            .await
-            .is_err()
-        );
-
-        let Json(_) = update_project(
-            State(state.clone()),
-            axum::extract::Path(project.id.clone()),
-            ApiJson(UpdateProject {
-                name: None,
-                description: None,
-                status: Some("archived".into()),
-                default_location_id: None,
-                default_base_branch: None,
-                default_delivery_mode: None,
-            }),
-        )
-        .await
-        .expect("archive Project before delete");
-        delete_project(
-            State(state.clone()),
-            axum::extract::Path(project.id),
-            Query(DeleteProject {
-                cleanup_managed: false,
-            }),
-        )
-        .await
-        .expect("delete archived Project");
-        assert!(
-            state
-                .store
-                .projects()
-                .await
-                .expect("list Projects")
-                .is_empty()
-        );
-        drop(state);
-        std::fs::remove_dir_all(root).expect("remove archive fixture");
-    }
-
-    struct RebaseFixture {
-        root: PathBuf,
-        repository: PathBuf,
-        home: PathBuf,
-        state: AppState,
-        workspace: Workspace,
-        fork: Workspace,
-    }
-
-    async fn rebase_fixture(label: &str) -> RebaseFixture {
-        let root =
-            std::env::temp_dir().join(format!("treefold-rebase-{label}-{}", uuid::Uuid::new_v4()));
-        let repository = root.join("repository");
-        let home = root.join("home");
-        std::fs::create_dir_all(&repository).expect("create rebase repository");
-        command_output(Path::new(&repository), "git", &["init", "-b", "main"])
-            .expect("initialize rebase repository");
-        command_output(
-            Path::new(&repository),
-            "git",
-            &["config", "user.email", "treefold@example.test"],
-        )
-        .expect("configure rebase email");
-        command_output(
-            Path::new(&repository),
-            "git",
-            &["config", "user.name", "Treefold Test"],
-        )
-        .expect("configure rebase name");
-        std::fs::write(repository.join("shared.txt"), "initial\n")
-            .expect("write shared fixture file");
-        command_output(Path::new(&repository), "git", &["add", "."]).expect("stage rebase fixture");
-        command_output(Path::new(&repository), "git", &["commit", "-m", "initial"])
-            .expect("commit rebase fixture");
-
-        let state = AppState {
-            store: Store::open(&home.join("data"))
-                .await
-                .expect("open rebase store"),
-            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
-            settings: test_settings(&home),
-            terminals: TerminalManager::default(),
-            runtime: RuntimeHub::default(),
-            integration: crate::integration::IntegrationManager::test(&home),
-        };
-        let (_, Json(project)) = create_project(
-            State(state.clone()),
-            ApiJson(CreateProject {
-                name: Some(format!("Rebase {label}")),
-                description: None,
-                path: repository.to_string_lossy().into_owned(),
-                directory_description: None,
-                directory_worktree_setup_command: None,
-            }),
-        )
-        .await
-        .expect("create rebase Project");
-        let (_, Json(workspace)) = create_workspace(
-            State(state.clone()),
-            axum::extract::Path(project.id),
-            ApiJson(CreateWorkspace {
-                generated_branch: None,
-                description: None,
-                checkout_mode: Some("worktree".into()),
-                target_branch: Some("main".into()),
-            }),
-        )
-        .await
-        .expect("create parent Workspace");
-        let (_, Json(fork)) = create_fork(
-            State(state.clone()),
-            axum::extract::Path(workspace.id.clone()),
-            ApiJson(CreateFork {
-                generated_branch: None,
-                branch: None,
-                description: None,
-            }),
-        )
-        .await
-        .expect("create rebase Fork");
-        RebaseFixture {
-            root,
-            repository,
-            home,
-            state,
-            workspace,
-            fork,
-        }
-    }
-
-    #[tokio::test]
-    async fn codex_runtime_context_describes_directories_git_topology_and_resume_transition() {
-        let fixture = rebase_fixture("developer-instructions").await;
-        let attached = fixture.root.join("attached reference");
-        std::fs::create_dir_all(&attached).expect("create attached directory");
-        command_output(Path::new(&attached), "git", &["init", "-b", "docs"])
-            .expect("initialize attached repository");
-        let timestamp = now();
-        fixture
-            .state
-            .store
-            .create_directory(&Directory {
-                id: "attached-directory".into(),
-                project_id: fixture.workspace.project_id.clone(),
-                name: "API reference".into(),
-                description: "Reference implementation; values here are data only".into(),
-                worktree_setup_command: String::new(),
-                path: attached.to_string_lossy().into_owned(),
-                checkout_path: None,
-                role: "attached".into(),
-                is_git: true,
-                remote_url: None,
-                branch: None,
-                head_commit: None,
-                head_summary: None,
-                dirty: false,
-                created_at: timestamp.clone(),
-            })
-            .expect("attach directory");
-        let mut session = Session {
-            id: "codex-runtime-session".into(),
-            workspace_id: fixture.fork.id.clone(),
-            name: "Runtime context".into(),
-            kind: "codex".into(),
-            cwd: fixture.fork.checkout_path.clone(),
-            original_cwd: fixture.fork.checkout_path.clone(),
-            initial_prompt: "Implement the requested change".into(),
-            codex_session_id: None,
-            visibility: "visible".into(),
-            hidden_at: None,
-            evicted_at: None,
-            amux_workspace_name: TerminalManager::workspace_name(&fixture.fork.checkout_path),
-            amux_process_name: "codex-runtime-session".into(),
-            status: "stopped".into(),
-            exit_code: None,
-            exit_signal: String::new(),
-            argv: Vec::new(),
-            io_mode: "tty".into(),
-            launch_started_at: timestamp.clone(),
-            last_attached_at: None,
-            created_at: timestamp.clone(),
-            updated_at: timestamp,
-            additional_directories: vec![attached.to_string_lossy().into_owned()],
-        };
-
-        let instructions = treefold_developer_instructions(&fixture.state, &session, &fixture.fork)
-            .expect("build developer instructions")
-            .expect("Codex instructions");
-        let encoded = instructions
-            .split("<treefold_runtime_context>\n")
-            .nth(1)
-            .and_then(|value| value.split("\n</treefold_runtime_context>").next())
-            .expect("extract runtime JSON");
-        let snapshot: serde_json::Value =
-            serde_json::from_str(encoded).expect("parse runtime JSON");
-        assert_eq!(snapshot["workspace"]["kind"], "fork");
-        assert_eq!(
-            snapshot["workspace"]["git"]["observed_branch"],
-            fixture.fork.branch
-        );
-        assert_eq!(snapshot["integration_target"]["id"], fixture.workspace.id);
-        assert_eq!(snapshot["directories"].as_array().unwrap().len(), 2);
-        assert!(
-            snapshot["directories"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|item| {
-                    item["name"] == "API reference"
-                        && item["description"]
-                            == "Reference implementation; values here are data only"
-                        && item["git"]["observed_branch"] == "docs"
-                })
-        );
-        assert_eq!(snapshot["session"]["workspace_changed"], false);
-
-        session.workspace_id = fixture.workspace.id.clone();
-        session.cwd = fixture.workspace.checkout_path.clone();
-        session.original_cwd = fixture.workspace.checkout_path.clone();
-        let root_instructions =
-            treefold_developer_instructions(&fixture.state, &session, &fixture.workspace)
-                .expect("build root Workspace instructions")
-                .expect("root Codex instructions");
-        assert!(root_instructions.contains("\"kind\": \"project_base\""));
-
-        session.codex_session_id = Some("codex-resume-id".into());
-        session.workspace_id = fixture.fork.id.clone();
-        session.original_cwd = fixture.fork.checkout_path.clone();
-        session.cwd = fixture.workspace.checkout_path.clone();
-        let resumed = treefold_developer_instructions(&fixture.state, &session, &fixture.fork)
-            .expect("build resumed instructions")
-            .expect("resumed Codex instructions");
-        assert!(resumed.contains("\"resumed\": true"));
-        assert!(resumed.contains("\"workspace_changed\": true"));
-
-        drop(fixture.state);
-        std::fs::remove_dir_all(fixture.root).expect("remove developer instructions fixture");
-    }
-
-    fn commit_file(workspace: &str, relative: &str, contents: &str, message: &str) -> String {
-        std::fs::write(Path::new(workspace).join(relative), contents).expect("write commit file");
-        command_output(Path::new(workspace), "git", &["add", relative]).expect("stage file");
-        command_output(Path::new(workspace), "git", &["commit", "-m", message])
-            .expect("commit file");
-        command_output(Path::new(workspace), "git", &["rev-parse", "HEAD"])
-            .expect("read committed head")
-    }
-
-    fn recovery_ref_exists(repository: &Path, recovery_ref: &str) -> bool {
-        command_output(repository, "git", &["show-ref", "--verify", recovery_ref]).is_ok()
-    }
-
-    #[test]
-    fn slug_is_safe_for_worktree_paths() {
-        assert_eq!(slug("Desktop Migration / Rust"), "desktop-migration-rust");
-        assert_eq!(slug("你好"), "workspace");
-        assert!(slug(&"a".repeat(80)).len() <= 32);
-    }
-
-    #[test]
-    fn parses_git_worktree_porcelain_output() {
-        let output = "worktree /repo\nHEAD 1234567890abcdef\nbranch refs/heads/main\n\nworktree /repo-feature\nHEAD abcdef1234567890\ndetached";
-        assert_eq!(
-            parse_git_worktrees(output),
-            vec![
-                ParsedGitWorktree {
-                    path: "/repo".into(),
-                    branch: "main".into(),
-                    head_commit: "1234567890".into(),
-                    is_main: true,
-                },
-                ParsedGitWorktree {
-                    path: "/repo-feature".into(),
-                    branch: "detached HEAD".into(),
-                    head_commit: "abcdef1234".into(),
-                    is_main: false,
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn parses_git_history_records() {
-        let output = "f5377ee123456789\x1ff5377ee\x1fwin5do\x1f2026-08-07T11:17:00+08:00\x1fReplace Makefile with Justfile\x1e\n3cddb0b123456789\x1f3cddb0b\x1fwin5do\x1f2026-08-07T10:42:00+08:00\x1fReimplement amux runtime in Rust\x1e";
-        let commits = parse_git_history(output);
-        assert_eq!(commits.len(), 2);
-        assert_eq!(commits[0].short_hash, "f5377ee");
-        assert_eq!(commits[0].subject, "Replace Makefile with Justfile");
-        assert_eq!(commits[1].author, "win5do");
-        assert_eq!(commits[1].authored_at, "2026-08-07T10:42:00+08:00");
-    }
-
-    #[tokio::test]
-    async fn delivery_preflight_records_delivery_snapshot_and_rejects_stale_git_state() {
-        let fixture = rebase_fixture("delivery-preflight").await;
-        commit_file(
-            &fixture.fork.checkout_path,
-            "feature.txt",
-            "feature\n",
-            "feature commit",
-        );
-        let preflight = create_delivery_preflight_impl(
-            &fixture.state,
-            &fixture.fork.id,
-            &CreateDeliveryPreflight {
-                code_action: "merge".into(),
-            },
-        )
-        .expect("create delivery preflight");
-        assert_eq!(preflight.ahead, 1);
-        assert_eq!(preflight.commits.len(), 1);
-        assert_eq!(
-            fixture
-                .state
-                .store
-                .delivery_preflight(&preflight.id)
-                .expect("reload persisted preflight"),
-            preflight
-        );
-
-        commit_file(
-            &fixture.workspace.checkout_path,
-            "parent-after-preflight.txt",
-            "parent moved\n",
-            "move target after preflight",
-        );
-        let stale = finish_workspace_impl(
-            &fixture.state,
-            &fixture.fork.id,
-            &FinishWorkspace {
-                code_action: "merge".into(),
-                todo_action: "carry".into(),
-                keep_session_history: true,
-                delete_worktree: true,
-                delete_branch: true,
-                commit_message: None,
-                preflight_id: Some(preflight.id),
-            },
-            None,
-        )
-        .await
-        .expect_err("stale preflight must not settle");
-        assert!(stale.to_string().contains("preflight is stale"));
-        assert_eq!(
-            fixture
-                .state
-                .store
-                .workspace(&fixture.fork.id)
-                .expect("Fork remains active")
-                .status,
-            "active"
-        );
-
-        let root = fixture.root.clone();
-        drop(fixture);
-        std::fs::remove_dir_all(root).expect("remove delivery preflight fixture");
-    }
-
-    #[tokio::test]
-    async fn fork_delivery_merges_code_carries_todos_and_cleans_git_resources() {
-        let root =
-            std::env::temp_dir().join(format!("treefold-fork-flow-test-{}", uuid::Uuid::new_v4()));
-        let repository = root.join("repository");
-        let home = root.join("home");
-        std::fs::create_dir_all(&repository).expect("create repository");
-        command_output(Path::new(&repository), "git", &["init", "-b", "main"])
-            .expect("initialize repository");
-        command_output(
-            Path::new(&repository),
-            "git",
-            &["config", "user.email", "treefold@example.test"],
-        )
-        .expect("configure email");
-        command_output(
-            Path::new(&repository),
-            "git",
-            &["config", "user.name", "Treefold Test"],
-        )
-        .expect("configure name");
-        std::fs::write(repository.join("README.md"), "initial\n").expect("write initial file");
-        command_output(Path::new(&repository), "git", &["add", "."]).expect("stage initial");
-        command_output(Path::new(&repository), "git", &["commit", "-m", "initial"])
-            .expect("commit initial");
-
-        let state = AppState {
-            store: Store::open(&home.join("data")).await.expect("open store"),
-            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
-            settings: test_settings(&home),
-            terminals: TerminalManager::default(),
-            runtime: RuntimeHub::default(),
-            integration: crate::integration::IntegrationManager::test(&home),
-        };
-        state
-            .settings
-            .update(SettingsPatch {
-                agents: Some(AgentsSettingsPatch {
-                    codex: Some(CodexAgentSettingsPatch {
-                        extra_args: Some(vec![
-                            "--dangerously-bypass-approvals-and-sandbox".into(),
-                            "--search".into(),
-                        ]),
-                    }),
-                }),
-                ..SettingsPatch::default()
-            })
-            .expect("configure TOML-backed settings");
-        let setup_log = root.join("worktree-setup.log");
-        let setup_command = format!(
-            "test -n \"$PWD\" && printf '%s\\n' \"$PWD\" >> '{}'",
-            setup_log.to_string_lossy()
-        );
-        let (_, Json(project)) = create_project(
-            State(state.clone()),
-            ApiJson(CreateProject {
-                name: Some("Test Project".into()),
-                description: None,
-                path: repository.to_string_lossy().into_owned(),
-                directory_description: None,
-                directory_worktree_setup_command: Some(setup_command),
-            }),
-        )
-        .await
-        .expect("create project");
-        let (_, Json(workspace)) = create_workspace(
-            State(state.clone()),
-            axum::extract::Path(project.id.clone()),
-            ApiJson(CreateWorkspace {
-                generated_branch: None,
-                description: None,
-                checkout_mode: Some("worktree".into()),
-                target_branch: Some("main".into()),
-            }),
-        )
-        .await
-        .expect("create workspace");
-        assert!(Path::new(&workspace.checkout_path).starts_with(&home));
-        let (_, Json(fork)) = create_fork(
-            State(state.clone()),
-            axum::extract::Path(workspace.id.clone()),
-            ApiJson(CreateFork {
-                generated_branch: None,
-                branch: None,
-                description: None,
-            }),
-        )
-        .await
-        .expect("create fork");
-        assert_eq!(fork.kind, "fork");
-        assert_eq!(
-            fork.parent_workspace_id.as_deref(),
-            Some(workspace.id.as_str())
-        );
-        let setup_paths = std::fs::read_to_string(&setup_log)
-            .expect("read Worktree setup command output")
-            .lines()
-            .map(normalized_path)
-            .collect::<Vec<_>>();
-        assert_eq!(
-            setup_paths,
-            [
-                normalized_path(&workspace.checkout_path),
-                normalized_path(&fork.checkout_path)
-            ],
-            "Worktree setup command must run in every new managed workspace"
-        );
-        let directory = state
-            .store
-            .directory(&project.primary_directory_id)
-            .expect("read primary Directory");
-        let worktrees_before_failed_setup = git_worktrees(&directory.path)
-            .expect("list worktrees before failed setup")
-            .len();
-        state
-            .store
-            .update_directory(
-                &directory.id,
-                &directory.name,
-                &directory.description,
-                "printf 'setup failed' >&2; exit 23",
-                None,
-                None,
-            )
-            .expect("configure failing Worktree setup command");
-        let setup_error = create_workspace(
-            State(state.clone()),
-            axum::extract::Path(project.id.clone()),
-            ApiJson(CreateWorkspace {
-                generated_branch: None,
-                description: None,
-                checkout_mode: Some("worktree".into()),
-                target_branch: Some("main".into()),
-            }),
-        )
-        .await
-        .expect_err("failed Worktree setup must reject creation");
-        assert!(setup_error.to_string().contains("setup failed"));
-        assert_eq!(
-            git_worktrees(&directory.path)
-                .expect("list worktrees after failed setup")
-                .len(),
-            worktrees_before_failed_setup,
-            "failed Worktree setup must clean its worktree registration"
-        );
-        assert!(
-            create_fork(
-                State(state.clone()),
-                axum::extract::Path(fork.id.clone()),
-                ApiJson(CreateFork {
-                    generated_branch: None,
-                    branch: None,
-                    description: None,
-                }),
-            )
-            .await
-            .is_err()
-        );
-
-        let (_, Json(fork_shell)) = create_session(
-            State(state.clone()),
-            axum::extract::Path(fork.id.clone()),
-            ApiJson(CreateSession {
-                name: Some("Fork shell".into()),
-                kind: Some("shell".into()),
-                project_directory_id: None,
-                initial_prompt: None,
-            }),
-        )
-        .await
-        .expect("create Shell Session in Fork");
-        assert_eq!(fork_shell.workspace_id, fork.id);
-        assert_eq!(fork_shell.cwd, fork.checkout_path);
-        assert!(state.terminals.is_running(&fork_shell.id).await);
-
-        let _ = create_todo(
-            State(state.clone()),
-            axum::extract::Path(fork.id.clone()),
-            ApiJson(CreateTodo {
-                title: "Carry me".into(),
-                description: None,
-                session_id: None,
-            }),
-        )
-        .await
-        .expect("create Todo");
-        let timestamp = now();
-        let session = Session {
-            id: uuid::Uuid::new_v4().simple().to_string(),
-            workspace_id: fork.id.clone(),
-            name: "Archived Codex".into(),
-            kind: "codex".into(),
-            cwd: fork.checkout_path.clone(),
-            original_cwd: fork.checkout_path.clone(),
-            initial_prompt: "Continue the independent part".into(),
-            codex_session_id: Some("codex-session-for-resume".into()),
-            visibility: "visible".into(),
-            hidden_at: None,
-            evicted_at: None,
-            amux_workspace_name: TerminalManager::workspace_name(&fork.checkout_path),
-            amux_process_name: "archived-codex".into(),
-            status: "exited".into(),
-            exit_code: Some(0),
-            exit_signal: String::new(),
-            argv: vec!["codex".into()],
-            io_mode: "tty".into(),
-            launch_started_at: timestamp.clone(),
-            last_attached_at: None,
-            created_at: timestamp.clone(),
-            updated_at: timestamp,
-            additional_directories: Vec::new(),
-        };
-        state
-            .store
-            .create_session(&session)
-            .expect("create resumable session history");
-        std::fs::write(
-            Path::new(&fork.checkout_path).join("fork.txt"),
-            "fork work\n",
-        )
-        .expect("write fork change");
-
-        let fork_preflight = create_delivery_preflight_impl(
-            &state,
-            &fork.id,
-            &CreateDeliveryPreflight {
-                code_action: "merge".into(),
-            },
-        )
-        .expect("preflight Fork delivery");
-        assert!(fork_preflight.source_dirty);
-        assert!(
-            fork_preflight
-                .changed_files
-                .iter()
-                .any(|file| file == "fork.txt")
-        );
-        let delivery = FinishWorkspace {
-            code_action: "merge".into(),
-            todo_action: "carry".into(),
-            keep_session_history: true,
-            delete_worktree: true,
-            delete_branch: true,
-            commit_message: Some("complete fork".into()),
-            preflight_id: Some(fork_preflight.id),
-        };
-        let interrupted =
-            finish_workspace_impl(&state, &fork.id, &delivery, Some("code_integrated"))
-                .await
-                .expect_err("inject failure after merge");
-        assert!(
-            interrupted
-                .to_string()
-                .contains("injected delivery failure after code_integrated")
-        );
-        let interrupted_operation = state
-            .store
-            .delivery_operation(&fork.id)
-            .expect("load interrupted delivery")
-            .expect("persist interrupted delivery");
-        assert_eq!(interrupted_operation.phase, "code_integrated");
-        assert!(!interrupted_operation.before_head.is_empty());
-        assert!(!interrupted_operation.source_head.is_empty());
-        assert_eq!(
-            interrupted_operation.target_head,
-            interrupted_operation
-                .integrated_commit
-                .clone()
-                .expect("record integrated commit")
-        );
-        assert!(
-            interrupted_operation
-                .error
-                .contains("injected delivery failure")
-        );
-        let reopened_store = Store::open(&home.join("data"))
-            .await
-            .expect("reopen persistent store");
-        assert_eq!(
-            reopened_store
-                .delivery_operation(&fork.id)
-                .expect("reload interrupted delivery")
-                .expect("delivery survives store reopen")
-                .phase,
-            "code_integrated"
-        );
-        drop(reopened_store);
-        assert_eq!(
-            state
-                .store
-                .workspace(&fork.id)
-                .await
-                .expect("active Fork")
-                .status,
-            "active"
-        );
-        assert!(Path::new(&fork.checkout_path).exists());
-        assert!(
-            command_output(Path::new(&repository), "git", &["branch", "--list"])
-                .expect("list branches after interruption")
-                .contains(&fork.branch)
-        );
-        assert!(
-            Path::new(&workspace.checkout_path)
-                .join("fork.txt")
-                .exists()
-        );
-        assert_eq!(
-            state
-                .store
-                .todos(&workspace.id)
-                .expect("parent Todos before retry")
-                .len(),
-            0
-        );
-        assert_eq!(
-            state
-                .store
-                .session(&session.id)
-                .expect("unsettled Session")
-                .status,
-            "exited"
-        );
-        let target_head_after_interruption = command_output(
-            Path::new(&workspace.checkout_path),
-            "git",
-            &["rev-parse", "HEAD"],
-        )
-        .expect("parent head after interruption");
-        let parent_commit_count_after_interruption = command_output(
-            Path::new(&workspace.checkout_path),
-            "git",
-            &["rev-list", "--count", "HEAD"],
-        )
-        .expect("parent commit count after interruption");
-
-        let Json(settled) = finish_workspace(
-            State(state.clone()),
-            axum::extract::Path(fork.id.clone()),
-            ApiJson(delivery.clone()),
-        )
-        .await
-        .expect("resume interrupted Fork delivery");
-        assert_eq!(settled.status, "archived");
-        assert_eq!(settled.delivery_status, "merged");
-        assert_eq!(
-            command_output(
-                Path::new(&workspace.checkout_path),
-                "git",
-                &["rev-parse", "HEAD"]
-            )
-            .expect("parent head after retry"),
-            target_head_after_interruption
-        );
-        assert_eq!(
-            command_output(
-                Path::new(&workspace.checkout_path),
-                "git",
-                &["rev-list", "--count", "HEAD"]
-            )
-            .expect("parent commit count after retry"),
-            parent_commit_count_after_interruption
-        );
-        assert!(!Path::new(&fork.checkout_path).exists());
-        assert!(
-            Path::new(&workspace.checkout_path)
-                .join("fork.txt")
-                .exists()
-        );
-        assert_eq!(
-            state
-                .store
-                .todos(&workspace.id)
-                .expect("parent Todos")
-                .len(),
-            1
-        );
-        assert_eq!(
-            state
-                .store
-                .todos(&fork.id)
-                .expect("archived Fork Todos")
-                .len(),
-            1
-        );
-        let archived_session = state
-            .store
-            .session(&session.id)
-            .await
-            .expect("session history");
-        assert_eq!(archived_session.status, "stopped");
-        assert_eq!(archived_session.visibility, "hidden");
-        assert_eq!(archived_session.cwd, workspace.checkout_path);
-        assert_eq!(archived_session.original_cwd, fork.checkout_path);
-        assert_eq!(
-            archived_session.codex_session_id.as_deref(),
-            Some("codex-session-for-resume")
-        );
-        let archived_shell = state
-            .store
-            .session(&fork_shell.id)
-            .await
-            .expect("Shell history");
-        assert_eq!(archived_shell.status, "stopped");
-        assert_eq!(archived_shell.cwd, workspace.checkout_path);
-        let branches = command_output(Path::new(&repository), "git", &["branch", "--list"])
-            .expect("list branches");
-        assert!(!branches.contains(&fork.branch));
-        let completed_operation = state
-            .store
-            .delivery_operation(&fork.id)
-            .expect("load completed delivery")
-            .expect("persist completed delivery");
-        assert_eq!(completed_operation.phase, "archived");
-        assert!(completed_operation.error.is_empty());
-
-        let Json(settled_again) = finish_workspace(
-            State(state.clone()),
-            axum::extract::Path(fork.id.clone()),
-            ApiJson(delivery),
-        )
-        .await
-        .expect("repeat completed Fork delivery");
-        assert_eq!(settled_again.status, "archived");
-        assert_eq!(
-            command_output(
-                Path::new(&workspace.checkout_path),
-                "git",
-                &["rev-parse", "HEAD"]
-            )
-            .expect("parent head after repeated request"),
-            target_head_after_interruption
-        );
-        assert_eq!(
-            state
-                .store
-                .todos(&workspace.id)
-                .expect("parent Todos after repeated request")
-                .len(),
-            1
-        );
-
-        let root_preflight = create_delivery_preflight_impl(
-            &state,
-            &workspace.id,
-            &CreateDeliveryPreflight {
-                code_action: "merge".into(),
-            },
-        )
-        .expect("preflight root Workspace delivery");
-        let Json(settled_root) = finish_workspace(
-            State(state.clone()),
-            axum::extract::Path(workspace.id.clone()),
-            ApiJson(FinishWorkspace {
-                code_action: "merge".into(),
-                todo_action: "carry".into(),
-                keep_session_history: true,
-                delete_worktree: true,
-                delete_branch: true,
-                commit_message: None,
-                preflight_id: Some(root_preflight.id),
-            }),
-        )
-        .await
-        .expect("settle root Workspace into Project");
-        assert_eq!(settled_root.status, "archived");
-        assert_eq!(settled_root.delivery_status, "merged");
-        assert!(!Path::new(&workspace.checkout_path).exists());
-        assert!(repository.join("fork.txt").exists());
-        assert_eq!(
-            state
-                .store
-                .project_todos(&project.id)
-                .expect("Project Todos")
-                .len(),
-            1
-        );
-        let branches = command_output(Path::new(&repository), "git", &["branch", "--list"])
-            .expect("list branches after root delivery");
-        assert!(!branches.contains(&workspace.branch));
-
-        drop(state);
-        std::fs::remove_dir_all(root).expect("remove test root");
     }
 }

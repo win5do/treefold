@@ -196,19 +196,7 @@ pub(super) struct CreateDeliveryPreflight {
     pub(super) code_action: String,
 }
 
-pub(super) async fn create_delivery_preflight(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-    ApiJson(input): ApiJson<CreateDeliveryPreflight>,
-) -> Result<(StatusCode, Json<DeliveryPreflight>)> {
-    blocking_git_operation(move || async move {
-        create_delivery_preflight_impl(&state, &id, &input)
-            .await
-            .map(|preflight| (StatusCode::CREATED, Json(preflight)))
-    })
-    .await
-}
-
+#[cfg(test)]
 pub(super) async fn create_delivery_preflight_impl(
     state: &AppState,
     id: &str,
@@ -221,6 +209,7 @@ pub(super) async fn create_delivery_preflight_impl(
     Ok(preflight)
 }
 
+#[cfg(test)]
 pub(super) async fn validate_preflight_snapshot(
     state: &AppState,
     workspace: &Workspace,

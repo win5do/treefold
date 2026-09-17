@@ -1,5 +1,3 @@
-#![allow(dead_code)] // Legacy helpers remain only for shared delivery state-machine coverage.
-
 use std::{
     collections::{HashMap, HashSet},
     env,

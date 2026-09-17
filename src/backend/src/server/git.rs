@@ -1040,6 +1040,7 @@ pub(super) async fn archive_workspace(
     Ok(Json(state.store.workspace(&id).await?))
 }
 
+#[cfg(test)]
 pub(super) async fn pull_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
@@ -1091,6 +1092,7 @@ pub(super) async fn pull_workspace(
     )))
 }
 
+#[cfg(test)]
 pub(super) async fn push_workspace(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
@@ -1131,6 +1133,7 @@ pub(super) fn ensure_active_workspace(workspace: &Workspace) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn workspace_upstream(workspace: &Workspace) -> Result<(String, String)> {
     let remote = workspace
         .remote_name

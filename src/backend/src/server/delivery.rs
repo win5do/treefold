@@ -383,6 +383,7 @@ pub(super) fn git_rebase_output(dir: &Path, args: &[&str]) -> std::result::Resul
     )
 }
 
+#[cfg(test)]
 pub(super) async fn workspace_delivery_target(
     state: &AppState,
     workspace: &Workspace,
@@ -409,28 +410,24 @@ pub(super) async fn workspace_delivery_target(
 pub(super) struct FinishWorkspace {
     pub(super) code_action: String,
     #[serde(default)]
+    #[cfg_attr(not(test), allow(dead_code))]
+    // Retained request field used by legacy delivery tests.
     pub(super) todo_action: String,
     #[serde(default)]
     pub(super) push_after_merge: bool,
+    #[cfg_attr(not(test), allow(dead_code))]
+    // Retained request field used by legacy delivery tests.
     pub(super) keep_session_history: bool,
     pub(super) delete_worktree: bool,
     pub(super) delete_branch: bool,
+    #[allow(dead_code)] // Accepted legacy request field; delivery does not auto-commit.
     pub(super) commit_message: Option<String>,
     pub(super) preflight_id: Option<String>,
     #[serde(default)]
     pub(super) resume_finish: bool,
 }
 
-pub(super) async fn finish_workspace(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-    ApiJson(input): ApiJson<FinishWorkspace>,
-) -> Result<Json<Workspace>> {
-    finish_workspace_impl(&state, &id, &input, None)
-        .await
-        .map(Json)
-}
-
+#[cfg(test)]
 pub(super) async fn finish_workspace_impl(
     state: &AppState,
     id: &str,
@@ -456,6 +453,7 @@ pub(super) async fn finish_workspace_impl(
     result
 }
 
+#[cfg(test)]
 pub(super) async fn finish_workspace_steps(
     state: &AppState,
     id: &str,
@@ -799,6 +797,7 @@ pub(super) fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn ensure_delivery_matches(
     operation: &DeliveryOperation,
     input: &FinishWorkspace,
@@ -817,6 +816,7 @@ pub(super) fn ensure_delivery_matches(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn delivery_phase_at_least(current: &str, expected: &str) -> Result<bool> {
     const PHASES: [&str; 7] = [
         "preflight_passed",
@@ -836,6 +836,7 @@ pub(super) fn delivery_phase_at_least(current: &str, expected: &str) -> Result<b
     Ok(rank(current)? >= rank(expected)?)
 }
 
+#[cfg(test)]
 pub(super) fn fail_delivery_after(actual: Option<&str>, phase: &str) -> Result<()> {
     if actual == Some(phase) {
         return Err(AppError::BadRequest(format!(
@@ -845,6 +846,7 @@ pub(super) fn fail_delivery_after(actual: Option<&str>, phase: &str) -> Result<(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn ensure_target_branch(path: &str, target_branch: &str) -> Result<()> {
     let checked_out = command_output(Path::new(path), "git", &["branch", "--show-current"])
         .map_err(AppError::BadRequest)?;
