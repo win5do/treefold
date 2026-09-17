@@ -2,6 +2,7 @@
 name = "treefold-cli"
 version = "0.1.0"
 description = "Command-line client for Treefold"
+license = "AGPL-3.0-only"
 edition = "2024"
 rust-version = "1.97.1"
 

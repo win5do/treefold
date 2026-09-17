@@ -117,3 +117,8 @@ Cmd+T (new), Cmd+W (close), Ctrl+Tab (next), and Ctrl+Shift+Tab (previous).
 `config/settings.toml` and `config/keymap.toml` under `$TREEFOLD_HOME` store only
 user overrides. Missing keys follow defaults; `false` disables a key binding.
 See [configuration details](docs/keymap-configuration-plan.md) for syntax and APIs.
+
+## License
+
+Treefold is licensed under the GNU Affero General Public License v3.0 only.
+See [LICENSE](LICENSE) for the full terms.

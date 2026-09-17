@@ -2,6 +2,7 @@
   "name": "treefold",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "allowScripts": {
     "fsevents@2.3.3": true
   },
