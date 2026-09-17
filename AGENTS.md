@@ -239,13 +239,15 @@ source of truth for this configuration.
 
 - Before adding or editing user-facing copy or translations, read
   `src/renderer/src/i18n/AGENTS.md` and follow its translation and review workflow.
-- `src/renderer/src/i18n/glossary.md` is the single source of truth for preserved
-  terms and fixed translations. Update it when introducing a terminology decision;
-  do not duplicate the term list in other instructions.
+- The terminology section in `src/renderer/src/i18n/AGENTS.md` is the single
+  source of truth for preserved terms and fixed translations. Update it when
+  introducing a terminology decision; do not duplicate the term list in other
+  instructions.
 - Keep English product names and core concepts in Chinese UI; translate actions,
   descriptions, states, and consequences according to the i18n guide.
-- Existing copy is not precedent when it conflicts with the glossary. Keep fixes
-  within the requested scope and report remaining inconsistencies explicitly.
+- Existing copy is not precedent when it conflicts with the terminology rules.
+  Keep fixes within the requested scope and report remaining inconsistencies
+  explicitly.
 
 ## UI verification workflow
 
