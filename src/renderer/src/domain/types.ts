@@ -16,6 +16,16 @@ export type Project = {
   updated_at: string;
 };
 
+export type ProjectPathCandidate = {
+  path: string;
+  repository_root: string | null;
+  is_git: boolean;
+};
+export type ProjectPathInspection = {
+  path: string;
+  candidates: ProjectPathCandidate[];
+};
+
 export type Directory = {
   id: string;
   project_id: string;

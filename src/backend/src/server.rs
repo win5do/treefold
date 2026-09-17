@@ -286,6 +286,7 @@ fn app(state: AppState) -> Router {
         .route("/api/events", get(runtime_events))
         .route("/api/events/revision", get(runtime_revision))
         .route("/api/projects", get(list_projects).post(create_project))
+        .route("/api/projects/inspect-path", post(inspect_project_path))
         .route("/api/projects/summary", get(list_project_summaries))
         .route("/api/sidebar", get(get_sidebar))
         .route(

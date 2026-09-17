@@ -12,6 +12,7 @@ import type {
   WorktreeDeletePrecheck,
   WorktreeDeleteOperation,
   Project,
+  ProjectPathInspection,
   ProjectDetail,
   ProjectDeletePrecheck,
   ProjectDirectoryInspection,
@@ -31,6 +32,10 @@ export const projectsApi = {
     request<ProjectDetail>(`/api/projects/${id}`, { signal }),
   create: (json: unknown) =>
     request<Project>("/api/projects", { method: "POST", json }),
+  inspectProjectPath: (path: string, signal?: AbortSignal) =>
+    request<ProjectPathInspection>("/api/projects/inspect-path", {
+      method: "POST", json: { path }, signal,
+    }),
   update: (id: string, json: unknown) =>
     request<Project>(`/api/projects/${id}`, { method: "PATCH", json }),
   delete: (id: string, cleanupManaged: boolean) =>

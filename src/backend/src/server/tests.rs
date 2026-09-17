@@ -21,8 +21,8 @@ mod current_workspace_tests {
         create_project, create_project_session, create_session, create_workspace,
         create_workspace_repository_preflight_impl, delete_project, delete_project_directory,
         finish_workspace_impl, finish_workspace_repository_impl, get_project, git_head,
-        git_is_ancestor, git_worktrees, managed_repository_source_path, normalized_path,
-        parse_git_history, parse_git_worktrees, pull_workspace, push_workspace,
+        git_is_ancestor, git_worktrees, inspect_project_path_value, managed_repository_source_path,
+        normalized_path, parse_git_history, parse_git_worktrees, pull_workspace, push_workspace,
         reconcile_parent_operation, reconcile_process, refresh_project_directory,
         repository_name_from_url, repository_slug, reveal_in_file_manager, slug,
         start_parent_operation_impl, stop_amux, stop_session, undo_parent_operation_impl,
@@ -93,6 +93,93 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
+    async fn project_path_inspection_and_creation_keep_selected_locations() {
+        let root = std::env::temp_dir().join(format!(
+            "treefold-project-path-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let container = root.join("multi-repo");
+        let backend = container.join("backend");
+        let frontend = container.join("frontend");
+        let context = container.join("docs");
+        let nested = backend.join("src");
+        initialize_repository(&backend);
+        initialize_repository(&frontend);
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&context).unwrap();
+        let backend = std::fs::canonicalize(backend).unwrap();
+        let frontend = std::fs::canonicalize(frontend).unwrap();
+        let context = std::fs::canonicalize(context).unwrap();
+        let nested = std::fs::canonicalize(nested).unwrap();
+
+        let inspected = inspect_project_path_value(container.to_str().unwrap()).unwrap();
+        assert_eq!(inspected.candidates.len(), 3);
+        assert_eq!(
+            inspected
+                .candidates
+                .iter()
+                .filter(|item| item.is_git)
+                .count(),
+            2
+        );
+        assert!(
+            inspected
+                .candidates
+                .iter()
+                .any(|item| item.path == context.to_string_lossy() && !item.is_git)
+        );
+        let inside = inspect_project_path_value(nested.to_str().unwrap()).unwrap();
+        assert_eq!(inside.candidates.len(), 1);
+        assert_eq!(inside.candidates[0].path, nested.to_string_lossy());
+        assert_eq!(
+            inside.candidates[0].repository_root.as_deref(),
+            Some(backend.to_str().unwrap())
+        );
+
+        let state = test_state(&root).await;
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Multi repo".into()),
+                description: None,
+                path: None,
+                locations: Some(vec![
+                    nested.to_string_lossy().into_owned(),
+                    context.to_string_lossy().into_owned(),
+                    frontend.to_string_lossy().into_owned(),
+                ]),
+                preferred_remote: None,
+                default_base_branch: None,
+                default_target_branch: None,
+                default_delivery_mode: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let detail = state.store.project_detail(&project.id).await.unwrap();
+        assert_eq!(detail.repositories.len(), 2);
+        assert_eq!(detail.directories.len(), 3);
+        assert_eq!(
+            detail
+                .directories
+                .iter()
+                .find(|item| item.id == project.default_location_id.clone().unwrap())
+                .unwrap()
+                .path,
+            nested.to_string_lossy()
+        );
+        assert!(
+            detail
+                .directories
+                .iter()
+                .any(|item| item.path == context.to_string_lossy() && item.repository_id.is_none())
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn process_snapshot_route_does_not_start_a_missing_daemon() {
         let root = std::env::temp_dir().join(format!(
             "treefold-process-snapshot-test-{}",
@@ -135,6 +222,7 @@ mod current_workspace_tests {
                 name: Some("Stale worktree".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: Some("main".into()),
                 default_target_branch: None,
@@ -337,6 +425,7 @@ mod current_workspace_tests {
                 name: Some("Monorepo scopes".into()),
                 description: None,
                 path: Some(web.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: Some("main".into()),
                 default_target_branch: None,
@@ -422,6 +511,7 @@ mod current_workspace_tests {
                 name: Some("Command Project".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: None,
                 default_target_branch: None,
@@ -612,6 +702,7 @@ mod current_workspace_tests {
                 name: Some("Invalid context Project".into()),
                 description: None,
                 path: Some(context.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: None,
                 default_target_branch: None,
@@ -641,6 +732,7 @@ mod current_workspace_tests {
                 name: Some("Primary repository Project".into()),
                 description: None,
                 path: None,
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: None,
                 default_target_branch: None,
@@ -793,6 +885,7 @@ mod current_workspace_tests {
                 name: Some("Managed Project Sessions".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_target_branch: Some("main".into()),
                 default_base_branch: Some("main".into()),
@@ -1050,6 +1143,7 @@ mod current_workspace_tests {
                 name: Some("Fork lifecycle".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_target_branch: Some("main".into()),
                 default_base_branch: Some("main".into()),
@@ -1307,6 +1401,7 @@ mod current_workspace_tests {
                 name: Some("Parent operations".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_target_branch: Some("main".into()),
                 default_base_branch: Some("main".into()),
@@ -1513,6 +1608,7 @@ mod current_workspace_tests {
                 name: Some("Finish conflict".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_target_branch: Some("main".into()),
                 default_base_branch: Some("main".into()),
@@ -1658,6 +1754,7 @@ mod current_workspace_tests {
                 name: Some("Dirty Finish".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_target_branch: Some("main".into()),
                 default_base_branch: Some("main".into()),
@@ -1758,6 +1855,7 @@ mod current_workspace_tests {
                 name: Some("Push Finish".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: Some("origin".into()),
                 default_target_branch: Some("main".into()),
                 default_base_branch: Some("main".into()),
@@ -1854,6 +1952,7 @@ mod current_workspace_tests {
                 name: Some("Multi location".into()),
                 description: None,
                 path: None,
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: Some("main".into()),
                 default_target_branch: None,
@@ -2102,6 +2201,7 @@ mod current_workspace_tests {
                 name: Some("Setup shell".into()),
                 description: None,
                 path: Some(first.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: Some("main".into()),
                 default_target_branch: None,
@@ -2247,6 +2347,7 @@ mod current_workspace_tests {
                 name: Some("Partial Workspace".into()),
                 description: None,
                 path: Some(first.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: Some("main".into()),
                 default_target_branch: None,
@@ -2495,6 +2596,7 @@ mod current_workspace_tests {
                 name: Some("Managed source".into()),
                 description: None,
                 path: None,
+                locations: None,
                 preferred_remote: None,
                 default_base_branch: Some("main".into()),
                 default_target_branch: None,
@@ -2655,6 +2757,7 @@ mod current_workspace_tests {
                 name: Some("Agent API".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
                 preferred_remote: None,
                 default_target_branch: None,
                 default_base_branch: Some("main".into()),

@@ -303,7 +303,7 @@ async function startFixtureApi() {
       return;
     }
     if (request.method === "POST" && pathname === "/api/projects") {
-      const input = await readJson<{ name: string; description?: string }>(request);
+      const input = await readJson<{ name: string; description?: string; locations?: string[] }>(request);
       const created: FixtureProject = {
         id: "project-created-primary-requirement",
         name: input.name,
@@ -325,7 +325,46 @@ async function startFixtureApi() {
         workspaces: [],
         worktrees: [],
       };
+      for (const [index, locationPath] of (input.locations ?? []).entries()) {
+        const isGit = !/docs|documentation|reference|context/i.test(locationPath);
+        const name = locationPath.split("/").at(-1) || locationPath;
+        const directory: FixtureDirectory = {
+          id: `created-location-${index}`, project_id: created.id, name,
+          description: "", worktree_setup_command: "", path: locationPath,
+          git_status: isGit ? "ready" : "not_git", role: index === 0 ? "primary" : "attached",
+          is_git: isGit, dirty: false, created_at: created.created_at,
+        };
+        if (isGit) {
+          const repository: FixtureRepository = {
+            id: `created-repository-${index}`, project_id: created.id, name,
+            source_root: locationPath, git_common_dir: `${locationPath}/.git`,
+            setup_command: "", setup_workdir: ".", git_status: "ready",
+            created_at: created.created_at, updated_at: created.updated_at,
+          };
+          fixture.projectDetails[created.id].repositories.push(repository);
+          directory.repository_id = repository.id;
+          directory.relative_path = ".";
+          if (!created.default_location_id) created.default_location_id = directory.id;
+        } else directory.external_path = locationPath;
+        fixture.projectDetails[created.id].directories.push(directory);
+        locationRequests.push({ projectId: created.id, path: locationPath, isGit });
+      }
+      fixture.projectDetails[created.id].default_location_id = created.default_location_id;
       sendJson(response, 201, created);
+      return;
+    }
+
+    if (request.method === "POST" && pathname === "/api/projects/inspect-path") {
+      const input = await readJson<{ path: string }>(request);
+      const cleanPath = input.path.replace(/\/+$/, "");
+      const candidates = cleanPath.endsWith("/multi-repo")
+        ? ["backend", "docs", "frontend"].map((name) => ({
+            path: `${cleanPath}/${name}`,
+            repository_root: name === "docs" ? null : `${cleanPath}/${name}`,
+            is_git: name !== "docs",
+          }))
+        : [{ path: cleanPath, repository_root: cleanPath, is_git: true }];
+      sendJson(response, 200, { path: cleanPath, candidates });
       return;
     }
 

@@ -1509,14 +1509,12 @@ function Workspace() {
         open={createProjectOpen}
         busy={busy}
         onOpenChange={setCreateProjectOpen}
-        onSubmit={async (event) => {
-          event.preventDefault();
-          const form = new FormData(event.currentTarget);
+        onSubmit={async ({ name, locations }) => {
           let created: Project | null = null;
           const ok = await act(async () => {
             created = await projectsApi.create({
-              name: form.get("name"),
-              description: form.get("description"),
+              name,
+              locations,
             });
           });
           if (ok && created) {
@@ -1525,7 +1523,6 @@ function Workspace() {
             );
             queryClient.setQueryData(projectKeys.detail(detail.id), detail);
             setCreateProjectOpen(false);
-            setAddDirectoryProject(detail);
             navigate(`/projects/${detail.id}`);
           }
         }}

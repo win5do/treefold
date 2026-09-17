@@ -2220,56 +2220,24 @@ test("sidebar.core", async () => {
     await clickUiElement(page, '[data-testid="new-project-action"]');
     const primaryProjectDialog = page.getByRole("dialog", { name: "New Project", exact: true });
     await primaryProjectDialog.waitFor({ timeout: 3_000, state: 'visible' });
-    await (
-      primaryProjectDialog.locator('input[name="name"]')
-    ).fill("Primary requirement fixture");
-    await (primaryProjectDialog.locator("button:text-is(\"Create Project\")")).click();
-    await primaryProjectDialog.waitFor({ timeout: 3_000, state: 'hidden' });
-    const primaryLocationDialog = page.getByRole("dialog", { name: "Add project locations", exact: true });
-    await primaryLocationDialog.waitFor({ timeout: 3_000, state: 'visible' });
-    assert.match(
-      await (
-        primaryLocationDialog.locator('[data-testid="primary-git-location-requirement"]')
-      ).innerText(),
-      /at least one Git repository/,
-      "an empty Project must explain its primary Git requirement",
-    );
-    let primaryLocationRows = await primaryLocationDialog.locator('[data-testid="location-draft-row"]').all();
-    await (
-      primaryLocationRows[0].locator('input[aria-label="Location 1 path"]')
-    ).fill("/tmp/treefold-ui-fixture/first-reference-context");
-    await (primaryLocationRows[0].locator("button:text-is(\"Check\")")).click();
-    const addPrimaryLocations = primaryLocationDialog.locator("button:text-is(\"Add 1 location\")");
-    assert.equal(
-      await addPrimaryLocations.isEnabled(),
-      false,
-      "a non-Git-only first batch must not be submittable",
-    );
-    await (primaryLocationDialog.locator("button:text-is(\"Add another\")")).click();
-    primaryLocationRows = await primaryLocationDialog.locator('[data-testid="location-draft-row"]').all();
-    await (
-      primaryLocationRows[1].locator('input[aria-label="Location 2 path"]')
-    ).fill("/tmp/treefold-ui-fixture/primary-repository");
-    await (primaryLocationRows[1].locator("button:text-is(\"Check\")")).click();
-    const addMixedLocations = primaryLocationDialog.locator("button:text-is(\"Add 2 locations\")");
-    await expect.poll(() => addMixedLocations.isEnabled(), {
-      timeout: 3_000,
-      message: "a mixed first batch did not become submittable",
-    }).toBeTruthy();
-    await addMixedLocations.click();
-    await primaryLocationDialog.waitFor({ timeout: 3_000, state: 'hidden' });
+    await primaryProjectDialog.locator('input[name="name"]').fill("Multi repo fixture");
+    await primaryProjectDialog.locator('input#project-path').fill("/tmp/treefold-ui-fixture/multi-repo");
+    const backendCandidate = primaryProjectDialog.getByRole("checkbox", { name: /backend/ });
+    const contextCandidate = primaryProjectDialog.getByRole("checkbox", { name: /docs/ });
+    const frontendCandidate = primaryProjectDialog.getByRole("checkbox", { name: /frontend/ });
+    await backendCandidate.waitFor({ timeout: 3_000, state: "visible" });
+    assert.equal(await backendCandidate.isChecked(), true);
+    assert.equal(await contextCandidate.isChecked(), true);
+    await frontendCandidate.uncheck();
+    await primaryProjectDialog.getByRole("button", { name: "Create Project" }).click();
+    await primaryProjectDialog.waitFor({ timeout: 3_000, state: "hidden" });
     assert.deepEqual(
-      harness.locationRequests
-        .slice(-2)
-        .map((request) => ({ path: request.path, isGit: request.isGit })),
+      harness.locationRequests.slice(-2).map((request) => ({ path: request.path, isGit: request.isGit })),
       [
-        { path: "/tmp/treefold-ui-fixture/primary-repository", isGit: true },
-        {
-          path: "/tmp/treefold-ui-fixture/first-reference-context",
-          isGit: false,
-        },
+        { path: "/tmp/treefold-ui-fixture/multi-repo/backend", isGit: true },
+        { path: "/tmp/treefold-ui-fixture/multi-repo/docs", isGit: false },
       ],
-      "a mixed first batch must create its primary Git repository before context locations",
+      "Project creation must save only the confirmed repository and Context directory",
     );
     await page.goto(harness.baseUrl);
     await expect.poll(async () =>

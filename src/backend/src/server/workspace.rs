@@ -19,6 +19,7 @@ pub(super) struct CreateProject {
     pub(super) name: Option<String>,
     pub(super) description: Option<String>,
     pub(super) path: Option<String>,
+    pub(super) locations: Option<Vec<String>>,
     pub(super) preferred_remote: Option<String>,
     pub(super) default_base_branch: Option<String>,
     pub(super) default_target_branch: Option<String>,
@@ -26,10 +27,103 @@ pub(super) struct CreateProject {
     pub(super) directory_description: Option<String>,
     pub(super) directory_worktree_setup_command: Option<String>,
 }
+
+#[derive(Deserialize)]
+pub(super) struct InspectProjectPath {
+    path: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct ProjectPathCandidate {
+    pub(super) path: String,
+    pub(super) repository_root: Option<String>,
+    pub(super) is_git: bool,
+}
+
+#[derive(Serialize)]
+pub(super) struct ProjectPathInspection {
+    pub(super) path: String,
+    pub(super) candidates: Vec<ProjectPathCandidate>,
+}
+
+pub(super) fn inspect_project_path_value(value: &str) -> Result<ProjectPathInspection> {
+    let (path, is_git) = inspect_path(value)?;
+    let mut candidates = Vec::new();
+    if is_git {
+        let root = command_output(Path::new(&path), "git", &["rev-parse", "--show-toplevel"])
+            .map_err(AppError::BadRequest)?;
+        candidates.push(ProjectPathCandidate {
+            path: path.clone(),
+            repository_root: Some(root),
+            is_git: true,
+        });
+    } else {
+        let mut children = std::fs::read_dir(&path)
+            .map_err(|error| AppError::BadRequest(format!("cannot read directory: {error}")))?
+            .filter_map(std::result::Result::ok)
+            .filter_map(|entry| {
+                let kind = entry.file_type().ok()?;
+                kind.is_dir().then_some(entry.path())
+            })
+            .collect::<Vec<_>>();
+        children.sort();
+        for child in children {
+            let child = child.to_string_lossy().into_owned();
+            let (child, child_is_git) = inspect_path(&child)?;
+            let repository_root = if child_is_git {
+                Some(
+                    command_output(Path::new(&child), "git", &["rev-parse", "--show-toplevel"])
+                        .map_err(AppError::BadRequest)?,
+                )
+            } else {
+                None
+            };
+            candidates.push(ProjectPathCandidate {
+                path: child,
+                repository_root,
+                is_git: child_is_git,
+            });
+        }
+    }
+    Ok(ProjectPathInspection { path, candidates })
+}
+
+pub(super) async fn inspect_project_path(
+    ApiJson(input): ApiJson<InspectProjectPath>,
+) -> Result<Json<ProjectPathInspection>> {
+    Ok(Json(inspect_project_path_value(&input.path)?))
+}
 pub(super) async fn create_project(
     State(state): State<AppState>,
     ApiJson(input): ApiJson<CreateProject>,
 ) -> Result<(StatusCode, Json<Project>)> {
+    let locations = input
+        .locations
+        .as_ref()
+        .map(|paths| {
+            if paths.is_empty() {
+                return Err(AppError::BadRequest(
+                    "at least one location is required".into(),
+                ));
+            }
+            let mut seen = HashSet::new();
+            let mut inspected = Vec::new();
+            for value in paths {
+                let (path, is_git) = inspect_path(value)?;
+                if !seen.insert(path.clone()) {
+                    return Err(AppError::BadRequest("duplicate location path".into()));
+                }
+                inspected.push((path, is_git));
+            }
+            if !inspected.iter().any(|(_, git)| *git) {
+                return Err(AppError::BadRequest(
+                    "a Project needs a Git repository".into(),
+                ));
+            }
+            inspected.sort_by_key(|(_, git)| !*git);
+            Ok(inspected)
+        })
+        .transpose()?;
     let timestamp = now();
     let project_id = new_id();
     let name = trimmed(input.name)
@@ -78,6 +172,57 @@ pub(super) async fn create_project(
         default_target_branch: default_base_branch,
     };
     state.store.create_empty_project(&project).await?;
+    if let Some(locations) = locations {
+        for (path, is_git) in locations {
+            let mut location = Directory {
+                id: new_id(),
+                project_id: project_id.clone(),
+                name: basename(&path),
+                description: String::new(),
+                worktree_setup_command: String::new(),
+                path,
+                repository_url: None,
+                preferred_remote_name: None,
+                base_branch: is_git.then(|| project.default_base_branch.clone()),
+                delivery_mode: is_git.then(|| project.default_delivery_mode.clone()),
+                git_common_dir: None,
+                git_status: if is_git { "ready" } else { "not_git" }.into(),
+                last_checked_at: None,
+                created_at: timestamp.clone(),
+                updated_at: timestamp.clone(),
+                checkout_path: None,
+                role: "attached".into(),
+                is_git,
+                remote_url: None,
+                branch: None,
+                head_commit: None,
+                head_summary: None,
+                dirty: false,
+            };
+            if let Err(error) = refresh_location_observation(&mut location).and_then(|_| {
+                if (is_git && location.git_status == "ready")
+                    || (!is_git && location.git_status == "not_git")
+                {
+                    Ok(())
+                } else {
+                    Err(AppError::BadRequest(
+                        "location changed during Project creation".into(),
+                    ))
+                }
+            }) {
+                let _ = state.store.delete_project(&project_id).await;
+                return Err(error);
+            }
+            if let Err(error) = state.store.create_directory(&location).await {
+                let _ = state.store.delete_project(&project_id).await;
+                return Err(error);
+            }
+        }
+        return Ok((
+            StatusCode::CREATED,
+            Json(state.store.project(&project_id).await?),
+        ));
+    }
     if let Some((path, is_git)) = inspected_path {
         let mut location = Directory {
             id: new_id(),
