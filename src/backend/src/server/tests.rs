@@ -21,9 +21,9 @@ mod current_workspace_tests {
         create_project, create_project_session, create_session, create_workspace,
         create_workspace_repository_preflight_impl, delete_project, delete_project_directory,
         finish_workspace_impl, finish_workspace_repository_impl, get_project, git_head,
-        git_is_ancestor, git_worktrees, managed_repository_source_path, managed_worktree_path,
-        normalized_path, pull_workspace, push_workspace, reconcile_parent_operation,
-        reconcile_process, refresh_project_directory, repository_name_from_url, repository_slug,
+        git_is_ancestor, git_worktrees, managed_repository_source_path, normalized_path,
+        pull_workspace, push_workspace, reconcile_parent_operation, reconcile_process,
+        refresh_project_directory, repository_name_from_url, repository_slug,
         start_parent_operation_impl, stop_amux, stop_session, undo_parent_operation_impl,
         update_project, update_workspace_repository,
     };
@@ -1072,6 +1072,31 @@ mod current_workspace_tests {
         )
         .await
         .expect("create Workspace");
+        let workspace_location = state
+            .store
+            .default_workspace_repository(&workspace.id)
+            .await
+            .unwrap();
+        assert_eq!(
+            workspace_location.branch.as_deref(),
+            Some("feature/current-fork-test")
+        );
+        assert_short_worktree_path(workspace_location.checkout_path.as_deref().unwrap());
+        for branch in ["feature/current-fork-test", "invalid branch"] {
+            assert!(
+                create_fork(
+                    State(state.clone()),
+                    axum::extract::Path(workspace.id.clone()),
+                    ApiJson(CreateFork {
+                        name: "Rejected".into(),
+                        description: None,
+                        branch: Some(branch.into())
+                    }),
+                )
+                .await
+                .is_err()
+            );
+        }
         let sessions = app(state.clone())
             .oneshot(
                 Request::get(format!("/api/workspaces/{}/sessions", workspace.id))
@@ -1085,6 +1110,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                branch: Some("feature/custom-fork".into()),
                 name: "Parallel work".into(),
                 description: None,
             }),
@@ -1097,6 +1123,7 @@ mod current_workspace_tests {
                 State(state.clone()),
                 axum::extract::Path(fork.id.clone()),
                 ApiJson(CreateFork {
+                    branch: None,
                     name: "Nested".into(),
                     description: None,
                 }),
@@ -1125,6 +1152,12 @@ mod current_workspace_tests {
             .default_workspace_repository(&fork.id)
             .await
             .expect("get Fork location");
+        assert_eq!(fork_location.branch.as_deref(), Some("feature/custom-fork"));
+        assert_short_worktree_path(fork_location.checkout_path.as_deref().unwrap());
+        assert_ne!(
+            Path::new(workspace_location.checkout_path.as_deref().unwrap()).parent(),
+            Path::new(fork_location.checkout_path.as_deref().unwrap()).parent()
+        );
         assert!(
             update_workspace_repository(
                 State(state.clone()),
@@ -1297,6 +1330,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                branch: None,
                 name: "Child".into(),
                 description: None,
             }),
@@ -1502,6 +1536,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(workspace.id),
             ApiJson(CreateFork {
+                branch: None,
                 name: "Finish child".into(),
                 description: None,
             }),
@@ -1896,6 +1931,30 @@ mod current_workspace_tests {
         )
         .await
         .expect("create multi-location Workspace");
+        let location = state
+            .store
+            .default_workspace_repository(&workspace.id)
+            .await
+            .unwrap();
+        assert_short_worktree_path(location.checkout_path.as_deref().unwrap());
+        let branch = location
+            .branch
+            .as_deref()
+            .unwrap()
+            .strip_prefix("treefold/")
+            .unwrap();
+        let parts = branch.split('-').collect::<Vec<_>>();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0].len(), 4);
+        assert_eq!(parts[1].len(), 4);
+        assert!(
+            parts[..2]
+                .iter()
+                .all(|part| part.bytes().all(|byte| byte.is_ascii_digit()))
+        );
+        assert_eq!(parts[2].len(), 8);
+        assert!(parts[2].bytes().all(|byte| byte.is_ascii_hexdigit()));
+
         let repositories = state
             .store
             .workspace_repositories(&workspace.id)
@@ -2312,6 +2371,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                branch: None,
                 name: "Partial fork".into(),
                 description: None,
             }),
@@ -2363,6 +2423,18 @@ mod current_workspace_tests {
         std::fs::remove_dir_all(root).expect("remove fixture");
     }
 
+    fn assert_short_worktree_path(path: &str) {
+        let namespace = Path::new(path)
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert_eq!(namespace.len(), 8);
+        assert!(namespace.bytes().all(|byte| byte.is_ascii_lowercase()));
+    }
+
     #[test]
     fn managed_git_paths_are_short_and_ascii_safe() {
         let root =
@@ -2374,10 +2446,6 @@ mod current_workspace_tests {
         assert_eq!(
             managed_repository_source_path(&settings, "PROJECT-ID", "Repo 中文 @ Name"),
             expected_home.join("git/s/project-id/repo-name")
-        );
-        assert_eq!(
-            managed_worktree_path(&settings, "WORKSPACE-ID", "Repo 中文 @ Name"),
-            expected_home.join("git/w/workspace-id/repo-name")
         );
         assert_eq!(repository_slug("中文仓库"), "repository");
 
@@ -3052,6 +3120,7 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                branch: None,
                 name: "Rebase Fork".into(),
                 description: None,
             }),
@@ -3378,6 +3447,7 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                branch: None,
                 name: "Independent part".into(),
                 description: None,
             }),
@@ -3445,6 +3515,7 @@ mod tests {
                 State(state.clone()),
                 axum::extract::Path(fork.id.clone()),
                 ApiJson(CreateFork {
+                    branch: None,
                     name: "Nested".into(),
                     description: None,
                 }),

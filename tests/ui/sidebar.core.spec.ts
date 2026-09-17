@@ -1847,7 +1847,7 @@ test("sidebar.core", async () => {
       /origin/,
       "push delivery must select from repository remotes",
     );
-    const sharedWorkspaceBranch = deferredSetupDialog.locator('input[name="branch"]');
+    const sharedWorkspaceBranch = deferredSetupDialog.getByRole("textbox", { name: "Shared local branch", exact: true });
     const remoteWorkspaceBranch = deferredSetupDialog.locator('input[name="remote_branch"]');
     await sharedWorkspaceBranch.fill("feature/local-name");
     assert.equal(

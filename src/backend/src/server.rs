@@ -613,6 +613,7 @@ mod session;
 mod tests;
 mod verification;
 mod workspace;
+mod worktree_names;
 
 use agent::*;
 use codex_identity::*;

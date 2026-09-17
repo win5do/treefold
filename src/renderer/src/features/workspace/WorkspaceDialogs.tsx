@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { BranchNameField } from "@/features/git/BranchNameField";
 import { projectsApi } from "@/api/projects";
 import { Button } from "@/components/ui/button";
 import {
@@ -198,19 +199,11 @@ export function CreateWorkspaceDialog({
                 placeholder="Scope and expected outcome"
               />
             </Field>
-            <Field>
-              <FieldLabel htmlFor="workspace-branch">
-                Shared local branch
-              </FieldLabel>
-              <Input
-                id="workspace-branch"
-                className="font-mono text-xs"
-                name="branch"
-                value={sharedBranch}
-                onChange={(event) => setSharedBranch(event.target.value)}
-                placeholder="Leave empty to generate treefold/name-random"
-              />
-            </Field>
+            <BranchNameField
+              key={project?.id ?? "closed"}
+              label="Shared local branch"
+              onChange={setSharedBranch}
+            />
           </FieldGroup>
 
           {setupRepositories.map((repository) => {

@@ -1815,12 +1815,15 @@ pub(super) fn repository_slug(value: &str) -> String {
 pub(super) fn choose_shared_branch(
     locations: &[Directory],
     explicit: Option<&str>,
-    label: &str,
 ) -> Result<String> {
     for attempt in 0..32 {
         let candidate = explicit.map(str::to_owned).unwrap_or_else(|| {
             let random = Uuid::new_v4().simple().to_string();
-            format!("treefold/{}-{}", slug(label), &random[..8])
+            format!(
+                "treefold/{}-{}",
+                chrono::Local::now().format("%m%d-%H%M"),
+                &random[..8]
+            )
         });
         let mut conflict = false;
         for location in locations

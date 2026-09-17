@@ -4,6 +4,7 @@ use super::*;
 pub(super) struct CreateFork {
     pub(super) name: String,
     pub(super) description: Option<String>,
+    pub(super) branch: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -68,6 +69,7 @@ pub(super) async fn create_todo_fork(
             parent_id,
             CreateFork {
                 name,
+                branch: None,
                 description: Some("Created from Workspace Todo".into()),
             },
         )
@@ -186,11 +188,9 @@ pub(super) async fn create_fork_impl(
     for repository in state.store.repositories(&project.id).await? {
         project_repositorys.push(state.store.repository_as_directory(&repository.id).await?);
     }
-    let branch = choose_shared_branch(
-        &project_repositorys,
-        None,
-        &format!("f-{}", input.name.trim()),
-    )?;
+    let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
+    let branch = choose_shared_branch(&project_repositorys, explicit_branch.as_deref())?;
+    let worktree_root = super::worktree_names::reserve_worktree_root(&state.settings)?;
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
@@ -199,10 +199,11 @@ pub(super) async fn create_fork_impl(
             .store
             .repository_as_directory(&parent_location.project_repository_id)
             .await?;
-        let checkout_path =
-            managed_worktree_path(&state.settings, &fork_id, &parent_location.repository_name)
-                .to_string_lossy()
-                .into_owned();
+        let checkout_path = worktree_root
+            .path()
+            .join(repository_slug(&parent_location.repository_name))
+            .to_string_lossy()
+            .into_owned();
         let base_branch = parent_location.branch.clone().unwrap_or_default();
         let mut snapshot = git_workspace_repository(
             &fork_id,

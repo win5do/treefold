@@ -2004,7 +2004,7 @@ pub(super) async fn create_workspace_impl(
     }
     let workspace_id = new_id();
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
-    let branch = choose_shared_branch(&locations, explicit_branch.as_deref(), input.name.trim())?;
+    let branch = choose_shared_branch(&locations, explicit_branch.as_deref())?;
     let default_delivery_mode = locations
         .iter()
         .find(|location| location.id == default_repository_id)
@@ -2012,6 +2012,7 @@ pub(super) async fn create_workspace_impl(
         .ok_or_else(|| {
             AppError::BadRequest("default Repository delivery mode is not configured".into())
         })?;
+    let worktree_root = super::worktree_names::reserve_worktree_root(&state.settings)?;
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
@@ -2034,7 +2035,9 @@ pub(super) async fn create_workspace_impl(
                 location.name
             )));
         }
-        let checkout_path = managed_worktree_path(&state.settings, &workspace_id, &location.name)
+        let checkout_path = worktree_root
+            .path()
+            .join(repository_slug(&location.name))
             .to_string_lossy()
             .into_owned();
         let remote_name = if location.id == default_repository_id {
@@ -2158,19 +2161,6 @@ pub(super) async fn repository_root_for_directory(
         .await?
         .ok_or_else(|| AppError::BadRequest("directory is not attached to a Repository".into()))?;
     Ok(state.store.repository(&repository_id).await?.source_root)
-}
-
-pub(super) fn managed_worktree_path(
-    settings: &SettingsStore,
-    workspace_id: &str,
-    repository_name: &str,
-) -> PathBuf {
-    settings
-        .treefold_home()
-        .join("git")
-        .join("w")
-        .join(slug(workspace_id))
-        .join(repository_slug(repository_name))
 }
 
 pub(super) fn create_workspace_worktrees(

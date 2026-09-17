@@ -1728,6 +1728,7 @@ function Workspace() {
           let created: Workspace | null = null;
           const ok = await act(async () => {
             created = await workspacesApi.createFork(createForkWorkspace.id, {
+              branch: form.get("branch"),
               name: form.get("name"),
               description: form.get("description"),
             });
