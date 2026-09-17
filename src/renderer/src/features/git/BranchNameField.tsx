@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 function generateBranchName() {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
-  const date = `${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+  const date = `${pad(now.getFullYear() % 100)}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
   const hash = Array.from(crypto.getRandomValues(new Uint8Array(4)), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");

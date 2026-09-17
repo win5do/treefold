@@ -1893,7 +1893,6 @@ pub(super) async fn checkout_directory_branch_impl(
 
 #[derive(Deserialize)]
 pub(super) struct CreateWorkspace {
-    pub(super) name: String,
     pub(super) description: Option<String>,
     pub(super) branch: Option<String>,
     pub(super) remote_name: Option<String>,
@@ -1958,9 +1957,6 @@ pub(super) async fn create_workspace_impl(
     project_id: String,
     input: CreateWorkspace,
 ) -> Result<CreatedWorkspace> {
-    if input.name.trim().is_empty() {
-        return Err(AppError::BadRequest("workspace name is required".into()));
-    }
     let project = state.store.project(&project_id).await?;
     if project.status != "active" {
         return Err(AppError::BadRequest(
@@ -2097,7 +2093,7 @@ pub(super) async fn create_workspace_impl(
     let workspace = Workspace {
         id: workspace_id.clone(),
         project_id,
-        name: input.name.trim().into(),
+        name: branch.clone(),
         description: trimmed(input.description).unwrap_or_default(),
         status: "active".into(),
         kind: "workspace".into(),

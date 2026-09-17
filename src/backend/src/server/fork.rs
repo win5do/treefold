@@ -2,7 +2,6 @@ use super::*;
 
 #[derive(Deserialize)]
 pub(super) struct CreateFork {
-    pub(super) name: String,
     pub(super) description: Option<String>,
     pub(super) branch: Option<String>,
 }
@@ -53,14 +52,7 @@ pub(super) async fn create_todo_fork(
             "Todo is no longer pending or blocked",
         ));
     }
-    let name = todo
-        .content
-        .lines()
-        .next()
-        .unwrap_or("Todo")
-        .chars()
-        .take(48)
-        .collect::<String>();
+    let description = todo.content.clone();
     let operation_state = state.clone();
     let parent_id = owner.id.clone();
     let created = blocking_git_operation(move || async move {
@@ -68,9 +60,8 @@ pub(super) async fn create_todo_fork(
             operation_state,
             parent_id,
             CreateFork {
-                name,
                 branch: None,
-                description: Some("Created from Workspace Todo".into()),
+                description: Some(description),
             },
         )
         .await
@@ -160,9 +151,6 @@ pub(super) async fn create_fork_impl(
     parent_id: String,
     input: CreateFork,
 ) -> Result<CreatedWorkspace> {
-    if input.name.trim().is_empty() {
-        return Err(AppError::BadRequest("fork name is required".into()));
-    }
     let parent = state.store.workspace(&parent_id).await?;
     if parent.status != "active" {
         return Err(AppError::BadRequest(
@@ -282,7 +270,7 @@ pub(super) async fn create_fork_impl(
     let fork = Workspace {
         id: fork_id.clone(),
         project_id: parent.project_id,
-        name: input.name.trim().into(),
+        name: branch.clone(),
         description: trimmed(input.description).unwrap_or_default(),
         status: "active".into(),
         kind: "fork".into(),

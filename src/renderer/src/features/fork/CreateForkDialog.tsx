@@ -3,7 +3,6 @@ import { GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BranchNameField } from "@/features/git/BranchNameField";
 import type { Workspace } from "@/domain/types";
@@ -25,10 +24,6 @@ export function CreateForkDialog({ workspace, busy, onOpenChange, onSubmit }: {
         </DialogDescription>
         <form key={workspace?.id ?? "closed"} className="mt-6 flex flex-col gap-3" onSubmit={onSubmit}>
           <FieldGroup>
-            <Field>
-              <FieldLabel className="sr-only" htmlFor="fork-name">Fork name</FieldLabel>
-              <Input id="fork-name" name="name" placeholder="Fork name" required />
-            </Field>
             <Field>
               <FieldLabel className="sr-only" htmlFor="fork-description">Fork description</FieldLabel>
               <Textarea id="fork-description" name="description" placeholder="Independent feature or experiment" />

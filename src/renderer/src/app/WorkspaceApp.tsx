@@ -1695,7 +1695,6 @@ function Workspace() {
             created = await projectsApi.createWorkspace(
               createWorkspaceProject.id,
               {
-                name: form.get("name"),
                 description: form.get("description"),
                 branch: form.get("branch"),
                 remote_name:
@@ -1729,7 +1728,6 @@ function Workspace() {
           const ok = await act(async () => {
             created = await workspacesApi.createFork(createForkWorkspace.id, {
               branch: form.get("branch"),
-              name: form.get("name"),
               description: form.get("description"),
             });
           });

@@ -179,17 +179,6 @@ export function CreateWorkspaceDialog({
         >
           <FieldGroup>
             <Field>
-              <FieldLabel className="sr-only" htmlFor="workspace-name">
-                Workspace name
-              </FieldLabel>
-              <Input
-                id="workspace-name"
-                name="name"
-                placeholder="Feature or fix name"
-                required
-              />
-            </Field>
-            <Field>
               <FieldLabel className="sr-only" htmlFor="workspace-description">
                 Workspace description
               </FieldLabel>

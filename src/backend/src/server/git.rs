@@ -1821,7 +1821,7 @@ pub(super) fn choose_shared_branch(
             let random = Uuid::new_v4().simple().to_string();
             format!(
                 "treefold/{}-{}",
-                chrono::Local::now().format("%m%d-%H%M"),
+                chrono::Local::now().format("%y%m%d-%H%M"),
                 &random[..8]
             )
         });

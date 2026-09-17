@@ -32,8 +32,7 @@ for (const kind of ["workspace", "fork"] as const) {
       const branch = dialog.getByRole("textbox", { name: kind === "workspace" ? "Shared local branch" : "Branch name", exact: true });
       await expect(branch).toHaveValue("");
       const generated = await branch.getAttribute("placeholder");
-      expect(generated).toMatch(/^treefold\/\d{4}-\d{4}-[a-f0-9]{8}$/);
-      await dialog.getByRole("textbox", { name: kind === "workspace" ? "Workspace name" : "Fork name", exact: true }).fill("My change");
+      expect(generated).toMatch(/^treefold\/\d{6}-\d{4}-[a-f0-9]{8}$/);
       const submit = dialog.getByRole("button", { name: kind === "workspace" ? "Create Workspace" : "Create Fork", exact: true });
       await submit.click();
       await expect.poll(() => requests.length).toBe(1);

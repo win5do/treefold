@@ -38,8 +38,14 @@ fn random_name() -> String {
 }
 
 pub(super) fn reserve_worktree_root(settings: &SettingsStore) -> Result<WorktreeRoot> {
-    reserve_in(&settings.treefold_home().join("git/w"), random_name)
-        .map_err(|error| anyhow::anyhow!("reserve worktree directory: {error}").into())
+    reserve_in(&settings.treefold_home().join("git/w"), || {
+        format!(
+            "{}-{}",
+            chrono::Local::now().format("%y%m%d-%H%M"),
+            random_name()
+        )
+    })
+    .map_err(|error| anyhow::anyhow!("reserve worktree directory: {error}").into())
 }
 
 fn reserve_in(root: &Path, mut next_name: impl FnMut() -> String) -> io::Result<WorktreeRoot> {
