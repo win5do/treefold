@@ -6,7 +6,7 @@ function generateBranchName() {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
   const date = `${pad(now.getFullYear() % 100)}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-  const hash = Array.from(crypto.getRandomValues(new Uint8Array(4)), (byte) =>
+  const hash = Array.from(crypto.getRandomValues(new Uint8Array(2)), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
   return `treefold/${date}-${hash}`;
@@ -38,7 +38,8 @@ export function BranchNameField({
           onChange?.(event.target.value.trim());
         }}
       />
-      <input type="hidden" name="branch" value={value.trim() || generated} />
+      <input type="hidden" name="branch" value={value.trim()} />
+      <input type="hidden" name="generated_branch" value={generated} />
       <FieldDescription id={`${id}-description`}>
         Leave empty to use the generated name, or enter your own.
       </FieldDescription>

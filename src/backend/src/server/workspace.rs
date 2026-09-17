@@ -1897,6 +1897,7 @@ pub(super) struct CreateWorkspace {
     pub(super) branch: Option<String>,
     pub(super) remote_name: Option<String>,
     pub(super) remote_branch: Option<String>,
+    pub(super) generated_branch: Option<String>,
 }
 
 #[derive(Clone)]
@@ -2000,7 +2001,13 @@ pub(super) async fn create_workspace_impl(
     }
     let workspace_id = new_id();
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
-    let branch = choose_shared_branch(&locations, explicit_branch.as_deref())?;
+    let branch = choose_shared_branch(
+        &locations,
+        explicit_branch.as_deref(),
+        trimmed(input.generated_branch)
+            .filter(|value| !value.is_empty())
+            .as_deref(),
+    )?;
     let default_delivery_mode = locations
         .iter()
         .find(|location| location.id == default_repository_id)

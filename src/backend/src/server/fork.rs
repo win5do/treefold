@@ -4,6 +4,7 @@ use super::*;
 pub(super) struct CreateFork {
     pub(super) description: Option<String>,
     pub(super) branch: Option<String>,
+    pub(super) generated_branch: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -60,6 +61,7 @@ pub(super) async fn create_todo_fork(
             operation_state,
             parent_id,
             CreateFork {
+                generated_branch: None,
                 branch: None,
                 description: Some(description),
             },
@@ -177,7 +179,13 @@ pub(super) async fn create_fork_impl(
         project_repositorys.push(state.store.repository_as_directory(&repository.id).await?);
     }
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
-    let branch = choose_shared_branch(&project_repositorys, explicit_branch.as_deref())?;
+    let branch = choose_shared_branch(
+        &project_repositorys,
+        explicit_branch.as_deref(),
+        trimmed(input.generated_branch)
+            .filter(|value| !value.is_empty())
+            .as_deref(),
+    )?;
     let worktree_root = super::worktree_names::reserve_worktree_root(&state.settings)?;
     let timestamp = now();
     let mut snapshots = Vec::new();

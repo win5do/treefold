@@ -1697,6 +1697,7 @@ function Workspace() {
               {
                 description: form.get("description"),
                 branch: form.get("branch"),
+                generated_branch: form.get("generated_branch"),
                 remote_name:
                   configuredDefaultDelivery === "push_branch"
                     ? configuredDefaultRemote
@@ -1728,6 +1729,7 @@ function Workspace() {
           const ok = await act(async () => {
             created = await workspacesApi.createFork(createForkWorkspace.id, {
               branch: form.get("branch"),
+              generated_branch: form.get("generated_branch"),
               description: form.get("description"),
             });
           });

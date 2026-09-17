@@ -7,7 +7,7 @@ for (const kind of ["workspace", "fork"] as const) {
   test(`${kind} creation submits the preview branch or a user override`, async () => {
     const harness = await startUiHarness();
     let page: Page | undefined;
-    const requests: { branch: string }[] = [];
+    const requests: { branch: string; generated_branch: string }[] = [];
     try {
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: `create-${kind}` });
       const endpoint = kind === "workspace"
@@ -32,11 +32,12 @@ for (const kind of ["workspace", "fork"] as const) {
       const branch = dialog.getByRole("textbox", { name: kind === "workspace" ? "Shared local branch" : "Branch name", exact: true });
       await expect(branch).toHaveValue("");
       const generated = await branch.getAttribute("placeholder");
-      expect(generated).toMatch(/^treefold\/\d{6}-\d{4}-[a-f0-9]{8}$/);
+      expect(generated).toMatch(/^treefold\/\d{6}-\d{4}-[a-f0-9]{4}$/);
       const submit = dialog.getByRole("button", { name: kind === "workspace" ? "Create Workspace" : "Create Fork", exact: true });
       await submit.click();
       await expect.poll(() => requests.length).toBe(1);
-      expect(requests[0].branch).toBe(generated);
+      expect(requests[0].branch).toBe("");
+      expect(requests[0].generated_branch).toBe(generated);
       await branch.fill("feature/my-change");
       await submit.click();
       await expect.poll(() => requests.length).toBe(2);
@@ -45,7 +46,8 @@ for (const kind of ["workspace", "fork"] as const) {
       await expect(branch).toHaveAttribute("placeholder", generated!);
       await submit.click();
       await expect.poll(() => requests.length).toBe(3);
-      expect(requests[2].branch).toBe(generated);
+      expect(requests[2].branch).toBe("");
+      expect(requests[2].generated_branch).toBe(generated);
       await expect(submit).toBeEnabled();
       await dialog.getByRole("button", { name: "Close", exact: true }).click();
       await expect(dialog).toBeHidden();

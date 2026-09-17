@@ -376,6 +376,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: None,
                 remote_name: None,
@@ -434,6 +435,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: None,
                 remote_name: None,
@@ -691,6 +693,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: None,
                 remote_name: None,
@@ -1060,8 +1063,9 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: Some("feature/current-fork-test".into()),
                 description: None,
-                branch: Some("feature/current-fork-test".into()),
+                branch: None,
                 remote_name: None,
                 remote_branch: None,
             }),
@@ -1085,6 +1089,7 @@ mod current_workspace_tests {
                     State(state.clone()),
                     axum::extract::Path(workspace.id.clone()),
                     ApiJson(CreateFork {
+                        generated_branch: Some("main".into()),
                         description: None,
                         branch: Some(branch.into())
                     }),
@@ -1106,6 +1111,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                generated_branch: Some("main".into()),
                 branch: Some("feature/custom-fork".into()),
                 description: Some("Independent task description".into()),
             }),
@@ -1118,6 +1124,7 @@ mod current_workspace_tests {
                 State(state.clone()),
                 axum::extract::Path(fork.id.clone()),
                 ApiJson(CreateFork {
+                    generated_branch: Some("main".into()),
                     branch: None,
                     description: None,
                 }),
@@ -1313,6 +1320,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: Some("feature/parent-operation-parent".into()),
                 remote_name: None,
@@ -1325,6 +1333,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                generated_branch: None,
                 branch: None,
                 description: None,
             }),
@@ -1517,6 +1526,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: Some("feature/finish-parent".into()),
                 remote_name: None,
@@ -1529,6 +1539,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(workspace.id),
             ApiJson(CreateFork {
+                generated_branch: None,
                 branch: None,
                 description: None,
             }),
@@ -1660,6 +1671,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: Some("feature/dirty-finish".into()),
                 remote_name: None,
@@ -1759,6 +1771,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: Some("feature/publish-finish".into()),
                 remote_name: Some("origin".into()),
@@ -1912,6 +1925,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: Some("main".into()),
                 description: None,
                 branch: None,
                 remote_name: None,
@@ -1942,7 +1956,7 @@ mod current_workspace_tests {
                 .iter()
                 .all(|part| part.bytes().all(|byte| byte.is_ascii_digit()))
         );
-        assert_eq!(parts[2].len(), 8);
+        assert_eq!(parts[2].len(), 4);
         assert!(parts[2].bytes().all(|byte| byte.is_ascii_hexdigit()));
 
         let repositories = state
@@ -2124,6 +2138,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: None,
                 remote_name: None,
@@ -2279,6 +2294,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: Some("main".into()),
                 description: None,
                 branch: None,
                 remote_name: None,
@@ -2359,6 +2375,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                generated_branch: Some("main".into()),
                 branch: None,
                 description: None,
             }),
@@ -2428,7 +2445,7 @@ mod current_workspace_tests {
             .unwrap()
             .to_str()
             .unwrap();
-        assert_eq!(namespace.len(), 20);
+        assert_eq!(namespace.len(), 16);
         assert_eq!(&namespace[6..7], "-");
         assert_eq!(&namespace[11..12], "-");
         assert!(
@@ -2526,6 +2543,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 branch: None,
                 remote_name: None,
@@ -2645,6 +2663,7 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 checkout_mode: Some("in_place".into()),
                 target_branch: None,
@@ -3115,6 +3134,7 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 checkout_mode: Some("worktree".into()),
                 target_branch: Some("main".into()),
@@ -3126,6 +3146,7 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                generated_branch: None,
                 branch: None,
                 description: None,
             }),
@@ -3439,6 +3460,7 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 checkout_mode: Some("worktree".into()),
                 target_branch: Some("main".into()),
@@ -3451,6 +3473,7 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
             ApiJson(CreateFork {
+                generated_branch: None,
                 branch: None,
                 description: None,
             }),
@@ -3497,6 +3520,7 @@ mod tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                generated_branch: None,
                 description: None,
                 checkout_mode: Some("worktree".into()),
                 target_branch: Some("main".into()),
@@ -3517,6 +3541,7 @@ mod tests {
                 State(state.clone()),
                 axum::extract::Path(fork.id.clone()),
                 ApiJson(CreateFork {
+                    generated_branch: None,
                     branch: None,
                     description: None,
                 }),
