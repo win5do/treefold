@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import assert from "node:assert/strict";
-import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
+import { FIXTURE_IDS, FIXTURE_NAMES } from "./fixtures/sidebar-core.ts";
 import { startUiHarness } from "./ui-harness.ts";
 import { closeUiSession, createUiSession } from "./harness/session.ts";
 
@@ -59,6 +59,12 @@ test("todos", async () => {
     await expect.poll(async () =>
         (page.url()).includes(`/workspaces/${FIXTURE_IDS.fork}`), { timeout: 3_000 }).toBeTruthy();
     assert.equal(harness.todoRequests.at(-1)!.action, "fork");
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.fork}`);
+    await expect(page.getByRole("heading", { name: FIXTURE_NAMES.fork, exact: true })).toBeVisible();
+    await expect(page.getByTestId("workspace-todos-section")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Add Todo", exact: true })).toHaveCount(0);
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await expect(page.getByTestId("workspace-todos-section")).toBeVisible();
     harness.assertNoUnexpectedRequests();
     console.log("✓ Todo CRUD and Todo Fork launch passed");
   } finally {
