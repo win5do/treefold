@@ -16,6 +16,7 @@ import { acceptOutputSequence, createTerminalRuntime, decodeSequencedOutput, typ
 import { discardTerminalSession, retainTerminalSession, takeTerminalSession } from "@/features/terminal/sessionCache";
 import { setupXtermIme229Workaround } from "@/features/terminal/xtermIme229Workaround";
 import { setupTerminalScrollbar } from "@/features/terminal/terminalScrollbar";
+import { PipeLogSession } from "@/features/terminal/PipeLogSession";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
@@ -25,7 +26,11 @@ export function SessionWorkspace({ session, busy, onRestart, onExit }: { session
     if (!running) discardTerminalSession(session.id);
   }, [running, session.id]);
   return <div data-testid="session-workspace" data-session-id={session.id} className="flex h-full min-h-0 flex-col bg-[#111315]">
-    {running ? <WebTerminal key={session.id} session={session} onExit={onExit} /> : <StoppedSession session={session} busy={busy} onRestart={onRestart} />}
+    {session.io_mode === "pipe"
+      ? <PipeLogSession key={`${session.id}:${session.launch_started_at}:${session.status}`} session={session} busy={busy} onRestart={onRestart} />
+      : running
+        ? <WebTerminal key={session.id} session={session} onExit={onExit} />
+        : <StoppedSession session={session} busy={busy} onRestart={onRestart} />}
   </div>;
 }
 

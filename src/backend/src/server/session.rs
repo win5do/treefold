@@ -672,6 +672,38 @@ pub(super) async fn update_settings(
     Ok(Json(state.settings.update(input)?))
 }
 
+#[derive(Default, Deserialize)]
+pub(super) struct SessionLogsQuery {
+    #[serde(default)]
+    after: u64,
+    #[serde(default)]
+    follow: bool,
+}
+
+pub(super) async fn session_logs(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    Query(query): Query<SessionLogsQuery>,
+) -> Result<impl IntoResponse> {
+    let session = state.store.session(&id).await?;
+    if session.io_mode != "pipe" {
+        return Err(AppError::BadRequest("session has no pipe logs".into()));
+    }
+    let body = state
+        .terminals
+        .logs_existing(
+            &session.amux_workspace_name,
+            &session.amux_process_name,
+            query.after,
+            query.follow,
+        )
+        .await?;
+    Ok((
+        [(axum::http::header::CONTENT_TYPE, "application/x-ndjson")],
+        body,
+    ))
+}
+
 pub(super) async fn terminal_socket(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,

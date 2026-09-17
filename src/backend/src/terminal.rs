@@ -568,6 +568,23 @@ impl TerminalManager {
             "/v1/processes/{workspace}/{process}/attach?replay_bytes={REPLAY_BYTES}{control}{input}{output}"
         )).await?))
     }
+
+    pub async fn logs_existing(
+        &self,
+        workspace: &str,
+        process: &str,
+        after: u64,
+        follow: bool,
+    ) -> anyhow::Result<axum::body::Body> {
+        self.ensure_runtime().await?;
+        let body = self
+            .client
+            .stream(&format!(
+                "/v1/processes/{workspace}/{process}/logs?after={after}&follow={follow}"
+            ))
+            .await?;
+        Ok(axum::body::Body::new(body))
+    }
 }
 
 pub(crate) fn treefold_process_view(

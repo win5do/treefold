@@ -523,6 +523,7 @@ fn app(state: AppState) -> Router {
         .route("/api/sessions/{id}/close", post(close_session))
         .route("/api/sessions/{id}/open", post(open_session))
         .route("/api/sessions/{id}/terminal", get(terminal_socket))
+        .route("/api/sessions/{id}/logs", get(session_logs))
         .route("/api/keymap", get(keymap::get).patch(keymap::update))
         .route("/api/settings", get(get_settings).patch(update_settings))
         .fallback(route_not_found)
