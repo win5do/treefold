@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Copy, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,38 +30,36 @@ export function SessionWorkspace({ session, busy, onRestart, onExit }: { session
 }
 
 function StoppedSession({ session, busy, onRestart }: { session: Session; busy: boolean; onRestart: () => void }) {
+  const { t } = useTranslation();
   const command = session.argv.join(" ");
   const copyCommand = async () => {
     try {
       await navigator.clipboard.writeText(command);
-      toast.success("Command copied");
+      toast.success(t("terminalUi.commandCopied"));
     } catch (cause) {
-      toast.errorFrom(cause, "Could not copy command");
+      toast.errorFrom(cause, t("terminalUi.couldNotCopyCommand"));
     }
   };
   return (
     <div data-testid="session-terminal-state" className="grid min-h-0 flex-1 overflow-y-auto place-items-center p-8 text-terminal-muted">
       <div className="w-full min-w-0 max-w-2xl rounded-lg border border-terminal-accent bg-terminal-accent p-5">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium">Session is {session.status}</p>
+          <p className="text-sm font-medium">{t("terminalUi.sessionState", { status: t(`states.${session.status}`, { defaultValue: session.status }) })}</p>
           <Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}>
-            <RotateCcw data-icon="inline-start" />Resume
-          </Button>
+            <RotateCcw data-icon="inline-start" />{t("terminalUi.resume")}</Button>
         </div>
         <dl className="mt-4 grid min-w-0 gap-3 text-xs">
           <div className="min-w-0">
-            <dt className="flex items-center justify-between gap-2 text-terminal-muted">
-              Command
-              <Button size="icon-sm" variant="terminal" aria-label="Copy command" title="Copy command" disabled={!command} onClick={() => void copyCommand()}>
+            <dt className="flex items-center justify-between gap-2 text-terminal-muted">{t("terminalUi.command")}<Button size="icon-sm" variant="terminal" aria-label={t("terminalUi.copyCommand")} title={t("terminalUi.copyCommand")} disabled={!command} onClick={() => void copyCommand()}>
                 <Copy data-icon="inline-start" />
               </Button>
             </dt>
-            <dd aria-label="Command" tabIndex={0} className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-md border border-terminal-accent p-3 font-mono [scrollbar-gutter:stable]">
+            <dd aria-label={t("terminalUi.command")} tabIndex={0} className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-all rounded-md border border-terminal-accent p-3 font-mono [scrollbar-gutter:stable]">
               {command || "—"}
             </dd>
           </div>
-          <div><dt className="text-terminal-muted">Working directory</dt><dd className="mt-1 break-all font-mono">{session.cwd}</dd></div>
-          <div><dt className="text-terminal-muted">I/O mode</dt><dd className="mt-1 font-mono">{session.io_mode}</dd></div>
+          <div><dt className="text-terminal-muted">{t("terminalUi.workingDirectory")}</dt><dd className="mt-1 break-all font-mono">{session.cwd}</dd></div>
+          <div><dt className="text-terminal-muted">{t("terminalUi.iOMode")}</dt><dd className="mt-1 font-mono">{session.io_mode}</dd></div>
         </dl>
       </div>
     </div>
@@ -68,6 +67,7 @@ function StoppedSession({ session, busy, onRestart }: { session: Session; busy: 
 }
 
 function WebTerminal({ session, onExit }: { session: Session; onExit: () => void }) {
+  const { t } = useTranslation();
   const hostRef = useRef<HTMLDivElement>(null);
   const onExitRef = useRef(onExit);
   const [ownership, setOwnership] = useState<TerminalOwnership>("connecting");
@@ -326,7 +326,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     };
   }, [session.id, session.kind, session.status, session.launch_started_at, session.amux_process_name]);
   return <div className="relative min-h-0 flex-1 p-2">
-    {ownership === "readonly" ? <div data-testid="terminal-readonly-indicator" role="status" className="absolute right-4 top-3 z-10 rounded border border-amber-400/30 bg-[#191b1e]/95 px-2 py-1 text-[10px] font-medium text-amber-300">Read only</div> : null}
+    {ownership === "readonly" ? <div data-testid="terminal-readonly-indicator" role="status" className="absolute right-4 top-3 z-10 rounded border border-amber-400/30 bg-[#191b1e]/95 px-2 py-1 text-[10px] font-medium text-amber-300">{t("terminalUi.readOnly")}</div> : null}
     <div ref={hostRef} className="h-full min-h-0" />
   </div>;
 }

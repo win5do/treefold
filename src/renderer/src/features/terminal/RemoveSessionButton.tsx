@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
@@ -8,6 +9,7 @@ import type { Session } from "@/domain/types";
 import { toast } from "@/lib/toast";
 
 export function RemoveSessionButton({ session, disabled }: { session: Session; disabled?: boolean }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const queryClient = useQueryClient();
@@ -19,20 +21,20 @@ export function RemoveSessionButton({ session, disabled }: { session: Session; d
       await queryClient.invalidateQueries({ predicate: ({ queryKey }) => ["sidebar", "project-sessions", "workspace-sessions", "project", "workspace"].includes(String(queryKey[0])) });
       setOpen(false);
     } catch (cause) {
-      toast.errorFrom(cause, "Could not remove Session");
+      toast.errorFrom(cause, t("terminalUi.couldNotRemoveSession"));
     } finally {
       setRemoving(false);
     }
   };
   return <>
-    <Button size="icon-sm" variant="destructive-ghost" disabled={disabled || removing} title="Remove from Treefold" aria-label="Remove from Treefold" onClick={() => setOpen(true)}><Trash2 data-icon="inline-start" /></Button>
+    <Button size="icon-sm" variant="destructive-ghost" disabled={disabled || removing} title={t("terminalUi.removeFromTreefold")} aria-label={t("terminalUi.removeFromTreefold")} onClick={() => setOpen(true)}><Trash2 data-icon="inline-start" /></Button>
     <AlertDialog open={open} onOpenChange={(value) => { if (!removing) setOpen(value); }}>
       <AlertDialogContent>
-        <AlertDialogTitle>Remove Session from Treefold?</AlertDialogTitle>
-        <AlertDialogDescription>Remove “{session.name}” and stop it if running. Its Codex conversation remains available in Codex.</AlertDialogDescription>
+        <AlertDialogTitle>{t("terminalUi.removeSessionFromTreefold")}</AlertDialogTitle>
+        <AlertDialogDescription>{t("terminalUi.removeDescription", { name: session.name })}</AlertDialogDescription>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={removing}>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" disabled={removing} onClick={() => void remove()}>Remove</AlertDialogAction>
+          <AlertDialogCancel disabled={removing}>{t("terminalUi.cancel")}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={removing} onClick={() => void remove()}>{t("terminalUi.remove")}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

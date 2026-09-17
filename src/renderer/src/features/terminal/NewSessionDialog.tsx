@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Directory } from "@/domain/types";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ export function NewSessionDialog({
   onClose: () => void;
   onCreate: (kind: "shell" | "codex", directory: Directory) => void;
 }) {
+  const { t } = useTranslation();
   // Follow the active Session until the user explicitly selects a type.
   // Router transitions can settle just after the shortcut opens this dialog.
   const [chosenKind, setKind] = useState<"shell" | "codex" | null>(null);
@@ -114,8 +116,8 @@ export function NewSessionDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>新建 Session</DialogTitle>
-          <DialogDescription>{name} · 选择类型和目录</DialogDescription>
+          <DialogTitle>{t("terminalUi.newSession")}</DialogTitle>
+          <DialogDescription>{t("terminalUi.chooseTypeDirectory", { name })}</DialogDescription>
         </DialogHeader>
         <ToggleGroup
           value={[kind]}
@@ -132,7 +134,7 @@ export function NewSessionDialog({
               create();
             }
           }}
-          aria-label="Session 类型"
+          aria-label={t("terminalUi.sessionType")}
         >
           <ToggleGroupItem
             ref={(node) => { typeRefs.current.codex = node; }}
@@ -150,12 +152,12 @@ export function NewSessionDialog({
           </ToggleGroupItem>
         </ToggleGroup>
         <Field>
-          <FieldLabel htmlFor="new-session-directory">目录</FieldLabel>
+          <FieldLabel htmlFor="new-session-directory">{t("terminalUi.directory")}</FieldLabel>
           <Input
             ref={searchRef}
             id="new-session-directory"
             value={search}
-            placeholder="搜索目录（⌘ F）"
+            placeholder={t("terminalUi.searchDirectoriesF")}
             onFocus={(event) => {
               if (event.relatedTarget instanceof HTMLElement) {
                 searchReturnFocus.current = event.relatedTarget;
@@ -183,7 +185,7 @@ export function NewSessionDialog({
         <div
           className="flex max-h-64 flex-col gap-1 overflow-y-auto"
           role="group"
-          aria-label="可用目录"
+          aria-label={t("terminalUi.availableDirectories")}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -230,17 +232,15 @@ export function NewSessionDialog({
                   <span>{directory.name}</span>
                   <span className="max-w-full truncate text-muted-foreground">
                     {directory.path}
-                    {disabled ? " · Agent 需要可用的 Git 目录" : ""}
+                    {disabled ? t("terminalUi.agentsRequireAnAvailableGitDirectory") : ""}
                   </span>
                 </span>
               </Button>
             );
           })}
-          {filtered.length === 0 && <p role="status">没有匹配的目录</p>}
+          {filtered.length === 0 && <p role="status">{t("terminalUi.noMatchingDirectories")}</p>}
         </div>
-        <Button disabled={!active} onClick={create}>
-          创建 Session
-        </Button>
+        <Button disabled={!active} onClick={create}>{t("terminalUi.createSession")}</Button>
       </DialogContent>
     </Dialog>
   );

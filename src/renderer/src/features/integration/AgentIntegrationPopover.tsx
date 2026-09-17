@@ -71,9 +71,9 @@ export function AgentIntegrationPopover() {
         </div>
         <Table data-testid="agent-integration-table" className="table-fixed">
           <TableBody>
-            <TableRow><TableCell className="w-24 text-muted-foreground">App</TableCell><TableCell className="font-mono">{status?.app_version ?? "—"}</TableCell></TableRow>
-            <TableRow><TableCell className="text-muted-foreground">Bundle</TableCell><TableCell className="truncate font-mono" title={status?.bundle_path}>{status?.bundle_version ?? "—"}</TableCell></TableRow>
-            <TableRow><TableCell className="text-muted-foreground">Protocol</TableCell><TableCell className="font-mono">{status?.protocol_version ?? "—"}</TableCell></TableRow>
+            <TableRow><TableCell className="w-24 text-muted-foreground">{t("integrationUi.app")}</TableCell><TableCell className="font-mono">{status?.app_version ?? "—"}</TableCell></TableRow>
+            <TableRow><TableCell className="text-muted-foreground">{t("integrationUi.bundle")}</TableCell><TableCell className="truncate font-mono" title={status?.bundle_path}>{status?.bundle_version ?? "—"}</TableCell></TableRow>
+            <TableRow><TableCell className="text-muted-foreground">{t("integrationUi.protocol")}</TableCell><TableCell className="font-mono">{status?.protocol_version ?? "—"}</TableCell></TableRow>
             {status?.components.map((component) => <TableRow key={component.id}>
               <TableCell className="text-muted-foreground">{componentLabels[component.id]}</TableCell>
               <TableCell>

@@ -1,4 +1,5 @@
 import { frontendLogger } from "@/lib/logger";
+import i18n from "@/i18n";
 
 let API_BASE = import.meta.env.VITE_TREEFOLD_API_BASE || "http://127.0.0.1:15001";
 
@@ -43,7 +44,7 @@ async function responseBody(response: Response, requestId: string): Promise<unkn
   try {
     return JSON.parse(text);
   } catch {
-    throw new ApiError(response.status, "INVALID_RESPONSE", `Server returned invalid JSON (${response.status})`, undefined, requestId);
+    throw new ApiError(response.status, "INVALID_RESPONSE", i18n.t("feedback.invalidResponse", { status: response.status }), undefined, requestId);
   }
 }
 
@@ -66,7 +67,7 @@ export async function request<T = void>(path: string, options: RequestOptions = 
       });
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") throw cause;
-      throw new ApiError(0, "NETWORK_ERROR", cause instanceof Error ? cause.message : "Network request failed", cause, activeId);
+      throw new ApiError(0, "NETWORK_ERROR", cause instanceof Error ? cause.message : i18n.t("feedback.networkError"), cause, activeId);
     }
     status = response.status;
     const returnedId = response.headers.get("X-Request-ID");
@@ -74,7 +75,7 @@ export async function request<T = void>(path: string, options: RequestOptions = 
     const body = await responseBody(response, activeId);
     if (!response.ok) {
       if (isErrorBody(body)) throw new ApiError(status, body.error.code, body.error.message, body.error.details, activeId);
-      throw new ApiError(status, "HTTP_ERROR", `Request failed: ${status}`, body, activeId);
+      throw new ApiError(status, "HTTP_ERROR", i18n.t("feedback.httpError", { status }), body, activeId);
     }
     const level = ["GET", "HEAD", "OPTIONS"].includes(method) ? "debug" : "info";
     frontendLogger[level](`request_id=${activeId} HTTP ${label} status=${status} elapsed_ms=${Math.round(performance.now() - started)}`);

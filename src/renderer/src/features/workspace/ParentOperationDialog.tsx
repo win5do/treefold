@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, GitMerge, GitPullRequestArrow, Sparkles } from "lucide-react";
 import { workspacesApi } from "@/api/workspaces";
@@ -39,6 +41,7 @@ export function ParentOperationDialog({
   onOpenChange: (open: boolean) => void;
   onOpenSession: (operation: ParentOperation, session: Session) => void;
 }) {
+  const { t } = useTranslation();
   const repositories = useMemo(
     () =>
       (workspace?.repositories ?? []).filter(
@@ -95,7 +98,7 @@ export function ParentOperationDialog({
   }, [operation?.id, operation?.status]);
 
   if (!workspace || !direction) return null;
-  const title = direction === "update" ? "Update from Parent" : "Integrate into Parent";
+  const title = direction === "update" ? t("workspaceUi.updateFromParent") : t("workspaceUi.integrateIntoParent");
   const currentOperation = operation ?? preview?.operation ?? null;
   const blocked = !preview || preview.blockers.length > 0;
   const canStart =
@@ -137,14 +140,14 @@ export function ParentOperationDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {direction === "update"
-              ? "Bring the selected Workspace or Fork Repository up to its parent without fetching remotes."
-              : "Merge the selected Repository into its parent checkout. Git fast-forwards when possible."}
+              ? t("workspaceUi.updateFromParentDescription")
+              : t("workspaceUi.integrateIntoParentDescription")}
           </DialogDescription>
         </DialogHeader>
 
         <FieldGroup>
           <Field>
-            <FieldLabel htmlFor="parent-operation-repository">Repository</FieldLabel>
+            <FieldLabel htmlFor="parent-operation-repository">{t("workspaceUi.repository")}</FieldLabel>
             <NativeSelect
               id="parent-operation-repository"
               className="w-full"
@@ -162,7 +165,7 @@ export function ParentOperationDialog({
 
           {direction === "update" && canStart && (
             <Field>
-              <FieldLabel>Strategy</FieldLabel>
+              <FieldLabel>{t("workspaceUi.strategy")}</FieldLabel>
               <ToggleGroup
                 value={[strategy]}
                 onValueChange={(value) => {
@@ -172,18 +175,17 @@ export function ParentOperationDialog({
                 variant="outline"
                 spacing={0}
               >
-                <ToggleGroupItem value="rebase">Rebase (Recommended)</ToggleGroupItem>
-                <ToggleGroupItem value="merge">Merge</ToggleGroupItem>
+                <ToggleGroupItem value="rebase">{t("workspaceUi.rebaseRecommended")}</ToggleGroupItem>
+                <ToggleGroupItem value="merge">{t("workspaceUi.merge")}</ToggleGroupItem>
               </ToggleGroup>
-              <FieldDescription>Rebase keeps a linear branch; Merge preserves existing commit topology.</FieldDescription>
+              <FieldDescription>{t("workspaceUi.strategyDescription")}</FieldDescription>
             </Field>
           )}
         </FieldGroup>
 
         {busy && !preview && (
           <div className="flex items-center gap-2 text-muted-foreground">
-            <Spinner /> Checking Repository state…
-          </div>
+            <Spinner />{t("workspaceUi.checkingRepositoryState")}</div>
         )}
 
         {preview && (
@@ -195,7 +197,7 @@ export function ParentOperationDialog({
             </AlertTitle>
             <AlertDescription>
               <p>{preview.source_branch} → {preview.target_branch}</p>
-              <p className="truncate" title={preview.target_path}>Target: {preview.target_path}</p>
+              <p className="truncate" title={preview.target_path}>{t("workspaceUi.target")}{preview.target_path}</p>
             </AlertDescription>
           </Alert>
         )}
@@ -203,7 +205,7 @@ export function ParentOperationDialog({
         {preview?.blockers.map((blocker) => (
           <Alert key={blocker} variant="destructive">
             <AlertTriangle />
-            <AlertTitle>Blocked</AlertTitle>
+            <AlertTitle>{t("workspaceUi.blocked")}</AlertTitle>
             <AlertDescription>{blocker}</AlertDescription>
           </Alert>
         ))}
@@ -232,13 +234,13 @@ export function ParentOperationDialog({
         {error && (
           <Alert variant="destructive">
             <AlertTriangle />
-            <AlertTitle>Operation failed</AlertTitle>
+            <AlertTitle>{t("workspaceUi.operationFailed")}</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
         <DialogFooter>
-          <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>Close</Button>
+          <Button variant="secondary" disabled={busy} onClick={() => onOpenChange(false)}>{t("workspaceUi.close")}</Button>
           {canStart && (
             <Button
               data-testid="start-parent-operation"
@@ -282,36 +284,35 @@ export function ParentOperationPanel({
   onUndo: () => void;
   onResumeFinish?: () => void;
 }) {
+  const { t } = useTranslation();
   const conflicted = operation.status === "conflicted" || operation.status === "resolving";
   return (
     <Alert variant={conflicted || operation.status === "recovery_required" ? "warning" : "default"}>
       {conflicted ? <AlertTriangle /> : <Sparkles />}
       <AlertTitle className="flex items-center gap-2">
         {statusLabel(operation.status)}
-        <Badge variant="outline">{operation.strategy}</Badge>
+        <Badge variant="outline">{t(`states.${operation.strategy}`, { defaultValue: operation.strategy })}</Badge>
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-2">
         {operation.error && <p>{operation.error}</p>}
         <div className="flex flex-wrap gap-2">
           {conflicted && (
             <Button size="sm" disabled={busy} onClick={onResolve}>
-              {busy ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
-              Resolve with AI
-            </Button>
+              {busy ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}{t("workspaceUi.resolveWithAI")}</Button>
           )}
           {(resolverSession || operation.resolver_session_id) && (
-            <Button size="sm" variant="outline" onClick={onOpenSession}>Open Session</Button>
+            <Button size="sm" variant="outline" onClick={onOpenSession}>{t("workspaceUi.openSession")}</Button>
           )}
           {conflicted && (
-            <Button size="sm" variant="destructive" disabled={busy} onClick={onAbort}>Stop AI & Abort</Button>
+            <Button size="sm" variant="destructive" disabled={busy} onClick={onAbort}>{t("workspaceUi.stopAIAbort")}</Button>
           )}
           {operation.status === "completed" && operation.undo_available && (
             <Button size="sm" variant="outline" disabled={busy} onClick={onUndo}>
-              {operation.direction === "update" ? "Undo Update" : "Undo Integration"}
+              {operation.direction === "update" ? t("workspaceUi.undoUpdate") : t("workspaceUi.undoIntegration")}
             </Button>
           )}
           {operation.status === "completed" && operation.origin === "finish" && onResumeFinish && (
-            <Button size="sm" disabled={busy} onClick={onResumeFinish}>Resume Finish</Button>
+            <Button size="sm" disabled={busy} onClick={onResumeFinish}>{t("workspaceUi.resumeFinish")}</Button>
           )}
         </div>
       </AlertDescription>
@@ -320,12 +321,9 @@ export function ParentOperationPanel({
 }
 
 function outcomeLabel(outcome: ParentOperationPreview["outcome"]) {
-  if (outcome === "up_to_date") return "up to date";
-  if (outcome === "fast_forward") return "fast-forward";
-  return "merge commit";
+  return i18n.t(`states.${outcome}`, { defaultValue: outcome });
 }
 
 function statusLabel(status: ParentOperation["status"]) {
-  if (status === "recovery_required") return "Recovery required";
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  return i18n.t(`parentOperationStatus.${status}`, { defaultValue: status });
 }

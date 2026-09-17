@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
 import {
   Bot,
@@ -61,6 +62,7 @@ export function ProjectHome({
   onDeleteWorktree: (worktree: GitWorktree) => void;
   worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
+  const { t } = useTranslation();
   const rootWorkspaces = project.workspaces.filter(
     (stream) => !stream.parent_workspace_id,
   );
@@ -75,11 +77,9 @@ export function ProjectHome({
       <div data-testid="page-content" className="mx-auto max-w-[96rem]">
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-xs text-muted-foreground">
-              Project · multi-repository locations
-            </p>
+            <p className="text-xs text-muted-foreground">{t("projectsUi.projectMultiRepositoryLocations")}</p>
             {project.status === "archived" && (
-              <Badge>archived · read-only</Badge>
+              <Badge>{t("labels.archivedReadOnly")}</Badge>
             )}
           </div>
           <h1 className="mt-2 text-3xl font-semibold tracking-tight">
@@ -92,10 +92,8 @@ export function ProjectHome({
         <section className="mt-10">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">Repositories</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Each repository contains peer Directories and Worktrees groups.
-              </p>
+              <h2 className="text-sm font-semibold">{t("projectsUi.repositories")}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t("projectsUi.eachRepositoryContainsPeerDirectoriesAndWorktreesGroups")}</p>
             </div>
             {project.status === "active" && (
               <Button
@@ -103,9 +101,7 @@ export function ProjectHome({
                 size="sm"
                 onClick={onAddDirectory}
               >
-                <Plus data-icon="inline-start" />
-                Add location
-              </Button>
+                <Plus data-icon="inline-start" />{t("projectsUi.addLocation")}</Button>
             )}
           </div>
           <div
@@ -141,19 +137,14 @@ export function ProjectHome({
               );
             })}
             {project.repositories.length === 0 && (
-              <div className="py-10 text-center text-xs text-muted-foreground">
-                Add a Git Directory before creating a Workspace.
-              </div>
+              <div className="py-10 text-center text-xs text-muted-foreground">{t("projectsUi.addAGitDirectoryBeforeCreatingAWorkspace")}</div>
             )}
           </div>
         </section>
         {contextDirectories.length > 0 && (
           <section className="mt-8" data-testid="project-context-directories">
-            <h2 className="text-sm font-semibold">Non-Git Directories</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Available to Shell Sessions and provided to Agents as read-only
-              context.
-            </p>
+            <h2 className="text-sm font-semibold">{t("projectsUi.nonGitDirectories")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("projectsUi.contextDirectoriesDescription")}</p>
             <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
               {contextDirectories.map((directory) => (
                 <DirectoryTreeRow
@@ -177,12 +168,8 @@ export function ProjectHome({
         <section data-testid="project-sessions-section" className="mt-10">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-semibold">Project Sessions</h2>
-              <p className="mt-1 text-xs text-warning">
-                These Sessions operate directly in Project locations. Shell and
-                Command records are deleted only when closed; Codex history is
-                retained.
-              </p>
+              <h2 className="text-sm font-semibold">{t("projectsUi.projectSessions")}</h2>
+              <p className="mt-1 text-xs text-warning">{t("projectsUi.projectSessionsDescription")}</p>
             </div>
             <span className="text-[11px] text-muted-foreground">
               {project.sessions.length}
@@ -213,7 +200,7 @@ export function ProjectHome({
                       {session.kind === "codex"
                         ? "Codex"
                         : session.kind === "command"
-                          ? "Command"
+                          ? t("projectsUi.command")
                           : "Shell"}
                     </Badge>
                     <Badge
@@ -226,8 +213,8 @@ export function ProjectHome({
                       }
                     >
                       {session.visibility === "visible"
-                        ? session.status
-                        : "history"}
+                        ? t(`states.${session.status}`, { defaultValue: session.status })
+                        : t("projectsUi.history")}
                     </Badge>
                   </div>
                   <code
@@ -244,24 +231,20 @@ export function ProjectHome({
                       variant="secondary"
                       disabled={busy}
                       onClick={() => onOpenSession(session)}
-                    >
-                      Open
-                    </Button>
+                    >{t("projectsUi.open")}</Button>
                   )}
                   <RemoveSessionButton session={session} disabled={busy} />
                 </div>
               </div>
             ))}
             {project.sessions.length === 0 && (
-              <div className="py-10 text-center text-xs text-muted-foreground">
-                No Sessions
-              </div>
+              <div className="py-10 text-center text-xs text-muted-foreground">{t("projectsUi.noSessions")}</div>
             )}
           </div>
         </section>
         <section className="mt-10">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Workspaces</h2>
+            <h2 className="text-sm font-semibold">{t("projectsUi.workspaces")}</h2>
             <span className="text-[11px] text-muted-foreground">
               {rootWorkspaces.length}
             </span>
@@ -285,7 +268,7 @@ export function ProjectHome({
                       <p className="truncate text-sm font-semibold">
                         {stream.name}
                       </p>
-                      {stream.status === "archived" && <Badge>archived</Badge>}
+                      {stream.status === "archived" && <Badge>{t("labels.archived")}</Badge>}
                     </div>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
                       {stream.description || stream.checkout_path}
@@ -306,9 +289,7 @@ export function ProjectHome({
               </div>
             ))}
             {rootWorkspaces.length === 0 && (
-              <div className="py-12 text-center text-xs text-muted-foreground">
-                No Workspaces yet
-              </div>
+              <div className="py-12 text-center text-xs text-muted-foreground">{t("projectsUi.noWorkspacesYet")}</div>
             )}
           </div>
         </section>

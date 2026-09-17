@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { type FormEvent, useEffect, useState } from "react";
 import {
   ChevronDown,
@@ -49,6 +50,7 @@ function DirectoryPathField({
   onPathChange: (path: string) => void;
   onInspect: (path: string) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [picking, setPicking] = useState(false);
   const [pickerError, setPickerError] = useState("");
   async function chooseDirectory() {
@@ -58,7 +60,7 @@ function DirectoryPathField({
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Choose a directory for Treefold",
+        title: t("projectsUi.chooseADirectoryForTreefold"),
       });
       if (typeof selected === "string") {
         onPathChange(selected);
@@ -66,7 +68,7 @@ function DirectoryPathField({
       }
     } catch (cause) {
       setPickerError(
-        cause instanceof Error ? cause.message : "Could not open Finder",
+        cause instanceof Error ? cause.message : t("projectsUi.couldNotOpenFinder"),
       );
     } finally {
       setPicking(false);
@@ -88,9 +90,7 @@ function DirectoryPathField({
           variant="secondary"
           disabled={busy || picking || !path.trim()}
           onClick={() => void onInspect(path)}
-        >
-          Check
-        </Button>
+        >{t("projectsUi.check")}</Button>
         <Button
           type="button"
           variant="secondary"
@@ -98,7 +98,7 @@ function DirectoryPathField({
           onClick={() => void chooseDirectory()}
         >
           <FolderOpen data-icon="inline-start" />
-          {picking ? "Choosing…" : "Choose…"}
+          {picking ? t("projectsUi.choosing") : t("projectsUi.choose")}
         </Button>
       </div>
       {pickerError && (
@@ -115,23 +115,21 @@ function WorktreeSetupField({
   defaultValue?: string;
   name?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <Field>
-      <FieldLabel htmlFor="worktree-setup-command">
-        Worktree setup command{" "}
-        <span className="text-muted-foreground">(optional)</span>
+      <FieldLabel htmlFor="worktree-setup-command">{t("projectsUi.worktreeSetupCommand")}{" "}
+        <span className="text-muted-foreground">{t("projectsUi.optional")}</span>
       </FieldLabel>
       <Textarea
         id="worktree-setup-command"
         className="font-mono"
         name={name}
-        aria-label="Worktree setup command"
+        aria-label={t("projectsUi.worktreeSetupCommand")}
         defaultValue={defaultValue}
         placeholder="npm install"
       />
-      <FieldDescription>
-        Starts after worktree creation in a visible setup Shell.
-      </FieldDescription>
+      <FieldDescription>{t("projectsUi.startsAfterWorktreeCreationInAVisibleSetupShell")}</FieldDescription>
     </Field>
   );
 }
@@ -147,44 +145,36 @@ export function CreateProjectDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>New Project</DialogTitle>
-          <DialogDescription>
-            Project 只负责组织 locations；Git 分支和交付方式在 repository
-            location 上配置。
-          </DialogDescription>
+          <DialogTitle>{t("projectsUi.newProject")}</DialogTitle>
+          <DialogDescription>{t("projectsUi.projectDescription")}</DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
           <FieldGroup className="gap-3">
             <Field>
-              <FieldLabel className="sr-only" htmlFor="project-name">
-                Project name
-              </FieldLabel>
+              <FieldLabel className="sr-only" htmlFor="project-name">{t("projectsUi.projectName")}</FieldLabel>
               <Input
                 id="project-name"
                 name="name"
-                placeholder="Project name"
+                placeholder={t("projectsUi.projectName")}
                 required
               />
             </Field>
             <Field>
-              <FieldLabel className="sr-only" htmlFor="project-description">
-                Project description
-              </FieldLabel>
+              <FieldLabel className="sr-only" htmlFor="project-description">{t("projectsUi.projectDescription")}</FieldLabel>
               <Textarea
                 id="project-description"
                 name="description"
-                placeholder="Project description"
+                placeholder={t("projectsUi.projectDescription")}
               />
             </Field>
           </FieldGroup>
           <div className="flex justify-end">
-            <Button type="submit" disabled={busy}>
-              Create Project
-            </Button>
+            <Button type="submit" disabled={busy}>{t("projectsUi.createProject")}</Button>
           </div>
         </form>
       </DialogContent>
@@ -215,6 +205,7 @@ export function AddDirectoryDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (locations: LocationDraft[]) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [locations, setLocations] = useState<LocationDraft[]>([
     newLocationDraft(),
   ]);
@@ -244,7 +235,7 @@ export function AddDirectoryDialog({
       update(key, {
         inspection: undefined,
         inspectionError:
-          cause instanceof Error ? cause.message : "Could not inspect location",
+          cause instanceof Error ? cause.message : t("projectsUi.couldNotInspectLocation"),
       });
     } finally {
       setCheckingKeys((current) => {
@@ -279,21 +270,15 @@ export function AddDirectoryDialog({
   return (
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
       <DialogContent className="location-list-dialog">
-        <DialogTitle className="text-lg font-semibold">
-          Add project locations
-        </DialogTitle>
+        <DialogTitle className="text-lg font-semibold">{t("projectsUi.addProjectLocations")}</DialogTitle>
         <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          Add Git repositories and read-only context directories to{" "}
-          {project?.name}. Names always use the directory name.
+          {t("projectsUi.addLocationsDescription", { name: project?.name })}
         </DialogDescription>
         {requiresPrimaryGit && (
           <p
             data-testid="primary-git-location-requirement"
             className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-foreground"
-          >
-            Include at least one Git repository to use as this Project's primary
-            location.
-          </p>
+          >{t("projectsUi.primaryRepositoryRequired")}</p>
         )}
         <form
           className="mt-5"
@@ -320,18 +305,15 @@ export function AddDirectoryDialog({
                   className="rounded-xl border border-border bg-muted/60 p-4"
                 >
                   <div className="mb-3 flex items-center gap-2">
-                    <span className="text-xs font-semibold">
-                      Location {index + 1}
+                    <span className="text-xs font-semibold">{t("projectsUi.location")}{index + 1}
                     </span>
                     {location.inspection && (
                       <>
                         <Badge variant={isGit ? "success" : "neutral"}>
-                          {location.inspection.git_status}
+                          {t(`states.${location.inspection.git_status}`, { defaultValue: location.inspection.git_status })}
                         </Badge>
                         {existingRepository && (
-                          <Badge variant="outline">
-                            Existing Repository · scope only
-                          </Badge>
+                          <Badge variant="outline">{t("projectsUi.existingRepositoryScopeOnly")}</Badge>
                         )}
                         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
                           {location.inspection.name}
@@ -342,7 +324,7 @@ export function AddDirectoryDialog({
                       type="button"
                       size="icon"
                       variant="ghost"
-                      aria-label={`Remove location ${index + 1}`}
+                      aria-label={t("projectsUi.removeLocation", { index: index + 1 })}
                       disabled={locations.length === 1 || busy}
                       onClick={() =>
                         setLocations((current) =>
@@ -355,7 +337,7 @@ export function AddDirectoryDialog({
                   </div>
                   <div className="mb-3 grid gap-2 sm:grid-cols-[9rem_1fr]">
                     <Select
-                      aria-label={`Location ${index + 1} source`}
+                      aria-label={t("projectsUi.locationSource", { index: index + 1 })}
                       value={location.source}
                       onChange={(event) =>
                         update(location.key, {
@@ -366,13 +348,13 @@ export function AddDirectoryDialog({
                         })
                       }
                     >
-                      <option value="local">Local folder</option>
-                      <option value="url">Git URL</option>
+                      <option value="local">{t("projectsUi.localFolder")}</option>
+                      <option value="url">{t("projectsUi.gitURL")}</option>
                     </Select>
                     {isUrl ? (
                       <Input
                         className="min-w-0 font-mono text-xs"
-                        aria-label={`Location ${index + 1} Git URL`}
+                        aria-label={t("projectsUi.locationGitURL", { index: index + 1 })}
                         value={location.path}
                         onChange={(event) =>
                           update(location.key, {
@@ -388,7 +370,7 @@ export function AddDirectoryDialog({
                       <DirectoryPathField
                         busy={busy || checking}
                         path={location.path}
-                        label={`Location ${index + 1} path`}
+                        label={t("projectsUi.locationPath", { index: index + 1 })}
                         onPathChange={(path) =>
                           update(location.key, {
                             path,
@@ -401,14 +383,10 @@ export function AddDirectoryDialog({
                     )}
                   </div>
                   {isUrl && (
-                    <p className="mt-2 text-[11px] text-muted-foreground">
-                      Treefold clones the remote default branch into a managed source.
-                    </p>
+                    <p className="mt-2 text-[11px] text-muted-foreground">{t("projectsUi.treefoldClonesTheRemoteDefaultBranchIntoAManagedSource")}</p>
                   )}
                   {checking && (
-                    <p className="mt-2 text-[11px] text-muted-foreground">
-                      Checking repository…
-                    </p>
+                    <p className="mt-2 text-[11px] text-muted-foreground">{t("projectsUi.checkingRepository")}</p>
                   )}
                   {location.inspectionError && (
                     <p className="mt-2 text-[11px] text-destructive">
@@ -416,43 +394,35 @@ export function AddDirectoryDialog({
                     </p>
                   )}
                   {duplicatePath.has(location.path.trim()) && (
-                    <p className="mt-2 text-[11px] text-destructive">
-                      This path is already in the list.
-                    </p>
+                    <p className="mt-2 text-[11px] text-destructive">{t("projectsUi.thisPathIsAlreadyInTheList")}</p>
                   )}
                   {location.inspection && (
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       {!existingRepository && (
                         <label className="text-[11px] text-muted-foreground">
-                          <span className="font-medium text-foreground">
-                            Purpose{" "}
-                            <span className="font-normal text-muted-foreground">
-                              (optional)
-                            </span>
+                          <span className="font-medium text-foreground">{t("projectsUi.purpose")}{" "}
+                            <span className="font-normal text-muted-foreground">{t("projectsUi.optional")}</span>
                           </span>
                           <Textarea
                             className="mt-1 min-h-16"
-                            aria-label={`Location ${index + 1} purpose`}
+                            aria-label={t("projectsUi.locationPurpose", { index: index + 1 })}
                             value={location.description}
                             onChange={(event) =>
                               update(location.key, {
                                 description: event.target.value,
                               })
                             }
-                            placeholder="API service, docs, design assets…"
+                            placeholder={t("projectsUi.aPIServiceDocsDesignAssets")}
                           />
                         </label>
                       )}
                       <label className="text-[11px] text-muted-foreground">
-                        <span className="font-medium text-foreground">
-                          Worktree setup{" "}
-                          <span className="font-normal text-muted-foreground">
-                            (optional)
-                          </span>
+                        <span className="font-medium text-foreground">{t("projectsUi.worktreeSetup")}{" "}
+                          <span className="font-normal text-muted-foreground">{t("projectsUi.optional")}</span>
                         </span>
                         <Textarea
                           className="mt-1 min-h-16 font-mono text-xs"
-                          aria-label={`Location ${index + 1} worktree setup`}
+                          aria-label={t("projectsUi.locationWorktreeSetup", { index: index + 1 })}
                           value={location.worktree_setup_command}
                           onChange={(event) =>
                             update(location.key, {
@@ -466,10 +436,7 @@ export function AddDirectoryDialog({
                     </div>
                   )}
                   {location.inspection?.git_status === "not_git" && (
-                    <p className="mt-3 rounded-lg bg-card px-3 py-2 text-[11px] text-muted-foreground">
-                      Read-only Workspace context · no Git branch or delivery
-                      settings.
-                    </p>
+                    <p className="mt-3 rounded-lg bg-card px-3 py-2 text-[11px] text-muted-foreground">{t("projectsUi.readOnlyWorkspaceContextNoGitBranchOrDeliverySettings")}</p>
                   )}
                 </section>
               );
@@ -484,13 +451,11 @@ export function AddDirectoryDialog({
                 setLocations((current) => [...current, newLocationDraft()])
               }
             >
-              <Plus data-icon="inline-start" />
-              Add another
-            </Button>
+              <Plus data-icon="inline-start" />{t("projectsUi.addAnother")}</Button>
             <Button type="submit" disabled={busy || !canSubmit}>
               {busy
-                ? "Adding…"
-                : `Add ${locations.length} location${locations.length === 1 ? "" : "s"}`}
+                ? t("projectsUi.adding")
+                : t("projectsUi.addLocations", { count: locations.length })}
             </Button>
           </div>
         </form>
@@ -510,6 +475,7 @@ export function EditDirectoryDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={Boolean(directory)} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -526,34 +492,27 @@ export function EditDirectoryDialog({
             onSubmit={onSubmit}
           >
             <Field>
-              <FieldLabel htmlFor="directory-name">Name</FieldLabel>
+              <FieldLabel htmlFor="directory-name">{t("projectsUi.name")}</FieldLabel>
               <Input
                 id="directory-name"
                 name="name"
                 defaultValue={directory.name}
                 required
               />
-              <FieldDescription>
-                Changes the name shown in Treefold. The local folder is not renamed.
-              </FieldDescription>
+              <FieldDescription>{t("projectsUi.changesTheNameShownInTreefoldTheLocalFolderIsNotRenamed")}</FieldDescription>
             </Field>
             <Field>
-              <FieldLabel htmlFor="directory-description">Purpose</FieldLabel>
+              <FieldLabel htmlFor="directory-description">{t("projectsUi.purpose")}</FieldLabel>
               <Textarea
                 id="directory-description"
                 name="description"
                 defaultValue={directory.description}
-                placeholder="What is this directory used for?"
+                placeholder={t("projectsUi.whatIsThisDirectoryUsedFor")}
               />
-              <FieldDescription>
-                Default is managed from the directory row. Branch and delivery
-                settings belong to the repository.
-              </FieldDescription>
+              <FieldDescription>{t("projectsUi.directorySettingsDescription")}</FieldDescription>
             </Field>
             <div className="flex justify-end">
-              <Button type="submit" disabled={busy}>
-                Save
-              </Button>
+              <Button type="submit" disabled={busy}>{t("projectsUi.save")}</Button>
             </div>
           </form>
         )}
@@ -573,6 +532,7 @@ export function EditRepositoryDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const { t } = useTranslation();
   const [branches, setBranches] = useState<RepositoryBranches | null>(null);
   const [branchesError, setBranchesError] = useState("");
   const [baseBranch, setBaseBranch] = useState("");
@@ -597,7 +557,7 @@ export function EditRepositoryDialog({
       .catch((cause) => {
         if (controller.signal.aborted) return;
         setBranchesError(
-          cause instanceof Error ? cause.message : "Could not load branches",
+          cause instanceof Error ? cause.message : t("projectsUi.couldNotLoadBranches"),
         );
       });
     return () => controller.abort();
@@ -610,7 +570,7 @@ export function EditRepositoryDialog({
           {repository?.name}
         </DialogTitle>
         <DialogDescription className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-          Repository settings · {repository?.source_root}
+          {t("projectsUi.repositorySettings", { name: repository?.source_root })}
         </DialogDescription>
         {repository && (
           <form
@@ -631,9 +591,7 @@ export function EditRepositoryDialog({
                 defaultValue={repository.setup_command}
               />
               <Field>
-                <FieldLabel htmlFor="repository-setup-workdir">
-                  Setup working directory
-                </FieldLabel>
+                <FieldLabel htmlFor="repository-setup-workdir">{t("projectsUi.setupWorkingDirectory")}</FieldLabel>
                 <Input
                   id="repository-setup-workdir"
                   className="font-mono text-xs"
@@ -641,15 +599,11 @@ export function EditRepositoryDialog({
                   defaultValue={repository.setup_workdir || "."}
                   required
                 />
-                <FieldDescription>
-                  Relative to the repository root.
-                </FieldDescription>
+                <FieldDescription>{t("projectsUi.relativeToTheRepositoryRoot")}</FieldDescription>
               </Field>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel htmlFor="repository-base-branch">
-                    Base branch
-                  </FieldLabel>
+                  <FieldLabel htmlFor="repository-base-branch">{t("projectsUi.baseBranch")}</FieldLabel>
                   <Select
                     id="repository-base-branch"
                     className="w-full font-mono"
@@ -660,14 +614,13 @@ export function EditRepositoryDialog({
                     required
                   >
                     {!branches ? (
-                      <option value={repository.base_branch || ""}>Loading…</option>
+                      <option value={repository.base_branch || ""}>{t("projectsUi.loading")}</option>
                     ) : (
                       <>
                         {repository.base_branch &&
                           !branches.local.includes(repository.base_branch) && (
                           <option value={repository.base_branch} disabled>
-                            {repository.base_branch} (not found)
-                          </option>
+                            {repository.base_branch}{t("projectsUi.notFound")}</option>
                         )}
                         {branches.local.map((branch) => (
                           <option key={branch} value={branch}>
@@ -679,8 +632,7 @@ export function EditRepositoryDialog({
                   </Select>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="repository-base-remote">
-                    Remote <span className="text-muted-foreground">(optional)</span>
+                  <FieldLabel htmlFor="repository-base-remote">{t("projectsUi.remote")}<span className="text-muted-foreground">{t("projectsUi.optional")}</span>
                   </FieldLabel>
                   <Select
                     id="repository-base-remote"
@@ -690,11 +642,9 @@ export function EditRepositoryDialog({
                     onChange={(event) => setBaseRemote(event.target.value)}
                     disabled={busy || !branches}
                   >
-                    <option value="">None</option>
+                    <option value="">{t("projectsUi.none")}</option>
                     {!branches && repository.preferred_remote_name && (
-                      <option value={repository.preferred_remote_name}>
-                        Loading…
-                      </option>
+                      <option value={repository.preferred_remote_name}>{t("projectsUi.loading")}</option>
                     )}
                     {branches &&
                       repository.preferred_remote_name &&
@@ -706,8 +656,7 @@ export function EditRepositoryDialog({
                           value={repository.preferred_remote_name}
                           disabled
                         >
-                          {repository.preferred_remote_name} (not found)
-                        </option>
+                          {repository.preferred_remote_name}{t("projectsUi.notFound")}</option>
                       )}
                     {branches?.remotes.map((remote) => (
                       <option key={remote.name} value={remote.name}>
@@ -717,17 +666,15 @@ export function EditRepositoryDialog({
                   </Select>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="repository-delivery-mode">
-                    Default Workspace finish strategy
-                  </FieldLabel>
+                  <FieldLabel htmlFor="repository-delivery-mode">{t("projectsUi.defaultWorkspaceFinishStrategy")}</FieldLabel>
                   <Select
                     id="repository-delivery-mode"
                     name="delivery_mode"
                     defaultValue={repository.delivery_mode}
                   >
-                    <option value="push_branch">Push feature branch</option>
-                    <option value="local_merge">Merge into local base</option>
-                    <option value="keep">Preserve without delivery</option>
+                    <option value="push_branch">{t("projectsUi.pushFeatureBranch")}</option>
+                    <option value="local_merge">{t("projectsUi.mergeIntoLocalBase")}</option>
+                    <option value="keep">{t("projectsUi.preserveWithoutDelivery")}</option>
                   </Select>
                 </Field>
               </div>
@@ -738,9 +685,7 @@ export function EditRepositoryDialog({
               )}
             </FieldGroup>
             <div className="flex justify-end">
-              <Button type="submit" disabled={busy || !branches}>
-                Save repository
-              </Button>
+              <Button type="submit" disabled={busy || !branches}>{t("projectsUi.saveRepository")}</Button>
             </div>
           </form>
         )}
@@ -774,6 +719,7 @@ function BranchActionRow({
   onSwitch: (target: RepositoryBranchTarget) => Promise<void>;
   onDelete: (target: RepositoryBranchTarget) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const label = target.remote ? `${target.remote}/${branch}` : branch;
 
@@ -793,7 +739,7 @@ function BranchActionRow({
         <span className="min-w-0 flex-1 truncate font-mono" title={label}>
           {branch}
         </span>
-        {current && <Badge variant="secondary">current</Badge>}
+        {current && <Badge variant="secondary">{t("labels.current")}</Badge>}
         <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent
@@ -812,23 +758,21 @@ function BranchActionRow({
             setOpen(false);
           }}
         >
-          <GitBranch className="size-3.5" />
-          Switch
-        </button>
+          <GitBranch className="size-3.5" />{t("projectsUi.switch")}</button>
         <button
           type="button"
           className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40"
           disabled={busy || current}
           onClick={async () => {
-            const location = target.remote ? ` on ${target.remote}` : "";
-            if (!window.confirm(`Delete branch ${branch}${location}?`)) return;
+            const confirmation = target.kind === "remote"
+                    ? t("projectsUi.deleteRemoteBranch", { branch, remote: target.remote })
+                    : t("projectsUi.deleteLocalBranch", { branch });
+            if (!window.confirm(confirmation)) return;
             await onDelete(target);
             setOpen(false);
           }}
         >
-          <Trash2 className="size-3.5" />
-          Delete
-        </button>
+          <Trash2 className="size-3.5" />{t("projectsUi.delete")}</button>
       </PopoverContent>
     </Popover>
   );
@@ -879,6 +823,7 @@ export function RepositoryBranchesDialog({
   onSwitch: (target: RepositoryBranchTarget) => Promise<void>;
   onDelete: (target: RepositoryBranchTarget) => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [branches, setBranches] = useState<RepositoryBranches | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -893,7 +838,7 @@ export function RepositoryBranchesDialog({
       setBranches(await projectsApi.repositoryBranches(repositoryId, signal));
     } catch (cause) {
       if (signal?.aborted) return;
-      setError(cause instanceof Error ? cause.message : "Could not load branches");
+      setError(cause instanceof Error ? cause.message : t("projectsUi.couldNotLoadBranches"));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
@@ -925,7 +870,7 @@ export function RepositoryBranchesDialog({
     <Dialog open={Boolean(repository)} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
-          <DialogTitle>Branch</DialogTitle>
+          <DialogTitle>{t("projectsUi.branch")}</DialogTitle>
           <DialogDescription className="truncate">
             {repository?.name}
           </DialogDescription>
@@ -935,9 +880,7 @@ export function RepositoryBranchesDialog({
           className="max-h-[24rem] min-h-28 overflow-y-auto rounded-lg border border-border p-1"
         >
           {loading && !branches ? (
-            <div className="grid min-h-24 place-items-center text-xs text-muted-foreground">
-              Loading branches…
-            </div>
+            <div className="grid min-h-24 place-items-center text-xs text-muted-foreground">{t("projectsUi.loadingBranches")}</div>
           ) : error ? (
             <div className="grid min-h-24 place-items-center px-4 text-center text-xs text-destructive">
               {error}
@@ -945,7 +888,7 @@ export function RepositoryBranchesDialog({
           ) : branches ? (
             <>
               <BranchGroup
-                label="Local"
+                label={t("projectsUi.local")}
                 open={localOpen}
                 onOpenChange={() => setLocalOpen((value) => !value)}
               >
@@ -962,7 +905,7 @@ export function RepositoryBranchesDialog({
                 ))}
               </BranchGroup>
               <BranchGroup
-                label="Remote"
+                label={t("projectsUi.remote")}
                 open={remoteOpen}
                 onOpenChange={() => setRemoteOpen((value) => !value)}
               >

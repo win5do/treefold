@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import type * as React from "react";
 import { Bot, Check, Copy, GitBranch, GitCommitHorizontal, GitCompare, History, Info, PanelsTopLeft, RotateCcw, TerminalSquare, Undo2 } from "lucide-react";
@@ -23,6 +24,7 @@ import { toast } from "@/lib/toast";
 type InspectorRepository = { id: string; name: string };
 
 export function WorkspaceInspector({ open, project, workspace, session, gitChangesActive, onOpenChanges, onOpenDiff }: { open: boolean; project: ProjectDetail; workspace: WorkspaceDetail | null; session: Session | null; gitChangesActive: boolean; onOpenChanges: (repository: InspectorRepository) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<"info" | "changes" | "history">("changes");
   const [history, setHistory] = useState<GitHistory | null>(null);
   const [historyError, setHistoryError] = useState("");
@@ -70,43 +72,44 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
     void load.then((value) => {
       if (!controller.signal.aborted) setHistory(value);
     }).catch((cause) => {
-      if (!controller.signal.aborted) setHistoryError(cause instanceof Error ? cause.message : "Git history could not be loaded");
+      if (!controller.signal.aborted) setHistoryError(cause instanceof Error ? cause.message : t("reviewUi.gitHistoryCouldNotBeLoaded"));
     });
     return () => controller.abort();
   }, [activeHistoryRepositoryId, open, tab, workspace?.id]);
 
   return <aside data-testid="right-sidebar" aria-hidden={!open} inert={!open} className={cn("absolute inset-y-0 right-0 z-20 flex w-[min(88vw,340px)] shrink-0 flex-col border-l border-border bg-background shadow-2xl transition-transform duration-200 ease-out lg:shadow-none", open ? "translate-x-0" : "translate-x-full pointer-events-none")}>
     <div className="shrink-0 border-b border-border p-2">
-      <NativeSelect aria-label="Git repository" data-testid="git-repository" value={activeHistoryRepositoryId} disabled={historyRepositories.length <= 1} onChange={(event) => setHistoryRepositoryId(event.target.value)}>
-        {historyRepositories.length === 0 ? <NativeSelectOption value="">No Git repositories</NativeSelectOption> : historyRepositories.map((repository) => <NativeSelectOption key={repository.id} value={repository.id}>{repository.name}</NativeSelectOption>)}
+      <NativeSelect aria-label={t("reviewUi.gitRepository")} data-testid="git-repository" value={activeHistoryRepositoryId} disabled={historyRepositories.length <= 1} onChange={(event) => setHistoryRepositoryId(event.target.value)}>
+        {historyRepositories.length === 0 ? <NativeSelectOption value="">{t("reviewUi.noGitRepositories")}</NativeSelectOption> : historyRepositories.map((repository) => <NativeSelectOption key={repository.id} value={repository.id}>{repository.name}</NativeSelectOption>)}
       </NativeSelect>
     </div>
     <div className="flex h-11 shrink-0 items-stretch border-b border-border">
-      <div className="flex min-w-0 flex-1" role="tablist" aria-label="Sidebar sections">
-        {([ ["changes", GitCommitHorizontal, "Changes"], ["history", History, "Git History"], ["info", Info, "Repository Info"] ] as const).map(([value, Icon, label]) => <Tooltip key={value}><TooltipTrigger render={<button role="tab" aria-label={label} aria-selected={tab === value} className={cn("relative flex flex-1 items-center justify-center text-muted-foreground hover:text-foreground", tab === value && "text-foreground")} onClick={() => setTab(value)} />}><Icon />{tab === value && <span className="absolute inset-x-4 bottom-0 h-0.5 bg-foreground" />}</TooltipTrigger><TooltipContent side="bottom">{label}</TooltipContent></Tooltip>)}
+      <div className="flex min-w-0 flex-1" role="tablist" aria-label={t("reviewUi.sidebarSections")}>
+        {([ ["changes", GitCommitHorizontal, t("reviewUi.changes")], ["history", History, t("reviewUi.gitHistory")], ["info", Info, t("reviewUi.repositoryInfo")] ] as const).map(([value, Icon, label]) => <Tooltip key={value}><TooltipTrigger render={<button role="tab" aria-label={label} aria-selected={tab === value} className={cn("relative flex flex-1 items-center justify-center text-muted-foreground hover:text-foreground", tab === value && "text-foreground")} onClick={() => setTab(value)} />}><Icon />{tab === value && <span className="absolute inset-x-4 bottom-0 h-0.5 bg-foreground" />}</TooltipTrigger><TooltipContent side="bottom">{label}</TooltipContent></Tooltip>)}
       </div>
     </div>
     <div className="min-h-0 flex-1 overflow-y-auto">
     {tab === "changes" ? <GitCommitPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} onOpenChanges={onOpenChanges} /> : tab === "history" ? <GitHistoryPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} history={history} error={historyError} onHistoryChange={setHistory} onOpenDiff={onOpenDiff} /> : session ? <div className="flex flex-col gap-6 p-4">
-      <div><div className="flex items-center gap-2"><div className="grid size-9 place-items-center rounded-lg bg-muted">{session.kind === "codex" ? <Bot className="size-4" /> : session.kind === "command" ? <PanelsTopLeft className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{session.name}</p><div className="mt-1 flex items-center gap-2"><Badge>{session.kind}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "destructive" : "secondary"}>{session.status}</Badge></div></div></div></div>
-      <InspectorGroup title="Process"><InspectorRow label="Workspace" value={session.amux_workspace_name} mono /><InspectorRow label="Name" value={session.amux_process_name} mono /><InspectorRow label="I/O" value={session.io_mode} /><InspectorRow label="Exit" value={session.exit_code === undefined ? "—" : `${session.exit_code}${session.exit_signal ? ` · ${session.exit_signal}` : ""}`} /></InspectorGroup>
-      <InspectorGroup title={workspace ? "Workspace" : "Project Session"}>{workspace && <><InspectorRow label="Workspace" value={workspace.name} /><InspectorRow label="Runtime" value={workspace.runtime_name} /><InspectorRow label="Workspace ID" value={workspace.runtime_id} mono /></>}<InspectorRow label="Workdir" value={session.cwd} mono />{session.original_cwd !== session.cwd && <InspectorRow label="Original" value={session.original_cwd} mono />}</InspectorGroup>
-      {session.kind === "codex" && <InspectorGroup title="Codex"><InspectorRow label="Session ID" value={session.codex_session_id || "Capturing…"} mono />{session.initial_prompt && <div className="mt-3 rounded-lg bg-muted/50 p-3 text-xs leading-5 text-foreground">{session.initial_prompt}</div>}</InspectorGroup>}
-      <InspectorGroup title="Command"><code className="block break-all rounded-lg bg-neutral-950 p-3 text-[10px] leading-5 text-neutral-300">{session.argv.join(" ") || "—"}</code></InspectorGroup>
+      <div><div className="flex items-center gap-2"><div className="grid size-9 place-items-center rounded-lg bg-muted">{session.kind === "codex" ? <Bot className="size-4" /> : session.kind === "command" ? <PanelsTopLeft className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{session.name}</p><div className="mt-1 flex items-center gap-2"><Badge>{t(`states.${session.kind}`, { defaultValue: session.kind })}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "destructive" : "secondary"}>{t(`states.${session.status}`, { defaultValue: session.status })}</Badge></div></div></div></div>
+      <InspectorGroup title={t("reviewUi.process")}><InspectorRow label="Workspace" value={session.amux_workspace_name} mono /><InspectorRow label={t("reviewUi.name")} value={session.amux_process_name} mono /><InspectorRow label="I/O" value={session.io_mode} /><InspectorRow label={t("reviewUi.exit")} value={session.exit_code === undefined ? "—" : `${session.exit_code}${session.exit_signal ? ` · ${session.exit_signal}` : ""}`} /></InspectorGroup>
+      <InspectorGroup title={workspace ? "Workspace" : t("reviewUi.projectSession")}>{workspace && <><InspectorRow label="Workspace" value={workspace.name} /><InspectorRow label={t("reviewUi.runtime")} value={workspace.runtime_name} /><InspectorRow label={t("reviewUi.workspaceID")} value={workspace.runtime_id} mono /></>}<InspectorRow label={t("reviewUi.workdir")} value={session.cwd} mono />{session.original_cwd !== session.cwd && <InspectorRow label={t("reviewUi.original")} value={session.original_cwd} mono />}</InspectorGroup>
+      {session.kind === "codex" && <InspectorGroup title="Codex"><InspectorRow label={t("reviewUi.sessionID")} value={session.codex_session_id || t("reviewUi.capturing")} mono />{session.initial_prompt && <div className="mt-3 rounded-lg bg-muted/50 p-3 text-xs leading-5 text-foreground">{session.initial_prompt}</div>}</InspectorGroup>}
+      <InspectorGroup title={t("reviewUi.command")}><code className="block break-all rounded-lg bg-neutral-950 p-3 text-[10px] leading-5 text-neutral-300">{session.argv.join(" ") || "—"}</code></InspectorGroup>
     </div> : workspace ? <div className="flex flex-col gap-6 p-4">
-      <div><p className="truncate text-sm font-semibold" title={workspace.name}>{workspace.name}</p><div className="mt-2 flex gap-2"><Badge>{workspace.kind}</Badge><Badge variant={workspace.status === "active" ? "success" : "secondary"}>{workspace.status}</Badge></div></div>
-      <InspectorGroup title="Git"><InspectorRow label="Branch" value={workspace.branch || "—"} mono /><InspectorRow label="Start" value={workspace.start_commit || "—"} mono /><InspectorRow label="Target" value={workspace.target_branch || "—"} mono /><InspectorRow label="Delivery" value={workspace.delivery_status} /></InspectorGroup>
-      <InspectorGroup title="Workspace"><InspectorRow label="Mode" value={workspace.checkout_mode} /><InspectorRow label="Runtime" value={workspace.runtime_name} /><InspectorRow label="Path" value={workspace.checkout_path} mono /></InspectorGroup>
-      <InspectorGroup title="Records"><InspectorRow label="Sessions" value={String(workspace.sessions.length)} /><InspectorRow label="Todos" value={String(workspace.todos.length)} />{workspace.kind === "workspace" && <InspectorRow label="Forks" value={String(workspace.forks.length)} />}</InspectorGroup>
+      <div><p className="truncate text-sm font-semibold" title={workspace.name}>{workspace.name}</p><div className="mt-2 flex gap-2"><Badge>{t(`states.${workspace.kind}`, { defaultValue: workspace.kind })}</Badge><Badge variant={workspace.status === "active" ? "success" : "secondary"}>{t(`states.${workspace.status}`, { defaultValue: workspace.status })}</Badge></div></div>
+      <InspectorGroup title="Git"><InspectorRow label={t("reviewUi.branch")} value={workspace.branch || "—"} mono /><InspectorRow label={t("reviewUi.start")} value={workspace.start_commit || "—"} mono /><InspectorRow label={t("reviewUi.target")} value={workspace.target_branch || "—"} mono /><InspectorRow label={t("reviewUi.delivery")} value={t(`states.${workspace.delivery_status}`, { defaultValue: workspace.delivery_status })} /></InspectorGroup>
+      <InspectorGroup title="Workspace"><InspectorRow label={t("reviewUi.mode")} value={t(`states.${workspace.checkout_mode}`, { defaultValue: workspace.checkout_mode })} /><InspectorRow label={t("reviewUi.runtime")} value={workspace.runtime_name} /><InspectorRow label={t("reviewUi.path")} value={workspace.checkout_path} mono /></InspectorGroup>
+      <InspectorGroup title={t("reviewUi.records")}><InspectorRow label={t("reviewUi.sessions")} value={String(workspace.sessions.length)} /><InspectorRow label={t("reviewUi.todos")} value={String(workspace.todos.length)} />{workspace.kind === "workspace" && <InspectorRow label={t("reviewUi.forks")} value={String(workspace.forks.length)} />}</InspectorGroup>
     </div> : <div className="flex flex-col gap-6 p-4">
-      <div><p className="truncate text-sm font-semibold" title={project.name}>{project.name}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{project.description || "No project description."}</p></div>
-      <InspectorGroup title="Repository"><InspectorRow label="Target" value={project.default_target_branch || "—"} mono /><InspectorRow label="Remote" value={project.preferred_remote || "—"} /><InspectorRow label="Directories" value={String(project.directories.length)} /><InspectorRow label="Workspaces" value={String(project.workspaces.filter((item) => !item.parent_workspace_id).length)} /></InspectorGroup>
+      <div><p className="truncate text-sm font-semibold" title={project.name}>{project.name}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{project.description || t("reviewUi.noProjectDescription")}</p></div>
+      <InspectorGroup title={t("reviewUi.repository")}><InspectorRow label={t("reviewUi.target")} value={project.default_target_branch || "—"} mono /><InspectorRow label={t("reviewUi.remote")} value={project.preferred_remote || "—"} /><InspectorRow label={t("reviewUi.directories")} value={String(project.directories.length)} /><InspectorRow label={t("reviewUi.workspaces")} value={String(project.workspaces.filter((item) => !item.parent_workspace_id).length)} /></InspectorGroup>
     </div>}
     </div>
   </aside>;
 }
 
 function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChanges }: { repositoryKind: "project" | "workspace"; repositories: InspectorRepository[]; repositoryId: string; onOpenChanges: (repository: InspectorRepository) => void }) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -120,7 +123,7 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
   useEffect(() => {
     const controller = new AbortController();
     setStatus(null); setError("");
-    void load(controller.signal).catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Git changes could not be loaded"); });
+    void load(controller.signal).catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : t("reviewUi.gitChangesCouldNotBeLoaded")); });
     return () => controller.abort();
   }, [repositoryId, repositoryKind]);
   useEffect(() => {
@@ -136,8 +139,8 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
     setLoading(true); setError("");
     try {
       const result = await api.commit(repositoryId, message.trim(), status.snapshot);
-      setStatus(result.status); setMessage(""); window.dispatchEvent(new CustomEvent("treefold:git-status-changed", { detail: { repositoryId, status: result.status } })); toast.success(`Committed ${result.hash.slice(0, 10)}`);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Commit failed"); }
+      setStatus(result.status); setMessage(""); window.dispatchEvent(new CustomEvent("treefold:git-status-changed", { detail: { repositoryId, status: result.status } })); toast.success(t("reviewUi.committed", { commit: result.hash.slice(0, 10) }));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : t("reviewUi.commitFailed")); }
     finally { setLoading(false); }
   };
   const repository = repositories.find((item) => item.id === repositoryId);
@@ -145,19 +148,20 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
   const deletions = status?.files.reduce((total, file) => total + file.deletions, 0) ?? 0;
   return <div className="flex min-h-full flex-col gap-3 p-3">
     {error && <p className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
-    {!status ? <p className="py-8 text-center text-xs text-muted-foreground">Loading changes...</p> : status.files.length === 0 ? <p className="py-8 text-center text-xs text-muted-foreground">No changes</p> : <>
+    {!status ? <p className="py-8 text-center text-xs text-muted-foreground">{t("reviewUi.loadingChanges")}</p> : status.files.length === 0 ? <p className="py-8 text-center text-xs text-muted-foreground">{t("reviewUi.noChanges")}</p> : <>
       <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><GitBranch className="size-3.5" /><span className="min-w-0 flex-1 truncate font-mono">{status.branch}</span></div>
       <div className="flex flex-col gap-2">
-        <div data-testid="git-change-summary" className="flex items-center gap-2 text-xs leading-none"><span className="text-muted-foreground">{status.files.length} files</span><span className="font-mono tabular-nums text-success">+{additions}</span><span className="font-mono tabular-nums text-destructive">−{deletions}</span>{status.staged_count > 0 && <><span className="text-muted-foreground">·</span><span className="text-muted-foreground">{status.staged_count} staged</span></>}</div>
-        {repository && <Button className="w-full" size="sm" variant="outline" onClick={() => onOpenChanges(repository)}><GitCompare data-icon="inline-start" />Review Changes</Button>}
+        <div data-testid="git-change-summary" className="flex items-center gap-2 text-xs leading-none"><span className="text-muted-foreground">{t("counts.file", { count: status.files.length })}</span><span className="font-mono tabular-nums text-success">+{additions}</span><span className="font-mono tabular-nums text-destructive">−{deletions}</span>{status.staged_count > 0 && <><span className="text-muted-foreground">·</span><span className="text-muted-foreground">{t("counts.staged", { count: status.staged_count })}</span></>}</div>
+        {repository && <Button className="w-full" size="sm" variant="outline" onClick={() => onOpenChanges(repository)}><GitCompare data-icon="inline-start" />{t("reviewUi.reviewChanges")}</Button>}
       </div>
-      <Textarea aria-label="Commit message" placeholder="Commit message" value={message} disabled={loading} onChange={(event) => setMessage(event.target.value)} />
-      <Button className="w-full" disabled={loading || !message.trim() || !status.staged_count} onClick={() => void commit()}><Check data-icon="inline-start" />Commit {status.staged_count || ""}</Button>
+      <Textarea aria-label={t("reviewUi.commitMessage")} placeholder={t("reviewUi.commitMessage")} value={message} disabled={loading} onChange={(event) => setMessage(event.target.value)} />
+      <Button className="w-full" disabled={loading || !message.trim() || !status.staged_count} onClick={() => void commit()}><Check data-icon="inline-start" />{t("reviewUi.commit")} {status.staged_count || ""}</Button>
     </>}
   </div>;
 }
 
 function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, error, onHistoryChange, onOpenDiff }: { repositoryKind: "project" | "workspace"; repositories: { id: string; name: string }[]; repositoryId: string; history: GitHistory | null; error: string; onHistoryChange: (history: GitHistory) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
+  const { t } = useTranslation();
   const [selection, setSelection] = useState<{ anchor: number; first: number; last: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ kind: "revert" | "reset"; commit: GitCommit } | null>(null);
   const [resetMode, setResetMode] = useState<"soft" | "mixed" | "hard">("mixed");
@@ -203,26 +207,26 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
       onHistoryChange(nextHistory);
       setSelection(null);
       setPendingAction(null);
-      toast.success(pendingAction.kind === "revert" ? "Commit reverted" : `Repository reset (${resetMode})`);
+      toast.success(pendingAction.kind === "revert" ? t("reviewUi.commitReverted") : t("reviewUi.repositoryReset", { mode: resetMode }));
     } catch (cause) {
-      setActionError(cause instanceof Error ? cause.message : `Could not ${pendingAction.kind} commit`);
+      setActionError(cause instanceof Error ? cause.message : t(pendingAction.kind === "revert" ? "reviewUi.revertFailed" : "reviewUi.resetFailed"));
     } finally {
       setActionPending(false);
     }
   };
   const copyCommit = (hash: string) => {
     void navigator.clipboard.writeText(hash).then(() => {
-      toast.success("Commit copied");
+      toast.success(t("reviewUi.commitCopied"));
     }).catch((cause) => {
       console.error("Could not copy Git commit", cause);
-      toast.error("Could not copy commit");
+      toast.error(t("reviewUi.couldNotCopyCommit"));
     });
   };
   return <><div>
     <div className="flex flex-col gap-2 border-b border-border/60 p-3">
-      {history && <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><GitBranch className="size-3.5" /><span className="min-w-0 flex-1 truncate font-mono" title={history.branch}>{history.branch}</span><span>{history.commits.length} commits</span></div>}
+      {history && <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><GitBranch className="size-3.5" /><span className="min-w-0 flex-1 truncate font-mono" title={history.branch}>{history.branch}</span><span>{t("counts.commit", { count: history.commits.length })}</span></div>}
     </div>
-    {error ? <div className="p-4"><div className="rounded-lg bg-destructive/10 p-3 text-xs leading-5 text-destructive">{error}</div></div> : repositories.length === 0 ? <div className="grid h-40 place-items-center px-6 text-center text-xs leading-5 text-muted-foreground">No Git repositories are available.</div> : !history ? <div className="grid h-32 place-items-center text-xs text-muted-foreground">Loading Git history…</div> : history.commits.length === 0 ? <div className="grid h-40 place-items-center px-6 text-center text-xs leading-5 text-muted-foreground">No commits found for this repository.</div> : <div className="divide-y divide-border/60">{history.commits.map((commit, index) => {
+    {error ? <div className="p-4"><div className="rounded-lg bg-destructive/10 p-3 text-xs leading-5 text-destructive">{error}</div></div> : repositories.length === 0 ? <div className="grid h-40 place-items-center px-6 text-center text-xs leading-5 text-muted-foreground">{t("reviewUi.noGitRepositoriesAreAvailable")}</div> : !history ? <div className="grid h-32 place-items-center text-xs text-muted-foreground">{t("reviewUi.loadingGitHistory")}</div> : history.commits.length === 0 ? <div className="grid h-40 place-items-center px-6 text-center text-xs leading-5 text-muted-foreground">{t("reviewUi.noCommitsFoundForThisRepository")}</div> : <div className="divide-y divide-border/60">{history.commits.map((commit, index) => {
       const selected = Boolean(selection && index >= selection.first && index <= selection.last);
       const rangeStart = selected && index === selection?.first;
       const rangeEnd = selected && index === selection?.last;
@@ -254,21 +258,13 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
         <ContextMenuContent>
           <ContextMenuGroup>
             <ContextMenuItem data-testid="view-git-diff-action" onClick={() => viewDiff()}>
-              <GitCompare data-icon="inline-start" />
-              View Diff
-            </ContextMenuItem>
+              <GitCompare data-icon="inline-start" />{t("reviewUi.viewDiff")}</ContextMenuItem>
             <ContextMenuItem data-testid="copy-git-commit-action" onClick={() => copyCommit(commit.hash)}>
-              <Copy data-icon="inline-start" />
-              Copy Commit
-            </ContextMenuItem>
+              <Copy data-icon="inline-start" />{t("reviewUi.copyCommit")}</ContextMenuItem>
             <ContextMenuItem onClick={() => openAction("revert", commit)}>
-              <Undo2 data-icon="inline-start" />
-              Revert Commit
-            </ContextMenuItem>
+              <Undo2 data-icon="inline-start" />{t("reviewUi.revertCommit")}</ContextMenuItem>
             <ContextMenuItem variant="destructive" onClick={() => openAction("reset", commit)}>
-              <RotateCcw data-icon="inline-start" />
-              Reset to Commit
-            </ContextMenuItem>
+              <RotateCcw data-icon="inline-start" />{t("reviewUi.resetToCommit")}</ContextMenuItem>
           </ContextMenuGroup>
         </ContextMenuContent>
       </ContextMenu>;
@@ -277,28 +273,28 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
   <Dialog open={Boolean(pendingAction)} onOpenChange={(nextOpen) => { if (!nextOpen && !actionPending) setPendingAction(null); }}>
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>{pendingAction?.kind === "revert" ? "Revert commit?" : "Reset repository to commit?"}</DialogTitle>
+        <DialogTitle>{pendingAction?.kind === "revert" ? t("reviewUi.revertCommit2") : t("reviewUi.resetRepositoryToCommit")}</DialogTitle>
         <DialogDescription>
           {pendingAction?.kind === "revert"
-            ? "This creates a new commit that reverses the selected commit."
-            : "This moves the current branch to the selected commit. Commits after it will no longer be on the current branch."}
+            ? t("reviewUi.thisCreatesANewCommitThatReversesTheSelectedCommit")
+            : t("reviewUi.resetDescription")}
         </DialogDescription>
       </DialogHeader>
       {pendingAction && <div className="rounded-lg bg-muted p-3"><p className="break-words font-medium">{pendingAction.commit.subject}</p><code className="mt-1 block text-[10px] text-muted-foreground">{pendingAction.commit.short_hash}</code></div>}
       {pendingAction?.kind === "reset" && <div className="flex flex-col gap-2">
-        <label htmlFor="git-reset-mode" className="font-medium">Reset strategy</label>
+        <label htmlFor="git-reset-mode" className="font-medium">{t("reviewUi.resetStrategy")}</label>
         <NativeSelect id="git-reset-mode" value={resetMode} disabled={actionPending} onChange={(event) => setResetMode(event.target.value as "soft" | "mixed" | "hard")}>
-          <NativeSelectOption value="soft">Soft — keep changes staged</NativeSelectOption>
-          <NativeSelectOption value="mixed">Mixed — keep changes unstaged</NativeSelectOption>
-          <NativeSelectOption value="hard">Hard — discard tracked changes</NativeSelectOption>
+          <NativeSelectOption value="soft">{t("reviewUi.softKeepChangesStaged")}</NativeSelectOption>
+          <NativeSelectOption value="mixed">{t("reviewUi.mixedKeepChangesUnstaged")}</NativeSelectOption>
+          <NativeSelectOption value="hard">{t("reviewUi.hardDiscardTrackedChanges")}</NativeSelectOption>
         </NativeSelect>
-        {resetMode === "hard" && <p className="text-destructive">Hard reset permanently discards tracked working tree and index changes.</p>}
+        {resetMode === "hard" && <p className="text-destructive">{t("reviewUi.hardResetWarning")}</p>}
       </div>}
       {actionError && <p role="alert" className="text-destructive">{actionError}</p>}
       <DialogFooter>
-        <Button variant="outline" disabled={actionPending} onClick={() => setPendingAction(null)}>Cancel</Button>
+        <Button variant="outline" disabled={actionPending} onClick={() => setPendingAction(null)}>{t("reviewUi.cancel")}</Button>
         <Button variant={pendingAction?.kind === "reset" ? "destructive" : "default"} disabled={actionPending} onClick={() => void runAction()}>
-          {actionPending ? "Working…" : pendingAction?.kind === "revert" ? "Revert Commit" : `Reset (${resetMode})`}
+          {actionPending ? t("reviewUi.working") : pendingAction?.kind === "revert" ? t("reviewUi.revertCommit") : t("reviewUi.reset", { mode: resetMode })}
         </Button>
       </DialogFooter>
     </DialogContent>

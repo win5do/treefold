@@ -48,7 +48,7 @@ export function AmuxResourcesPopover() {
       setConfirmStop(false);
       setOpen(true);
       await invalidateRuntimeQueries(queryClient);
-      toast.success("amux Daemon stopped");
+      toast.success(t("resourcesUi.daemonStopped"));
     } catch (cause) {
       toast.errorFrom(cause, t("resources.stopFailed"));
     } finally {
@@ -70,7 +70,7 @@ export function AmuxResourcesPopover() {
       <PopoverContent data-testid="amux-resources-popover" side="top" align="start" sideOffset={8} className="w-80 p-3">
         <div className="flex items-start justify-between gap-4">
           <PopoverHeader className="min-w-0">
-            <PopoverTitle>amux Daemon</PopoverTitle>
+            <PopoverTitle>{t("resourcesUi.daemonTitle")}</PopoverTitle>
             <PopoverDescription>{t("resources.description")}</PopoverDescription>
           </PopoverHeader>
           {running
@@ -86,8 +86,8 @@ export function AmuxResourcesPopover() {
           <TableBody>
             <TableRow><TableCell className="w-20 text-muted-foreground">{t("resources.name")}</TableCell><TableCell className="truncate font-mono" title={status?.name}>{status?.name ?? "—"}</TableCell></TableRow>
             <TableRow><TableCell className="text-muted-foreground">{t("resources.uptime")}</TableCell><TableCell>{formatDaemonUptime(status, t)}</TableCell></TableRow>
-            <TableRow><TableCell className="text-muted-foreground">Groups</TableCell><TableCell>{status?.active_groups ?? 0}</TableCell></TableRow>
-            <TableRow><TableCell className="text-muted-foreground">Processes</TableCell><TableCell>{status?.active_processes ?? 0}</TableCell></TableRow>
+            <TableRow><TableCell className="text-muted-foreground">{t("resourcesUi.groups")}</TableCell><TableCell>{status?.active_groups ?? 0}</TableCell></TableRow>
+            <TableRow><TableCell className="text-muted-foreground">{t("resourcesUi.processes")}</TableCell><TableCell>{status?.active_processes ?? 0}</TableCell></TableRow>
           </TableBody>
         </Table>
         {statusQuery.error && <p role="alert" className="text-xs text-destructive">{statusQuery.error.message}</p>}

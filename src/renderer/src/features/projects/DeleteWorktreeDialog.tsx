@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import {
   CircleCheck,
@@ -39,6 +40,7 @@ export function DeleteWorktreeDialog({
   onOpenChange: (open: boolean) => void;
   onConfirm: () => Promise<boolean>;
 }) {
+  const { t } = useTranslation();
   const [precheck, setPrecheck] = useState<WorktreeDeletePrecheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
@@ -60,7 +62,7 @@ export function DeleteWorktreeDialog({
       .then(setPrecheck)
       .catch((cause) => {
         if (!controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "Precheck failed");
+          setError(cause instanceof Error ? cause.message : t("projectsUi.precheckFailed"));
       })
       .finally(() => {
         if (!controller.signal.aborted) setChecking(false);
@@ -88,22 +90,20 @@ export function DeleteWorktreeDialog({
     <AlertDialog open={Boolean(target)} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="delete-worktree-dialog" className="sm:max-w-md">
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete worktree?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Treefold will remove this checkout. Its local branch will be preserved.
-          </AlertDialogDescription>
+          <AlertDialogTitle>{t("projectsUi.deleteWorktree")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("projectsUi.deleteWorktreeDescription")}</AlertDialogDescription>
         </AlertDialogHeader>
 
         {target && (
           <dl className="grid min-w-0 grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-            <dt className="text-muted-foreground">Branch</dt>
+            <dt className="text-muted-foreground">{t("projectsUi.branch")}</dt>
             <dd className="flex min-w-0 items-center gap-2 font-medium">
               <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="truncate" title={target.branch || "detached"}>
                 {target.branch || "detached"}
               </span>
             </dd>
-            <dt className="text-muted-foreground">Path</dt>
+            <dt className="text-muted-foreground">{t("projectsUi.path")}</dt>
             <dd className="min-w-0 truncate font-mono" title={target.path}>
               {target.path}
             </dd>
@@ -113,17 +113,15 @@ export function DeleteWorktreeDialog({
         {checking && (
           <Alert data-testid="worktree-delete-checking">
             <Spinner />
-            <AlertTitle>Checking worktree state</AlertTitle>
-            <AlertDescription>
-              Looking for uncommitted changes and active Workspace ownership.
-            </AlertDescription>
+            <AlertTitle>{t("projectsUi.checkingWorktreeState")}</AlertTitle>
+            <AlertDescription>{t("projectsUi.lookingForUncommittedChangesAndActiveWorkspaceOwnership")}</AlertDescription>
           </Alert>
         )}
 
         {error && (
           <Alert variant="destructive" data-testid="worktree-delete-error">
             <TriangleAlert />
-            <AlertTitle>Could not check this worktree</AlertTitle>
+            <AlertTitle>{t("projectsUi.couldNotCheckThisWorktree")}</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
@@ -131,7 +129,7 @@ export function DeleteWorktreeDialog({
         {precheck?.status === "blocked" && (
           <Alert variant="destructive" data-testid="worktree-delete-blocked">
             <TriangleAlert />
-            <AlertTitle>Resolve these changes before deleting</AlertTitle>
+            <AlertTitle>{t("projectsUi.resolveTheseChangesBeforeDeleting")}</AlertTitle>
             <AlertDescription>
               <ul className="list-disc pl-4">
                 {precheck.blockers.map((blocker) => (
@@ -145,10 +143,10 @@ export function DeleteWorktreeDialog({
         {precheck?.status === "stale" && (
           <Alert variant="warning" data-testid="worktree-delete-stale">
             <TriangleAlert />
-            <AlertTitle>Stale worktree registration</AlertTitle>
+            <AlertTitle>{t("projectsUi.staleWorktreeRegistration")}</AlertTitle>
             <AlertDescription>
               {precheck.warnings[0] ??
-                "The directory is missing. Only its Git registration will be removed."}
+                t("projectsUi.staleWorktreeDescription")}
             </AlertDescription>
           </Alert>
         )}
@@ -156,25 +154,20 @@ export function DeleteWorktreeDialog({
         {precheck?.status === "ready" && (
           <Alert data-testid="worktree-delete-ready">
             <CircleCheck />
-            <AlertTitle className="flex items-center gap-2">
-              Ready to delete <Badge variant="success">clean</Badge>
+            <AlertTitle className="flex items-center gap-2">{t("projectsUi.readyToDelete")}<Badge variant="success">{t("labels.clean")}</Badge>
             </AlertTitle>
-            <AlertDescription>
-              No tracked changes or untracked files were found.
-            </AlertDescription>
+            <AlertDescription>{t("projectsUi.noTrackedChangesOrUntrackedFilesWereFound")}</AlertDescription>
           </Alert>
         )}
 
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy || submitting}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={busy || submitting}>{t("projectsUi.cancel")}</AlertDialogCancel>
           {canRecheck && (
             <Button
               variant="outline"
               disabled={busy || submitting}
               onClick={() => setCheckVersion((current) => current + 1)}
-            >
-              Check again
-            </Button>
+            >{t("projectsUi.checkAgain")}</Button>
           )}
           <AlertDialogAction
             variant="destructive"
@@ -182,7 +175,7 @@ export function DeleteWorktreeDialog({
             onClick={() => void remove()}
           >
             {submitting && <Spinner data-icon="inline-start" />}
-            {submitting ? "Starting..." : "Delete worktree"}
+            {submitting ? t("projectsUi.starting") : t("projectsUi.deleteWorktree2")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

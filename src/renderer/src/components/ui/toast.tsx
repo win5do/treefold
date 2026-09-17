@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Toast as ToastPrimitive } from "@base-ui/react/toast"
 import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon, XIcon } from "lucide-react"
 
@@ -45,7 +46,8 @@ function ToastAction({ className, render = <Button variant="outline" size="sm" /
 }
 
 function ToastClose({ className, children, render = <Button variant="ghost" size="icon-sm" />, ...props }: ToastPrimitive.Close.Props) {
-  return <ToastPrimitive.Close data-slot="toast-close" aria-label="Close toast" render={render} className={cn("relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-foreground", className)} {...props}>
+  const { t } = useTranslation();
+  return <ToastPrimitive.Close data-slot="toast-close" aria-label={t("controls.closeToast")} render={render} className={cn("relative shrink-0 text-muted-foreground after:absolute after:-inset-2 after:content-[''] hover:text-foreground", className)} {...props}>
     {children ?? <XIcon aria-hidden="true" />}
   </ToastPrimitive.Close>
 }

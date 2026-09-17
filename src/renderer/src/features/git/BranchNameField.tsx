@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useId, useState } from "react";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -13,19 +14,20 @@ function generateBranchName() {
 }
 
 export function BranchNameField({
-  label = "Branch name",
+  label,
   onChange,
 }: {
   label?: string;
   onChange?: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   const id = useId();
   const [generated] = useState(generateBranchName);
   const [value, setValue] = useState("");
 
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <FieldLabel htmlFor={id}>{label ?? t("gitUi.branchName")}</FieldLabel>
       <Input
         id={id}
         value={value}
@@ -40,9 +42,7 @@ export function BranchNameField({
       />
       <input type="hidden" name="branch" value={value.trim()} />
       <input type="hidden" name="generated_branch" value={generated} />
-      <FieldDescription id={`${id}-description`}>
-        Leave empty to use the generated name, or enter your own.
-      </FieldDescription>
+      <FieldDescription id={`${id}-description`}>{t("gitUi.leaveEmptyToUseTheGeneratedNameOrEnterYourOwn")}</FieldDescription>
     </Field>
   );
 }

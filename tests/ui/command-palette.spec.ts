@@ -39,7 +39,7 @@ for (const owner of [
       await expect(page).toHaveURL(/#\/projects$/);
       await palette.getByRole("combobox").fill("session.create.new");
       await palette.getByRole("combobox").press("Enter");
-      const dialog = page.getByRole("dialog", { name: "新建 Session" });
+      const dialog = page.getByRole("dialog", { name: "New Session" });
       await expect(dialog.getByRole("button", { name: "Agent", exact: true })).toBeFocused();
       await dialog.getByRole("button", { name: "Shell", exact: true }).click();
       const creation = page.waitForRequest(
@@ -48,7 +48,7 @@ for (const owner of [
           request.url().endsWith(`/api/${owner.path}/sessions`),
       );
       await dialog
-        .getByRole("button", { name: "创建 Session", exact: true })
+        .getByRole("button", { name: "Create Session", exact: true })
         .click();
       expect((await creation).postDataJSON()).toEqual({
         kind: "shell",

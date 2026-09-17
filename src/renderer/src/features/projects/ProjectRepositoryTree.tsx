@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n";
 import { useMemo, useState } from "react";
 import type * as React from "react";
 import {
@@ -30,7 +32,7 @@ import type {
 import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 
 function repositoryLabel(remote?: string) {
-  if (!remote) return "Local Git repository";
+  if (!remote) return i18n.t("projectsUi.localGitRepository");
   return remote
     .replace(/^git@([^:]+):/, "$1/")
     .replace(/^https?:\/\//, "")
@@ -38,10 +40,10 @@ function repositoryLabel(remote?: string) {
 }
 
 function deliveryStrategyLabel(mode?: ProjectRepository["delivery_mode"]) {
-  if (mode === "local_merge") return "merge into local base";
-  if (mode === "keep") return "preserve";
-  if (mode === "push_branch") return "push feature branch";
-  return "delivery not configured";
+  if (mode === "local_merge") return i18n.t("states.local_merge");
+  if (mode === "keep") return i18n.t("states.keep");
+  if (mode === "push_branch") return i18n.t("states.push_branch");
+  return i18n.t("projectsUi.deliveryNotConfigured");
 }
 
 export function DirectoryTreeRow({
@@ -73,6 +75,7 @@ export function DirectoryTreeRow({
   onDeleteWorktree: (worktree: GitWorktree) => void;
   worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
+  const { t } = useTranslation();
   const isRepository = directory.git_status !== "not_git";
   const [expanded, setExpanded] = useState(
     isRepository &&
@@ -88,17 +91,17 @@ export function DirectoryTreeRow({
   const currentBranch =
     directory.branch ||
     (directory.head_commit
-      ? `detached @ ${directory.head_commit.slice(0, 7)}`
-      : "detached");
+      ? t("projectsUi.detached", { commit: directory.head_commit.slice(0, 7) })
+      : t("projectsUi.detachedHead"));
   const repositoryDetails = (
     <>
       <span>
-        current{" "}
+        {t("labels.current")}{" "}
         <strong className="font-medium text-foreground">{currentBranch}</strong>
       </span>
       <span>·</span>
       <span>
-        base{" "}
+        {t("labels.base")}{" "}
         <strong className="font-medium text-foreground">
           {directory.base_branch || "—"}
         </strong>
@@ -136,18 +139,17 @@ export function DirectoryTreeRow({
                   : "destructive"
             }
           >
-            {directory.git_status}
+            {t(`states.${directory.git_status}`, { defaultValue: directory.git_status })}
           </Badge>
-          {directory.worktree_setup_command && <Badge>Setup</Badge>}
+          {directory.worktree_setup_command && <Badge>{t("projectsUi.setup")}</Badge>}
           {isRepository && (
             <span className="text-[10px] text-muted-foreground">
-              {worktrees.length}{" "}
-              {worktrees.length === 1 ? "worktree" : "worktrees"}
+              {t("counts.worktree", { count: worktrees.length })}
             </span>
           )}
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
-          {directory.description || "No purpose described yet."}
+          {directory.description || t("projectsUi.noPurposeDescribedYet")}
         </p>
         <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
           {isRepository && repositoryDetails}
@@ -169,7 +171,7 @@ export function DirectoryTreeRow({
               className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               aria-expanded={expanded}
               aria-controls={`project-location-worktrees-${directory.id}`}
-              aria-label={`${expanded ? "Collapse" : "Expand"} repository ${directory.name}`}
+              aria-label={t(expanded ? "navigation.collapseRepository" : "navigation.expandRepository", { name: directory.name })}
               onClick={() => setExpanded((value) => !value)}
             >
               <span
@@ -196,14 +198,14 @@ export function DirectoryTreeRow({
                 size="icon"
                 variant="ghost"
                 disabled={busy}
-                aria-label={`Refresh ${directory.name}`}
-                title={`Refresh ${directory.name}`}
+                aria-label={t("projectsUi.refresh", { name: directory.name })}
+                title={t("projectsUi.refresh", { name: directory.name })}
                 onClick={onRefresh}
               >
                 <RefreshCw data-icon="inline-start" />
               </Button>
               <ActionMenu
-                label={`Actions for ${directory.name}`}
+                label={t("projectsUi.actionsFor", { name: directory.name })}
                 testId={`project-location-actions-${directory.id}`}
                 disabled={busy}
               >
@@ -214,9 +216,7 @@ export function DirectoryTreeRow({
                       disabled={busy}
                       testId={`project-location-make-default-${directory.id}`}
                       onClick={onMakeDefault}
-                    >
-                      Make default
-                    </ActionMenuItem>
+                    >{t("projectsUi.makeDefault")}</ActionMenuItem>
                   )}
                 {["missing", "broken", "mismatch"].includes(
                   directory.git_status,
@@ -225,18 +225,14 @@ export function DirectoryTreeRow({
                     icon={<RefreshCw className="size-3.5" />}
                     disabled={busy}
                     onClick={onReattach}
-                  >
-                    Relink
-                  </ActionMenuItem>
+                  >{t("projectsUi.relink")}</ActionMenuItem>
                 )}
                 <ActionMenuItem
                   icon={<Pencil className="size-3.5" />}
                   disabled={busy}
                   testId={`project-location-edit-${directory.id}`}
                   onClick={onEdit}
-                >
-                  Edit location
-                </ActionMenuItem>
+                >{t("projectsUi.editLocation")}</ActionMenuItem>
               </ActionMenu>
             </div>
           )}
@@ -246,7 +242,7 @@ export function DirectoryTreeRow({
             id={`project-location-worktrees-${directory.id}`}
             data-testid={`project-location-worktrees-${directory.id}`}
             role="group"
-            aria-label={`Scopes and worktrees for ${directory.name}`}
+            aria-label={t("projectsUi.scopesAndWorktreesFor", { name: directory.name })}
             className="border-t border-border/60 bg-muted/60 px-4 py-2"
           >
             {scopes.length > 0 && (
@@ -266,7 +262,7 @@ export function DirectoryTreeRow({
                         <span className="truncate text-sm font-medium">
                           {scope.name}
                         </span>
-                        {scope.role === "primary" && <Badge>Default</Badge>}
+                        {scope.role === "primary" && <Badge>{t("projectsUi.default")}</Badge>}
                       </div>
                       <code
                         className="mt-1 block truncate text-[10px] text-muted-foreground"
@@ -284,7 +280,7 @@ export function DirectoryTreeRow({
                       <Button
                         size="icon"
                         variant="ghost"
-                        aria-label={`Edit Directory ${scope.name}`}
+                        aria-label={t("projectsUi.editDirectory", { name: scope.name })}
                         onClick={() => onEditScope?.(scope)}
                       >
                         <Pencil data-icon="inline-start" />
@@ -306,17 +302,15 @@ export function DirectoryTreeRow({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-semibold">
-                        {item.branch || "detached"}
+                        {item.branch || t("projectsUi.detachedHead")}
                       </span>
-                      {item.is_main && <Badge>Main checkout</Badge>}
+                      {item.is_main && <Badge>{t("projectsUi.mainCheckout")}</Badge>}
                       {worktreeDeletions[item.path]?.status === "deleting" && (
                         <Badge variant="secondary">
-                          <Spinner data-icon="inline-start" />
-                          Deleting
-                        </Badge>
+                          <Spinner data-icon="inline-start" />{t("projectsUi.deleting")}</Badge>
                       )}
                       {worktreeDeletions[item.path]?.status === "failed" && (
-                        <Badge variant="destructive">Delete failed</Badge>
+                        <Badge variant="destructive">{t("projectsUi.deleteFailed")}</Badge>
                       )}
                     </div>
                     <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
@@ -340,8 +334,8 @@ export function DirectoryTreeRow({
                       render={
                         <button
                           type="button"
-                          aria-label={`Open Workspace ${item.workspace_name || item.workspace_id}`}
-                          title={`Open Workspace “${item.workspace_name || item.workspace_id}”`}
+                          aria-label={t("projectsUi.openWorkspace", { name: item.workspace_name || item.workspace_id })}
+                          title={t("projectsUi.openWorkspace2", { name: item.workspace_name || item.workspace_id })}
                           onClick={() => onOpen(item.workspace_id!)}
                         />
                       }
@@ -378,17 +372,17 @@ export function DirectoryTreeRow({
                       }
                       aria-label={
                         item.workspace_id
-                          ? `Cannot delete worktree ${item.path}: active Workspace ${item.workspace_name || item.workspace_id}`
+                          ? t("projectsUi.cannotDeleteWorktreeActiveWorkspace", { path: item.path, name: item.workspace_name || item.workspace_id })
                           : worktreeDeletions[item.path]?.status === "deleting"
-                            ? `Deleting worktree ${item.path}`
-                          : `Delete worktree ${item.path}`
+                            ? t("projectsUi.deletingWorktree", { path: item.path })
+                          : t("projectsUi.deleteWorktree3", { path: item.path })
                       }
                       title={
                         item.workspace_id
-                          ? `Finish Workspace “${item.workspace_name || item.workspace_id}” before deleting this worktree`
+                          ? t("projectsUi.finishWorkspaceBeforeDeletingThisWorktree", { name: item.workspace_name || item.workspace_id })
                           : worktreeDeletions[item.path]?.status === "deleting"
-                            ? "Worktree deletion in progress"
-                          : `Delete worktree ${item.path}`
+                            ? t("projectsUi.worktreeDeletionInProgress")
+                          : t("projectsUi.deleteWorktree3", { path: item.path })
                       }
                       onClick={() => onDeleteWorktree(item)}
                     >
@@ -402,9 +396,7 @@ export function DirectoryTreeRow({
                 </div>
               ))}
               {orderedWorktrees.length === 0 && (
-                <div className="py-5 pl-5 text-xs text-muted-foreground">
-                  No worktrees found for this repository.
-                </div>
+                <div className="py-5 pl-5 text-xs text-muted-foreground">{t("projectsUi.noWorktreesFoundForThisRepository")}</div>
               )}
             </div>
           </CollapsibleContent>
@@ -449,6 +441,7 @@ export function ProjectRepositoryTreeRow({
   onDeleteWorktree: (worktree: GitWorktree) => void;
   worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(
     directories.some((directory) => directory.role === "primary") ||
       repository.git_status !== "ready",
@@ -467,8 +460,8 @@ export function ProjectRepositoryTreeRow({
       ? mainWorktree.branch
       : observedDirectory?.branch ||
         (mainWorktree?.head_commit
-          ? `detached @ ${mainWorktree.head_commit.slice(0, 7)}`
-          : "detached");
+          ? t("projectsUi.detached", { commit: mainWorktree.head_commit.slice(0, 7) })
+          : t("projectsUi.detachedHead"));
 
   return (
     <article data-testid={`project-location-${repository.id}`}>
@@ -480,7 +473,7 @@ export function ProjectRepositoryTreeRow({
             className="flex min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-expanded={expanded}
             aria-controls={`project-repository-children-${repository.id}`}
-            aria-label={`${expanded ? "Collapse" : "Expand"} repository ${repository.name}`}
+            aria-label={t(expanded ? "navigation.collapseRepository" : "navigation.expandRepository", { name: repository.name })}
             onClick={() => setExpanded((value) => !value)}
           >
             <span className="mt-1 grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground">
@@ -505,24 +498,23 @@ export function ProjectRepositoryTreeRow({
                       : "destructive"
                   }
                 >
-                  {repository.git_status}
+                  {t(`states.${repository.git_status}`, { defaultValue: repository.git_status })}
                 </Badge>
-                {repository.setup_command && <Badge>Setup</Badge>}
+                {repository.setup_command && <Badge>{t("projectsUi.setup")}</Badge>}
                 <span className="text-[10px] text-muted-foreground">
-                  {directories.length}{" "}
-                  {directories.length === 1 ? "dir" : "dirs"}
+                  {t("counts.directory", { count: directories.length })}
                 </span>
               </div>
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
                 <span>
-                  base{" "}
+                  {t("labels.base")}{" "}
                   <strong className="font-medium text-foreground">
-                    {repository.base_branch || "not configured"}
+                    {repository.base_branch || t("labels.notConfigured")}
                   </strong>
                 </span>
                 <span>·</span>
                 <span>
-                  current{" "}
+                  {t("labels.current")}{" "}
                   <strong className="font-medium text-foreground">
                     {currentBranch}
                   </strong>
@@ -549,14 +541,14 @@ export function ProjectRepositoryTreeRow({
                 size="icon"
                 variant="ghost"
                 disabled={busy}
-                aria-label={`Refresh ${repository.name}`}
-                title={`Refresh ${repository.name}`}
+                aria-label={t("projectsUi.refresh", { name: repository.name })}
+                title={t("projectsUi.refresh", { name: repository.name })}
                 onClick={onRefresh}
               >
                 <RefreshCw data-icon="inline-start" />
               </Button>
               <ActionMenu
-                label={`Actions for repository ${repository.name}`}
+                label={t("projectsUi.actionsForRepository", { name: repository.name })}
                 testId={`project-location-actions-${repository.id}`}
                 disabled={busy}
               >
@@ -566,30 +558,22 @@ export function ProjectRepositoryTreeRow({
                   <ActionMenuItem
                     icon={<RefreshCw className="size-3.5" />}
                     onClick={onReattach}
-                  >
-                    Relink
-                  </ActionMenuItem>
+                  >{t("projectsUi.relink")}</ActionMenuItem>
                 )}
                 <ActionMenuItem
                   icon={<GitBranch className="size-3.5" />}
                   testId={`project-repository-branches-${repository.id}`}
                   onClick={onOpenBranches}
-                >
-                  Branch
-                </ActionMenuItem>
+                >{t("projectsUi.branch")}</ActionMenuItem>
                 <ActionMenuItem
                   icon={<Pencil className="size-3.5" />}
                   testId={`project-repository-edit-${repository.id}`}
                   onClick={onEditRepository}
-                >
-                  Edit repository
-                </ActionMenuItem>
+                >{t("projectsUi.editRepository")}</ActionMenuItem>
                 <ActionMenuItem
                   icon={<Trash2 className="size-3.5" />}
                   onClick={onDeleteRepository}
-                >
-                  Remove from project
-                </ActionMenuItem>
+                >{t("projectsUi.removeFromProject")}</ActionMenuItem>
               </ActionMenu>
             </div>
           )}
@@ -599,13 +583,13 @@ export function ProjectRepositoryTreeRow({
             id={`project-repository-children-${repository.id}`}
             data-testid={`project-repository-children-${repository.id}`}
             role="group"
-            aria-label={`Directories and worktrees for ${repository.name}`}
+            aria-label={t("projectsUi.directoriesAndWorktreesFor", { name: repository.name })}
             className="border-t border-border/60 bg-muted/60 px-4 py-2"
           >
             <div className="ml-5 divide-y divide-border border-l border-border">
               <ProjectRepositoryChildGroup
                 id={`project-repository-directories-${repository.id}`}
-                label="Directories"
+                label={t("projectsUi.directories")}
                 subject={repository.name}
                 count={directories.length}
                 icon={Folders}
@@ -624,7 +608,7 @@ export function ProjectRepositoryTreeRow({
               </ProjectRepositoryChildGroup>
               <ProjectRepositoryChildGroup
                 id={`project-repository-worktrees-${repository.id}`}
-                label="Worktrees"
+                label={t("projectsUi.worktrees")}
                 subject={repository.name}
                 count={orderedWorktrees.length}
                 icon={GitBranch}
@@ -640,17 +624,15 @@ export function ProjectRepositoryTreeRow({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold">
-                          {item.branch || "detached"}
+                          {item.branch || t("projectsUi.detachedHead")}
                         </span>
-                        {item.is_main && <Badge>Main checkout</Badge>}
+                        {item.is_main && <Badge>{t("projectsUi.mainCheckout")}</Badge>}
                         {worktreeDeletions[item.path]?.status === "deleting" && (
                           <Badge variant="secondary">
-                            <Spinner data-icon="inline-start" />
-                            Deleting
-                          </Badge>
+                            <Spinner data-icon="inline-start" />{t("projectsUi.deleting")}</Badge>
                         )}
                         {worktreeDeletions[item.path]?.status === "failed" && (
-                          <Badge variant="destructive">Delete failed</Badge>
+                          <Badge variant="destructive">{t("projectsUi.deleteFailed")}</Badge>
                         )}
                       </div>
                       <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
@@ -674,8 +656,8 @@ export function ProjectRepositoryTreeRow({
                         render={
                           <button
                             type="button"
-                            aria-label={`Open Workspace ${item.workspace_name || item.workspace_id}`}
-                            title={`Open Workspace “${item.workspace_name || item.workspace_id}”`}
+                            aria-label={t("projectsUi.openWorkspace", { name: item.workspace_name || item.workspace_id })}
+                            title={t("projectsUi.openWorkspace2", { name: item.workspace_name || item.workspace_id })}
                             onClick={() => onOpen(item.workspace_id!)}
                           />
                         }
@@ -712,17 +694,17 @@ export function ProjectRepositoryTreeRow({
                         }
                         aria-label={
                           item.workspace_id
-                            ? `Cannot delete worktree ${item.path}: active Workspace ${item.workspace_name || item.workspace_id}`
+                            ? t("projectsUi.cannotDeleteWorktreeActiveWorkspace", { path: item.path, name: item.workspace_name || item.workspace_id })
                             : worktreeDeletions[item.path]?.status === "deleting"
-                              ? `Deleting worktree ${item.path}`
-                            : `Delete worktree ${item.path}`
+                              ? t("projectsUi.deletingWorktree", { path: item.path })
+                            : t("projectsUi.deleteWorktree3", { path: item.path })
                         }
                         title={
                           item.workspace_id
-                            ? `Finish Workspace “${item.workspace_name || item.workspace_id}” before deleting this worktree`
+                            ? t("projectsUi.finishWorkspaceBeforeDeletingThisWorktree", { name: item.workspace_name || item.workspace_id })
                             : worktreeDeletions[item.path]?.status === "deleting"
-                              ? "Worktree deletion in progress"
-                            : `Delete worktree ${item.path}`
+                              ? t("projectsUi.worktreeDeletionInProgress")
+                            : t("projectsUi.deleteWorktree3", { path: item.path })
                         }
                         onClick={() => onDeleteWorktree(item)}
                       >
@@ -736,9 +718,7 @@ export function ProjectRepositoryTreeRow({
                   </div>
                 ))}
                 {orderedWorktrees.length === 0 && (
-                  <div className="py-4 pl-5 text-xs text-muted-foreground">
-                    No worktrees found for this repository.
-                  </div>
+                  <div className="py-4 pl-5 text-xs text-muted-foreground">{t("projectsUi.noWorktreesFoundForThisRepository")}</div>
                 )}
               </ProjectRepositoryChildGroup>
             </div>
@@ -764,6 +744,7 @@ function ProjectRepositoryChildGroup({
   icon: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
 }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
 
   return (
@@ -771,7 +752,7 @@ function ProjectRepositoryChildGroup({
       <CollapsibleTrigger
         data-testid={`${id}-toggle`}
         className="flex w-full min-w-0 items-center gap-3 py-2 pl-5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={`${expanded ? "Collapse" : "Expand"} ${label.toLowerCase()} for ${subject}`}
+        aria-label={t(expanded ? "navigation.collapseGroup" : "navigation.expandGroup", { label, subject })}
       >
         {expanded ? (
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
@@ -790,7 +771,7 @@ function ProjectRepositoryChildGroup({
         id={id}
         data-testid={id}
         role="group"
-        aria-label={`${label} for ${subject}`}
+        aria-label={t("navigation.groupLabel", { label, subject })}
         className="ml-8 divide-y divide-border border-l border-border"
       >
         {children}
@@ -814,6 +795,7 @@ function ProjectDirectoryTreeRow({
   onMakeDefault: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div
       data-testid={`project-directory-${directory.id}`}
@@ -823,7 +805,7 @@ function ProjectDirectoryTreeRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{directory.name}</span>
-          {directory.role === "primary" && <Badge>Default</Badge>}
+          {directory.role === "primary" && <Badge>{t("projectsUi.default")}</Badge>}
         </div>
         <code
           className="mt-1 block truncate text-[10px] text-muted-foreground"
@@ -839,7 +821,7 @@ function ProjectDirectoryTreeRow({
       </div>
       {!readOnly && (
         <ActionMenu
-          label={`Actions for directory ${directory.name}`}
+          label={t("projectsUi.actionsForDirectory", { name: directory.name })}
           testId={`project-directory-actions-${directory.id}`}
           disabled={busy}
         >
@@ -848,23 +830,17 @@ function ProjectDirectoryTreeRow({
               icon={<Folder className="size-3.5" />}
               testId={`project-directory-make-default-${directory.id}`}
               onClick={onMakeDefault}
-            >
-              Make default
-            </ActionMenuItem>
+            >{t("projectsUi.makeDefault")}</ActionMenuItem>
           )}
           <ActionMenuItem
             icon={<Pencil className="size-3.5" />}
             testId={`project-directory-edit-${directory.id}`}
             onClick={onEdit}
-          >
-            Edit directory
-          </ActionMenuItem>
+          >{t("projectsUi.editDirectory2")}</ActionMenuItem>
           <ActionMenuItem
             icon={<Trash2 className="size-3.5" />}
             onClick={onDelete}
-          >
-            Remove from project
-          </ActionMenuItem>
+          >{t("projectsUi.removeFromProject")}</ActionMenuItem>
         </ActionMenu>
       )}
     </div>

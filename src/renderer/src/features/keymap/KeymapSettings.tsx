@@ -1,3 +1,5 @@
+import { useTranslation } from "react-i18next";
+import { keymapLabel } from "@/features/actions/labels";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Keyboard, RotateCcw, X } from "lucide-react";
@@ -24,6 +26,7 @@ import { keymapKey, keymapQuery, updateKeymap } from "./api";
 import { keyboardChord, configuredChord, displayedChord } from "./keyboard";
 
 export function KeymapSettings() {
+  const { t } = useTranslation();
   const query = useQuery(keymapQuery());
   const client = useQueryClient();
   const [recording, setRecording] = useState<string | null>(null);
@@ -50,26 +53,22 @@ export function KeymapSettings() {
     <div className="flex flex-col gap-5 p-6">
       <Field>
         <div className="flex items-center justify-between gap-3">
-          <FieldLabel htmlFor="keymap-search">快捷键 / Keymap</FieldLabel>
+          <FieldLabel htmlFor="keymap-search">{t("keymapUi.keyboardShortcuts")}</FieldLabel>
           <ActionMenu
-            label="Keymap 操作"
+            label={t("keymapUi.keymapActions")}
             testId="keymap-actions"
             disabled={busy || !query.data}
           >
             <ActionMenuItem
               icon={<RotateCcw className="size-4" />}
               onClick={() => setResetOpen(true)}
-            >
-              恢复全部默认快捷键
-            </ActionMenuItem>
+            >{t("keymapUi.resetAllShortcuts")}</ActionMenuItem>
           </ActionMenu>
         </div>
-        <FieldDescription>
-          点击录入后按组合键，更改立即保存。Esc 取消录入。
-        </FieldDescription>
+        <FieldDescription>{t("keymapUi.recordingDescription")}</FieldDescription>
         <Input
           id="keymap-search"
-          placeholder="搜索命令或快捷键"
+          placeholder={t("keymapUi.searchCommandsOrShortcuts")}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
@@ -77,10 +76,10 @@ export function KeymapSettings() {
       {(error || query.error) && (
         <FieldError role="alert">{error || query.error?.message}</FieldError>
       )}
-      {query.isPending && <p role="status">加载快捷键…</p>}
+      {query.isPending && <p role="status">{t("keymapUi.loadingShortcuts")}</p>}
       {query.data?.commands
         .filter((command) =>
-          `${command.id} ${command.label} ${command.binding} ${command.binding && configuredChord(command.binding)} ${command.binding && displayedChord(command.binding)}`
+          `${command.id} ${command.label} ${keymapLabel(t, command.id, command.label)} ${command.binding} ${command.binding && configuredChord(command.binding)} ${command.binding && displayedChord(command.binding)}`
             .toLowerCase()
             .includes(search.toLowerCase()),
         )
@@ -101,8 +100,8 @@ export function KeymapSettings() {
                   autoFocus
                   readOnly
                   data-keymap-recording
-                  aria-label={`录入 ${command.label}`}
-                  value="请按组合键…"
+                  aria-label={t("keymapUi.record", { name: keymapLabel(t, command.id, command.label) })}
+                  value={t("keymapUi.pressAKeyCombination")}
                   aria-invalid={Boolean(error)}
                   onBlur={() => setRecording(null)}
                   onKeyDown={(event) => {
@@ -132,18 +131,18 @@ export function KeymapSettings() {
                 <Button
                   variant="outline"
                   disabled={busy}
-                  aria-label={`录入 ${command.label}`}
+                  aria-label={t("keymapUi.record", { name: keymapLabel(t, command.id, command.label) })}
                   onClick={() => {
                     setError("");
                     setRecording(command.id);
                   }}
                 >
                   <Keyboard data-icon="inline-start" />
-                  {command.binding ? displayedChord(command.binding) : "未绑定"}
+                  {command.binding ? displayedChord(command.binding) : t("keymapUi.unbound")}
                 </Button>
               )}
               <ActionMenu
-                label={`${command.label} 操作`}
+                label={t("keymapUi.actionsFor", { name: keymapLabel(t, command.id, command.label) })}
                 testId={`keymap-${command.id}-actions`}
                 disabled={busy}
               >
@@ -151,16 +150,12 @@ export function KeymapSettings() {
                   <ActionMenuItem
                     icon={<X className="size-4" />}
                     onClick={() => void save({ [command.id]: false })}
-                  >
-                    禁用快捷键
-                  </ActionMenuItem>
+                  >{t("keymapUi.disableShortcut")}</ActionMenuItem>
                 )}
                 <ActionMenuItem
                   icon={<RotateCcw className="size-4" />}
                   onClick={() => void save({ [command.id]: null })}
-                >
-                  恢复默认
-                </ActionMenuItem>
+                >{t("keymapUi.resetToDefault")}</ActionMenuItem>
               </ActionMenu>
             </div>
           </div>
@@ -173,13 +168,11 @@ export function KeymapSettings() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>恢复全部默认快捷键？</AlertDialogTitle>
-            <AlertDialogDescription>
-              所有自定义绑定和禁用项都会恢复默认，并立即保存。
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t("keymapUi.resetAllShortcuts2")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("keymapUi.resetDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>{t("keymapUi.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={busy || !query.data}
               onClick={() => {
@@ -192,9 +185,7 @@ export function KeymapSettings() {
                     if (ok) setResetOpen(false);
                   });
               }}
-            >
-              确认恢复
-            </AlertDialogAction>
+            >{t("keymapUi.confirmReset")}</AlertDialogAction>
           </AlertDialogFooter>
           {error && <FieldError role="alert">{error}</FieldError>}
         </AlertDialogContent>

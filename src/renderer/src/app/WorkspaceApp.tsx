@@ -319,7 +319,7 @@ function Workspace() {
                 const { [operation.path]: _finished, ...remaining } = current;
                 return remaining;
               });
-              toast.success("Worktree deleted", {
+              toast.success(t("appFeedback.worktreeDeleted"), {
                 description: operation.path,
               });
               void Promise.all([
@@ -335,7 +335,7 @@ function Workspace() {
                 ...current,
                 [operation.path]: next,
               }));
-              toast.error("Worktree deletion failed", {
+              toast.error(t("appFeedback.worktreeDeletionFailed"), {
                 description: next.error ?? operation.path,
               });
             }
@@ -439,7 +439,7 @@ function Workspace() {
     null;
   const gitView = searchParams.get("view") === "git-changes";
   const gitRepositoryId = searchParams.get("repositoryId") ?? "";
-  const gitRepositoryName = searchParams.get("repositoryName") ?? "Repository";
+  const gitRepositoryName = searchParams.get("repositoryName") ?? t("appFeedback.repository");
   const gitScope = (searchParams.get("scope") as "working-tree" | "staged" | "commit" | null) ?? "working-tree";
   const parentWorkspace = workspace?.parent_workspace_id
     ? (selectedProject?.workspaces.find(
@@ -481,7 +481,7 @@ function Workspace() {
       if (feedback?.success) toast.success(feedback.success);
       return true;
     } catch (cause) {
-      toast.errorFrom(cause, feedback?.error ?? "操作失败");
+      toast.errorFrom(cause, feedback?.error ?? t("appFeedback.operationFailed"));
       return false;
     } finally {
       setBusy(false);
@@ -576,7 +576,7 @@ function Workspace() {
         normalizeWorkspace(await workspacesApi.detail(stream.id)),
       );
     } catch (cause) {
-      toast.errorFrom(cause, "Workspace 加载失败");
+      toast.errorFrom(cause, t("appFeedback.couldNotLoadWorkspace"));
     } finally {
       setBusy(false);
     }
@@ -594,7 +594,7 @@ function Workspace() {
           : normalizeWorkspace(await workspacesApi.detail(stream.id));
       setParentOperationDialog({ workspace: detail, direction });
     } catch (cause) {
-      toast.errorFrom(cause, "Workspace failed to load");
+      toast.errorFrom(cause, t("appFeedback.workspaceFailedToLoad"));
     } finally {
       setBusy(false);
     }
@@ -634,7 +634,7 @@ function Workspace() {
       );
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.errorFrom(cause, "Shell 创建失败");
+      toast.errorFrom(cause, t("appFeedback.couldNotCreateShell"));
     } finally {
       setBusy(false);
     }
@@ -674,7 +674,7 @@ function Workspace() {
       );
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.errorFrom(cause, "Codex 创建失败");
+      toast.errorFrom(cause, t("appFeedback.couldNotCreateCodexSession"));
     } finally {
       setBusy(false);
     }
@@ -697,7 +697,7 @@ function Workspace() {
       );
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.errorFrom(cause, "Shell 创建失败");
+      toast.errorFrom(cause, t("appFeedback.couldNotCreateShell"));
     } finally {
       setBusy(false);
     }
@@ -720,7 +720,7 @@ function Workspace() {
       );
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.errorFrom(cause, "Codex 创建失败");
+      toast.errorFrom(cause, t("appFeedback.couldNotCreateCodexSession"));
     } finally {
       setBusy(false);
     }
@@ -820,7 +820,7 @@ function Workspace() {
           queryKey: workspaceKeys.sessions(stream.id),
         }),
       ]);
-      toast.errorFrom(cause, "Session 排序失败");
+      toast.errorFrom(cause, t("appFeedback.couldNotReorderSessions"));
     }
   }
 
@@ -882,7 +882,7 @@ function Workspace() {
   function removeWorktree(worktree: GitWorktree) {
     if (worktree.workspace_id) {
       toast.warning(
-        `Worktree belongs to active Workspace “${worktree.workspace_name || worktree.workspace_id}”; use Finish Workspace.`,
+        t("appFeedback.worktreeBelongsToActiveWorkspaceUseFinishWorkspace", { name: worktree.workspace_name || worktree.workspace_id }),
       );
       return;
     }
@@ -902,12 +902,12 @@ function Workspace() {
         [target.path]: operation,
       }));
       setDeleteWorktreeTarget(null);
-      toast.info("Worktree deletion started", {
-        description: "You can continue working while the checkout is removed.",
+      toast.info(t("appFeedback.worktreeDeletionStarted"), {
+        description: t("appFeedback.youCanContinueWorkingWhileTheCheckoutIsRemoved"),
       });
       return true;
     } catch (cause) {
-      toast.errorFrom(cause, "Could not start worktree deletion");
+      toast.errorFrom(cause, t("appFeedback.couldNotStartWorktreeDeletion"));
       return false;
     }
   }
@@ -933,7 +933,7 @@ function Workspace() {
     const selected = await open({
       directory: true,
       multiple: false,
-      title: `Relink ${location.name}`,
+      title: t("appFeedback.relink", { name: location.name }),
     });
     if (typeof selected !== "string") return;
     if (!location.repository_id) return;
@@ -942,13 +942,13 @@ function Workspace() {
   }
 
   async function removeProjectRepository(repository: ProjectRepository) {
-    if (!window.confirm(`Remove repository from this Project?\n\n${repository.name}\n\nLocal files and Git resources will not be deleted.`))
+    if (!window.confirm(t("appFeedback.removeRepository", { name: repository.name })))
       return;
     await act(() => projectsApi.deleteRepository(repository.id));
   }
 
   async function removeProjectDirectory(directory: Directory) {
-    if (!window.confirm(`Remove directory from this Project?\n\n${directory.name}\n\nLocal files and Git resources will not be deleted.`))
+    if (!window.confirm(t("appFeedback.removeDirectory", { name: directory.name })))
       return;
     await act(() => projectsApi.deleteLocation(directory.id));
   }
@@ -974,7 +974,7 @@ function Workspace() {
       await queryClient.invalidateQueries({
         queryKey: workspaceKeys.sessions(stream.id),
       });
-      toast.errorFrom(cause, "关闭 Session 失败");
+      toast.errorFrom(cause, t("appFeedback.couldNotCloseSession"));
     } finally {
       if (session.kind !== "codex") {
         queryClient.setQueryData<Session[]>(
@@ -1005,7 +1005,7 @@ function Workspace() {
       await queryClient.invalidateQueries({
         queryKey: projectKeys.sessions(project.id),
       });
-      toast.errorFrom(cause, "关闭 Session 失败");
+      toast.errorFrom(cause, t("appFeedback.couldNotCloseSession"));
     } finally {
       if (session.kind !== "codex") {
         queryClient.setQueryData<Session[]>(
@@ -1337,7 +1337,7 @@ function Workspace() {
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  aria-label="Dismiss warning"
+                  aria-label={t("appFeedback.dismissWarning")}
                   onClick={() => setWarning("")}
                 >
                   <X />

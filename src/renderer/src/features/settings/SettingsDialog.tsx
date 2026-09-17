@@ -33,7 +33,7 @@ export function SettingsDialog(
         </DialogHeader>
         <div className="flex min-h-0 flex-1">
           <nav
-            aria-label="设置分类"
+            aria-label={t("settingsUi.settingsCategories")}
             className="flex w-36 shrink-0 flex-col gap-1 border-r p-3"
           >
             <Button
@@ -42,18 +42,14 @@ export function SettingsDialog(
               aria-current={page === "settings" ? "page" : undefined}
               onClick={() => setPage("settings")}
             >
-              <Settings data-icon="inline-start" />
-              设置项
-            </Button>
+              <Settings data-icon="inline-start" />{t("settingsUi.preferences")}</Button>
             <Button
               className="justify-start"
               variant={page === "keymap" ? "secondary" : "ghost"}
               aria-current={page === "keymap" ? "page" : undefined}
               onClick={() => setPage("keymap")}
             >
-              <Keyboard data-icon="inline-start" />
-              Keymap
-            </Button>
+              <Keyboard data-icon="inline-start" />{t("settingsUi.keymap")}</Button>
           </nav>
           <div
             className={

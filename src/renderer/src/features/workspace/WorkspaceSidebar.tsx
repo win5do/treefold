@@ -709,17 +709,13 @@ function SidebarOwnerContextMenu({
                 disabled={busy}
                 onClick={() => onParentOperation("update")}
               >
-                <GitPullRequestArrow />
-                Update from Parent…
-              </ContextMenuItem>
+                <GitPullRequestArrow />{t("workspaceUi.updateFromParent2")}</ContextMenuItem>
               <ContextMenuItem
                 data-testid="integrate-into-parent-action"
                 disabled={busy}
                 onClick={() => onParentOperation("integrate")}
               >
-                <GitMerge />
-                Integrate into Parent…
-              </ContextMenuItem>
+                <GitMerge />{t("workspaceUi.integrateIntoParent2")}</ContextMenuItem>
             </ContextMenuGroup>
           </>
         )}
@@ -1142,8 +1138,8 @@ function SessionDirectoryMenu({
           role="menu"
           aria-label={
             activeSessionKind === "shell"
-              ? "Shell locations"
-              : "Agent locations"
+              ? t("workspaceUi.shellLocations")
+              : t("workspaceUi.agentLocations")
           }
           className="directory-session-submenu absolute left-full w-44 rounded-lg border border-border bg-card p-1 shadow-xl"
           style={{ top: submenuTop }}
@@ -1443,7 +1439,7 @@ function SidebarSessions({
               <SessionKindIcon kind={session.kind} />
               <span className="min-w-0 flex-1 truncate">{session.name}</span>
               <StatusDot status={session.status} />
-              <span className="shrink-0 text-[10px]">{session.status}</span>
+              <span className="shrink-0 text-[10px]">{t(`states.${session.status}`, { defaultValue: session.status })}</span>
             </button>
             <Button
               data-session-close="true"
@@ -1452,13 +1448,13 @@ function SidebarSessions({
               className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible"
               title={
                 session.kind === "codex"
-                  ? "Remove from sidebar"
-                  : "Close Session"
+                  ? t("workspaceUi.removeFromSidebar")
+                  : t("workspaceUi.closeSession")
               }
               aria-label={
                 session.kind === "codex"
-                  ? "Remove from sidebar"
-                  : "Close Session"
+                  ? t("workspaceUi.removeFromSidebar")
+                  : t("workspaceUi.closeSession")
               }
               onClick={(event) => {
                 event.stopPropagation();
@@ -1529,7 +1525,7 @@ function SidebarProjectSessions({
               <SessionKindIcon kind={session.kind} />
               <span className="min-w-0 flex-1 truncate">{session.name}</span>
               <StatusDot status={session.status} />
-              <span className="shrink-0 text-[10px]">{session.status}</span>
+              <span className="shrink-0 text-[10px]">{t(`states.${session.status}`, { defaultValue: session.status })}</span>
             </button>
             <Button
               size="icon-sm"
@@ -1537,13 +1533,13 @@ function SidebarProjectSessions({
               className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible"
               title={
                 session.kind === "codex"
-                  ? "Remove from sidebar"
-                  : "Close Session"
+                  ? t("workspaceUi.removeFromSidebar")
+                  : t("workspaceUi.closeSession")
               }
               aria-label={
                 session.kind === "codex"
-                  ? "Remove from sidebar"
-                  : "Close Session"
+                  ? t("workspaceUi.removeFromSidebar")
+                  : t("workspaceUi.closeSession")
               }
               onClick={(event) => {
                 event.stopPropagation();
@@ -1611,7 +1607,7 @@ function SidebarForkNode(props: SidebarNodeProps) {
           <button
             data-testid="sidebar-tree-toggle"
             className={sidebarTreeToggleClass}
-            aria-label={`${open ? "Collapse" : "Expand"} Fork ${stream.name}`}
+            aria-label={t(open ? "navigation.collapseFork" : "navigation.expandFork", { name: stream.name })}
             aria-expanded={open}
             onClick={() => onToggleWorkspace(stream.id)}
           >
@@ -1663,7 +1659,7 @@ function SidebarForkNode(props: SidebarNodeProps) {
             <span
               data-sidebar-row-action="true"
               className="grid size-7 shrink-0 place-items-center"
-              title="Archived"
+              title={t("workspaceUi.archived")}
             >
               <StatusDot status="closed" />
             </span>
@@ -1693,9 +1689,7 @@ function SidebarForkNode(props: SidebarNodeProps) {
             stream.sessions.filter(
               (session) => session.visibility === "visible",
             ).length === 0) && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground/70">
-              No Sessions
-            </p>
+            <p className="px-2 py-1.5 text-xs text-muted-foreground/70">{t("workspaceUi.noSessions")}</p>
           )}
         </div>
       )}
@@ -1752,7 +1746,7 @@ function SidebarWorkspaceNode(
           <button
             data-testid="sidebar-tree-toggle"
             className={sidebarTreeToggleClass}
-            aria-label={`${open ? "Collapse" : "Expand"} Workspace ${stream.name}`}
+            aria-label={t(open ? "navigation.collapseWorkspace" : "navigation.expandWorkspace", { name: stream.name })}
             aria-expanded={open}
             onClick={() => onToggleWorkspace(stream.id)}
           >
@@ -1804,7 +1798,7 @@ function SidebarWorkspaceNode(
             <span
               data-sidebar-row-action="true"
               className="grid size-7 shrink-0 place-items-center"
-              title="Archived"
+              title={t("workspaceUi.archived")}
             >
               <StatusDot status="closed" />
             </span>
@@ -1842,9 +1836,7 @@ function SidebarWorkspaceNode(
               (session) => session.visibility === "visible",
             ).length === 0) &&
             forks.length === 0 && (
-              <p className="px-2 py-1.5 text-xs text-muted-foreground/70">
-                No Sessions or Forks
-              </p>
+              <p className="px-2 py-1.5 text-xs text-muted-foreground/70">{t("workspaceUi.noSessionsOrForks")}</p>
             )}
         </div>
       )}

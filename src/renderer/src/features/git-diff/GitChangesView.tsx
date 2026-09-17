@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { ChevronDown, ChevronUp, GitCompare, RefreshCw, X } from "lucide-react";
@@ -33,6 +34,7 @@ export function GitChangesView(props: GitChangesViewProps) {
 }
 
 function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, scope = "working-tree", initialPath, onStatusChange, onClose }: GitChangesViewProps) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [comparison, setComparison] = useState<GitDiffComparison | null>(null);
   const [selectedPath, setSelectedPath] = useState(initialPath ?? "");
@@ -49,7 +51,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
   const api = repositoryKind === "project" ? projectsApi : workspacesApi;
   const files = useMemo(() => sortByTreePath((status?.files ?? []).filter((file) => scope === "staged" ? file.has_staged_changes : true)), [scope, status]);
   const selected = files.find((file) => file.path === selectedPath) ?? files[0];
-  const parsed = useMemo(() => parseDiffComparison(comparison), [comparison]);
+  const parsed = useMemo(() => parseDiffComparison(comparison), [comparison, t]);
   const current = parsed.files.find((file) => file.path === selectedPath) ?? parsed.files[0];
 
   const publishStatus = (next: GitStatus) => {
@@ -73,7 +75,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
       const first = initialPath ?? next.files.find((file) => scope === "staged" ? file.has_staged_changes : file.has_unstaged_changes)?.path;
       setSelectedPath(first ?? "");
     }).catch((cause) => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Git status could not be loaded");
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : t("gitDiffUi.gitStatusCouldNotBeLoaded"));
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false);
     });
@@ -111,7 +113,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
     void api.gitDiff(repositoryId, request, controller.signal).then((next) => {
       if (!controller.signal.aborted) setComparison(next);
     }).catch((cause) => {
-      if (!controller.signal.aborted) setError(cause instanceof ApiError && cause.code === "DIFF_TOO_LARGE" ? "Diff is too large to display safely." : cause instanceof Error ? cause.message : "Diff could not be loaded");
+      if (!controller.signal.aborted) setError(cause instanceof ApiError && cause.code === "DIFF_TOO_LARGE" ? t("gitDiffUi.diffIsTooLargeToDisplaySafely") : cause instanceof Error ? cause.message : t("gitDiffUi.diffCouldNotBeLoaded"));
     });
     return () => controller.abort();
   }, [repositoryId, repositoryKind, selected?.path, scope, diffRevision]);
@@ -125,7 +127,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
       publishStatus(next);
       setDiffRevision((value) => value + 1);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Git status could not be refreshed");
+      setError(cause instanceof Error ? cause.message : t("gitDiffUi.gitStatusCouldNotBeRefreshed"));
     } finally {
       setRefreshing(false);
     }
@@ -140,7 +142,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
       publishStatus(next);
       setDiffRevision((value) => value + 1);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Git stage operation failed");
+      setError(cause instanceof Error ? cause.message : t("gitDiffUi.gitStageOperationFailed"));
     } finally {
       setMutatingPath("");
     }
@@ -157,7 +159,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
       publishStatus(next);
       setDiffRevision((value) => value + 1);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Git stage operation failed");
+      setError(cause instanceof Error ? cause.message : t("gitDiffUi.gitStageOperationFailed"));
     } finally {
       setMutatingPath("");
     }
@@ -180,22 +182,22 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
   return <main data-git-changes-view className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
     <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
       <GitCompare className="size-4 text-muted-foreground" />
-      <h1 className="truncate text-sm font-semibold">Git Changes</h1>
+      <h1 className="truncate text-sm font-semibold">{t("gitDiffUi.gitChanges")}</h1>
       <Badge variant="secondary" className="ml-auto">{repositoryName}</Badge>
-      {onClose && <Button size="icon-sm" variant="ghost" aria-label="Close Git Changes" onClick={onClose}><X /></Button>}
+      {onClose && <Button size="icon-sm" variant="ghost" aria-label={t("gitDiffUi.closeGitChanges")} onClick={onClose}><X /></Button>}
     </header>
-    {loading ? <State title="Loading Git changes" /> : error && !current ? <State title="Could not load Git changes" detail={error} /> : files.length === 0 ? <State title="No changes" /> : <div className="flex min-h-0 flex-1">
+    {loading ? <State title={t("gitDiffUi.loadingGitChanges")} /> : error && !current ? <State title={t("gitDiffUi.couldNotLoadGitChanges")} detail={error} /> : files.length === 0 ? <State title={t("gitDiffUi.noChanges")} /> : <div className="flex min-h-0 flex-1">
       <aside className="flex min-w-[220px] shrink-0 flex-col border-r border-border bg-muted/20" style={{ width: treeWidth }}>
         <div className="flex h-10 shrink-0 items-center gap-2 px-2 text-xs font-semibold">
-          <span>Changed files</span>
-          {status && <Badge variant="outline" className="ml-auto">{status.files.length} files</Badge>}
-          <Button size="icon-sm" variant="ghost" data-testid="git-changes-refresh" aria-label="Refresh Git changes" title="Refresh Git changes" disabled={loading || refreshing || Boolean(mutatingPath)} onClick={() => void refreshChanges()}><RefreshCw className={cn(refreshing && "animate-spin")} /></Button>
+          <span>{t("gitDiffUi.changedFiles")}</span>
+          {status && <Badge variant="outline" className="ml-auto">{t("counts.file", { count: status.files.length })}</Badge>}
+          <Button size="icon-sm" variant="ghost" data-testid="git-changes-refresh" aria-label={t("gitDiffUi.refreshGitChanges")} title={t("gitDiffUi.refreshGitChanges")} disabled={loading || refreshing || Boolean(mutatingPath)} onClick={() => void refreshChanges()}><RefreshCw className={cn(refreshing && "animate-spin")} /></Button>
         </div>
         {status && <GitChangesTree files={files} allFiles={status.files} stagedCount={status.staged_count} selectedPath={selectedPath} mutatingPath={mutatingPath} onSelect={setSelectedPath} onToggle={(file, stage) => void toggleStage(file, stage)} onToggleAll={(stage) => void toggleStageAll(stage)} />}
       </aside>
-      <div data-testid="git-changes-tree-resize-handle" role="separator" aria-label="Resize changed files panel" aria-orientation="vertical" aria-valuemin={220} aria-valuemax={520} aria-valuenow={treeWidth} className="w-1 shrink-0 cursor-col-resize touch-none hover:bg-ring/50 focus:bg-ring/50" onPointerDown={resizeTree} onPointerMove={continueResize} onPointerUp={stopResize} onPointerCancel={stopResize} />
+      <div data-testid="git-changes-tree-resize-handle" role="separator" aria-label={t("gitDiffUi.resizeChangedFilesPanel")} aria-orientation="vertical" aria-valuemin={220} aria-valuemax={520} aria-valuenow={treeWidth} className="w-1 shrink-0 cursor-col-resize touch-none hover:bg-ring/50 focus:bg-ring/50" onPointerDown={resizeTree} onPointerMove={continueResize} onPointerUp={stopResize} onPointerCancel={stopResize} />
       <section className="flex min-w-0 flex-1 flex-col">
-        {current && <><div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3"><span className="min-w-0 flex-1 truncate font-mono text-xs" title={current.path}>{current.path}</span><Button size="icon-sm" variant="ghost" aria-label="Previous file" disabled={selectedIndex <= 0} onClick={() => setSelectedPath(files[selectedIndex - 1]?.path ?? selectedPath)}><ChevronUp /></Button><Button size="icon-sm" variant="ghost" aria-label="Next file" disabled={selectedIndex < 0 || selectedIndex >= files.length - 1} onClick={() => setSelectedPath(files[selectedIndex + 1]?.path ?? selectedPath)}><ChevronDown /></Button></div><div className="min-h-0 flex-1 overflow-hidden" data-testid="git-diff-content">{error ? <State title="Could not load diff" detail={error} /> : current.binary || current.diff.hunks.length === 0 ? <State title={current.binary ? "Binary file changed" : "No line changes"} /> : <Virtualizer className="h-full overflow-auto" contentClassName="min-h-full"><FileDiff key={current.path} fileDiff={current.diff} options={diffOptions} /></Virtualizer>}</div></>}
+        {current && <><div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3"><span className="min-w-0 flex-1 truncate font-mono text-xs" title={current.path}>{current.path}</span><Button size="icon-sm" variant="ghost" aria-label={t("gitDiffUi.previousFile")} disabled={selectedIndex <= 0} onClick={() => setSelectedPath(files[selectedIndex - 1]?.path ?? selectedPath)}><ChevronUp /></Button><Button size="icon-sm" variant="ghost" aria-label={t("gitDiffUi.nextFile")} disabled={selectedIndex < 0 || selectedIndex >= files.length - 1} onClick={() => setSelectedPath(files[selectedIndex + 1]?.path ?? selectedPath)}><ChevronDown /></Button></div><div className="min-h-0 flex-1 overflow-hidden" data-testid="git-diff-content">{error ? <State title={t("gitDiffUi.couldNotLoadDiff")} detail={error} /> : current.binary || current.diff.hunks.length === 0 ? <State title={current.binary ? t("gitDiffUi.binaryFileChanged") : t("gitDiffUi.noLineChanges")} /> : <Virtualizer className="h-full overflow-auto" contentClassName="min-h-full"><FileDiff key={current.path} fileDiff={current.diff} options={diffOptions} /></Virtualizer>}</div></>}
       </section>
     </div>}
   </main>;

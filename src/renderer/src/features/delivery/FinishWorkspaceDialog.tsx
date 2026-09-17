@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { GitCompare, SquareTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +59,7 @@ export function FinishWorkspaceDialog({
   onOpenShell: (locationId: string) => void;
   onReviewChanges: (locationId: string) => void;
 }) {
+  const { t } = useTranslation();
   const finishable = workspace?.repositories.filter(
     (location) =>
       location.access_mode === "read_write" &&
@@ -110,7 +112,7 @@ export function FinishWorkspaceDialog({
       .catch((cause) => {
         if (!controller.signal.aborted) {
           setPreflightError(
-            cause instanceof Error ? cause.message : "Preflight failed",
+            cause instanceof Error ? cause.message : t("deliveryUi.preflightFailed"),
           );
         }
       })
@@ -176,18 +178,15 @@ export function FinishWorkspaceDialog({
     <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Finish {isFork ? "Fork" : "Workspace"} location</DialogTitle>
-          <DialogDescription>
-            Finish each Git location independently. The Workspace is archived
-            only after all repositories reach a terminal state.
-          </DialogDescription>
+          <DialogTitle>{t("deliveryUi.finishLocation", { type: isFork ? "Fork" : "Workspace" })}</DialogTitle>
+          <DialogDescription>{t("deliveryUi.finishDescription")}</DialogDescription>
         </DialogHeader>
         <div
           data-testid="finish-scroll-region"
           className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
         >
           <Field>
-            <FieldLabel htmlFor="finish-location">REPOSITORY</FieldLabel>
+            <FieldLabel htmlFor="finish-location">{t("deliveryUi.rEPOSITORY")}</FieldLabel>
             <Select
               id="finish-location"
               className="w-full"
@@ -196,7 +195,7 @@ export function FinishWorkspaceDialog({
             >
               {finishable.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.repository_name} · {item.delivery_status}
+                  {item.repository_name} · {t(`states.${item.delivery_status}`, { defaultValue: item.delivery_status })}
                 </option>
               ))}
             </Select>
@@ -207,18 +206,17 @@ export function FinishWorkspaceDialog({
           >
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-xs font-semibold">
-                Delivery preflight · {location?.repository_name}
+                {t("deliveryUi.preflightTitle", { name: location?.repository_name })}
               </h3>
               <Badge
                 variant={preflight && !preflight.blockers.length ? "success" : "neutral"}
               >
-                {checking ? "checking" : blocked ? "blocked" : "ready"}
+                {t(checking ? "states.checking" : blocked ? "states.blocked" : "states.ready")}
               </Badge>
             </div>
             {preflight && (
               <p className="mt-3 text-xs text-muted-foreground">
-                {preflight.ahead} ahead · {preflight.behind} behind ·{" "}
-                {preflight.changed_files.length} files
+                {t("deliveryUi.preflightSummary", { ahead: preflight.ahead, behind: preflight.behind, files: preflight.changed_files.length })}
               </p>
             )}
             {preflight?.warnings.map((item) => (
@@ -233,8 +231,8 @@ export function FinishWorkspaceDialog({
             ))}
             {preflight?.source_dirty && location && (
               <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => onReviewChanges(location.id)}><GitCompare data-icon="inline-start" />Review Changes</Button>
-                <Button size="sm" variant="outline" onClick={() => onOpenShell(location.id)}><SquareTerminal data-icon="inline-start" />Open Shell</Button>
+                <Button size="sm" variant="secondary" onClick={() => onReviewChanges(location.id)}><GitCompare data-icon="inline-start" />{t("deliveryUi.reviewChanges")}</Button>
+                <Button size="sm" variant="outline" onClick={() => onOpenShell(location.id)}><SquareTerminal data-icon="inline-start" />{t("deliveryUi.openShell")}</Button>
               </div>
             )}
             {preflightError && (
@@ -242,11 +240,9 @@ export function FinishWorkspaceDialog({
             )}
           </section>
           <FieldSet className="rounded-lg border p-4">
-            <FieldLegend variant="label">Strategy</FieldLegend>
+            <FieldLegend variant="label">{t("deliveryUi.strategy")}</FieldLegend>
             <Field>
-              <FieldLabel className="sr-only" htmlFor="finish-code-action">
-                Finish strategy
-              </FieldLabel>
+              <FieldLabel className="sr-only" htmlFor="finish-code-action">{t("deliveryUi.finishStrategy")}</FieldLabel>
               <Select
                 id="finish-code-action"
                 className="w-full"
@@ -256,12 +252,12 @@ export function FinishWorkspaceDialog({
                 }
               >
                 <option value="local_merge">
-                  Merge into {isFork ? "parent Workspace" : "local base branch"}
+                  {t("deliveryUi.mergeTarget", { target: isFork ? t("deliveryUi.parentWorkspace") : t("deliveryUi.localBaseBranch") })}
                 </option>
                 {!isFork && (
-                  <option value="push_branch">Push Workspace feature branch</option>
+                  <option value="push_branch">{t("deliveryUi.pushWorkspaceFeatureBranch")}</option>
                 )}
-                <option value="keep">Preserve without delivery</option>
+                <option value="keep">{t("deliveryUi.preserveWithoutDelivery")}</option>
               </Select>
             </Field>
           </FieldSet>
@@ -311,7 +307,7 @@ export function FinishWorkspaceDialog({
             <p className="text-xs text-destructive">{operationError}</p>
           )}
           <FieldSet className="rounded-lg border p-4">
-            <FieldLegend variant="label">Cleanup</FieldLegend>
+            <FieldLegend variant="label">{t("deliveryUi.cleanup")}</FieldLegend>
             <FieldGroup className="gap-3">
               <Field orientation="horizontal">
                 <Checkbox
@@ -324,9 +320,7 @@ export function FinishWorkspaceDialog({
                     })
                   }
                 />
-                <FieldLabel htmlFor="finish-delete-worktree">
-                  Remove managed worktree
-                </FieldLabel>
+                <FieldLabel htmlFor="finish-delete-worktree">{t("deliveryUi.removeManagedWorktree")}</FieldLabel>
               </Field>
               <Field
                 orientation="horizontal"
@@ -340,9 +334,7 @@ export function FinishWorkspaceDialog({
                     updateDraft({ deleteBranch: checked })
                   }
                 />
-                <FieldLabel htmlFor="finish-delete-branch">
-                  Delete local branch
-                </FieldLabel>
+                <FieldLabel htmlFor="finish-delete-branch">{t("deliveryUi.deleteLocalBranch")}</FieldLabel>
               </Field>
             </FieldGroup>
           </FieldSet>
@@ -352,9 +344,7 @@ export function FinishWorkspaceDialog({
             variant="secondary"
             disabled={busy}
             onClick={() => onOpenChange(false)}
-          >
-            Cancel
-          </Button>
+          >{t("deliveryUi.cancel")}</Button>
           <Button
             data-testid="finish-confirm-action"
             variant="destructive"
@@ -380,7 +370,7 @@ export function FinishWorkspaceDialog({
               if (location && nextPayload) onSubmit(location.id, nextPayload);
             }}
           >
-            {busy ? "Finishing…" : `Finish ${location?.repository_name ?? "location"}`}
+            {busy ? t("deliveryUi.finishing") : t("deliveryUi.finish", { name: location?.repository_name ?? t("deliveryUi.location") })}
           </Button>
         </div>
       </DialogContent>

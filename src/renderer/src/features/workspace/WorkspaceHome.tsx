@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
 import { useEffect, useState } from "react";
 import {
@@ -71,6 +72,7 @@ export function WorkspaceHome({
   onTodosChanged: () => void;
   onTodoForkCreated: (fork: Workspace, session?: Session) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const [filter, setFilter] = useState<"all" | "codex" | "shell" | "command">(
     "all",
   );
@@ -104,12 +106,12 @@ export function WorkspaceHome({
       session.kind === "codex" &&
       session.status === "running"
     )
-      return "Background";
-    return session.status;
+      return t("workspaceUi.background");
+    return t(`states.${session.status}`, { defaultValue: session.status });
   };
   const formatTime = (value?: string) =>
     value
-      ? new Intl.DateTimeFormat(undefined, {
+      ? new Intl.DateTimeFormat(i18n.resolvedLanguage, {
           month: "short",
           day: "numeric",
           hour: "2-digit",
@@ -125,11 +127,11 @@ export function WorkspaceHome({
         <div>
           <div>
             <div className="mb-3 flex items-center gap-2">
-              <Badge>{detail.checkout_mode}</Badge>
+              <Badge>{t(`states.${detail.checkout_mode}`, { defaultValue: detail.checkout_mode })}</Badge>
               <Badge
                 variant={detail.status === "active" ? "success" : "secondary"}
               >
-                {detail.status}
+                {t(`states.${detail.status}`, { defaultValue: detail.status })}
               </Badge>
             </div>
             <h1 className="text-3xl font-semibold tracking-tight">
@@ -137,18 +139,15 @@ export function WorkspaceHome({
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
               {detail.description ||
-                "在同一个 Workspace 中运行 Shell 和 Codex Sessions。"}
+                t("workspaceUi.runShellAndCodexSessionsInTheSameWorkspace")}
             </p>
           </div>
         </div>
         <section data-testid="workspace-repositories-section" className="mt-8">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-sm font-semibold">Workspace Repositories</h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Git lifecycle and delivery run once per Repository; Sessions
-                start in a Directory scope.
-              </p>
+              <h2 className="text-sm font-semibold">{t("workspaceUi.workspaceRepositories")}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.repositoryLifecycleDescription")}</p>
             </div>
             {detail.status === "active" && (
               <Button
@@ -157,9 +156,7 @@ export function WorkspaceHome({
                 disabled={busy}
                 onClick={onResync}
               >
-                <RefreshCw data-icon="inline-start" />
-                Resync
-              </Button>
+                <RefreshCw data-icon="inline-start" />{t("workspaceUi.resync")}</Button>
             )}
           </div>
           <div className="mt-3 grid gap-3">
@@ -185,10 +182,8 @@ export function WorkspaceHome({
           (directory) => !directory.workspace_repository_id,
         ) && (
           <section className="mt-8" data-testid="workspace-context-directories">
-            <h2 className="text-sm font-semibold">Non-Git Directories</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Read-only context; available only as a Shell cwd.
-            </p>
+            <h2 className="text-sm font-semibold">{t("workspaceUi.nonGitDirectories")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.readOnlyContextAvailableOnlyAsAShellCwd")}</p>
             <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
               {detail.workspace_directories
                 .filter((directory) => !directory.workspace_repository_id)
@@ -210,7 +205,7 @@ export function WorkspaceHome({
                         {directory.path}
                       </code>
                     </div>
-                    <Badge>read only</Badge>
+                    <Badge>{t("labels.readOnly")}</Badge>
                   </div>
                 ))}
             </div>
@@ -219,7 +214,7 @@ export function WorkspaceHome({
         {detail.kind === "workspace" && (
           <section data-testid="workspace-forks-section" className="mt-8">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Forks</h2>
+              <h2 className="text-sm font-semibold">{t("workspaceUi.forks")}</h2>
               <span className="text-[11px] text-muted-foreground">
                 {detail.forks.length}
               </span>
@@ -246,7 +241,7 @@ export function WorkspaceHome({
                             fork.status === "active" ? "success" : "neutral"
                           }
                         >
-                          {fork.delivery_status}
+                          {t(`states.${fork.delivery_status}`, { defaultValue: fork.delivery_status })}
                         </Badge>
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -268,9 +263,7 @@ export function WorkspaceHome({
                 </div>
               ))}
               {detail.forks.length === 0 && (
-                <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-                  No Forks
-                </p>
+                <p className="px-4 py-8 text-center text-xs text-muted-foreground">{t("workspaceUi.noForks")}</p>
               )}
             </div>
           </section>
@@ -278,7 +271,7 @@ export function WorkspaceHome({
         {detail.kind === "workspace" && (
           <section data-testid="workspace-todos-section" className="mt-8">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Todos</h2>
+              <h2 className="text-sm font-semibold">{t("workspaceUi.todos")}</h2>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">
                   {detail.todos.length}
@@ -289,9 +282,7 @@ export function WorkspaceHome({
                     variant="secondary"
                     onClick={() => setTodoDialog({ content: "" })}
                   >
-                    <Plus data-icon="inline-start" />
-                    Add Todo
-                  </Button>
+                    <Plus data-icon="inline-start" />{t("workspaceUi.addTodo")}</Button>
                 )}
               </div>
             </div>
@@ -305,13 +296,13 @@ export function WorkspaceHome({
                 const canDelegate = ["pending", "blocked"].includes(todo.status);
                 const statusLabel = hasActiveFork
                   ? todo.status === "blocked"
-                    ? `Execution blocked${todo.blocked_reason ? `: ${todo.blocked_reason}` : ""}`
-                    : "Execution Fork is active. Finish or archive it before changing status."
+                    ? todo.blocked_reason ? t("workspaceUi.executionBlockedReason", { reason: todo.blocked_reason }) : t("workspaceUi.executionBlocked")
+                    : t("workspaceUi.executionForkActive")
                   : undefined;
                 const checkbox = (
                   <Checkbox
                     aria-label={
-                      todo.status === "done" ? "Reopen Todo" : "Complete Todo"
+                      todo.status === "done" ? t("workspaceUi.reopenTodo") : t("workspaceUi.completeTodo")
                     }
                     checked={todo.status === "done"}
                     disabled={todoBusy || hasActiveFork}
@@ -376,7 +367,7 @@ export function WorkspaceHome({
                           <CircleAlert className="size-4" />
                         </TooltipTrigger>
                         <TooltipContent>
-                          {todo.blocked_reason || "Execution blocked"}
+                          {todo.blocked_reason || t("workspaceUi.executionBlocked")}
                         </TooltipContent>
                       </Tooltip>
                     )}
@@ -387,7 +378,7 @@ export function WorkspaceHome({
                             <Button
                               size="icon-sm"
                               variant="ghost"
-                              aria-label="Edit Todo"
+                              aria-label={t("workspaceUi.editTodo")}
                               disabled={todoBusy}
                               onClick={() =>
                                 setTodoDialog({
@@ -400,7 +391,7 @@ export function WorkspaceHome({
                         >
                           <Pencil />
                         </TooltipTrigger>
-                        <TooltipContent>Edit Todo</TooltipContent>
+                        <TooltipContent>{t("workspaceUi.editTodo")}</TooltipContent>
                       </Tooltip>
                       {hasActiveFork && executionFork ? (
                         <Tooltip>
@@ -409,14 +400,14 @@ export function WorkspaceHome({
                               <Button
                                 size="icon-sm"
                                 variant="ghost"
-                                aria-label="Open execution Fork"
+                                aria-label={t("workspaceUi.openExecutionFork")}
                                 onClick={() => onOpenFork(executionFork)}
                               />
                             }
                           >
                             <GitFork />
                           </TooltipTrigger>
-                          <TooltipContent>Open execution Fork</TooltipContent>
+                          <TooltipContent>{t("workspaceUi.openExecutionFork")}</TooltipContent>
                         </Tooltip>
                       ) : (
                         <Tooltip>
@@ -426,7 +417,7 @@ export function WorkspaceHome({
                             <Button
                               size="icon-sm"
                               variant="ghost"
-                              aria-label="Delegate Todo to Fork"
+                              aria-label={t("workspaceUi.delegateTodoToFork")}
                               disabled={todoBusy || !canDelegate}
                               onClick={() =>
                                 void runTodo(async () => {
@@ -442,8 +433,8 @@ export function WorkspaceHome({
                           </TooltipTrigger>
                           <TooltipContent>
                             {canDelegate
-                              ? "Delegate Todo to Fork"
-                              : "Reopen Todo before delegating"}
+                              ? t("workspaceUi.delegateTodoToFork")
+                              : t("workspaceUi.reopenTodoBeforeDelegating")}
                           </TooltipContent>
                         </Tooltip>
                       )}
@@ -452,14 +443,14 @@ export function WorkspaceHome({
                           <Button
                             size="icon-sm"
                             variant="ghost"
-                            aria-label="Permanently delete Todo"
+                            aria-label={t("workspaceUi.permanentlyDeleteTodo")}
                             disabled={
                               todoBusy ||
                               hasActiveFork ||
                               todo.status === "in_progress"
                             }
                             onClick={() => {
-                              if (window.confirm("Permanently delete this Todo?"))
+                              if (window.confirm(t("workspaceUi.permanentlyDeleteThisTodo")))
                                 void runTodo(() => todosApi.delete(todo.id));
                             }}
                           >
@@ -468,8 +459,8 @@ export function WorkspaceHome({
                         </TooltipTrigger>
                         <TooltipContent>
                           {hasActiveFork
-                            ? "Finish or archive the execution Fork before deleting"
-                            : "Permanently delete Todo"}
+                            ? t("workspaceUi.finishOrArchiveTheExecutionForkBeforeDeleting")
+                            : t("workspaceUi.permanentlyDeleteTodo")}
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -477,9 +468,7 @@ export function WorkspaceHome({
                 );
               })}
               {detail.todos.length === 0 && (
-                <p className="px-4 py-8 text-center text-xs text-muted-foreground">
-                  No Todos
-                </p>
+                <p className="px-4 py-8 text-center text-xs text-muted-foreground">{t("workspaceUi.noTodos")}</p>
               )}
             </div>
             {todoError && (
@@ -494,16 +483,14 @@ export function WorkspaceHome({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                {todoDialog?.id ? "Edit Todo" : "Create Todo"}
+                {todoDialog?.id ? t("workspaceUi.editTodo") : t("workspaceUi.createTodo")}
               </DialogTitle>
-              <DialogDescription>
-                Markdown is supported. Todo content may span multiple lines.
-              </DialogDescription>
+              <DialogDescription>{t("workspaceUi.markdownIsSupportedTodoContentMaySpanMultipleLines")}</DialogDescription>
             </DialogHeader>
             <Textarea
               rows={10}
               className="min-h-48 resize-y"
-              aria-label="Todo content"
+              aria-label={t("workspaceUi.todoContent")}
               value={todoDialog?.content ?? ""}
               onChange={(event) =>
                 setTodoDialog(
@@ -513,9 +500,7 @@ export function WorkspaceHome({
               }
             />
             <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setTodoDialog(null)}>
-                Cancel
-              </Button>
+              <Button variant="secondary" onClick={() => setTodoDialog(null)}>{t("workspaceUi.cancel")}</Button>
               <Button
                 disabled={todoBusy || !todoDialog?.content.trim()}
                 onClick={() => {
@@ -529,9 +514,7 @@ export function WorkspaceHome({
                       : todosApi.create(detail.id, current.content),
                   ).then((saved) => saved && setTodoDialog(null));
                 }}
-              >
-                Save
-              </Button>
+              >{t("workspaceUi.save")}</Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -539,10 +522,10 @@ export function WorkspaceHome({
           <div className="flex gap-5">
             {(
               [
-                ["all", "All"],
+                ["all", t("workspaceUi.all")],
                 ["codex", "Agent"],
                 ["shell", "Shell"],
-                ["command", "Command"],
+                ["command", t("workspaceUi.command")],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -560,18 +543,18 @@ export function WorkspaceHome({
             ))}
           </div>
           <span className="pb-3 text-[11px] text-muted-foreground">
-            {sessions.length} sessions
+            {t("counts.session", { count: sessions.length })}
           </span>
         </div>
         <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
           <div className="hidden grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] gap-3 border-b border-border/60 bg-muted/50 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
             <span>Session</span>
-            <span>Type</span>
-            <span>Status</span>
-            <span>Started</span>
-            <span>Last active</span>
+            <span>{t("workspaceUi.type")}</span>
+            <span>{t("workspaceUi.status")}</span>
+            <span>{t("workspaceUi.started")}</span>
+            <span>{t("workspaceUi.lastActive")}</span>
             <span>Workspace</span>
-            <span className="text-right">Actions</span>
+            <span className="text-right">{t("workspaceUi.actions")}</span>
           </div>
           {sessions.map((session) => {
             return (
@@ -604,7 +587,7 @@ export function WorkspaceHome({
                     {session.kind === "codex"
                       ? "Agent"
                       : session.kind === "command"
-                        ? "Command"
+                        ? t("workspaceUi.command")
                         : "Shell"}
                   </Badge>
                 </div>
@@ -636,9 +619,7 @@ export function WorkspaceHome({
                       variant="secondary"
                       disabled={busy}
                       onClick={() => onOpen(session)}
-                    >
-                      Open
-                    </Button>
+                    >{t("workspaceUi.open")}</Button>
                   )}
                   <RemoveSessionButton session={session} disabled={busy} />
                 </div>
@@ -648,9 +629,7 @@ export function WorkspaceHome({
           {sessions.length === 0 && (
             <div className="py-16 text-center">
               <TerminalSquare className="mx-auto size-6 text-muted-foreground/60" />
-              <p className="mt-3 text-sm font-medium">
-                没有符合筛选条件的 Session
-              </p>
+              <p className="mt-3 text-sm font-medium">{t("workspaceUi.noSessionsMatchTheFilter")}</p>
             </div>
           )}
         </div>
@@ -674,6 +653,7 @@ function WorkspaceRepositoryRow({
   onConfigureUpstream: () => void;
   onClearUpstream: () => void;
 }) {
+  const { t } = useTranslation();
   const writableGit =
     location.access_mode === "read_write" && location.git_status === "ready";
   const upstream =
@@ -701,10 +681,10 @@ function WorkspaceRepositoryRow({
                     : "destructive"
               }
             >
-              {location.git_status}
+              {t(`states.${location.git_status}`, { defaultValue: location.git_status })}
             </Badge>
-            <Badge>{location.access_mode}</Badge>
-            <Badge>{location.delivery_status}</Badge>
+            <Badge>{t(`states.${location.access_mode}`, { defaultValue: location.access_mode })}</Badge>
+            <Badge>{t(`states.${location.delivery_status}`, { defaultValue: location.delivery_status })}</Badge>
           </div>
           <code
             className="mt-2 block truncate text-[10px] text-muted-foreground"
@@ -728,16 +708,16 @@ function WorkspaceRepositoryRow({
           {location.access_mode === "read_write" && (
             <div className="mt-2 flex flex-wrap gap-x-4 text-[11px] text-muted-foreground">
               <span>
-                branch <code>{location.branch}</code>
+                {t("labels.branch")} <code>{location.branch}</code>
               </span>
               <span>
-                base <code>{location.base_branch}</code>
+                {t("labels.base")} <code>{location.base_branch}</code>
               </span>
               <span>
-                upstream <code>{upstream || "—"}</code>
+                {t("labels.upstream")} <code>{upstream || "—"}</code>
               </span>
               <span>
-                delivery <code>{location.delivery_mode}</code>
+                {t("labels.delivery")} <code>{t(`states.${location.delivery_mode}`, { defaultValue: location.delivery_mode })}</code>
               </span>
             </div>
           )}
@@ -770,7 +750,7 @@ function WorkspaceRepositoryRow({
         {actionsEnabled && writableGit && (
           <div className="-mt-2 self-start">
             <ActionMenu
-              label={`Actions for ${location.repository_name}`}
+              label={t("workspaceUi.actionsFor", { name: location.repository_name })}
               testId={`workspace-location-actions-${location.id}`}
               disabled={busy}
             >
@@ -780,7 +760,7 @@ function WorkspaceRepositoryRow({
                 testId={`workspace-location-upstream-${location.id}`}
                 onClick={onConfigureUpstream}
               >
-                {upstream ? "Change upstream" : "Set upstream"}
+                {upstream ? t("workspaceUi.changeUpstream") : t("workspaceUi.setUpstream")}
               </ActionMenuItem>
               {upstream && (
                 <ActionMenuItem
@@ -788,9 +768,7 @@ function WorkspaceRepositoryRow({
                   disabled={busy}
                   testId={`workspace-location-clear-upstream-${location.id}`}
                   onClick={onClearUpstream}
-                >
-                  Clear upstream
-                </ActionMenuItem>
+                >{t("workspaceUi.clearUpstream")}</ActionMenuItem>
               )}
             </ActionMenu>
           </div>

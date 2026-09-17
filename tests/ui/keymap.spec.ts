@@ -66,28 +66,28 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
     await page.getByRole("button", { name: "Keymap", exact: true }).click();
     const close = page.getByTestId("keymap-session.close");
     await close
-      .getByRole("button", { name: "录入 Close Session", exact: true })
+      .getByRole("button", { name: "Record Close Session", exact: true })
       .click();
     await page
-      .getByRole("textbox", { name: "录入 Close Session", exact: true })
+      .getByRole("textbox", { name: "Record Close Session", exact: true })
       .press("Control+w");
     await expect(close).toContainText("ctrl W");
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await page
-      .getByRole("button", { name: "录入 New Session", exact: true })
+      .getByRole("button", { name: "Record New Session", exact: true })
       .click();
     await page
-      .getByRole("textbox", { name: "录入 New Session", exact: true })
+      .getByRole("textbox", { name: "Record New Session", exact: true })
       .press("Control+w");
     await expect(page.getByRole("alert")).toContainText("conflicts");
     await page.keyboard.press("Escape");
     await page
-      .getByRole("button", { name: "Close Session 操作", exact: true })
+      .getByRole("button", { name: "Actions for Close Session", exact: true })
       .click();
     await page
-      .getByRole("menuitem", { name: "禁用快捷键", exact: true })
+      .getByRole("menuitem", { name: "Disable shortcut", exact: true })
       .click();
-    await expect(close).toContainText("未绑定");
+    await expect(close).toContainText("Unbound");
     await page.screenshot({ path: "/tmp/treefold-keymap-settings.png" });
     await page
       .getByRole("dialog")
@@ -101,21 +101,21 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await page.getByTestId("open-settings").click();
     await expect(page.getByTestId("keymap-session.close")).toContainText(
-      "未绑定",
+      "Unbound",
     );
     await page
-      .getByRole("button", { name: "Close Session 操作", exact: true })
+      .getByRole("button", { name: "Actions for Close Session", exact: true })
       .click();
-    await page.getByRole("menuitem", { name: "恢复默认", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Reset to default", exact: true }).click();
     await expect(page.getByTestId("keymap-session.close")).toContainText("⌘ W");
     await close
-      .getByRole("button", { name: "录入 Close Session", exact: true })
+      .getByRole("button", { name: "Record Close Session", exact: true })
       .click();
     const recorded = page.waitForRequest(
       (r) => r.method() === "PATCH" && r.url().endsWith("/api/keymap"),
     );
     await page
-      .getByRole("textbox", { name: "录入 Close Session", exact: true })
+      .getByRole("textbox", { name: "Record Close Session", exact: true })
       .press("Meta+w");
     expect((await recorded).postDataJSON()).toEqual({
       bindings: { "session.close": "cmd+w" },
@@ -170,15 +170,15 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await expect(terminal(FIXTURE_IDS.workspaceShell)).toBeAttached();
     await terminal(FIXTURE_IDS.workspaceShell).press("Meta+t");
-    const dialog = page.getByRole("dialog", { name: "新建 Session" });
+    const dialog = page.getByRole("dialog", { name: "New Session" });
     await expect(dialog).toBeVisible();
     await expect(
       dialog.getByRole("button", { name: "Shell", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
-    const directoryInput = dialog.getByLabel("目录", { exact: true });
+    const directoryInput = dialog.getByLabel("Directory", { exact: true });
     const shellType = dialog.getByRole("button", { name: "Shell", exact: true });
     const agentType = dialog.getByRole("button", { name: "Agent", exact: true });
-    const directories = dialog.getByRole("group", { name: "可用目录" });
+    const directories = dialog.getByRole("group", { name: "Available directories" });
     await expect(shellType).toBeFocused();
     await page.keyboard.press("ArrowLeft");
     await expect(agentType).toBeFocused();
@@ -209,7 +209,7 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await page.keyboard.press("ArrowUp");
     await expect(directories.getByRole("button", { pressed: true })).toHaveText(firstDirectory, { useInnerText: true });
     await page.keyboard.press("Tab");
-    await expect(dialog.getByRole("button", { name: "创建 Session", exact: true })).toBeFocused();
+    await expect(dialog.getByRole("button", { name: "Create Session", exact: true })).toBeFocused();
     await page.keyboard.press("Meta+f");
     await expect(directoryInput).toBeFocused();
     await directoryInput.fill("replace me");
@@ -218,7 +218,7 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await expect(directoryInput).toHaveValue("fixture-api");
     await page.keyboard.press("Escape");
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "创建 Session", exact: true })).toBeFocused();
+    await expect(dialog.getByRole("button", { name: "Create Session", exact: true })).toBeFocused();
     await expect(directoryInput).toHaveValue("fixture-api");
     await page.keyboard.press("Meta+f");
     await directoryInput.press("ArrowLeft");
@@ -287,10 +287,10 @@ test("settings Save sends only edited fields and supports resetting overrides", 
     expect((await saved).postDataJSON()).toEqual({ theme: "dark" });
     await expect(page.getByTestId("settings-save")).toBeEnabled();
     await page
-      .getByRole("button", { name: "恢复默认设置", exact: true })
+      .getByRole("button", { name: "Reset settings", exact: true })
       .click();
     const confirmation = page.getByRole("alertdialog", {
-      name: "恢复默认设置？",
+      name: "Reset settings?",
     });
     await expect(confirmation).toBeVisible();
     await expect(theme).toHaveValue("dark");
@@ -299,20 +299,20 @@ test("settings Save sends only edited fields and supports resetting overrides", 
       animations: "disabled",
     });
     await confirmation
-      .getByRole("button", { name: "取消", exact: true })
+      .getByRole("button", { name: "Cancel", exact: true })
       .click();
     await expect(confirmation).toHaveCount(0);
     const persisted = await page.request.get(`${harness.apiUrl}/api/settings`);
     expect((await persisted.json()).theme).toBe("dark");
     await page
-      .getByRole("button", { name: "恢复默认设置", exact: true })
+      .getByRole("button", { name: "Reset settings", exact: true })
       .click();
     const reset = page.waitForRequest(
       (request) =>
         request.method() === "PATCH" && request.url().endsWith("/api/settings"),
     );
     await confirmation
-      .getByRole("button", { name: "确认恢复", exact: true })
+      .getByRole("button", { name: "Confirm reset", exact: true })
       .click();
     expect((await reset).postDataJSON()).toEqual({
       reset: [
@@ -356,7 +356,7 @@ for (const owner of [
         )
         .toBeTruthy();
       await page.keyboard.press("Meta+t");
-      const dialog = page.getByRole("dialog", { name: "新建 Session" });
+      const dialog = page.getByRole("dialog", { name: "New Session" });
       await dialog.getByRole("button", { name: "Shell", exact: true }).click();
       const request = page.waitForRequest(
         (request) =>
@@ -364,7 +364,7 @@ for (const owner of [
           request.url().endsWith(`/api/${owner.path}/sessions`),
       );
       await dialog
-        .getByRole("button", { name: "创建 Session", exact: true })
+        .getByRole("button", { name: "Create Session", exact: true })
         .click();
       expect((await request).postDataJSON()).toEqual({
         kind: "shell",
@@ -403,26 +403,26 @@ test("Keymap resets all bindings only after confirmation, including filtered com
     await page.getByTestId("open-settings").click();
     await page.getByRole("button", { name: "Keymap", exact: true }).click();
     await expect(page.getByTestId("keymap-session.close")).toContainText(
-      "未绑定",
+      "Unbound",
     );
     await page.screenshot({
       path: "/tmp/treefold-keymap-layout.png",
       animations: "disabled",
     });
-    await page.getByPlaceholder("搜索命令或快捷键").fill("New Session");
+    await page.getByPlaceholder("Search commands or shortcuts").fill("New Session");
     const openReset = async () => {
       await page!
-        .getByRole("button", { name: "Keymap 操作", exact: true })
+        .getByRole("button", { name: "Keymap actions", exact: true })
         .click();
       await page!
-        .getByRole("menuitem", { name: "恢复全部默认快捷键", exact: true })
+        .getByRole("menuitem", { name: "Reset all shortcuts", exact: true })
         .click();
     };
     await openReset();
     const dialog = page.getByRole("alertdialog", {
-      name: "恢复全部默认快捷键？",
+      name: "Reset all shortcuts?",
     });
-    await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId("keymap-session.new")).toContainText(
       "ctrl N",
@@ -431,7 +431,7 @@ test("Keymap resets all bindings only after confirmation, including filtered com
     const reset = page.waitForRequest(
       (r) => r.method() === "PATCH" && r.url().endsWith("/api/keymap"),
     );
-    await dialog.getByRole("button", { name: "确认恢复", exact: true }).click();
+    await dialog.getByRole("button", { name: "Confirm reset", exact: true }).click();
     expect((await reset).postDataJSON()).toEqual({
       bindings: {
         "session.new": null,
@@ -442,7 +442,7 @@ test("Keymap resets all bindings only after confirmation, including filtered com
       },
     });
     await expect(dialog).toHaveCount(0);
-    await page.getByPlaceholder("搜索命令或快捷键").fill("");
+    await page.getByPlaceholder("Search commands or shortcuts").fill("");
     await expect(page.getByTestId("keymap-session.new")).toContainText("⌘ T");
     await expect(page.getByTestId("keymap-session.close")).toContainText("⌘ W");
     harness.assertNoUnexpectedRequests();

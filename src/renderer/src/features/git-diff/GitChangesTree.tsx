@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ type Props = {
 };
 
 export function GitChangesTree({ files, allFiles, stagedCount, selectedPath, mutatingPath, onSelect, onToggle, onToggleAll }: Props) {
+  const { t } = useTranslation();
   const nodes = useMemo(() => buildTree(files), [files]);
   const directoryPaths = useMemo(() => collectDirectoryPaths(nodes), [nodes]);
   const directoryKey = [...directoryPaths].sort().join("\n");
@@ -61,16 +63,17 @@ export function GitChangesTree({ files, allFiles, stagedCount, selectedPath, mut
   };
 
   return <div className="min-h-0 flex-1 overflow-auto">
-    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2"><span className="ml-auto text-[10px] text-muted-foreground">{stagedCount} staged</span><span className="flex w-6 shrink-0 justify-center"><Checkbox checked={allChecked} indeterminate={allIndeterminate} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} aria-label={allChecked ? "Unstage all changes" : "Stage all changes"} data-item-checkbox="true" onCheckedChange={(value) => onToggleAll(value === true)} /></span></div>
-    <div role="tree" aria-label="Changed files" className="py-1">{nodes.map((node) => <TreeNodeRow key={node.path} node={node} depth={0} selectedPath={selectedPath} collapsedPaths={collapsedPaths} mutatingPath={mutatingPath} onSelect={onSelect} onToggle={onToggle} onDirectoryOpenChange={setDirectoryOpen} />)}</div>
+    <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border px-2"><span className="ml-auto text-[10px] text-muted-foreground">{t("counts.staged", { count: stagedCount })}</span><span className="flex w-6 shrink-0 justify-center"><Checkbox checked={allChecked} indeterminate={allIndeterminate} disabled={Boolean(mutatingPath) || stageableFiles.length === 0} aria-label={allChecked ? t("gitDiffUi.unstageAllChanges") : t("gitDiffUi.stageAllChanges")} data-item-checkbox="true" onCheckedChange={(value) => onToggleAll(value === true)} /></span></div>
+    <div role="tree" aria-label={t("gitDiffUi.changedFiles")} className="py-1">{nodes.map((node) => <TreeNodeRow key={node.path} node={node} depth={0} selectedPath={selectedPath} collapsedPaths={collapsedPaths} mutatingPath={mutatingPath} onSelect={onSelect} onToggle={onToggle} onDirectoryOpenChange={setDirectoryOpen} />)}</div>
   </div>;
 }
 
 function TreeNodeRow({ node, depth, selectedPath, collapsedPaths, mutatingPath, onSelect, onToggle, onDirectoryOpenChange }: { node: TreeNode; depth: number; selectedPath: string; collapsedPaths: Set<string>; mutatingPath: string; onSelect: (path: string) => void; onToggle: (file: GitChangeFile, stage: boolean) => void; onDirectoryOpenChange: (path: string, open: boolean) => void }) {
+  const { t } = useTranslation();
   if (node.kind === "directory") {
     const open = !collapsedPaths.has(node.path);
     return <Collapsible open={open} onOpenChange={(nextOpen) => onDirectoryOpenChange(node.path, nextOpen)}>
-      <CollapsibleTrigger render={<Button variant="ghost" size="sm" />} role="treeitem" aria-level={depth + 1} aria-expanded={open} aria-label={`${open ? "Collapse" : "Expand"} ${node.path}`} data-directory-path={node.path} className="h-7 w-full justify-start rounded-none pr-2" style={{ paddingLeft: `${depth * 16 + 8}px` }}><ChevronRight data-icon="inline-start" className={cn("transition-transform", open && "rotate-90")} /><span className="truncate">{node.name}</span></CollapsibleTrigger>
+      <CollapsibleTrigger render={<Button variant="ghost" size="sm" />} role="treeitem" aria-level={depth + 1} aria-expanded={open} aria-label={t(open ? "navigation.collapseFile" : "navigation.expandFile", { name: node.path })} data-directory-path={node.path} className="h-7 w-full justify-start rounded-none pr-2" style={{ paddingLeft: `${depth * 16 + 8}px` }}><ChevronRight data-icon="inline-start" className={cn("transition-transform", open && "rotate-90")} /><span className="truncate">{node.name}</span></CollapsibleTrigger>
       <CollapsibleContent role="group">{node.children.map((child) => <TreeNodeRow key={child.path} node={child} depth={depth + 1} selectedPath={selectedPath} collapsedPaths={collapsedPaths} mutatingPath={mutatingPath} onSelect={onSelect} onToggle={onToggle} onDirectoryOpenChange={onDirectoryOpenChange} />)}</CollapsibleContent>
     </Collapsible>;
   }
@@ -78,9 +81,9 @@ function TreeNodeRow({ node, depth, selectedPath, collapsedPaths, mutatingPath, 
   const checked = !node.file.has_unstaged_changes;
   const indeterminate = node.file.has_staged_changes && node.file.has_unstaged_changes;
   const disabled = Boolean(mutatingPath) || node.file.status === "conflicted";
-  const checkboxLabel = checked ? `Unstage ${node.path}` : `Stage ${node.path}`;
+  const checkboxLabel = checked ? t("gitDiffUi.unstage", { path: node.path }) : t("gitDiffUi.stage", { path: node.path });
   return <div role="treeitem" aria-level={depth + 1} aria-selected={selectedPath === node.path} data-file-path={node.path} className={cn("flex h-7 items-center pr-2", selectedPath === node.path && "bg-accent text-accent-foreground")}>
-    <Button variant="ghost" size="sm" className="h-7 min-w-0 flex-1 justify-start rounded-none pr-2" style={{ paddingLeft: `${depth * 16 + 28}px` }} aria-label={`Open diff for ${node.path}`} onClick={() => onSelect(node.path)}><span className="truncate">{node.name}</span><span className="ml-auto flex shrink-0 gap-1 font-mono text-[10px] tabular-nums" title={`${node.file.additions} additions, ${node.file.deletions} deletions`}><span className="text-success">+{node.file.additions}</span><span className="text-destructive">−{node.file.deletions}</span></span></Button>
+    <Button variant="ghost" size="sm" className="h-7 min-w-0 flex-1 justify-start rounded-none pr-2" style={{ paddingLeft: `${depth * 16 + 28}px` }} aria-label={t("gitDiffUi.openDiffFor", { path: node.path })} onClick={() => onSelect(node.path)}><span className="truncate">{node.name}</span><span className="ml-auto flex shrink-0 gap-1 font-mono text-[10px] tabular-nums" title={t("gitDiffUi.additionsDeletions", { additions: node.file.additions, deletions: node.file.deletions })}><span className="text-success">+{node.file.additions}</span><span className="text-destructive">−{node.file.deletions}</span></span></Button>
     <span className="flex w-6 shrink-0 justify-center"><Checkbox checked={checked} indeterminate={indeterminate} disabled={disabled} title={checkboxLabel} aria-label={checkboxLabel} data-item-checkbox="true" data-file-path={node.path} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onCheckedChange={(value) => onToggle(node.file, value === true)} /></span>
   </div>;
 }

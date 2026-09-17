@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { BranchNameField } from "@/features/git/BranchNameField";
 import { projectsApi } from "@/api/projects";
@@ -46,6 +47,7 @@ export function CreateWorkspaceDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const { t } = useTranslation();
   const repositories = useMemo(() => project?.repositories ?? [], [project]);
   const setupRepositories = useMemo(
     () => repositories.filter(repositoryNeedsSetup),
@@ -137,7 +139,7 @@ export function CreateWorkspaceDialog({
         setOptionsError(
           cause instanceof Error
             ? cause.message
-            : "Could not load repository branches",
+            : t("workspaceUi.couldNotLoadRepositoryBranches"),
         );
       })
       .finally(() => {
@@ -166,12 +168,8 @@ export function CreateWorkspaceDialog({
   return (
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle className="text-lg font-semibold">
-          New Workspace
-        </DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          Each Git location uses its own base branch and delivery mode.
-        </DialogDescription>
+        <DialogTitle className="text-lg font-semibold">{t("workspaceUi.newWorkspace")}</DialogTitle>
+        <DialogDescription className="mt-1 text-sm text-muted-foreground">{t("workspaceUi.eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode")}</DialogDescription>
         <form
           key={project ? project.id : "closed"}
           className="mt-6 flex max-h-[70vh] flex-col gap-4 overflow-y-auto"
@@ -179,18 +177,16 @@ export function CreateWorkspaceDialog({
         >
           <FieldGroup>
             <Field>
-              <FieldLabel className="sr-only" htmlFor="workspace-description">
-                Workspace description
-              </FieldLabel>
+              <FieldLabel className="sr-only" htmlFor="workspace-description">{t("workspaceUi.workspaceDescription")}</FieldLabel>
               <Textarea
                 id="workspace-description"
                 name="description"
-                placeholder="Scope and expected outcome"
+                placeholder={t("workspaceUi.scopeAndExpectedOutcome")}
               />
             </Field>
             <BranchNameField
               key={project?.id ?? "closed"}
-              label="Shared local branch"
+              label={t("workspaceUi.sharedLocalBranch")}
               onChange={setSharedBranch}
             />
           </FieldGroup>
@@ -200,7 +196,7 @@ export function CreateWorkspaceDialog({
             const mode = deliveryModes[repository.id] ?? "push_branch";
             return (
               <FieldSet key={repository.id} className="rounded-lg border p-3">
-                <FieldLegend>{repository.name} repository defaults</FieldLegend>
+                <FieldLegend>{t("workspaceUi.repositoryDefaults", { name: repository.name })}</FieldLegend>
                 <input
                   type="hidden"
                   name="setup_repository_id"
@@ -208,9 +204,7 @@ export function CreateWorkspaceDialog({
                 />
                 <FieldGroup className="gap-3">
                   <Field>
-                    <FieldLabel htmlFor={`base-branch-${repository.id}`}>
-                      Base branch
-                    </FieldLabel>
+                    <FieldLabel htmlFor={`base-branch-${repository.id}`}>{t("workspaceUi.baseBranch")}</FieldLabel>
                     <Select
                       id={`base-branch-${repository.id}`}
                       className="w-full font-mono"
@@ -233,9 +227,7 @@ export function CreateWorkspaceDialog({
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor={`delivery-mode-${repository.id}`}>
-                      Default Workspace finish strategy
-                    </FieldLabel>
+                    <FieldLabel htmlFor={`delivery-mode-${repository.id}`}>{t("workspaceUi.defaultWorkspaceFinishStrategy")}</FieldLabel>
                     <Select
                       id={`delivery-mode-${repository.id}`}
                       className="w-full"
@@ -248,16 +240,14 @@ export function CreateWorkspaceDialog({
                         }))
                       }
                     >
-                      <option value="push_branch">Push feature branch</option>
-                      <option value="local_merge">Merge into local base</option>
-                      <option value="keep">Preserve without delivery</option>
+                      <option value="push_branch">{t("workspaceUi.pushFeatureBranch")}</option>
+                      <option value="local_merge">{t("workspaceUi.mergeIntoLocalBase")}</option>
+                      <option value="keep">{t("workspaceUi.preserveWithoutDelivery")}</option>
                     </Select>
                   </Field>
                   {mode === "push_branch" && (
                     <Field>
-                      <FieldLabel htmlFor={`base-remote-${repository.id}`}>
-                        Remote
-                      </FieldLabel>
+                      <FieldLabel htmlFor={`base-remote-${repository.id}`}>{t("workspaceUi.remote")}</FieldLabel>
                       <Select
                         id={`base-remote-${repository.id}`}
                         className="w-full font-mono"
@@ -287,9 +277,7 @@ export function CreateWorkspaceDialog({
 
           {defaultDeliveryMode === "push_branch" && (
             <Field>
-              <FieldLabel htmlFor="workspace-remote-branch">
-                Remote feature branch
-              </FieldLabel>
+              <FieldLabel htmlFor="workspace-remote-branch">{t("workspaceUi.remoteFeatureBranch")}</FieldLabel>
               <Input
                 id="workspace-remote-branch"
                 className="font-mono text-xs"
@@ -299,17 +287,14 @@ export function CreateWorkspaceDialog({
                   setRemoteBranchEdited(true);
                   setRemoteBranch(event.target.value);
                 }}
-                placeholder="Defaults to the local branch name"
+                placeholder={t("workspaceUi.defaultsToTheLocalBranchName")}
               />
-              <FieldDescription>
-                Leave empty when the local branch is generated; Treefold will use
-                the same generated name remotely.
-              </FieldDescription>
+              <FieldDescription>{t("workspaceUi.generatedRemoteBranchDescription")}</FieldDescription>
             </Field>
           )}
 
           {loading && (
-            <FieldDescription>Loading local branches and remotes…</FieldDescription>
+            <FieldDescription>{t("workspaceUi.loadingLocalBranchesAndRemotes")}</FieldDescription>
           )}
           {optionsError && (
             <FieldDescription className="text-destructive">
@@ -320,9 +305,7 @@ export function CreateWorkspaceDialog({
             <Button
               type="submit"
               disabled={busy || loading || Boolean(optionsError) || invalidSetup}
-            >
-              Create Workspace
-            </Button>
+            >{t("workspaceUi.createWorkspace")}</Button>
           </div>
         </form>
       </DialogContent>
@@ -340,16 +323,15 @@ export function ConfigureWorkspaceRepositoryDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <Dialog open={Boolean(location)} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogTitle className="text-lg font-semibold">
-          {location?.remote_branch ? "Change" : "Set"} upstream
+          {t(location?.remote_branch ? "workspaceUi.changeUpstream" : "workspaceUi.setUpstream")}
         </DialogTitle>
         <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          Configure the remote feature branch for {location?.repository_name}.
-          Base branch and delivery mode remain inherited from its Project
-          repository.
+          {t("workspaceUi.configureUpstream", { name: location?.repository_name })}
         </DialogDescription>
         {location && (
           <form
@@ -362,9 +344,7 @@ export function ConfigureWorkspaceRepositoryDialog({
             onSubmit={onSubmit}
           >
             <div className="grid grid-cols-2 gap-3">
-              <label className="block text-[11px] text-muted-foreground">
-                Remote
-                <Input
+              <label className="block text-[11px] text-muted-foreground">{t("workspaceUi.remote")}<Input
                   className="mt-1 font-mono text-xs"
                   name="remote_name"
                   defaultValue={location.remote_name ?? ""}
@@ -372,9 +352,7 @@ export function ConfigureWorkspaceRepositoryDialog({
                   required
                 />
               </label>
-              <label className="block text-[11px] text-muted-foreground">
-                Remote feature branch
-                <Input
+              <label className="block text-[11px] text-muted-foreground">{t("workspaceUi.remoteFeatureBranch")}<Input
                   className="mt-1 font-mono text-xs"
                   name="remote_branch"
                   defaultValue={location.remote_branch ?? ""}
@@ -383,14 +361,9 @@ export function ConfigureWorkspaceRepositoryDialog({
                 />
               </label>
             </div>
-            <p className="rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground">
-              Pull and Push for this repository use this upstream. Treefold
-              never force pushes.
-            </p>
+            <p className="rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground">{t("workspaceUi.upstreamDescription")}</p>
             <div className="flex justify-end">
-              <Button type="submit" disabled={busy}>
-                Save upstream
-              </Button>
+              <Button type="submit" disabled={busy}>{t("workspaceUi.saveUpstream")}</Button>
             </div>
           </form>
         )}

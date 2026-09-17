@@ -134,8 +134,8 @@ export function SettingsPreferences({
     else toast.error(t("settings.saveFailed", { message: result.error }));
   };
   const runtimeItems = [
-    { key: "treefold-home", label: "Treefold Home", value: system?.treefold_home ?? "—" },
-    { key: "platform", label: "Platform", value: system?.platform ?? "—" },
+    { key: "treefold-home", label: t("settingsUi.treefoldHome"), value: system?.treefold_home ?? "—" },
+    { key: "platform", label: t("settingsUi.platform"), value: system?.platform ?? "—" },
     {
       key: "codex",
       label: "Codex",
@@ -360,7 +360,7 @@ export function SettingsPreferences({
         </div>
         <Separator />
         <div className="flex min-h-16 shrink-0 items-center justify-end gap-3 px-6 py-3">
-          <Button variant="ghost" disabled={busy || saving} onClick={() => setResetOpen(true)}>恢复默认设置</Button>
+          <Button variant="ghost" disabled={busy || saving} onClick={() => setResetOpen(true)}>{t("settingsUi.resetSettings")}</Button>
           <Button
             data-testid="settings-save"
             aria-busy={saving}
@@ -379,15 +379,13 @@ export function SettingsPreferences({
       <AlertDialog open={resetOpen} onOpenChange={(nextOpen) => { if (!resetting) setResetOpen(nextOpen); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>恢复默认设置？</AlertDialogTitle>
-            <AlertDialogDescription>将恢复本页所有设置的默认值并立即保存，未保存的修改也会被替换。</AlertDialogDescription>
+            <AlertDialogTitle>{t("settingsUi.resetSettings2")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("settingsUi.resetDescription")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={resetting}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={resetting}>{t("settingsUi.cancel")}</AlertDialogCancel>
             <AlertDialogAction disabled={busy || resetting} aria-busy={resetting} onClick={() => void handleReset()}>
-              {resetting && <Spinner data-icon="inline-start" />}
-              确认恢复
-            </AlertDialogAction>
+              {resetting && <Spinner data-icon="inline-start" />}{t("settingsUi.confirmReset")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

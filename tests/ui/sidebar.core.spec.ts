@@ -670,7 +670,7 @@ test("sidebar.core", async () => {
     );
     assert.match(
       await baseSection.innerText(),
-      /fixture-repository[\s\S]*read_write/,
+      /fixture-repository[\s\S]*read\/write/,
     );
     assert.match(
       await baseSection.innerText(),

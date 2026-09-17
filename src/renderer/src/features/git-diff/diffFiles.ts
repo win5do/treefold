@@ -1,3 +1,4 @@
+import i18n from "@/i18n";
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import type { GitDiffComparison } from "@/domain/types";
 
@@ -12,10 +13,10 @@ export function parseDiffComparison(comparison: GitDiffComparison | null): { fil
       return { diff, path: diff.name, additions: changes.reduce((sum, content) => sum + content.additions, 0), deletions: changes.reduce((sum, content) => sum + content.deletions, 0), binary: binaryPaths.has(diff.name), status: diff.type === "new" ? "added" : diff.type === "deleted" ? "deleted" : diff.type.startsWith("rename") ? "renamed" : "modified" } satisfies ParsedDiffFile;
     });
     const sorted = sortByTreePath(files);
-    if (sorted.length === 0) return { files: [], error: "The patch contains data that this viewer cannot parse." };
+    if (sorted.length === 0) return { files: [], error: i18n.t("gitDiffUi.thePatchContainsDataThatThisViewerCannotParse") };
     return { files: sorted, error: "" };
   } catch (cause) {
-    return { files: [], error: cause instanceof Error ? cause.message : "The patch could not be parsed." };
+    return { files: [], error: cause instanceof Error ? cause.message : i18n.t("gitDiffUi.thePatchCouldNotBeParsed") };
   }
 }
 
