@@ -7,7 +7,6 @@ export const sessionsApi = {
   delete: (id: string) => request(`/api/sessions/${id}`, { method: "DELETE" }),
   close: (id: string) => request(`/api/sessions/${id}/close`, { method: "POST" }),
   open: (id: string) => request<Session>(`/api/sessions/${id}/open`, { method: "POST" }),
-  stop: (id: string) => request(`/api/sessions/${id}/stop`, { method: "POST" }),
   restart: (id: string) => request<Session>(`/api/sessions/${id}/restart`, { method: "POST" }),
   terminalSocketUrl: (id: string, controllerClientId: string, inputClientId: string, afterOutputSequence: bigint | null) => {
     const query = new URLSearchParams({ controller_client_id: controllerClientId, input_client_id: inputClientId });

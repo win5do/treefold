@@ -1695,7 +1695,6 @@ test("sidebar.core", async () => {
     );
     await secondaryRepositoryToggle.click();
     const secondaryDirectory = secondaryLocation.locator(`[data-testid="project-directory-${FIXTURE_IDS.secondaryDirectory}"]`);
-    const secondaryDirectoryActionsTrigger = secondaryDirectory.locator(`[data-testid="project-directory-actions-${FIXTURE_IDS.secondaryDirectory}-trigger"]`);
     await clickUiElement(
       page,
       `[data-testid="project-directory-actions-${FIXTURE_IDS.secondaryDirectory}-trigger"]`,

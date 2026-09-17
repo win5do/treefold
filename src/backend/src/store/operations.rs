@@ -265,9 +265,7 @@ impl Store {
     ) -> Result<Option<ParentOperation>> {
         self.parent_optional(static_sql!("SELECT {PARENT} FROM parent_operations WHERE source_repository_id=? AND target_path=? AND status IN ('active','conflicted','resolving','recovery_required') ORDER BY updated_at DESC,rowid DESC LIMIT 1"),id,Some(path)).await
     }
-    pub async fn parent_operations(&self, id: &str) -> Result<Vec<ParentOperation>> {
-        Ok(sqlx::query_as::<_,ParentOperationRow>(static_sql!("SELECT {PARENT} FROM parent_operations WHERE workspace_id=? ORDER BY started_at DESC,rowid DESC")).bind(id).fetch_all(&self.pool).await?.into_iter().map(Into::into).collect())
-    }
+
     pub async fn create_parent_operation(&self, o: &ParentOperation) -> Result<()> {
         sqlx::query("INSERT INTO parent_operations(id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,undo_available,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&o.id).bind(&o.workspace_repository_id).bind(&o.workspace_id).bind(&o.direction).bind(&o.strategy).bind(&o.origin).bind(&o.source_repository_id).bind(&o.source_path).bind(&o.source_branch).bind(&o.target_scope).bind(&o.target_workspace_id).bind(&o.target_path).bind(&o.target_branch).bind(&o.source_head).bind(&o.parent_head).bind(&o.before_head).bind(&o.result_head).bind(&o.recovery_ref).bind(&o.status).bind(&o.phase).bind(&o.resolver_session_id).bind(&o.delivery_operation_id).bind(o.undo_available).bind(&o.error).bind(&o.started_at).bind(&o.updated_at).bind(&o.completed_at).execute(&self.pool).await?;
         Ok(())

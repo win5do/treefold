@@ -39,8 +39,6 @@ export const workspacesApi = {
       method: "PATCH",
       json: { session_ids: sessionIds },
     }),
-  reveal: (id: string) =>
-    request(`/api/workspaces/${id}/reveal`, { method: "POST" }),
   archive: (id: string) =>
     request(`/api/workspaces/${id}/archive`, { method: "POST" }),
   resync: (id: string) =>
@@ -104,15 +102,6 @@ export const workspacesApi = {
     request<GitHistory>(`/api/workspace-repositories/${id}/git-history`, {
       signal,
     }),
-  compareRepository: (
-    id: string,
-    input: { start_commit: string; end_commit: string; commit_count: number },
-    signal?: AbortSignal,
-  ) => request<GitDiffComparison>(`/api/workspace-repositories/${id}/compare`, {
-    method: "POST",
-    json: input,
-    signal,
-  }),
   gitStatus: (id: string, signal?: AbortSignal) => request<GitStatus>(`/api/workspace-repositories/${id}/git-status`, { signal }),
   gitDiff: (id: string, input: GitDiffRequest, signal?: AbortSignal) => request<GitDiffComparison>(`/api/workspace-repositories/${id}/git-diff`, { method: "POST", json: input, signal }),
   stage: (id: string, paths: string[]) => request<GitStatus>(`/api/workspace-repositories/${id}/git/stage`, { method: "POST", json: { paths } }),

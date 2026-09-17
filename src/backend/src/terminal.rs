@@ -102,11 +102,6 @@ struct DaemonRegistration {
 }
 
 impl TerminalManager {
-    #[allow(dead_code)]
-    pub fn new(config: Config) -> Self {
-        Self::new_named(config, amux::config::daemon_name())
-    }
-
     pub fn new_named(config: Config, daemon_name: String) -> Self {
         let (process_events, _) = tokio::sync::broadcast::channel(1024);
         let (snapshot_events, _) = tokio::sync::broadcast::channel(16);

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, type Page } from "@playwright/test";
 import assert from "node:assert/strict";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 import { startUiHarness } from "./ui-harness.ts";

@@ -28,7 +28,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, AlertAction, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { appApi } from "@/api/app";
 import { projectsApi } from "@/api/projects";
 import { sessionsApi } from "@/api/sessions";
 import { workspacesApi } from "@/api/workspaces";
@@ -87,7 +86,7 @@ import {
   CreateWorkspaceDialog,
 } from "@/features/workspace/WorkspaceDialogs";
 import { WorkspaceHome } from "@/features/workspace/WorkspaceHome";
-import { appKeys, settingsQuery, systemQuery } from "@/features/app/queries";
+import { settingsQuery, systemQuery } from "@/features/app/queries";
 import {
   projectDetailQuery,
   projectKeys,

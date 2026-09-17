@@ -136,8 +136,6 @@ export const projectsApi = {
         signal,
       },
     ),
-  reveal: (id: string) =>
-    request(`/api/projects/${id}/reveal`, { method: "POST" }),
   sync: (id: string, action: "pull" | "push") =>
     request<GitSyncItemResult[]>(`/api/projects/${id}/git/${action}-all`, {
       method: "POST",
@@ -150,15 +148,6 @@ export const projectsApi = {
     request<GitHistory>(`/api/project-repositories/${id}/git-history`, {
       signal,
     }),
-  compare: (
-    id: string,
-    input: { start_commit: string; end_commit: string; commit_count: number },
-    signal?: AbortSignal,
-  ) => request<GitDiffComparison>(`/api/project-repositories/${id}/compare`, {
-    method: "POST",
-    json: input,
-    signal,
-  }),
   gitStatus: (id: string, signal?: AbortSignal) => request<GitStatus>(`/api/project-repositories/${id}/git-status`, { signal }),
   gitDiff: (id: string, input: GitDiffRequest, signal?: AbortSignal) => request<GitDiffComparison>(`/api/project-repositories/${id}/git-diff`, { method: "POST", json: input, signal }),
   stage: (id: string, paths: string[]) => request<GitStatus>(`/api/project-repositories/${id}/git/stage`, { method: "POST", json: { paths } }),

@@ -107,9 +107,11 @@ pub fn now() -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use sqlx::{Connection, Executor, SqliteConnection, sqlite::SqliteConnectOptions};
 
-    use super::{CURRENT_DATABASE_FILENAME, CURRENT_DATABASE_GENERATION, Store};
+    use super::{CURRENT_DATABASE_FILENAME, CURRENT_DATABASE_GENERATION, MIGRATOR, Store};
     use crate::{
         model::{Directory, Project},
         store::now,
@@ -137,7 +139,7 @@ mod tests {
                 .fetch_one(&store.pool)
                 .await
                 .unwrap(),
-            1
+            MIGRATOR.iter().count() as i64
         );
         assert_eq!(
             sqlx::query_scalar::<_, i64>(
@@ -257,6 +259,17 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::open(directory.path()).await.unwrap();
         let changed_source = tempfile::tempdir().unwrap();
+        let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g1");
+        for entry in std::fs::read_dir(migrations).unwrap() {
+            let entry = entry.unwrap();
+            if entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "sql")
+            {
+                std::fs::copy(entry.path(), changed_source.path().join(entry.file_name())).unwrap();
+            }
+        }
         std::fs::write(
             changed_source.path().join("20260902000000_initial.sql"),
             "-- deliberately changed after execution\nSELECT 1;\n",
@@ -268,9 +281,11 @@ mod tests {
 
         let error = migrator.run(&store.pool).await.unwrap_err();
         assert!(
-            error
-                .to_string()
-                .contains("was previously applied but has been modified")
+            matches!(
+                error,
+                sqlx::migrate::MigrateError::VersionMismatch(20260902000000)
+            ),
+            "unexpected migration error: {error}"
         );
         store.pool.close().await;
     }

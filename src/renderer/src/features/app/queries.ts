@@ -13,4 +13,3 @@ export const systemQuery = () => queryOptions({ queryKey: appKeys.system, queryF
 export const settingsQuery = () => queryOptions({ queryKey: appKeys.settings, queryFn: ({ signal }) => appApi.settings(signal) });
 export const amuxQuery = () => queryOptions({ queryKey: appKeys.amux, queryFn: ({ signal }) => appApi.amuxStatus(signal) });
 export const agentIntegrationQuery = () => queryOptions({ queryKey: appKeys.agentIntegration, queryFn: ({ signal }) => appApi.agentIntegration(signal) });
-export const backgroundProcessesQuery = () => queryOptions({ queryKey: appKeys.processes, queryFn: ({ signal }) => appApi.backgroundProcesses(signal) });

@@ -40,7 +40,7 @@ for (const owner of [
       await palette.getByRole("combobox").fill("session.create.new");
       await palette.getByRole("combobox").press("Enter");
       const dialog = page.getByRole("dialog", { name: "新建 Session" });
-      await expect(dialog.getByLabel("目录", { exact: true })).toBeFocused();
+      await expect(dialog.getByRole("button", { name: "Agent", exact: true })).toBeFocused();
       await dialog.getByRole("button", { name: "Shell", exact: true }).click();
       const creation = page.waitForRequest(
         (request) =>

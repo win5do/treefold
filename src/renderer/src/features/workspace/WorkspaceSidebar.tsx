@@ -13,7 +13,6 @@ import {
   Ellipsis,
   Folder,
   FolderGit2,
-  FolderOpen,
   GitBranch,
   GitMerge,
   GitPullRequestArrow,
