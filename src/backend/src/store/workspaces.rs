@@ -275,15 +275,30 @@ impl Store {
         }
     }
     pub async fn delete_workspace(&self, id: &str) -> Result<()> {
-        let r = sqlx::query("DELETE FROM workspaces WHERE id=?")
-            .bind(id)
-            .execute(&self.pool)
+        let mut tx = self.pool.begin().await?;
+        let blocked = sqlx::query!(
+            "SELECT id FROM workspaces WHERE (id = ? OR parent_workspace_id = ?) AND (status != 'archived' OR kind = 'base') LIMIT 1",
+            id,
+            id
+        )
+        .fetch_optional(&mut *tx)
+        .await?;
+        if blocked.is_some() {
+            return Err(AppError::BadRequest(
+                "Finish the Workspace and its Forks before permanently deleting them".into(),
+            ));
+        }
+        sqlx::query!("DELETE FROM workspaces WHERE parent_workspace_id = ?", id)
+            .execute(&mut *tx)
+            .await?;
+        let r = sqlx::query!("DELETE FROM workspaces WHERE id = ?", id)
+            .execute(&mut *tx)
             .await?;
         if r.rows_affected() == 0 {
-            Err(AppError::NotFound)
-        } else {
-            Ok(())
+            return Err(AppError::NotFound);
         }
+        tx.commit().await?;
+        Ok(())
     }
     pub async fn workspace_repositories(&self, id: &str) -> Result<Vec<WorkspaceRepository>> {
         Ok(sqlx::query_as(static_sql!(
@@ -446,5 +461,69 @@ impl Store {
             forks: self.forks(id).await?,
             workspace,
         })
+    }
+}
+
+#[cfg(test)]
+mod deletion_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn workspace_deletion_cascades_atomically_and_requires_archived_forks() {
+        let root = std::env::temp_dir().join(format!("treefold-delete-{}", uuid::Uuid::new_v4()));
+        let store = Store::open(&root).await.unwrap();
+        sqlx::query(
+            "INSERT INTO projects(id,name,created_at,updated_at) VALUES('project','Project','','')",
+        )
+        .execute(&store.pool)
+        .await
+        .unwrap();
+        for (id, parent, kind, status) in [
+            ("parent", None, "workspace", "archived"),
+            ("fork", Some("parent"), "fork", "active"),
+            ("other", None, "workspace", "archived"),
+        ] {
+            sqlx::query("INSERT INTO workspaces(id,project_id,name,status,kind,parent_workspace_id,created_at,updated_at) VALUES(?,'project',?,?,?,?, '', '')")
+                .bind(id).bind(id).bind(status).bind(kind).bind(parent)
+                .execute(&store.pool).await.unwrap();
+        }
+        sqlx::query("INSERT INTO todos(id,workspace_id,content,status,fork_id,created_at,updated_at) VALUES('todo','parent','Task','done','fork','','')")
+            .execute(&store.pool).await.unwrap();
+        sqlx::query("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,status,launch_started_at,created_at,updated_at) VALUES('session','fork','Session','shell','','','stopped','','','')")
+            .execute(&store.pool).await.unwrap();
+
+        assert!(store.delete_workspace("parent").await.is_err());
+        assert!(store.workspace("parent").await.is_ok());
+        assert!(store.workspace("fork").await.is_ok());
+        sqlx::query("UPDATE workspaces SET status='archived' WHERE id='fork'")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+        sqlx::query("CREATE TRIGGER reject_parent_delete BEFORE DELETE ON workspaces WHEN OLD.id='parent' BEGIN SELECT RAISE(ABORT,'test deletion failure'); END")
+            .execute(&store.pool).await.unwrap();
+        assert!(store.delete_workspace("parent").await.is_err());
+        assert!(store.workspace("fork").await.is_ok());
+        assert_eq!(store.sessions("fork").await.unwrap().len(), 1);
+        assert_eq!(
+            store.todos("parent").await.unwrap()[0].fork_id.as_deref(),
+            Some("fork")
+        );
+        sqlx::query("DROP TRIGGER reject_parent_delete")
+            .execute(&store.pool)
+            .await
+            .unwrap();
+
+        store.delete_workspace("parent").await.unwrap();
+        assert!(store.workspace("parent").await.is_err());
+        assert!(store.workspace("fork").await.is_err());
+        assert!(store.sessions("fork").await.unwrap().is_empty());
+        assert!(store.todos("parent").await.unwrap().is_empty());
+        assert!(store.workspace("other").await.is_ok());
+        assert!(matches!(
+            store.delete_workspace("parent").await,
+            Err(AppError::NotFound)
+        ));
+        store.pool.close().await;
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

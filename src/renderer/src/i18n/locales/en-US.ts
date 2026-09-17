@@ -121,7 +121,7 @@ export const enUS = {
       fork: "Finish Fork “{{name}}” before permanently deleting it.",
     },
     deleteTitle: "Permanently delete {{type}} “{{name}}”?",
-    deleteRecordConfirmation: "This removes the {{type}} and its retained Treefold history from SQLite. Source directories, branches, and worktrees are not changed. This action cannot be undone.",
+    deleteRecordConfirmation: "This removes the {{type}}, its Forks, sessions, Todos, and history from the app. Source directories, branches, and worktrees are not changed. This action cannot be undone.",
     deleteProjectConfirmation: "This removes the Project and its retained Treefold history. Choose whether Treefold-managed local files should also be cleaned. This action cannot be undone.",
     deleteStrategy: {
       label: "Local file cleanup strategy",

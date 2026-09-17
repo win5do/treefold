@@ -123,7 +123,7 @@ export const zhCN = {
       fork: "请先 Finish Fork“{{name}}”，然后再永久删除。",
     },
     deleteTitle: "永久删除 {{type}}“{{name}}”？",
-    deleteRecordConfirmation: "这会从 SQLite 中删除该 {{type}} 及其在 Treefold 中保留的历史，但不会修改源码目录、分支或 worktree。此操作无法撤销。",
+    deleteRecordConfirmation: "这会从 App 中删除该 {{type}}、所属 Fork、会话、Todo 及历史记录，但不会修改源码目录、分支或 worktree。此操作无法撤销。",
     deleteProjectConfirmation: "这会删除该 Project 及其在 Treefold 中保留的历史。请选择是否同时清理 Treefold 管理的本地文件。此操作无法撤销。",
     deleteStrategy: {
       label: "本地文件清理策略",

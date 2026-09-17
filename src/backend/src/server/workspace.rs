@@ -2396,29 +2396,34 @@ pub(super) async fn delete_workspace(
             "Finish the Workspace or Fork before permanently deleting it".into(),
         ));
     }
-    if !state.store.forks(&id).await?.is_empty() {
-        return Err(AppError::BadRequest(
-            "Delete this Workspace's Forks before deleting the Workspace".into(),
-        ));
-    }
-    for session in state.store.sessions(&id).await? {
-        if state
-            .terminals
-            .inspect_existing(&session.amux_workspace_name, &session.amux_process_name)
-            .await?
-            .is_some_and(|process| {
-                matches!(
-                    process.state,
-                    amux::model::ProcessState::Created
-                        | amux::model::ProcessState::Starting
-                        | amux::model::ProcessState::Running
-                        | amux::model::ProcessState::Stopping
-                )
-            })
-        {
+    let mut targets = state.store.forks(&id).await?;
+    targets.push(workspace);
+    for target in targets {
+        if target.status != "archived" {
             return Err(AppError::BadRequest(
-                "Close all running Sessions before deleting this Workspace".into(),
+                "Finish all Forks before permanently deleting this Workspace".into(),
             ));
+        }
+        for session in state.store.sessions(&target.id).await? {
+            if state
+                .terminals
+                .inspect_existing(&session.amux_workspace_name, &session.amux_process_name)
+                .await?
+                .is_some_and(|process| {
+                    matches!(
+                        process.state,
+                        amux::model::ProcessState::Created
+                            | amux::model::ProcessState::Starting
+                            | amux::model::ProcessState::Running
+                            | amux::model::ProcessState::Stopping
+                    )
+                })
+            {
+                return Err(AppError::BadRequest(
+                    "Close all running Sessions in this Workspace and its Forks before deleting it"
+                        .into(),
+                ));
+            }
         }
     }
     state.store.delete_workspace(&id).await?;
