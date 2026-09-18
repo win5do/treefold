@@ -137,18 +137,18 @@ export function NewSessionDialog({
           aria-label={t("terminalUi.sessionType")}
         >
           <ToggleGroupItem
-            ref={(node) => { typeRefs.current.codex = node; }}
-            value="codex"
-            onFocus={() => setKind("codex")}
-          >
-            Agent
-          </ToggleGroupItem>
-          <ToggleGroupItem
             ref={(node) => { typeRefs.current.shell = node; }}
             value="shell"
             onFocus={() => setKind("shell")}
           >
             Shell
+          </ToggleGroupItem>
+          <ToggleGroupItem
+            ref={(node) => { typeRefs.current.codex = node; }}
+            value="codex"
+            onFocus={() => setKind("codex")}
+          >
+            Agent
           </ToggleGroupItem>
         </ToggleGroup>
         <Field>
