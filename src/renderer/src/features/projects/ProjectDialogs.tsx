@@ -109,6 +109,12 @@ function DirectoryPathField({
   );
 }
 
+function compactPath(path: string, maxLength = 64): string {
+  if (path.length <= maxLength) return path;
+  const tailLength = Math.floor(maxLength * 0.65);
+  return `${path.slice(0, maxLength - tailLength - 1)}…${path.slice(-tailLength)}`;
+}
+
 function WorktreeSetupField({
   defaultValue,
   name = "worktree_setup_command",
@@ -197,16 +203,16 @@ export function CreateProjectDialog({
     chosen.some((candidate) => candidate.path === primary);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-[min(94vw,52rem)] overflow-x-hidden sm:max-w-[min(94vw,52rem)]">
         <DialogHeader>
           <DialogTitle>{t("projectsUi.newProject")}</DialogTitle>
           <DialogDescription>{t("projectsUi.projectDescription")}</DialogDescription>
         </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={(event) => {
+        <form className="flex min-w-0 flex-col gap-4" onSubmit={(event) => {
           event.preventDefault();
           if (canCreate) void onSubmit({ name: name.trim(), locations: [primary, ...chosen.map((candidate) => candidate.path).filter((value) => value !== primary)] });
         }}>
-          <FieldGroup className="gap-3">
+          <FieldGroup className="min-w-0 gap-3">
             <Field>
               <FieldLabel className="sr-only" htmlFor="project-name">{t("projectsUi.projectName")}</FieldLabel>
               <Input
@@ -221,7 +227,7 @@ export function CreateProjectDialog({
             <Field>
               <FieldLabel htmlFor="project-path">{t("projectsUi.projectPath")}</FieldLabel>
               <div className="flex gap-2">
-                <Input id="project-path" className="min-w-0 flex-1 font-mono text-xs" value={path}
+                <Input id="project-path" className="min-w-0 flex-1 font-mono text-xs" value={path} title={path}
                   onChange={(event) => { setPath(event.target.value); setChecking(Boolean(event.target.value.trim())); }}
                   placeholder="/absolute/path/to/project" />
                 <Button type="button" variant="secondary" disabled={busy || picking} onClick={() => void choosePath()}>
@@ -232,9 +238,9 @@ export function CreateProjectDialog({
               {error && <FieldDescription className="text-destructive">{error}</FieldDescription>}
             </Field>
           </FieldGroup>
-          {candidates.length > 0 && <div className="max-h-[40vh] overflow-y-auto rounded-lg border p-2">
+          {candidates.length > 0 && <div className="min-w-0 max-h-[40vh] overflow-y-auto rounded-lg border p-2">
             <p className="px-2 py-1 text-xs text-muted-foreground">{t("projectsUi.confirmLocations")}</p>
-            {candidates.map((candidate) => <div key={candidate.path} className="flex items-center gap-2 rounded-md px-2 py-2 text-sm">
+            {candidates.map((candidate) => <div key={candidate.path} className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm">
               <input type="checkbox" aria-label={t("projectsUi.includeLocation", { name: candidate.path })}
                 checked={selected.includes(candidate.path)} onChange={(event) => {
                   const next = event.target.checked ? [...selected, candidate.path] : selected.filter((value) => value !== candidate.path);
@@ -242,11 +248,11 @@ export function CreateProjectDialog({
                   if (!next.includes(primary)) setPrimary(candidates.find((item) => item.is_git && next.includes(item.path))?.path ?? "");
                 }} />
               <span className="min-w-0 flex-1 truncate font-mono text-xs" title={candidate.path}>
-                {candidate.path}
+                {compactPath(candidate.path)}
                 {candidate.repository_root && candidate.repository_root !== candidate.path &&
-                  <span className="block truncate text-muted-foreground">{t("projectsUi.repositoryRoot", { path: candidate.repository_root })}</span>}
+                  <span className="block truncate text-muted-foreground" title={candidate.repository_root}>{t("projectsUi.repositoryRoot", { path: compactPath(candidate.repository_root) })}</span>}
               </span>
-              <Badge variant={candidate.is_git ? "success" : "neutral"}>{candidate.is_git ? t("projectsUi.gitRepository") : t("projectsUi.readOnlyContext")}</Badge>
+              <Badge className="shrink-0" variant={candidate.is_git ? "success" : "neutral"}>{candidate.is_git ? t("projectsUi.gitRepository") : t("projectsUi.readOnlyContext")}</Badge>
               {candidate.is_git && selected.includes(candidate.path) && <label className="flex shrink-0 items-center gap-1 text-xs">
                 <input type="radio" name="primary-location" checked={primary === candidate.path} onChange={() => setPrimary(candidate.path)} />
                 {t("projectsUi.primaryLocation")}
