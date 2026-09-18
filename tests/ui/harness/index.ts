@@ -357,6 +357,12 @@ async function startFixtureApi() {
     if (request.method === "POST" && pathname === "/api/projects/inspect-path") {
       const input = await readJson<{ path: string }>(request);
       const cleanPath = input.path.replace(/\/+$/, "");
+      if (cleanPath.endsWith("/additional-locations")) {
+        sendJson(response, 200, { path: cleanPath, candidates: ["new-api-repository", "reference-context", "unused-repository"].map((name) => ({
+          path: `/tmp/treefold-ui-fixture/${name}`, repository_root: name.includes("context") ? null : `/tmp/treefold-ui-fixture/${name}`, is_git: !name.includes("context"),
+        })) });
+        return;
+      }
       const candidates = cleanPath.endsWith("/multi-repo")
         ? ["backend", "docs", "frontend"].map((name) => ({
             path: `${cleanPath}/${name}`,

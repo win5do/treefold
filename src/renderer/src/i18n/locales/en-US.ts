@@ -370,6 +370,7 @@ export const enUS = {
     "includeLocation": "Include {{name}}",
     "gitRepository": "Git repository",
     "readOnlyContext": "Read-only Context",
+    "locationAlreadyAdded": "Already added",
     "primaryLocation": "Primary",
     "repositoryRoot": "Repository: {{path}}",
     "noGitRepositoryFound": "No Git repository found in this directory or its immediate children.",

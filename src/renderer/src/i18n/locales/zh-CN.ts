@@ -372,6 +372,7 @@ export const zhCN = {
     "includeLocation": "包含 {{name}}",
     "gitRepository": "Git 仓库",
     "readOnlyContext": "只读 Context",
+    "locationAlreadyAdded": "已添加",
     "primaryLocation": "主要位置",
     "repositoryRoot": "所属仓库：{{path}}",
     "noGitRepositoryFound": "此目录及其直属子目录中没有找到 Git 仓库。",

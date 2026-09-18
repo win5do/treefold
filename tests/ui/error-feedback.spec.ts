@@ -16,9 +16,8 @@ test("error-feedback", async () => {
     await (page.locator('[data-testid="project-add-location"]')).click();
     const dialog = page.locator('[role="dialog"]');
     await dialog.waitFor({ timeout: 3_000, state: 'visible' });
-    const row = dialog.locator('[data-testid="location-draft-row"]');
-    await (row.locator('input[aria-label="Location 1 path"]')).fill("/tmp/treefold-ui-fixture/internal-error-repository");
-    await (row.locator("button:text-is(\"Check\")")).click();
+    await dialog.locator('#project-location-path').fill("/tmp/treefold-ui-fixture/internal-error-repository");
+    await expect(dialog.getByRole("checkbox", { name: /internal-error-repository/ })).toBeChecked();
     harness.setNextLocationError({
       status: 500,
       code: "INTERNAL_ERROR",

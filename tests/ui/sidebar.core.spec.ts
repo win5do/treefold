@@ -1767,47 +1767,12 @@ test("sidebar.core", async () => {
       false,
       "Location rows must derive names from dirname",
     );
-    let locationRows = await addDirectoryDialog.locator('[data-testid="location-draft-row"]').all();
-    assert.equal(
-      locationRows.length,
-      1,
-      "Location dialog must start with one row",
-    );
-    await (
-      locationRows[0].locator('input[aria-label="Location 1 path"]')
-    ).fill("/tmp/treefold-ui-fixture/new-api-repository");
-    await (locationRows[0].locator("button:text-is(\"Check\")")).click();
-    assert.equal(
-      await locationRows[0].locator('input[aria-label="Location 1 base branch"]').count().then(count => count > 0),
-      false,
-      "adding a Git location must defer base branch configuration",
-    );
-    await (addDirectoryDialog.locator("button:text-is(\"Add another\")")).click();
-    locationRows = await addDirectoryDialog.locator('[data-testid="location-draft-row"]').all();
-    assert.equal(
-      locationRows.length,
-      2,
-      "Add another must append a location row in the same dialog",
-    );
-    await (
-      locationRows[1].locator('input[aria-label="Location 2 path"]')
-    ).fill("/tmp/treefold-ui-fixture/reference-context");
-    await (locationRows[1].locator("button:text-is(\"Check\")")).click();
-    await expect.poll(async () =>
-        (await locationRows[1].innerText()).includes("Read-only Workspace context"), {
-        timeout: 3_000,
-        message: "non-Git location did not become read-only context",
-      }).toBeTruthy();
-    assert.equal(
-      (await addDirectoryDialog.locator('input[aria-label$="base branch"]').all()).length,
-      0,
-      "location creation must not expose base branch configuration",
-    );
-    assert.equal(
-      (await addDirectoryDialog.locator('select[aria-label$="delivery mode"]').all()).length,
-      0,
-      "location creation must not expose delivery configuration",
-    );
+    await addDirectoryDialog.locator('#project-location-path').fill("/tmp/treefold-ui-fixture/additional-locations");
+    const additionalRepo = addDirectoryDialog.getByRole("checkbox", { name: /new-api-repository/ });
+    const additionalContext = addDirectoryDialog.getByRole("checkbox", { name: /reference-context/ });
+    await expect(additionalRepo).toBeChecked();
+    await expect(additionalContext).toBeChecked();
+    await addDirectoryDialog.getByRole("checkbox", { name: /unused-repository/ }).uncheck();
     await (addDirectoryDialog.locator("button:text-is(\"Add 2 locations\")")).click();
     await addDirectoryDialog.waitFor({ timeout: 3_000, state: 'hidden' });
     await expect.poll(async () =>

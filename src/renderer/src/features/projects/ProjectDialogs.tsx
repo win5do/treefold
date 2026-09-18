@@ -6,7 +6,6 @@ import {
   FolderGit2,
   FolderOpen,
   GitBranch,
-  Plus,
   Trash2,
 } from "lucide-react";
 import { open as openDirectory } from "@/lib/desktop";
@@ -37,77 +36,6 @@ import type {
   ProjectPathCandidate,
   ProjectRepository,
 } from "@/domain/types";
-
-function DirectoryPathField({
-  busy,
-  path,
-  label,
-  onPathChange,
-  onInspect,
-}: {
-  busy: boolean;
-  path: string;
-  label: string;
-  onPathChange: (path: string) => void;
-  onInspect: (path: string) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [picking, setPicking] = useState(false);
-  const [pickerError, setPickerError] = useState("");
-  async function chooseDirectory() {
-    setPicking(true);
-    setPickerError("");
-    try {
-      const selected = await openDirectory({
-        directory: true,
-        multiple: false,
-        title: t("projectsUi.chooseADirectoryForTreefold"),
-      });
-      if (typeof selected === "string") {
-        onPathChange(selected);
-        await onInspect(selected);
-      }
-    } catch (cause) {
-      setPickerError(
-        cause instanceof Error ? cause.message : t("projectsUi.couldNotOpenFinder"),
-      );
-    } finally {
-      setPicking(false);
-    }
-  }
-  return (
-    <div>
-      <div className="flex gap-2">
-        <Input
-          className="min-w-0 flex-1 font-mono text-xs"
-          aria-label={label}
-          value={path}
-          onChange={(event) => onPathChange(event.target.value)}
-          placeholder="/absolute/path/to/location"
-          required
-        />
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={busy || picking || !path.trim()}
-          onClick={() => void onInspect(path)}
-        >{t("projectsUi.check")}</Button>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={busy || picking}
-          onClick={() => void chooseDirectory()}
-        >
-          <FolderOpen data-icon="inline-start" />
-          {picking ? t("projectsUi.choosing") : t("projectsUi.choose")}
-        </Button>
-      </div>
-      {pickerError && (
-        <p className="mt-1.5 text-[11px] text-destructive">{pickerError}</p>
-      )}
-    </div>
-  );
-}
 
 function compactPath(path: string, maxLength = 64): string {
   if (path.length <= maxLength) return path;
@@ -300,292 +228,108 @@ export function AddDirectoryDialog({
   onSubmit: (locations: LocationDraft[]) => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const [locations, setLocations] = useState<LocationDraft[]>([
-    newLocationDraft(),
-  ]);
-  const [checkingKeys, setCheckingKeys] = useState<Set<string>>(new Set());
-  const [discovering, setDiscovering] = useState(false);
-  const [discoveryError, setDiscoveryError] = useState("");
+  const [path, setPath] = useState("");
+  const [locations, setLocations] = useState<LocationDraft[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [resolvedPath, setResolvedPath] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [error, setError] = useState("");
   useEffect(() => {
-    if (project) setLocations([newLocationDraft()]);
+    setPath(""); setLocations([]); setSelected([]); setResolvedPath(""); setError("");
   }, [project?.id]);
-  const update = (key: string, patch: Partial<LocationDraft>) =>
-    setLocations((current) =>
-      current.map((location) =>
-        location.key === key ? { ...location, ...patch } : location,
-      ),
-    );
-  async function inspect(key: string, rawPath: string) {
-    const path = rawPath.trim();
-    if (!path) return;
-    setCheckingKeys((current) => new Set(current).add(key));
-    update(key, { inspection: undefined, inspectionError: undefined });
-    try {
-      const result = await projectsApi.inspectLocation(path, project?.id);
-      update(key, {
-        path: result.path,
-        inspection: result,
-        inspectionError: undefined,
-      });
-    } catch (cause) {
-      update(key, {
-        inspection: undefined,
-        inspectionError:
-          cause instanceof Error ? cause.message : t("projectsUi.couldNotInspectLocation"),
-      });
-    } finally {
-      setCheckingKeys((current) => {
-        const next = new Set(current);
-        next.delete(key);
-        return next;
-      });
+  useEffect(() => {
+    const value = path.trim();
+    if (!project || !value) {
+      setLocations([]); setSelected([]); setResolvedPath(""); setChecking(false); setError("");
+      return;
     }
-  }
-  async function discoverFromDirectory() {
-    setDiscovering(true);
-    setDiscoveryError("");
-    try {
-      const path = await openDirectory({ directory: true, multiple: false, title: t("projectsUi.chooseADirectoryForTreefold") });
-      if (!path) return;
-      const result = await projectsApi.inspectProjectPath(path);
-      const drafts = await Promise.all(result.candidates.map(async (candidate) => ({
-        ...newLocationDraft(),
-        path: candidate.path,
-        inspection: await projectsApi.inspectLocation(candidate.path, project?.id),
-      })));
-      if (drafts.length === 0) {
-        setDiscoveryError(t("projectsUi.noLocationsFound"));
-        return;
+    const controller = new AbortController();
+    setChecking(true);
+    setError("");
+    const timer = setTimeout(() => {
+      async function discover() {
+        if (/^(https?:\/\/|ssh:\/\/|git@)/.test(value)) {
+          return [{ ...newLocationDraft(), source: "url" as const, path: value }];
+        }
+        const result = await projectsApi.inspectProjectPath(value, controller.signal);
+        const candidates = result.candidates.length ? result.candidates : [{ path: result.path }];
+        return Promise.all(candidates.map(async (candidate) => ({
+          ...newLocationDraft(), path: candidate.path,
+          inspection: await projectsApi.inspectLocation(candidate.path, project!.id, controller.signal),
+        })));
       }
-      setLocations((current) => {
-        const existing = current.filter((item) => item.path.trim());
-        const paths = new Set(existing.map((item) => item.path.trim()));
-        return [...existing, ...drafts.filter((item) => !paths.has(item.path))];
-      });
+      void discover().then((drafts) => {
+        if (controller.signal.aborted) return;
+        const available = drafts.filter((draft) => !project.directories.some((directory) => directory.path === draft.path));
+        setLocations(drafts);
+        setSelected(available.map((draft) => draft.key));
+        setResolvedPath(value);
+      }).catch((cause) => {
+        if (controller.signal.aborted) return;
+        setLocations([]); setSelected([]); setResolvedPath("");
+        setError(cause instanceof Error ? cause.message : t("projectsUi.couldNotInspectLocation"));
+      }).finally(() => { if (!controller.signal.aborted) setChecking(false); });
+    }, 350);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [project?.id, path, t]);
+  async function choosePath() {
+    setPicking(true);
+    try {
+      const value = await openDirectory({ directory: true, multiple: false, title: t("projectsUi.chooseADirectoryForTreefold") });
+      if (typeof value === "string") setPath(value);
     } catch (cause) {
-      setDiscoveryError(cause instanceof Error ? cause.message : t("projectsUi.couldNotInspectLocation"));
-    } finally {
-      setDiscovering(false);
-    }
+      setError(cause instanceof Error ? cause.message : t("projectsUi.couldNotOpenFinder"));
+    } finally { setPicking(false); }
   }
-  const duplicatePath = new Set(
-    locations
-      .map((location) => location.path.trim())
-      .filter((path, index, all) => path && all.indexOf(path) !== index),
-  );
-  const requiresPrimaryGit = !project?.default_location_id;
-  const hasReadyGit = locations.some(
-    (location) =>
-      location.source === "url" || location.inspection?.git_status === "ready",
-  );
-  const canSubmit =
-    locations.length > 0 &&
-    (!requiresPrimaryGit || hasReadyGit) &&
-    locations.every(
-      (location) =>
-        (location.source === "url" || location.inspection) &&
-        location.path.trim() &&
-        !location.inspectionError &&
-        (location.source === "url" ||
-          !duplicatePath.has(location.path.trim())),
-    ) &&
-    checkingKeys.size === 0;
+  const chosen = locations.filter((location) => selected.includes(location.key));
+  const requiresPrimaryGit = !(project?.default_directory_id || project?.default_location_id);
+  const canSubmit = !busy && !checking && !picking && resolvedPath === path.trim() && chosen.length > 0 &&
+    (!requiresPrimaryGit || chosen.some((location) => location.source === "url" || location.inspection?.git_status === "ready"));
   return (
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
-      <DialogContent className="location-list-dialog">
-        <DialogTitle className="text-lg font-semibold">{t("projectsUi.addProjectLocations")}</DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">
-          {t("projectsUi.addLocationsDescription", { name: project?.name })}
-        </DialogDescription>
-        <div className="mt-4">
-          <Button type="button" variant="secondary" disabled={busy || discovering} onClick={() => void discoverFromDirectory()}>
-            <FolderOpen data-icon="inline-start" />{t("projectsUi.discoverLocations")}
-          </Button>
-          {discoveryError && <p className="mt-2 text-xs text-destructive">{discoveryError}</p>}
-        </div>
-        {requiresPrimaryGit && (
-          <p
-            data-testid="primary-git-location-requirement"
-            className="mt-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-foreground"
-          >{t("projectsUi.primaryRepositoryRequired")}</p>
-        )}
-        <form
-          className="mt-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (canSubmit) void onSubmit(locations);
-          }}
-        >
-          <div
-            className="max-h-[58vh] flex flex-col gap-3 overflow-y-auto pr-1"
-            data-testid="location-draft-list"
-          >
-            {locations.map((location, index) => {
-              const isUrl = location.source === "url";
-              const isGit = location.inspection?.git_status === "ready";
-              const existingRepository = Boolean(
-                location.inspection?.repository_id,
-              );
-              const checking = checkingKeys.has(location.key);
-              return (
-                <section
-                  key={location.key}
-                  data-testid="location-draft-row"
-                  className="rounded-xl border border-border bg-muted/60 p-4"
-                >
-                  <div className="mb-3 flex items-center gap-2">
-                    <span className="text-xs font-semibold">{t("projectsUi.location")}{index + 1}
-                    </span>
-                    {location.inspection && (
-                      <>
-                        <Badge variant={isGit ? "success" : "neutral"}>
-                          {t(`states.${location.inspection.git_status}`, { defaultValue: location.inspection.git_status })}
-                        </Badge>
-                        {existingRepository && (
-                          <Badge variant="outline">{t("projectsUi.existingRepositoryScopeOnly")}</Badge>
-                        )}
-                        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
-                          {location.inspection.name}
-                        </span>
-                      </>
-                    )}
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label={t("projectsUi.removeLocation", { index: index + 1 })}
-                      disabled={locations.length === 1 || busy}
-                      onClick={() =>
-                        setLocations((current) =>
-                          current.filter((item) => item.key !== location.key),
-                        )
-                      }
-                    >
-                      <Trash2 data-icon="inline-start" />
-                    </Button>
-                  </div>
-                  <div className="mb-3 grid gap-2 sm:grid-cols-[9rem_1fr]">
-                    <Select
-                      aria-label={t("projectsUi.locationSource", { index: index + 1 })}
-                      value={location.source}
-                      onChange={(event) =>
-                        update(location.key, {
-                          source: event.target.value as LocationDraft["source"],
-                          path: "",
-                          inspection: undefined,
-                          inspectionError: undefined,
-                        })
-                      }
-                    >
-                      <option value="local">{t("projectsUi.localFolder")}</option>
-                      <option value="url">{t("projectsUi.gitURL")}</option>
-                    </Select>
-                    {isUrl ? (
-                      <Input
-                        className="min-w-0 font-mono text-xs"
-                        aria-label={t("projectsUi.locationGitURL", { index: index + 1 })}
-                        value={location.path}
-                        onChange={(event) =>
-                          update(location.key, {
-                            path: event.target.value,
-                            inspection: undefined,
-                            inspectionError: undefined,
-                          })
-                        }
-                        placeholder="https://github.com/org/repository.git"
-                        required
-                      />
-                    ) : (
-                      <DirectoryPathField
-                        busy={busy || checking}
-                        path={location.path}
-                        label={t("projectsUi.locationPath", { index: index + 1 })}
-                        onPathChange={(path) =>
-                          update(location.key, {
-                            path,
-                            inspection: undefined,
-                            inspectionError: undefined,
-                          })
-                        }
-                        onInspect={(path) => inspect(location.key, path)}
-                      />
-                    )}
-                  </div>
-                  {isUrl && (
-                    <p className="mt-2 text-[11px] text-muted-foreground">{t("projectsUi.treefoldClonesTheRemoteDefaultBranchIntoAManagedSource")}</p>
-                  )}
-                  {checking && (
-                    <p className="mt-2 text-[11px] text-muted-foreground">{t("projectsUi.checkingRepository")}</p>
-                  )}
-                  {location.inspectionError && (
-                    <p className="mt-2 text-[11px] text-destructive">
-                      {location.inspectionError}
-                    </p>
-                  )}
-                  {duplicatePath.has(location.path.trim()) && (
-                    <p className="mt-2 text-[11px] text-destructive">{t("projectsUi.thisPathIsAlreadyInTheList")}</p>
-                  )}
-                  {location.inspection && (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      {!existingRepository && (
-                        <label className="text-[11px] text-muted-foreground">
-                          <span className="font-medium text-foreground">{t("projectsUi.purpose")}{" "}
-                            <span className="font-normal text-muted-foreground">{t("projectsUi.optional")}</span>
-                          </span>
-                          <Textarea
-                            className="mt-1 min-h-16"
-                            aria-label={t("projectsUi.locationPurpose", { index: index + 1 })}
-                            value={location.description}
-                            onChange={(event) =>
-                              update(location.key, {
-                                description: event.target.value,
-                              })
-                            }
-                            placeholder={t("projectsUi.aPIServiceDocsDesignAssets")}
-                          />
-                        </label>
-                      )}
-                      <label className="text-[11px] text-muted-foreground">
-                        <span className="font-medium text-foreground">{t("projectsUi.worktreeSetup")}{" "}
-                          <span className="font-normal text-muted-foreground">{t("projectsUi.optional")}</span>
-                        </span>
-                        <Textarea
-                          className="mt-1 min-h-16 font-mono text-xs"
-                          aria-label={t("projectsUi.locationWorktreeSetup", { index: index + 1 })}
-                          value={location.worktree_setup_command}
-                          onChange={(event) =>
-                            update(location.key, {
-                              worktree_setup_command: event.target.value,
-                            })
-                          }
-                          placeholder="npm install"
-                          disabled={!isGit}
-                        />
-                      </label>
-                    </div>
-                  )}
-                  {location.inspection?.git_status === "not_git" && (
-                    <p className="mt-3 rounded-lg bg-card px-3 py-2 text-[11px] text-muted-foreground">{t("projectsUi.readOnlyWorkspaceContextNoGitBranchOrDeliverySettings")}</p>
-                  )}
-                </section>
-              );
+      <DialogContent className="max-w-[min(94vw,52rem)] overflow-x-hidden sm:max-w-[min(94vw,52rem)]">
+        <DialogHeader>
+          <DialogTitle>{t("projectsUi.addProjectLocations")}</DialogTitle>
+          <DialogDescription>{t("projectsUi.addLocationsDescription", { name: project?.name })}</DialogDescription>
+        </DialogHeader>
+        <form className="flex min-w-0 flex-col gap-4" onSubmit={(event) => {
+          event.preventDefault();
+          if (canSubmit) void onSubmit(chosen);
+        }}>
+          <Field className="min-w-0">
+            <FieldLabel htmlFor="project-location-path">{t("projectsUi.projectPath")}</FieldLabel>
+            <div className="flex min-w-0 gap-2">
+              <Input id="project-location-path" className="min-w-0 flex-1 font-mono text-xs"
+                value={path} title={path} disabled={busy} onChange={(event) => setPath(event.target.value)} placeholder="/absolute/path/to/location" />
+              <Button type="button" variant="secondary" disabled={busy || picking} onClick={() => void choosePath()}>
+                <FolderOpen data-icon="inline-start" />{t("projectsUi.choose")}
+              </Button>
+            </div>
+            {checking && <FieldDescription>{t("projectsUi.checkingRepository")}</FieldDescription>}
+            {error && <FieldDescription className="text-destructive">{error}</FieldDescription>}
+          </Field>
+          {requiresPrimaryGit && <p data-testid="primary-git-location-requirement" className="text-xs text-muted-foreground">{t("projectsUi.primaryRepositoryRequired")}</p>}
+          {locations.length > 0 && <div className="min-w-0 max-h-[40vh] overflow-y-auto rounded-lg border p-2" data-testid="location-draft-list">
+            {locations.map((location) => {
+              const isGit = location.source === "url" || location.inspection?.git_status === "ready";
+              const exists = project?.directories.some((directory) => directory.path === location.path);
+              const root = location.inspection?.source_root;
+              return <label key={location.key} data-testid="location-draft-row" className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm">
+                <input type="checkbox" aria-label={t("projectsUi.includeLocation", { name: location.path })}
+                  disabled={busy || checking || exists} checked={selected.includes(location.key)}
+                  onChange={(event) => setSelected((current) => event.target.checked ? [...current, location.key] : current.filter((key) => key !== location.key))} />
+                <span className="min-w-0 flex-1 truncate font-mono text-xs" title={location.path}>
+                  {location.source === "url" ? location.path : compactPath(location.path)}
+                  {root && root !== location.path && <span className="block truncate text-muted-foreground" title={root}>{t("projectsUi.repositoryRoot", { path: compactPath(root) })}</span>}
+                </span>
+                <Badge className="shrink-0" variant={isGit ? "success" : "neutral"}>{isGit ? t("projectsUi.gitRepository") : t("projectsUi.readOnlyContext")}</Badge>
+                {exists && <Badge className="shrink-0" variant="outline">{t("projectsUi.locationAlreadyAdded")}</Badge>}
+              </label>;
             })}
-          </div>
-          <div className="mt-4 flex items-center justify-between gap-3">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={busy}
-              onClick={() =>
-                setLocations((current) => [...current, newLocationDraft()])
-              }
-            >
-              <Plus data-icon="inline-start" />{t("projectsUi.addAnother")}</Button>
-            <Button type="submit" disabled={busy || discovering || !canSubmit}>
-              {busy
-                ? t("projectsUi.adding")
-                : t("projectsUi.addLocations", { count: locations.length })}
-            </Button>
+          </div>}
+          <div className="flex justify-end">
+            <Button type="submit" disabled={!canSubmit}>{busy ? t("projectsUi.adding") : t("projectsUi.addLocations", { count: chosen.length })}</Button>
           </div>
         </form>
       </DialogContent>
