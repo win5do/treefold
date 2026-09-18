@@ -60,7 +60,7 @@ fs.writeFileSync(dir + '/ghostty.jsonl', meta('standalone-codex'));
 fs.writeFileSync(dir + '/managed.jsonl', meta('managed-codex'));
 setTimeout(() => fs.appendFileSync(dir + '/managed.jsonl', JSON.stringify({type: 'response_item', payload: {role: 'developer', content: [{type: 'input_text', text: instructions}]}}) + '\\n'), 350);
 
-fs.writeFileSync(started, JSON.stringify({pid: process.pid, rows: process.stdout.rows, cols: process.stdout.columns}));
+fs.writeFileSync(started, JSON.stringify({pid: process.pid, rows: process.stdout.rows, cols: process.stdout.columns, amuxIoMode: process.env.AMUX_IO_MODE}));
 process.stdin.setRawMode(true);
 process.stdin.resume();
 let received = '';
@@ -126,7 +126,7 @@ setTimeout(() => finish(false), 100);
     expect(pid).toBeGreaterThan(0);
     controller.socket.send(JSON.stringify({ type: "terminal_ready", rows: 33, cols: 99 }));
     await expect.poll(() => exists(result)).toBe(true);
-    expect(JSON.parse(await readFile(started, "utf8"))).toEqual({ pid, rows: 33, cols: 99 });
+    expect(JSON.parse(await readFile(started, "utf8"))).toEqual({ pid, rows: 33, cols: 99, amuxIoMode: "tty" });
     expect(JSON.parse(await readFile(result, "utf8")).ok).toBe(true);
     const currentSession = async () => (await fetch(`${api}/api/sessions/${session.id}`)).json();
     await expect.poll(async () => (await currentSession()).codex_session_id, { timeout: 10_000 }).toBe("managed-codex");

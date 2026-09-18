@@ -3,6 +3,48 @@ import { startUiHarness } from "./ui-harness.ts";
 import { closeUiSession, createUiSession } from "./harness/session.ts";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 
+test("TTY Command Session opens from the sidebar and forwards Ctrl+C", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  const inputs: string[] = [];
+  let terminalReady = false;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "command-terminal" });
+    await page.route("**/api/**", async route => {
+      if (route.request().method() !== "GET" || new URL(route.request().url()).pathname === "/api/events") return route.continue();
+      const response = await route.fetch();
+      if (!response.headers()["content-type"]?.includes("application/json")) return route.fulfill({ response });
+      const body = await response.json();
+      const visit = (value: unknown): void => {
+        if (!value || typeof value !== "object") return;
+        const item = value as Record<string, unknown>;
+        if (item.id === FIXTURE_IDS.sessionDevServer) item.io_mode = "tty";
+        Object.values(item).forEach(visit);
+      };
+      visit(body);
+      await route.fulfill({ response, json: body });
+    });
+    await page.routeWebSocket(`**/api/sessions/${FIXTURE_IDS.sessionDevServer}/terminal?*`, socket => {
+      socket.onMessage(data => {
+        const message = JSON.parse(String(data));
+        if (message.type === "terminal_ready") terminalReady = true;
+        if (message.type === "input") inputs.push(Buffer.from(message.data, "base64").toString());
+      });
+      socket.send(JSON.stringify({ type: "ownership_state", state: "controller" }));
+    });
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await page.getByRole("button", { name: "web-dev-server running", exact: true }).click();
+    await expect.poll(() => terminalReady).toBe(true);
+    const input = page.getByTestId("session-workspace").locator(".xterm-helper-textarea");
+    await expect(input).toBeAttached();
+    await input.press("Control+c");
+    await expect.poll(() => inputs.join("")).toBe("\x03");
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});
+
 test("pipe Command Session replays logs, follows new output, and keeps logs after exit", async () => {
   const harness = await startUiHarness();
   let page: Page | undefined;

@@ -341,6 +341,7 @@ impl TerminalManager {
             ("TREEFOLD_PROJECT_ID".into(), project_id.into()),
             ("AMUX_DAEMON".into(), self.daemon_name.as_ref().clone()),
             ("AMUX_WORKSPACE".into(), workspace.clone()),
+            ("AMUX_IO_MODE".into(), "tty".into()),
             (
                 "AMUX_STATE_DIR".into(),
                 self.amux_state_dir.to_string_lossy().into_owned(),

@@ -168,6 +168,7 @@ TREEFOLD_INTEGRATION_VERSION
 AMUX_STATE_DIR
 AMUX_SOCKET
 AMUX_WORKSPACE
+AMUX_IO_MODE=tty
 AMUX_WORKSPACE_ID
 AMUX_PROCESS_ID
 PATH=<Treefold.app bundled binaries>:<inherited PATH>
@@ -182,6 +183,10 @@ amux restart "$AMUX_WORKSPACE/api"
 ```
 
 `amux run` 和 `amux shell` 从 `AMUX_WORKSPACE` 读取默认 workspace。Treefold Skill 不复制 amux 命令说明，只引用独立 `$amux` Skill。
+
+Treefold Session 通过 `AMUX_IO_MODE=tty` 让新建 command 进程默认分配 TTY，
+侧边栏打开后可输入文本和 Ctrl+C。需要独立 stdout/stderr 管道的命令可显式使用
+`amux run --io-mode pipe`。已有 pipe 进程保持原模式，不自动重启或转换。
 
 ## Skill 行为
 
