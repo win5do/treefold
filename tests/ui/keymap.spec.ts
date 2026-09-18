@@ -338,6 +338,7 @@ test("settings Save sends only edited fields and supports resetting overrides", 
 for (const owner of [
   { name: "Project", path: `projects/${FIXTURE_IDS.project}` },
   { name: "Fork", path: `workspaces/${FIXTURE_IDS.fork}` },
+  { name: "Agent Session", path: `workspaces/${FIXTURE_IDS.workspace}`, sessionId: FIXTURE_IDS.workspaceCodex },
 ]) {
   test(`new Session shortcut targets the current ${owner.name}`, async () => {
     const harness = await startUiHarness();
@@ -347,8 +348,9 @@ for (const owner of [
         apiUrl: harness.apiUrl,
         sessionName: "shortcut-scope",
       });
-      await page.goto(`${harness.baseUrl}/#/${owner.path}`);
-      await expect(page.getByTestId("page-content")).toBeVisible();
+      const route = "sessionId" in owner ? `${owner.path}/sessions/${owner.sessionId}` : owner.path;
+      await page.goto(`${harness.baseUrl}/#/${route}`);
+      await expect(page.getByTestId("sessionId" in owner ? "session-workspace" : "page-content")).toBeVisible();
       // Keymap is fetched independently of the owner detail.
       await expect
         .poll(async () =>
@@ -357,7 +359,15 @@ for (const owner of [
         .toBeTruthy();
       await page.keyboard.press("Meta+t");
       const dialog = page.getByRole("dialog", { name: "New Session" });
-      await dialog.getByRole("button", { name: "Shell", exact: true }).click();
+      const shellType = dialog.getByRole("button", { name: "Shell", exact: true });
+      await expect(shellType).toHaveAttribute("aria-pressed", "true");
+      await expect(shellType).toBeFocused();
+      await dialog.getByRole("button", { name: "Agent", exact: true }).click();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await page.keyboard.press("Meta+t");
+      await expect(shellType).toHaveAttribute("aria-pressed", "true");
+      await expect(shellType).toBeFocused();
       const request = page.waitForRequest(
         (request) =>
           request.method() === "POST" &&

@@ -45,7 +45,6 @@ export function useAppActions(scope: Scope) {
     context: ActionContext;
     create: Scope["actions"]["session"]["create"];
   } | null>(null);
-  const [lastKind, setLastKind] = useState<"shell" | "codex">("codex");
   const latest = useRef(scope);
   latest.current = scope;
   useEffect(() => {
@@ -151,16 +150,8 @@ export function useAppActions(scope: Scope) {
             creating.context.directory?.id ??
             creating.context.project?.default_directory_id
           }
-          initialKind={
-            creating.context.session?.kind === "shell"
-              ? "shell"
-              : creating.context.session?.kind === "codex"
-                ? "codex"
-                : lastKind
-          }
           onClose={() => setCreating(null)}
           onCreate={(kind, directory) => {
-            setLastKind(kind);
             setCreating(null);
             creating.create(kind, directory);
           }}

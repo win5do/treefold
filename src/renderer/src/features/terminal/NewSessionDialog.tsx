@@ -17,22 +17,17 @@ export function NewSessionDialog({
   name,
   directories,
   preferredDirectory,
-  initialKind,
   onClose,
   onCreate,
 }: {
   name: string;
   directories: Directory[];
   preferredDirectory?: string;
-  initialKind: "shell" | "codex";
   onClose: () => void;
   onCreate: (kind: "shell" | "codex", directory: Directory) => void;
 }) {
   const { t } = useTranslation();
-  // Follow the active Session until the user explicitly selects a type.
-  // Router transitions can settle just after the shortcut opens this dialog.
-  const [chosenKind, setKind] = useState<"shell" | "codex" | null>(null);
-  const kind = chosenKind ?? initialKind;
+  const [kind, setKind] = useState<"shell" | "codex">("shell");
   const typeRefs = useRef<
     Partial<Record<"shell" | "codex", HTMLButtonElement | null>>
   >({});
