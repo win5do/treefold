@@ -285,136 +285,6 @@ export function WorkspaceHome({
           onCreate={(kind, directory) => { setCreatingSession(false); creation.session(kind, directory); }}
         />}
         {detail.kind === "workspace" && (
-          <section data-testid="workspace-forks-section" className="mt-8">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">{t("workspaceUi.forks")}</h2>
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] text-muted-foreground">{detail.forks.length}</span>
-                {creation.available && <Button size="sm" disabled={busy} onClick={creation.fork}><Plus data-icon="inline-start" />{t("sidebar.newFork")}</Button>}
-              </div>
-            </div>
-            <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
-              {detail.forks.map((fork) => (
-                <div
-                  key={fork.id}
-                  data-testid={`fork-list-row-${fork.id}`}
-                  className="flex items-center gap-1"
-                >
-                  <button
-                    className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left hover:bg-muted/50"
-                    onClick={() => onOpenFork(fork)}
-                  >
-                    <GitBranch className="size-4 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">
-                          {fork.name}
-                        </span>
-                        <Badge
-                          variant={
-                            fork.status === "active" ? "success" : "neutral"
-                          }
-                        >
-                          {t(`states.${fork.delivery_status}`, { defaultValue: fork.delivery_status })}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {fork.branch}
-                      </p>
-                    </div>
-                    <ChevronRight className="size-4 text-muted-foreground/60" />
-                  </button>
-                  <div className="pr-2">
-                    <RecordActionMenu
-                      kind="fork"
-                      name={fork.name}
-                      status={fork.status}
-                      busy={busy}
-                      onDelete={() => onDeleteFork(fork)}
-                      onDeleteBlocked={() => onDeleteForkBlocked(fork)}
-                    />
-                  </div>
-                </div>
-              ))}
-              {detail.forks.length === 0 && (
-                <Empty className="py-8"><EmptyHeader>
-                  <EmptyTitle>{t(creation.available ? "workspaceUi.splitFeature" : "workspaceUi.noForks")}</EmptyTitle>
-                  {creation.available && <EmptyDescription>{t("workspaceUi.splitFeatureDescription")}</EmptyDescription>}
-                </EmptyHeader></Empty>
-              )}
-            </div>
-          </section>
-        )}
-        <section data-testid="workspace-repositories-section" className="mt-8">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-sm font-semibold">{t("workspaceUi.workspaceRepositories")}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.repositoryLifecycleDescription")}</p>
-            </div>
-            {detail.status === "active" && (
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={busy}
-                onClick={onResync}
-              >
-                <RefreshCw data-icon="inline-start" />{t("workspaceUi.resync")}</Button>
-            )}
-          </div>
-          <div className="mt-3 grid gap-3">
-            {detail.repositories.map((location) => (
-              <WorkspaceRepositoryRow
-                key={location.id}
-                location={location}
-                scopes={detail.workspace_directories.filter(
-                  (directory) =>
-                    directory.workspace_repository_id === location.id,
-                )}
-                busy={busy}
-                actionsEnabled={
-                  detail.kind === "workspace" && detail.status === "active"
-                }
-                onConfigureUpstream={() => onConfigureUpstream(location)}
-                onClearUpstream={() => onClearUpstream(location)}
-              />
-            ))}
-          </div>
-        </section>
-        {detail.workspace_directories.some(
-          (directory) => !directory.workspace_repository_id,
-        ) && (
-          <section className="mt-8" data-testid="workspace-context-directories">
-            <h2 className="text-sm font-semibold">{t("workspaceUi.nonGitDirectories")}</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.readOnlyContextAvailableOnlyAsAShellCwd")}</p>
-            <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
-              {detail.workspace_directories
-                .filter((directory) => !directory.workspace_repository_id)
-                .map((directory) => (
-                  <div
-                    key={directory.id}
-                    data-testid={`workspace-directory-${directory.project_directory_id}`}
-                    className="flex items-center gap-3 p-4"
-                  >
-                    <Folder className="size-4 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {directory.name}
-                      </p>
-                      <code
-                        className="mt-1 block truncate text-[10px] text-muted-foreground"
-                        title={directory.path}
-                      >
-                        {directory.path}
-                      </code>
-                    </div>
-                    <Badge>{t("labels.readOnly")}</Badge>
-                  </div>
-                ))}
-            </div>
-          </section>
-        )}
-
-        {detail.kind === "workspace" && (
           <section data-testid="workspace-todos-section" className="mt-8">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold">{t("workspaceUi.todos")}</h2>
@@ -622,6 +492,137 @@ export function WorkspaceHome({
             )}
           </section>
         )}
+        {detail.kind === "workspace" && (
+          <section data-testid="workspace-forks-section" className="mt-8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">{t("workspaceUi.forks")}</h2>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-muted-foreground">{detail.forks.length}</span>
+                {creation.available && <Button size="sm" disabled={busy} onClick={creation.fork}><Plus data-icon="inline-start" />{t("sidebar.newFork")}</Button>}
+              </div>
+            </div>
+            <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
+              {detail.forks.map((fork) => (
+                <div
+                  key={fork.id}
+                  data-testid={`fork-list-row-${fork.id}`}
+                  className="flex items-center gap-1"
+                >
+                  <button
+                    className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left hover:bg-muted/50"
+                    onClick={() => onOpenFork(fork)}
+                  >
+                    <GitBranch className="size-4 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {fork.name}
+                        </span>
+                        <Badge
+                          variant={
+                            fork.status === "active" ? "success" : "neutral"
+                          }
+                        >
+                          {t(`states.${fork.delivery_status}`, { defaultValue: fork.delivery_status })}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {fork.branch}
+                      </p>
+                    </div>
+                    <ChevronRight className="size-4 text-muted-foreground/60" />
+                  </button>
+                  <div className="pr-2">
+                    <RecordActionMenu
+                      kind="fork"
+                      name={fork.name}
+                      status={fork.status}
+                      busy={busy}
+                      onDelete={() => onDeleteFork(fork)}
+                      onDeleteBlocked={() => onDeleteForkBlocked(fork)}
+                    />
+                  </div>
+                </div>
+              ))}
+              {detail.forks.length === 0 && (
+                <Empty className="py-8"><EmptyHeader>
+                  <EmptyTitle>{t(creation.available ? "workspaceUi.splitFeature" : "workspaceUi.noForks")}</EmptyTitle>
+                  {creation.available && <EmptyDescription>{t("workspaceUi.splitFeatureDescription")}</EmptyDescription>}
+                </EmptyHeader></Empty>
+              )}
+            </div>
+          </section>
+        )}
+        <section data-testid="workspace-repositories-section" className="mt-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-semibold">{t("workspaceUi.workspaceRepositories")}</h2>
+              <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.repositoryLifecycleDescription")}</p>
+            </div>
+            {detail.status === "active" && (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={onResync}
+              >
+                <RefreshCw data-icon="inline-start" />{t("workspaceUi.resync")}</Button>
+            )}
+          </div>
+          <div className="mt-3 grid gap-3">
+            {detail.repositories.map((location) => (
+              <WorkspaceRepositoryRow
+                key={location.id}
+                location={location}
+                scopes={detail.workspace_directories.filter(
+                  (directory) =>
+                    directory.workspace_repository_id === location.id,
+                )}
+                busy={busy}
+                actionsEnabled={
+                  detail.kind === "workspace" && detail.status === "active"
+                }
+                onConfigureUpstream={() => onConfigureUpstream(location)}
+                onClearUpstream={() => onClearUpstream(location)}
+              />
+            ))}
+          </div>
+        </section>
+        {detail.workspace_directories.some(
+          (directory) => !directory.workspace_repository_id,
+        ) && (
+          <section className="mt-8" data-testid="workspace-context-directories">
+            <h2 className="text-sm font-semibold">{t("workspaceUi.nonGitDirectories")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.readOnlyContextAvailableOnlyAsAShellCwd")}</p>
+            <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
+              {detail.workspace_directories
+                .filter((directory) => !directory.workspace_repository_id)
+                .map((directory) => (
+                  <div
+                    key={directory.id}
+                    data-testid={`workspace-directory-${directory.project_directory_id}`}
+                    className="flex items-center gap-3 p-4"
+                  >
+                    <Folder className="size-4 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {directory.name}
+                      </p>
+                      <code
+                        className="mt-1 block truncate text-[10px] text-muted-foreground"
+                        title={directory.path}
+                      >
+                        {directory.path}
+                      </code>
+                    </div>
+                    <Badge>{t("labels.readOnly")}</Badge>
+                  </div>
+                ))}
+            </div>
+          </section>
+        )}
+
+
         <Dialog
           open={detail.kind === "workspace" && Boolean(todoDialog)}
           onOpenChange={(open) => !open && setTodoDialog(null)}
