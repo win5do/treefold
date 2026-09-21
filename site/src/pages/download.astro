@@ -1,0 +1,69 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+
+const github = 'https://github.com/win5do/treefold';
+const releases = `${github}/releases`;
+const tap = 'https://github.com/win5do/homebrew-tap';
+const installCommand = 'brew install --cask win5do/tap/treefold';
+---
+
+<BaseLayout
+  title="下载 Treefold for macOS"
+  description="Treefold 的 macOS 私有预发布下载入口：Homebrew Cask 与 GitHub Release。当前面向 Apple Silicon，免费开源。"
+>
+  <SiteHeader current="download" />
+  <main>
+    <section class="hero-glow relative overflow-hidden bg-ink py-20 text-white sm:py-24">
+      <div class="hero-grid pointer-events-none absolute inset-0"></div>
+      <div class="site-container relative">
+        <a href="/" class="inline-flex items-center gap-2 text-sm text-white/50 transition-colors hover:text-accent"><span aria-hidden="true">←</span> 返回首页</a>
+        <div class="eyebrow mt-12 flex w-fit text-accent">FREE & OPEN SOURCE / MACOS</div>
+        <h1 class="mt-6 max-w-[980px] text-[clamp(3.2rem,5.6vw,5.5rem)] leading-[1.06] font-semibold tracking-[-.075em]">下载 Treefold。<br /><span class="text-accent">开始并行，<br class="sm:hidden" />干净收尾。</span></h1>
+        <p class="mt-7 max-w-[650px] text-[16px] leading-8 text-white/60">当前安装入口面向 Apple Silicon Mac。Release 发布后，可通过私有 Homebrew tap 安装，或在 GitHub 下载 DMG。</p>
+        <div class="mt-9 flex flex-wrap gap-2.5 text-[11px] font-semibold text-white/70"><span class="rounded-full border border-white/20 px-3 py-1.5">macOS Sonoma 或更新版本</span><span class="rounded-full border border-white/20 px-3 py-1.5">Apple Silicon · arm64</span><span class="rounded-full border border-white/20 px-3 py-1.5">AGPL-3.0-only</span></div>
+      </div>
+    </section>
+
+    <section class="bg-paper py-16 sm:py-20">
+      <div class="site-container">
+        <div class="rounded-xl border border-[#b4c8b0] bg-[#e9f3e4] px-5 py-4 text-sm leading-7 text-[#395644] sm:px-6"><strong>私有预发布：</strong>Treefold 仓库与 Homebrew tap 目前需要 GitHub 访问权限。Release 尚未发布，以下链接和命令先作为安装入口保留；有安装包后即可使用。</div>
+        <div class="mt-12 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
+          <article class="flex min-w-0 flex-col rounded-2xl border border-[#dce5db] bg-white p-7 sm:p-9">
+            <div class="flex items-start justify-between gap-3"><div class="section-kicker text-pine">OPTION 01 / HOMEBREW</div><span class="rounded-full bg-[#eaf3e7] px-2.5 py-1 text-[10px] font-bold text-pine">推荐</span></div>
+            <h2 class="mt-7 text-3xl font-semibold tracking-[-.055em]">用 Homebrew Cask 安装</h2>
+            <p class="mt-4 text-sm leading-7 text-muted">适合已经使用 Homebrew 管理 macOS App 的开发者。命令来自 Treefold 的私有 tap。</p>
+            <div class="mt-7 min-w-0 overflow-hidden rounded-xl border border-[#39483f] bg-[#17221d] text-white"><div class="flex items-center justify-between border-b border-white/10 px-4 py-2.5"><span class="font-mono text-[10px] text-white/45">TERMINAL</span><button type="button" data-copy-command={installCommand} class="rounded px-2 py-1 text-xs font-semibold text-accent transition-colors hover:bg-white/10"><span data-copy-label>复制命令</span></button></div><pre class="overflow-x-auto px-4 py-5 font-mono text-[12px] leading-6 sm:text-sm"><code><span class="text-accent">$</span> {installCommand}</code></pre></div>
+            <p class="mt-5 text-xs leading-6 text-muted">安装前需有私有 tap 与 Release 的访问权限。当前 Release 尚未创建，命令暂时无法完成下载。</p>
+            <a class="mt-auto inline-flex items-center gap-2 pt-8 text-sm font-bold text-pine hover:underline" href={tap} target="_blank" rel="noopener noreferrer">查看 Homebrew tap <span aria-hidden="true">↗</span></a>
+          </article>
+
+          <article class="flex min-w-0 flex-col rounded-2xl border border-[#dce5db] bg-white p-7 sm:p-9"><div class="section-kicker text-pine">OPTION 02 / GITHUB RELEASE</div><h2 class="mt-7 text-3xl font-semibold tracking-[-.055em]">下载 DMG 安装包</h2><p class="mt-4 text-sm leading-7 text-muted">在 GitHub Release 页面选择 Apple Silicon 的 <code class="rounded bg-[#edf3ec] px-1.5 py-0.5 font-mono text-xs text-pine">aarch64.dmg</code>，打开 DMG 并将 Treefold 拖入“应用程序”。</p><div class="mt-7 rounded-xl border border-[#dce5db] bg-[#f3f7f0] p-5"><div class="font-mono text-[10px] font-bold tracking-[.13em] text-pine">EXPECTED RELEASE ASSET</div><p class="mt-3 break-all font-mono text-[12px] text-[#3f5745]">Treefold_&lt;version&gt;_aarch64.dmg</p></div><p class="mt-5 text-xs leading-6 text-muted">当前 Release 页面仍为空，发布安装包后此入口会显示可下载的版本。</p><a href={releases} target="_blank" rel="noopener noreferrer" class="mt-auto inline-flex min-h-[48px] items-center justify-center gap-3 self-start rounded-lg bg-ink px-5 pt-0 text-sm font-bold text-white transition-colors hover:bg-pine">打开 GitHub Releases <span aria-hidden="true">↗</span></a></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="border-t border-[#dce5db] bg-[#eaf0e8] py-16 sm:py-20"><div class="site-container grid gap-10 lg:grid-cols-[1fr_1fr] lg:gap-20"><div><div class="section-kicker text-pine">BEFORE YOU START</div><h2 class="mt-5 text-3xl font-semibold tracking-[-.055em] sm:text-4xl">开始之前</h2><p class="mt-5 text-sm leading-7 text-muted">Treefold 在本机管理 Project、Workspace、Session 和 Git worktree。使用 Codex Session 需要你已安装并配置 Codex CLI；Shell Session 可独立使用。</p></div><div class="space-y-4"><div class="rounded-xl border border-[#cbd9cc] bg-white p-5"><h3 class="font-semibold">系统要求</h3><p class="mt-2 text-sm leading-7 text-muted">Apple Silicon Mac、macOS Sonoma 或更新版本，以及 Git。</p></div><div class="rounded-xl border border-[#cbd9cc] bg-white p-5"><h3 class="font-semibold">关于首次打开</h3><p class="mt-2 text-sm leading-7 text-muted">当前预发布构建使用 ad-hoc 签名。首次打开时，macOS 可能要求你在“系统设置 → 隐私与安全性”中批准 Treefold。</p></div><div class="rounded-xl border border-[#cbd9cc] bg-white p-5"><h3 class="font-semibold">项目数据</h3><p class="mt-2 text-sm leading-7 text-muted">Treefold 的项目状态与编排数据保存在本机；Agent 是否访问外部服务取决于你自己的配置。</p></div></div></div></section>
+
+    <section class="bg-ink py-16 text-white sm:py-20"><div class="site-container flex flex-col justify-between gap-8 md:flex-row md:items-end"><div><div class="section-kicker text-accent">SOURCE AVAILABLE TO COLLABORATORS</div><h2 class="mt-4 max-w-[690px] text-[clamp(2rem,4vw,3.5rem)] leading-[1.15] font-semibold tracking-[-.055em]">免费开源。<br />用真实 Git 工作流构建。</h2><p class="mt-4 text-sm text-white/50">当前源码仓库为 private；公开后会保留同一 GitHub 地址。</p></div><a href={github} target="_blank" rel="noopener noreferrer" class="button-secondary self-start">前往 GitHub <span aria-hidden="true">↗</span></a></div></section>
+  </main>
+  <SiteFooter />
+</BaseLayout>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-copy-command]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const command = button.dataset.copyCommand;
+      const label = button.querySelector<HTMLElement>('[data-copy-label]');
+      if (!command || !label) return;
+      try {
+        await navigator.clipboard.writeText(command);
+        label.textContent = '已复制';
+        window.setTimeout(() => { label.textContent = '复制命令'; }, 2200);
+      } catch {
+        label.textContent = '复制失败，请手动选择';
+      }
+    });
+  });
+</script>
