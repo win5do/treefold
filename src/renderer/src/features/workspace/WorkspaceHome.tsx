@@ -522,7 +522,7 @@ export function WorkspaceHome({
                             fork.status === "active" ? "success" : "neutral"
                           }
                         >
-                          {t(`states.${fork.delivery_status}`, { defaultValue: fork.delivery_status })}
+                          {t(`states.${fork.status}`, { defaultValue: fork.status })}
                         </Badge>
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">

@@ -1,3 +1,4 @@
+import { invalidateHierarchyQueries } from "@/features/app/runtimeInvalidation";
 import { useSettingsSave } from "@/features/settings/useSettingsSave";
 import { useAppActions } from "@/features/actions/useAppActions";
 import {
@@ -455,21 +456,10 @@ function Workspace() {
     try {
       await action();
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: projectKeys.summaries }),
-        queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
-        params.projectId
-          ? queryClient.invalidateQueries({
-              queryKey: projectKeys.detail(params.projectId),
-            })
-          : Promise.resolve(),
+        invalidateHierarchyQueries(queryClient),
         params.projectId
           ? queryClient.invalidateQueries({
               queryKey: projectKeys.sessions(params.projectId),
-            })
-          : Promise.resolve(),
-        params.workspaceId
-          ? queryClient.invalidateQueries({
-              queryKey: workspaceKeys.detail(params.workspaceId),
             })
           : Promise.resolve(),
         params.workspaceId

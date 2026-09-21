@@ -11,13 +11,22 @@ export const allRuntimeDomains: RuntimeDomain[] = [
   "amux",
 ];
 
+export async function invalidateHierarchyQueries(queryClient: QueryClient) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: projectKeys.summaries }),
+    queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
+    queryClient.invalidateQueries({ queryKey: ["project"] }),
+    queryClient.invalidateQueries({ queryKey: ["workspace"] }),
+  ]);
+}
+
 export async function invalidateRuntimeQueries(
   queryClient: QueryClient,
   domains: readonly RuntimeDomain[] = allRuntimeDomains,
 ) {
   const invalidations: Promise<void>[] = [];
   if (domains.includes("sidebar")) {
-    invalidations.push(queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }));
+    invalidations.push(invalidateHierarchyQueries(queryClient));
   }
   if (domains.includes("sessions")) {
     invalidations.push(queryClient.invalidateQueries({ queryKey: ["project-sessions"] }));
