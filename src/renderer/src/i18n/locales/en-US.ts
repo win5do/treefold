@@ -340,6 +340,9 @@ export const enUS = {
     "resetDescription": "All custom bindings and disabled shortcuts will be reset to their defaults and saved immediately."
   },
   "projectsUi": {
+    "startFeature": "Start your first feature",
+    "startFeatureDescription": "Create a Workspace to manage development for one feature.",
+
     "precheckFailed": "Precheck failed",
     "deleteWorktree": "Delete worktree?",
     "branch": "Branch",
@@ -596,6 +599,15 @@ export const enUS = {
     "sessionState": "Session is {{status}}"
   },
   "workspaceUi": {
+    "featureDescription": "Develop one feature in this Workspace. Split it into Forks when you need separate subtasks.",
+    "subtaskDescription": "Complete this subtask as part of the parent Workspace’s feature.",
+    "splitFeature": "Split your feature into subtasks",
+    "splitFeatureDescription": "Create Forks for subtasks such as implementing an API, building a page, or adding tests.",
+    "startFeature": "Start developing this feature",
+    "startFeatureDescription": "Create a Session to work on this feature with Shell or Agent.",
+    "startSubtask": "Start this subtask",
+    "startSubtaskDescription": "Create a Session to work on the subtask assigned to this Fork.",
+
     "updateFromParent": "Update from Parent",
     "integrateIntoParent": "Integrate into Parent",
     "repository": "Repository",

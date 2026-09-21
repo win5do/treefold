@@ -342,6 +342,9 @@ export const zhCN = {
     "resetDescription": "所有自定义绑定和禁用项都会恢复默认，并立即保存。"
   },
   "projectsUi": {
+    "startFeature": "开始你的第一个 feature",
+    "startFeatureDescription": "创建 Workspace，集中管理一项 feature 的开发工作。",
+
     "precheckFailed": "预检失败",
     "deleteWorktree": "删除工作树？",
     "branch": "分支",
@@ -598,6 +601,15 @@ export const zhCN = {
     "sessionState": "Session {{status}}"
   },
   "workspaceUi": {
+    "featureDescription": "在这个 Workspace 中开发一项 feature，需要拆分工作时再创建 Fork。",
+    "subtaskDescription": "在这个 Fork 中完成上层 Workspace 所属 feature 的一项子任务。",
+    "splitFeature": "把 feature 拆成子任务",
+    "splitFeatureDescription": "为实现 API、完成页面、补充测试等子任务创建 Fork，分别推进。",
+    "startFeature": "开始开发这个 feature",
+    "startFeatureDescription": "新建 Session，使用 Shell 或 Agent 开始开发这项 feature。",
+    "startSubtask": "开始处理这个子任务",
+    "startSubtaskDescription": "新建 Session，完成当前 Fork 承担的子任务。",
+
     "updateFromParent": "从父级更新",
     "integrateIntoParent": "合并到父级",
     "repository": "仓库",

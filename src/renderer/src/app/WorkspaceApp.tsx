@@ -1386,6 +1386,11 @@ function Workspace() {
               ) : workspace ? (
                 <WorkspaceHome
                   detail={workspace}
+                  creation={{
+                    available: selectedProject?.status === "active" && workspace.status === "active",
+                    session: (kind, directory) => void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory)),
+                    fork: () => setCreateForkWorkspace(workspace),
+                  }}
                   busy={busy}
                   onOpen={(session) =>
                     void openHistorySession(workspace, session)
@@ -1416,6 +1421,7 @@ function Workspace() {
               ) : selectedProject ? (
                 <ProjectHome
                   project={selectedProject}
+                  onCreateWorkspace={() => setCreateWorkspaceProject(selectedProject)}
                   busy={busy}
                   onOpen={(id) => navigate(`/workspaces/${id}`)}
                   onDeleteWorkspace={(stream) =>

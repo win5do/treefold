@@ -31,11 +31,12 @@ Treefold 保留英文产品名和核心概念，中文负责让用户理解操�
 ```toml
 preserve = [
   "Treefold", "Codex", "Git", "amux", "Workspace", "Fork", "Project", "Session", "Agent", "Skill",
-  "AI", "API", "CLI", "SDK", "MCP", "Todo", "Context",
+  "AI", "API", "CLI", "SDK", "MCP", "Todo", "Context", "feature",
 ]
 ```
 
 - **识别时忽略大小写，展示时遵循标准拼写。** 例如 `workspace`、`Workspace`、`WORKSPACE` 表示同一产品概念时，统一展示为 `Workspace`；`Git` 保留首字母大写，`amux` 保持小写。无需列出大小写变体。
+- 产品层级：Project 组织项目，Workspace 承担一项独立的 feature，Fork 承担该 feature 的子任务。`feature` 保持小写；不要将 Fork 的主要用途描述为尝试另一种方案，也不要将 Project Session 作为常规开发起点。
 - 技术缩写 AI、API、CLI、SDK、MCP 统一大写；Todo 和 Context 作为产品功能或技术概念时保留英文，普通描述按语境处理。
 - 按概念和语境判断，不做全文机械替换。Workspace 不译为“工作区”或“工作流”，Fork 不译为“分叉”或“分支”，Project、Session、Agent、Skill 分别保留英文，不译为“项目”“会话”“智能体”“技能”。普通描述中的同形词按语境处理，例如 Git branch 仍可译为“分支”。
 - 中文句子中的概念词用单数形式，如“3 个 Session”“管理 Skill”；英文界面按语法使用 Projects、Sessions、Skills 等复数。

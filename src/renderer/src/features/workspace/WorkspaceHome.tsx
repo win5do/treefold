@@ -1,3 +1,5 @@
+import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { NewSessionDialog } from "@/features/terminal/NewSessionDialog";
 import { useTranslation } from "react-i18next";
 import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
 import { useEffect, useState } from "react";
@@ -38,6 +40,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type {
+  Directory,
   Session,
   Workspace,
   WorkspaceDetail,
@@ -49,6 +52,7 @@ import { cn } from "@/lib/utils";
 
 export function WorkspaceHome({
   detail,
+  creation,
   busy,
   onOpen,
   onOpenFork,
@@ -61,6 +65,11 @@ export function WorkspaceHome({
   onTodoForkCreated,
 }: {
   detail: WorkspaceDetail;
+  creation: {
+    available: boolean;
+    session: (kind: "shell" | "codex", directory: Directory) => void;
+    fork: () => void;
+  };
   busy: boolean;
   onOpen: (session: Session) => void;
   onOpenFork: (fork: Workspace) => void;
@@ -73,6 +82,8 @@ export function WorkspaceHome({
   onTodoForkCreated: (fork: Workspace, session?: Session) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const [creatingSession, setCreatingSession] = useState(false);
+  useEffect(() => setCreatingSession(false), [detail.id]);
   const [filter, setFilter] = useState<"all" | "codex" | "shell" | "command">(
     "all",
   );
@@ -139,10 +150,201 @@ export function WorkspaceHome({
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
               {detail.description ||
-                t("workspaceUi.runShellAndCodexSessionsInTheSameWorkspace")}
+                t(detail.kind === "fork" ? "workspaceUi.subtaskDescription" : "workspaceUi.featureDescription")}
             </p>
           </div>
         </div>
+        <section data-testid="workspace-sessions-section" className="mt-8">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold">Session</h2>
+            {creation.available && <Button size="sm" disabled={busy} onClick={() => setCreatingSession(true)}><Plus data-icon="inline-start" />{t("terminalUi.newSession")}</Button>}
+          </div>
+        {detail.sessions.length > 0 && (
+        <div className="mt-8 flex items-center justify-between border-b border-border">
+          <div className="flex gap-5">
+            {(
+              [
+                ["all", t("workspaceUi.all")],
+                ["codex", "Agent"],
+                ["shell", "Shell"],
+                ["command", t("workspaceUi.command")],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                className={cn(
+                  "border-b-2 px-1 pb-3 text-xs font-medium",
+                  filter === value
+                    ? "border-foreground text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => setFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="pb-3 text-[11px] text-muted-foreground">
+            {t("counts.session", { count: sessions.length })}
+          </span>
+        </div>
+        )}
+        <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
+          {detail.sessions.length > 0 && (
+          <div className="hidden grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] gap-3 border-b border-border/60 bg-muted/50 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+            <span>Session</span>
+            <span>{t("workspaceUi.type")}</span>
+            <span>{t("workspaceUi.status")}</span>
+            <span>{t("workspaceUi.started")}</span>
+            <span>{t("workspaceUi.lastActive")}</span>
+            <span>Workspace</span>
+            <span className="text-right">{t("workspaceUi.actions")}</span>
+          </div>
+          )}
+          {sessions.map((session) => {
+            return (
+              <div
+                key={session.id}
+                data-testid={`workspace-session-${session.id}`}
+                className="grid gap-3 border-b border-border/60 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] md:items-center"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
+                    {session.kind === "codex" ? (
+                      <Bot className="size-4" />
+                    ) : session.kind === "command" ? (
+                      <PanelsTopLeft className="size-4" />
+                    ) : (
+                      <TerminalSquare className="size-4" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {session.name}
+                    </p>
+                    <p className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">
+                      {session.codex_session_id || session.id}
+                    </p>
+                  </div>
+                </div>
+                <div>
+                  <Badge>
+                    {session.kind === "codex"
+                      ? "Agent"
+                      : session.kind === "command"
+                        ? t("workspaceUi.command")
+                        : "Shell"}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-foreground">
+                  <StatusDot status={session.status} />
+                  {displayStatus(session)}
+                </div>
+                <span className="hidden text-xs text-muted-foreground md:block">
+                  {formatTime(session.launch_started_at)}
+                </span>
+                <span className="hidden text-xs text-muted-foreground md:block">
+                  {formatTime(
+                    session.hidden_at ||
+                      session.last_attached_at ||
+                      session.updated_at ||
+                      session.created_at,
+                  )}
+                </span>
+                <code
+                  className="hidden truncate text-[10px] text-muted-foreground md:block"
+                  title={session.cwd}
+                >
+                  {session.cwd}
+                </code>
+                <div className="flex items-center justify-end gap-1">
+                  {detail.status === "active" && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() => onOpen(session)}
+                    >{t("workspaceUi.open")}</Button>
+                  )}
+                  <RemoveSessionButton session={session} disabled={busy} />
+                </div>
+              </div>
+            );
+          })}
+          {sessions.length === 0 && (
+            <Empty className="py-12"><EmptyHeader>
+              <EmptyTitle>{t(detail.sessions.length > 0 ? "workspaceUi.noSessionsMatchTheFilter" : !creation.available ? "projectsUi.noSessions" : detail.kind === "fork" ? "workspaceUi.startSubtask" : "workspaceUi.startFeature")}</EmptyTitle>
+              {detail.sessions.length === 0 && creation.available && <EmptyDescription>{t(detail.kind === "fork" ? "workspaceUi.startSubtaskDescription" : "workspaceUi.startFeatureDescription")}</EmptyDescription>}
+            </EmptyHeader></Empty>
+          )}
+        </div>
+        </section>
+        {creatingSession && creation.available && <NewSessionDialog
+          key={detail.id} name={detail.name} directories={detail.directories}
+          onClose={() => setCreatingSession(false)}
+          onCreate={(kind, directory) => { setCreatingSession(false); creation.session(kind, directory); }}
+        />}
+        {detail.kind === "workspace" && (
+          <section data-testid="workspace-forks-section" className="mt-8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold">{t("workspaceUi.forks")}</h2>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-muted-foreground">{detail.forks.length}</span>
+                {creation.available && <Button size="sm" disabled={busy} onClick={creation.fork}><Plus data-icon="inline-start" />{t("sidebar.newFork")}</Button>}
+              </div>
+            </div>
+            <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
+              {detail.forks.map((fork) => (
+                <div
+                  key={fork.id}
+                  data-testid={`fork-list-row-${fork.id}`}
+                  className="flex items-center gap-1"
+                >
+                  <button
+                    className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left hover:bg-muted/50"
+                    onClick={() => onOpenFork(fork)}
+                  >
+                    <GitBranch className="size-4 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {fork.name}
+                        </span>
+                        <Badge
+                          variant={
+                            fork.status === "active" ? "success" : "neutral"
+                          }
+                        >
+                          {t(`states.${fork.delivery_status}`, { defaultValue: fork.delivery_status })}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        {fork.branch}
+                      </p>
+                    </div>
+                    <ChevronRight className="size-4 text-muted-foreground/60" />
+                  </button>
+                  <div className="pr-2">
+                    <RecordActionMenu
+                      kind="fork"
+                      name={fork.name}
+                      status={fork.status}
+                      busy={busy}
+                      onDelete={() => onDeleteFork(fork)}
+                      onDeleteBlocked={() => onDeleteForkBlocked(fork)}
+                    />
+                  </div>
+                </div>
+              ))}
+              {detail.forks.length === 0 && (
+                <Empty className="py-8"><EmptyHeader>
+                  <EmptyTitle>{t(creation.available ? "workspaceUi.splitFeature" : "workspaceUi.noForks")}</EmptyTitle>
+                  {creation.available && <EmptyDescription>{t("workspaceUi.splitFeatureDescription")}</EmptyDescription>}
+                </EmptyHeader></Empty>
+              )}
+            </div>
+          </section>
+        )}
         <section data-testid="workspace-repositories-section" className="mt-8">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -211,63 +413,7 @@ export function WorkspaceHome({
             </div>
           </section>
         )}
-        {detail.kind === "workspace" && (
-          <section data-testid="workspace-forks-section" className="mt-8">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold">{t("workspaceUi.forks")}</h2>
-              <span className="text-[11px] text-muted-foreground">
-                {detail.forks.length}
-              </span>
-            </div>
-            <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
-              {detail.forks.map((fork) => (
-                <div
-                  key={fork.id}
-                  data-testid={`fork-list-row-${fork.id}`}
-                  className="flex items-center gap-1"
-                >
-                  <button
-                    className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left hover:bg-muted/50"
-                    onClick={() => onOpenFork(fork)}
-                  >
-                    <GitBranch className="size-4 text-muted-foreground" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">
-                          {fork.name}
-                        </span>
-                        <Badge
-                          variant={
-                            fork.status === "active" ? "success" : "neutral"
-                          }
-                        >
-                          {t(`states.${fork.delivery_status}`, { defaultValue: fork.delivery_status })}
-                        </Badge>
-                      </div>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">
-                        {fork.branch}
-                      </p>
-                    </div>
-                    <ChevronRight className="size-4 text-muted-foreground/60" />
-                  </button>
-                  <div className="pr-2">
-                    <RecordActionMenu
-                      kind="fork"
-                      name={fork.name}
-                      status={fork.status}
-                      busy={busy}
-                      onDelete={() => onDeleteFork(fork)}
-                      onDeleteBlocked={() => onDeleteForkBlocked(fork)}
-                    />
-                  </div>
-                </div>
-              ))}
-              {detail.forks.length === 0 && (
-                <p className="px-4 py-8 text-center text-xs text-muted-foreground">{t("workspaceUi.noForks")}</p>
-              )}
-            </div>
-          </section>
-        )}
+
         {detail.kind === "workspace" && (
           <section data-testid="workspace-todos-section" className="mt-8">
             <div className="flex items-center justify-between">
@@ -518,121 +664,7 @@ export function WorkspaceHome({
             </div>
           </DialogContent>
         </Dialog>
-        <div className="mt-8 flex items-center justify-between border-b border-border">
-          <div className="flex gap-5">
-            {(
-              [
-                ["all", t("workspaceUi.all")],
-                ["codex", "Agent"],
-                ["shell", "Shell"],
-                ["command", t("workspaceUi.command")],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                className={cn(
-                  "border-b-2 px-1 pb-3 text-xs font-medium",
-                  filter === value
-                    ? "border-foreground text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground",
-                )}
-                onClick={() => setFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <span className="pb-3 text-[11px] text-muted-foreground">
-            {t("counts.session", { count: sessions.length })}
-          </span>
-        </div>
-        <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
-          <div className="hidden grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] gap-3 border-b border-border/60 bg-muted/50 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
-            <span>Session</span>
-            <span>{t("workspaceUi.type")}</span>
-            <span>{t("workspaceUi.status")}</span>
-            <span>{t("workspaceUi.started")}</span>
-            <span>{t("workspaceUi.lastActive")}</span>
-            <span>Workspace</span>
-            <span className="text-right">{t("workspaceUi.actions")}</span>
-          </div>
-          {sessions.map((session) => {
-            return (
-              <div
-                key={session.id}
-                data-testid={`workspace-session-${session.id}`}
-                className="grid gap-3 border-b border-border/60 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] md:items-center"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
-                    {session.kind === "codex" ? (
-                      <Bot className="size-4" />
-                    ) : session.kind === "command" ? (
-                      <PanelsTopLeft className="size-4" />
-                    ) : (
-                      <TerminalSquare className="size-4" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {session.name}
-                    </p>
-                    <p className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">
-                      {session.codex_session_id || session.id}
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <Badge>
-                    {session.kind === "codex"
-                      ? "Agent"
-                      : session.kind === "command"
-                        ? t("workspaceUi.command")
-                        : "Shell"}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-foreground">
-                  <StatusDot status={session.status} />
-                  {displayStatus(session)}
-                </div>
-                <span className="hidden text-xs text-muted-foreground md:block">
-                  {formatTime(session.launch_started_at)}
-                </span>
-                <span className="hidden text-xs text-muted-foreground md:block">
-                  {formatTime(
-                    session.hidden_at ||
-                      session.last_attached_at ||
-                      session.updated_at ||
-                      session.created_at,
-                  )}
-                </span>
-                <code
-                  className="hidden truncate text-[10px] text-muted-foreground md:block"
-                  title={session.cwd}
-                >
-                  {session.cwd}
-                </code>
-                <div className="flex items-center justify-end gap-1">
-                  {detail.status === "active" && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() => onOpen(session)}
-                    >{t("workspaceUi.open")}</Button>
-                  )}
-                  <RemoveSessionButton session={session} disabled={busy} />
-                </div>
-              </div>
-            );
-          })}
-          {sessions.length === 0 && (
-            <div className="py-16 text-center">
-              <TerminalSquare className="mx-auto size-6 text-muted-foreground/60" />
-              <p className="mt-3 text-sm font-medium">{t("workspaceUi.noSessionsMatchTheFilter")}</p>
-            </div>
-          )}
-        </div>
+
       </div>
     </div>
   );
