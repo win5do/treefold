@@ -92,67 +92,6 @@ export function ProjectHome({
             {project.description}
           </p>
         </div>
-        <section data-testid="project-workspaces-section" className="mt-8">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">{t("projectsUi.workspaces")}</h2>
-            <div className="flex items-center gap-3">
-              <span className="text-[11px] text-muted-foreground">{rootWorkspaces.length}</span>
-              {project.status === "active" && (
-                <Button size="sm" disabled={busy} onClick={onCreateWorkspace}>
-                  <Plus data-icon="inline-start" />{t("sidebar.newWorkspace")}
-                </Button>
-              )}
-            </div>
-          </div>
-          <div className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
-            {rootWorkspaces.map((stream) => (
-              <div
-                key={stream.id}
-                data-testid={`workspace-list-row-${stream.id}`}
-                className="flex items-center gap-1"
-              >
-                <button
-                  onClick={() => onOpen(stream.id)}
-                  className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left hover:bg-muted/50"
-                >
-                  <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
-                    <Workflow className="size-4 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-semibold">
-                        {stream.name}
-                      </p>
-                      {stream.status === "archived" && <Badge>{t("labels.archived")}</Badge>}
-                    </div>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {stream.description || stream.checkout_path}
-                    </p>
-                  </div>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
-                </button>
-                <div className="pr-2">
-                  <RecordActionMenu
-                    kind="workspace"
-                    name={stream.name}
-                    status={stream.status}
-                    busy={busy}
-                    onDelete={() => onDeleteWorkspace(stream)}
-                    onDeleteBlocked={() => onDeleteWorkspaceBlocked(stream)}
-                  />
-                </div>
-              </div>
-            ))}
-            {rootWorkspaces.length === 0 && (
-              <Empty className="py-12">
-                <EmptyHeader>
-                  <EmptyTitle>{t(project.status === "active" ? "projectsUi.startFeature" : "projectsUi.noWorkspacesYet")}</EmptyTitle>
-                  {project.status === "active" && <EmptyDescription>{t("projectsUi.startFeatureDescription")}</EmptyDescription>}
-                </EmptyHeader>
-              </Empty>
-            )}
-          </div>
-        </section>
         <section className="mt-10">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -229,6 +168,67 @@ export function ProjectHome({
             </div>
           </section>
         )}
+        <section data-testid="project-workspaces-section" className="mt-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">{t("projectsUi.workspaces")}</h2>
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-muted-foreground">{rootWorkspaces.length}</span>
+              {project.status === "active" && (
+                <Button size="sm" disabled={busy} onClick={onCreateWorkspace}>
+                  <Plus data-icon="inline-start" />{t("sidebar.newWorkspace")}
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
+            {rootWorkspaces.map((stream) => (
+              <div
+                key={stream.id}
+                data-testid={`workspace-list-row-${stream.id}`}
+                className="flex items-center gap-1"
+              >
+                <button
+                  onClick={() => onOpen(stream.id)}
+                  className="flex min-w-0 flex-1 items-center gap-3 p-4 text-left hover:bg-muted/50"
+                >
+                  <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
+                    <Workflow className="size-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold">
+                        {stream.name}
+                      </p>
+                      {stream.status === "archived" && <Badge>{t("labels.archived")}</Badge>}
+                    </div>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {stream.description || stream.checkout_path}
+                    </p>
+                  </div>
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
+                </button>
+                <div className="pr-2">
+                  <RecordActionMenu
+                    kind="workspace"
+                    name={stream.name}
+                    status={stream.status}
+                    busy={busy}
+                    onDelete={() => onDeleteWorkspace(stream)}
+                    onDeleteBlocked={() => onDeleteWorkspaceBlocked(stream)}
+                  />
+                </div>
+              </div>
+            ))}
+            {rootWorkspaces.length === 0 && (
+              <Empty className="py-12">
+                <EmptyHeader>
+                  <EmptyTitle>{t(project.status === "active" ? "projectsUi.startFeature" : "projectsUi.noWorkspacesYet")}</EmptyTitle>
+                  {project.status === "active" && <EmptyDescription>{t("projectsUi.startFeatureDescription")}</EmptyDescription>}
+                </EmptyHeader>
+              </Empty>
+            )}
+          </div>
+        </section>
         <section data-testid="project-sessions-section" className="mt-10">
           <div className="flex items-center justify-between">
             <div>
