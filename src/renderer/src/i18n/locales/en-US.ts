@@ -599,6 +599,7 @@ export const enUS = {
     "sessionState": "Session is {{status}}"
   },
   "workspaceUi": {
+    "noRemoteDeliveryHint": "This repository has no remote. Choose local merge or preserve without delivery.",
     "featureDescription": "Develop one feature in this Workspace. Split it into Forks when you need separate subtasks.",
     "subtaskDescription": "Complete this subtask as part of the parent Workspace’s feature.",
     "splitFeature": "Split your feature into subtasks",

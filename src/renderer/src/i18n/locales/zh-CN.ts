@@ -601,6 +601,7 @@ export const zhCN = {
     "sessionState": "Session {{status}}"
   },
   "workspaceUi": {
+    "noRemoteDeliveryHint": "这个仓库没有远程仓库，可选择合并到本地基线或仅保留、不交付。",
     "featureDescription": "在这个 Workspace 中开发一项 feature，需要拆分工作时再创建 Fork。",
     "subtaskDescription": "在这个 Fork 中完成上层 Workspace 所属 feature 的一项子任务。",
     "splitFeature": "把 feature 拆成子任务",

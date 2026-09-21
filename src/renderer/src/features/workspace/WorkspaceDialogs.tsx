@@ -100,6 +100,16 @@ export function CreateWorkspaceDialog({
       ] as const),
     )
       .then((entries) => {
+        if (controller.signal.aborted) return;
+        setDeliveryModes((current) => {
+          const next = { ...current };
+          for (const [id, options] of entries) {
+            if (options.remotes.length === 0 && (next[id] ?? "push_branch") === "push_branch") {
+              next[id] = "local_merge";
+            }
+          }
+          return next;
+        });
         setBranches(Object.fromEntries(entries));
         setBaseBranches(
           Object.fromEntries(
@@ -240,10 +250,13 @@ export function CreateWorkspaceDialog({
                         }))
                       }
                     >
-                      <option value="push_branch">{t("workspaceUi.pushFeatureBranch")}</option>
+                      <option value="push_branch" disabled={!options?.remotes.length}>{t("workspaceUi.pushFeatureBranch")}</option>
                       <option value="local_merge">{t("workspaceUi.mergeIntoLocalBase")}</option>
                       <option value="keep">{t("workspaceUi.preserveWithoutDelivery")}</option>
                     </Select>
+                    {options && options.remotes.length === 0 && (
+                      <FieldDescription>{t("workspaceUi.noRemoteDeliveryHint")}</FieldDescription>
+                    )}
                   </Field>
                   {mode === "push_branch" && (
                     <Field>
