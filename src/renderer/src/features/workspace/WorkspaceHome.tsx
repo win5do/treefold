@@ -295,7 +295,6 @@ export function WorkspaceHome({
                 {detail.status === "active" && (
                   <Button
                     size="sm"
-                    variant="secondary"
                     onClick={() => setTodoDialog({ content: "" })}
                   >
                     <Plus data-icon="inline-start" />{t("workspaceUi.addTodo")}</Button>
@@ -560,13 +559,19 @@ export function WorkspaceHome({
               <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.repositoryLifecycleDescription")}</p>
             </div>
             {detail.status === "active" && (
-              <Button
-                size="sm"
-                variant="secondary"
+              <ActionMenu
+                label={t("workspaceUi.actions")}
+                testId="workspace-repositories-actions"
                 disabled={busy}
-                onClick={onResync}
               >
-                <RefreshCw data-icon="inline-start" />{t("workspaceUi.resync")}</Button>
+                <ActionMenuItem
+                  icon={<RefreshCw className="size-3.5" />}
+                  disabled={busy}
+                  onClick={onResync}
+                >
+                  {t("workspaceUi.resync")}
+                </ActionMenuItem>
+              </ActionMenu>
             )}
           </div>
           <div className="mt-3 grid gap-3">

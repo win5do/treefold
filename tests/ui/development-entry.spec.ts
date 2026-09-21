@@ -27,6 +27,20 @@ test("development pages open creation flows in their owning scope", async () => 
       expect((await request).postDataJSON()).toMatchObject({ kind: "shell" });
       await expect(page).toHaveURL(new RegExp(`/workspaces/${id}/sessions/`));
     }
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await page.route(`**/api/workspaces/${FIXTURE_IDS.workspace}/resync`, async route => {
+      const response = await page!.request.get(`${harness.apiUrl}/api/workspaces/${FIXTURE_IDS.workspace}`);
+      await route.fulfill({ json: await response.json() });
+    });
+    await expect(page.getByTestId(`workspace-session-${FIXTURE_IDS.workspaceShell}`)).toBeVisible();
+    await page.getByTestId("workspace-repositories-actions-trigger").scrollIntoViewIfNeeded();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    await page.getByTestId("workspace-repositories-actions-trigger").click();
+    await page.getByTestId("workspace-repositories-actions").waitFor();
+    const resync = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith(`/api/workspaces/${FIXTURE_IDS.workspace}/resync`));
+    await page.getByTestId("workspace-repositories-actions").getByRole("menuitem", { name: "Resync", exact: true }).click();
+    expect((await resync).ok()).toBe(true);
+    await expect(page.getByTestId("workspace-repositories-actions-trigger")).toBeEnabled();
     harness.archiveAllStreams();
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
     await page.reload();
