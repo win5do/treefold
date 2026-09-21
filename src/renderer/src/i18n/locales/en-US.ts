@@ -138,7 +138,9 @@ export const enUS = {
     deleteCleanupBlocked: "Managed files cannot be cleaned safely",
     deleteCleanupReady: "Managed files are ready to clean",
     deleteCleanupSummary: "Treefold will remove {{sources}} managed source(s) and {{worktrees}} managed worktree(s).",
-    empty: "No Projects yet",
+    empty: "Add your first Project",
+    emptyDescription: "Choose a local Git repository to organize code directories and Sessions in Treefold.",
+    emptyHint: "Click New Project in the top right to get started.",
   },
   settings: {
     title: "Settings",

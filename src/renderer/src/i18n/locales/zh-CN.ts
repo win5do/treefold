@@ -140,7 +140,9 @@ export const zhCN = {
     deleteCleanupBlocked: "无法安全清理受管理的文件",
     deleteCleanupReady: "受管理的文件可以安全清理",
     deleteCleanupSummary: "Treefold 将删除 {{sources}} 个受管理的源码目录和 {{worktrees}} 个受管理的工作树。",
-    empty: "暂无 Project",
+    empty: "添加你的第一个 Project",
+    emptyDescription: "选择本地 Git 仓库，在 Treefold 中组织代码目录和 Session。",
+    emptyHint: "点击右上角「新建 Project」开始。",
   },
   settings: {
     title: "设置",
