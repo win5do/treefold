@@ -768,6 +768,7 @@ export const zhCN = {
     "expandRepository": "展开仓库 {{name}}"
   },
   "labels": {
+    "repository": "仓库",
     "archivedReadOnly": "已归档 · 只读",
     "readOnly": "只读",
     "notConfigured": "未配置",

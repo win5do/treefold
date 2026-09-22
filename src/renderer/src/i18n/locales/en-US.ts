@@ -766,6 +766,7 @@ export const enUS = {
     "expandRepository": "Expand repository {{name}}"
   },
   "labels": {
+    "repository": "repository",
     "archivedReadOnly": "archived · read-only",
     "readOnly": "read only",
     "notConfigured": "not configured",
