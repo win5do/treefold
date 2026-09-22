@@ -18,6 +18,8 @@ pub struct FinishBatchItem {
     pub delivered: bool,
     pub cleaned: bool,
     pub error: Option<String>,
+    #[serde(default)]
+    pub error_code: Option<String>,
     pub operation_id: Option<String>,
 }
 

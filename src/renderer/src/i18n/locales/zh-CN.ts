@@ -243,6 +243,22 @@ export const zhCN = {
     "noActionsFound": "未找到匹配的操作。"
   },
   "deliveryUi": {
+    "recovery": {
+      "parentDirectoryMissing": "上级 Workspace 的目录不存在，请先处理上级 Workspace。",
+      "parentNotGit": "上级 Workspace 的目录不是有效的 Git 工作树，请先处理上级 Workspace。",
+      "parentGitBroken": "上级 Workspace 的 Git 关联已损坏，请先处理上级 Workspace。",
+      "forceDelete": "强制删除",
+      "title": "强制删除“{{name}}”？",
+      "workspaceDescription": "将从 App 中永久删除此 Workspace 及其所有 Fork、Session 历史、Todo 和操作记录。",
+      "forkDescription": "将从 App 中永久删除此 Fork、Session 历史和操作记录。上级 Workspace 中关联的 Todo 会保留并解除指派，未完成的 Todo 将恢复为待办。",
+      "diskDescription": "不会删除磁盘文件、工作树或 Git 分支，也不会撤销已经完成的合并。此操作不可撤销。",
+      "directoryMissing": "目录不存在",
+      "notGit": "该目录不是有效的 Git 工作树",
+      "gitBroken": "工作树的 Git 关联已损坏",
+      "unavailable": "仅当目录不存在或 Git 工作树异常时才能强制删除。请重新检查。",
+      "sessionActive": "请先停止此 Workspace、Fork 及冲突处理中的 Session，再强制删除。",
+      "operationActive": "请等待正在执行的完成任务结束，再强制删除。"
+    },
     "rEPOSITORY": "仓库",
     "reviewChanges": "查看修改",
     "openShell": "打开 Shell",
@@ -668,7 +684,7 @@ export const zhCN = {
     "background": "后台",
     "runShellAndCodexSessionsInTheSameWorkspace": "在同一个 Workspace 中运行 Shell 和 Codex Session。",
     "workspaceRepositories": "Workspace 仓库",
-    "resync": "重新同步",
+    "resync": "检查并修复工作树",
     "nonGitDirectories": "非 Git 目录",
     "readOnlyContextAvailableOnlyAsAShellCwd": "只读 Context，仅可用作 Shell 工作目录。",
     "forks": "Fork",

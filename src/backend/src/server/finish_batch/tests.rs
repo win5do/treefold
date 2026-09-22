@@ -556,3 +556,5 @@ async fn finish_batch_archives_legacy_completed_repositories_without_repeating_d
         assert!(Path::new(repository.checkout_path.as_ref().unwrap()).exists());
     }
 }
+
+mod recovery;

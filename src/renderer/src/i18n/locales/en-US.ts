@@ -241,6 +241,22 @@ export const enUS = {
     "noActionsFound": "No actions found."
   },
   "deliveryUi": {
+    "recovery": {
+      "parentDirectoryMissing": "The parent Workspace directory does not exist. Resolve the parent Workspace first.",
+      "parentNotGit": "The parent Workspace directory is not a valid Git worktree. Resolve the parent Workspace first.",
+      "parentGitBroken": "The parent Workspace Git metadata is broken. Resolve the parent Workspace first.",
+      "forceDelete": "Force delete",
+      "title": "Force delete “{{name}}”?",
+      "workspaceDescription": "Permanently remove this Workspace and all its Forks, Session history, Todos, and operation records from the App.",
+      "forkDescription": "Permanently remove this Fork, its Session history, and operation records from the App. Its assigned Todo in the parent Workspace will be kept and unassigned; unfinished Todos will return to pending.",
+      "diskDescription": "Disk files, worktrees, and Git branches will remain unchanged. Completed merges will not be undone. This cannot be undone.",
+      "directoryMissing": "Directory does not exist",
+      "notGit": "Directory is not a valid Git worktree",
+      "gitBroken": "Worktree Git metadata is broken",
+      "unavailable": "Force delete is only available for a missing or invalid Git worktree. Check again.",
+      "sessionActive": "Stop running Sessions in this Workspace, its Forks, and conflict resolvers before force deleting.",
+      "operationActive": "Wait for the running Finish task before force deleting."
+    },
     "rEPOSITORY": "REPOSITORY",
     "reviewChanges": "Review Changes",
     "openShell": "Open Shell",
@@ -666,7 +682,7 @@ export const enUS = {
     "background": "Background",
     "runShellAndCodexSessionsInTheSameWorkspace": "Run Shell and Codex Sessions in the same Workspace.",
     "workspaceRepositories": "Workspace Repositories",
-    "resync": "Resync",
+    "resync": "Check and repair worktrees",
     "nonGitDirectories": "Non-Git Directories",
     "readOnlyContextAvailableOnlyAsAShellCwd": "Read-only context; available only as a Shell cwd.",
     "forks": "Forks",

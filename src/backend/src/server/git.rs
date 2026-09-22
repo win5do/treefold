@@ -918,28 +918,53 @@ pub(super) async fn sync_project_repository(
 }
 
 pub(super) fn workspace_repository_git_path(location: &WorkspaceRepository) -> Result<&str> {
-    if location.access_mode != "read_write" || location.git_status != "ready" {
+    if location.access_mode != "read_write" {
         return Err(AppError::BadRequest(
-            "workspace repository is not Git-enabled".into(),
+            "workspace repository is read-only".into(),
         ));
     }
-    let path = location
-        .checkout_path
-        .as_deref()
-        .ok_or_else(|| AppError::BadRequest("workspace repository has no worktree".into()))?;
-    if !Path::new(path).is_dir() {
-        return Err(AppError::BadRequest(
-            "workspace repository unavailable: worktree is missing".into(),
-        ));
-    }
-    command_output(
-        Path::new(path),
-        "git",
-        &["rev-parse", "--is-inside-work-tree"],
-    )
-    .map_err(|_| {
-        AppError::BadRequest("workspace repository unavailable: Git metadata is broken".into())
+    let unavailable = |code, message| AppError::api(StatusCode::CONFLICT, code, message);
+    let path = location.checkout_path.as_deref().ok_or_else(|| {
+        unavailable(
+            "WORKTREE_DIRECTORY_MISSING",
+            "Worktree directory does not exist",
+        )
     })?;
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => {
+            return Err(unavailable(
+                "WORKTREE_DIRECTORY_MISSING",
+                "Worktree directory does not exist",
+            ));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(unavailable(
+                "WORKTREE_DIRECTORY_MISSING",
+                "Worktree directory does not exist",
+            ));
+        }
+        Err(error) => return Err(AppError::Internal(error.into())),
+    }
+    // Do not let Git discover an unrelated repository in an ancestor directory.
+    if !Path::new(path)
+        .join(".git")
+        .try_exists()
+        .map_err(anyhow::Error::from)?
+    {
+        return Err(unavailable(
+            "WORKTREE_NOT_GIT",
+            "Directory is not a Git worktree",
+        ));
+    }
+    let root = command_output(Path::new(path), "git", &["rev-parse", "--show-toplevel"])
+        .map_err(|_| unavailable("WORKTREE_GIT_BROKEN", "Worktree Git metadata is broken"))?;
+    if normalized_path(&root) != normalized_path(path) {
+        return Err(unavailable(
+            "WORKTREE_GIT_BROKEN",
+            "Worktree Git metadata is broken",
+        ));
+    }
     Ok(path)
 }
 

@@ -9,6 +9,8 @@ import type {
 } from "@/domain/types";
 import { invalidateHierarchyQueries } from "@/features/app/runtimeInvalidation";
 
+import { finishError, type FinishError } from "./finishErrors";
+
 type Draft = Omit<FinishPlanItem, "repository_id" | "preflight_id">;
 export function useFinishBatch(workspace: WorkspaceDetail | null) {
   const client = useQueryClient();
@@ -18,7 +20,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
   const [preflights, setPreflights] = useState<
     Record<string, DeliveryPreflight>
   >({});
-  const [checks, setChecks] = useState<Record<string, string>>({});
+  const [checks, setChecks] = useState<Record<string, FinishError>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
@@ -78,7 +80,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
           timer = setTimeout(() => void poll(), 1000);
       } catch (cause) {
         if (stopped) return;
-        setError(String(cause));
+        setError(cause instanceof Error ? cause.message : String(cause));
         timer = setTimeout(() => void poll(), 2000);
       }
     };
@@ -90,10 +92,11 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
   }, [workspace?.id, revision, client]);
 
   useEffect(() => {
-    if (!workspace || !loaded || batch) return;
+    // Recheck paused legacy batches too: old persisted errors had no structured code.
+    if (!workspace || !loaded || (batch && batch.status !== "paused")) return;
     const controller = new AbortController();
     setPreflights({});
-    setChecks(Object.fromEntries(Object.keys(drafts).map((id) => [id, ""])));
+    setChecks({});
     for (const [id, draft] of Object.entries(drafts)) {
       void workspacesApi
         .preflight(id, draft.code_action, controller.signal)
@@ -103,11 +106,11 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
         })
         .catch((cause) => {
           if (!controller.signal.aborted)
-            setChecks((current) => ({ ...current, [id]: String(cause) }));
+            setChecks((current) => ({ ...current, [id]: finishError(cause) }));
         });
     }
     return () => controller.abort();
-  }, [workspace?.id, loaded, Boolean(batch), drafts]);
+  }, [workspace?.id, loaded, batch?.status, drafts]);
 
   const ready =
     loaded &&
@@ -145,7 +148,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
       setRevision((value) => value + 1);
       await invalidateHierarchyQueries(client);
     } catch (cause) {
-      setError(String(cause));
+      setError(cause instanceof Error ? cause.message : String(cause));
       // A lost response does not mean that the backend rejected the batch.
       try {
         if (await workspacesApi.finishBatch(workspace.id)) {

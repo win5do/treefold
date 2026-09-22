@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT DISTINCT resolver_session_id FROM parent_operations WHERE resolver_session_id IS NOT NULL AND (workspace_id IN (SELECT id FROM workspaces WHERE id = ? OR parent_workspace_id = ?) OR target_workspace_id IN (SELECT id FROM workspaces WHERE id = ? OR parent_workspace_id = ?))",
+  "describe": {
+    "columns": [
+      {
+        "name": "resolver_session_id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "parent_operations",
+            "name": "resolver_session_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "fd02586ab3be54632f22b8c66c477b13a77c2a36a06f0d88a9bbea8addcb355d"
+}

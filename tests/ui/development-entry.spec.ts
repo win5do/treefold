@@ -38,7 +38,7 @@ test("development pages open creation flows in their owning scope", async () => 
     await page.getByTestId("workspace-repositories-actions-trigger").click();
     await page.getByTestId("workspace-repositories-actions").waitFor();
     const resync = page.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith(`/api/workspaces/${FIXTURE_IDS.workspace}/resync`));
-    await page.getByTestId("workspace-repositories-actions").getByRole("menuitem", { name: "Resync", exact: true }).click();
+    await page.getByTestId("workspace-repositories-actions").getByRole("menuitem", { name: "Check and repair worktrees", exact: true }).click();
     expect((await resync).ok()).toBe(true);
     await expect(page.getByTestId("workspace-repositories-actions-trigger")).toBeEnabled();
     harness.archiveAllStreams();

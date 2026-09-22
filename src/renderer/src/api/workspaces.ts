@@ -26,6 +26,8 @@ export const workspacesApi = {
     request<Workspace>(`/api/workspaces/${id}`, { method: "PATCH", json }),
   delete: (id: string) =>
     request(`/api/workspaces/${id}`, { method: "DELETE" }),
+  forceDelete: (id: string) =>
+    request(`/api/workspaces/${id}/force-delete`, { method: "POST" }),
   createFork: (id: string, json: unknown) =>
     request<Workspace>(`/api/workspaces/${id}/forks`, { method: "POST", json }),
   sessions: (id: string, signal?: AbortSignal) =>

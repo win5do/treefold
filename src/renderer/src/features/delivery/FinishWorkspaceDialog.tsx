@@ -22,6 +22,8 @@ import { NativeSelect as Select } from "@/components/ui/native-select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { ParentOperation, Session, WorkspaceDetail } from "@/domain/types";
 import { useFinishBatch } from "./useFinishBatch";
+import { ForceDeleteWorkspace } from "./ForceDeleteWorkspace";
+import { finishErrorText, isWorktreeError } from "./finishErrors";
 import { FinishConflict } from "./FinishConflict";
 
 export function FinishWorkspaceDialog({
@@ -146,6 +148,29 @@ export function FinishWorkspaceDialog({
                 const progressItem = flow.batch?.items.find(
                   (entry) => entry.repository_id === item.id,
                 );
+                const structuralCheck = isWorktreeError(
+                  flow.checks[item.id]?.code,
+                )
+                  ? flow.checks[item.id]
+                  : null;
+                const progressError =
+                  structuralCheck ??
+                  (progressItem?.error
+                    ? {
+                        message: progressItem.error,
+                        code: progressItem.error_code,
+                      }
+                    : null);
+                const recoveryAction =
+                  workspace &&
+                  (!flow.batch || flow.batch.status === "paused") &&
+                  (structuralCheck ||
+                    isWorktreeError(progressItem?.error_code)) ? (
+                    <ForceDeleteWorkspace
+                      workspace={workspace}
+                      onDeleted={onCompleted}
+                    />
+                  ) : null;
                 return (
                   <TabsContent
                     key={item.id}
@@ -162,14 +187,15 @@ export function FinishWorkspaceDialog({
                             `deliveryUi.batchStates.${progressItem?.status ?? "pending"}`,
                           )}
                         </p>
-                        {progressItem?.error && (
+                        {progressError && (
                           <p
                             role="alert"
                             className="break-words text-destructive"
                           >
-                            {progressItem.error}
+                            {finishErrorText(progressError, t)}
                           </p>
                         )}
+                        {recoveryAction}
                         {progressItem?.operation_id && (
                           <FinishConflict
                             id={progressItem.operation_id}
@@ -231,7 +257,9 @@ export function FinishWorkspaceDialog({
                                   ? check.blockers.length
                                     ? "states.blocked"
                                     : "states.ready"
-                                  : "states.checking",
+                                  : flow.checks[item.id]
+                                    ? "states.failed"
+                                    : "states.checking",
                               )}
                             </p>
                             {check && (
@@ -268,9 +296,10 @@ export function FinishWorkspaceDialog({
                                 role="alert"
                                 className="break-words text-destructive"
                               >
-                                {flow.checks[item.id]}
+                                {finishErrorText(flow.checks[item.id], t)}
                               </p>
                             )}
+                            {recoveryAction}
                             {check?.source_dirty && (
                               <div className="flex flex-wrap gap-2">
                                 <Button

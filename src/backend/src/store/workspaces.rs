@@ -275,11 +275,28 @@ impl Store {
         }
     }
     pub async fn delete_workspace(&self, id: &str) -> Result<()> {
+        self.remove_workspace_records(id, false).await
+    }
+    pub async fn workspace_removal_resolvers(&self, id: &str) -> Result<Vec<String>> {
+        let rows = sqlx::query!(
+            "SELECT DISTINCT resolver_session_id FROM parent_operations WHERE resolver_session_id IS NOT NULL AND (workspace_id IN (SELECT id FROM workspaces WHERE id = ? OR parent_workspace_id = ?) OR target_workspace_id IN (SELECT id FROM workspaces WHERE id = ? OR parent_workspace_id = ?))",
+            id, id, id, id
+        ).fetch_all(&self.pool).await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| row.resolver_session_id)
+            .collect())
+    }
+    pub async fn force_delete_workspace(&self, id: &str) -> Result<()> {
+        self.remove_workspace_records(id, true).await
+    }
+    async fn remove_workspace_records(&self, id: &str, force: bool) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         let blocked = sqlx::query!(
-            "SELECT id FROM workspaces WHERE (id = ? OR parent_workspace_id = ?) AND (status != 'archived' OR kind = 'base') LIMIT 1",
+            "SELECT id FROM workspaces WHERE (id = ? OR parent_workspace_id = ?) AND ((? = 0 AND status != 'archived') OR kind = 'base') LIMIT 1",
             id,
-            id
+            id,
+            force
         )
         .fetch_optional(&mut *tx)
         .await?;
@@ -287,6 +304,13 @@ impl Store {
             return Err(AppError::BadRequest(
                 "Finish the Workspace and its Forks before permanently deleting them".into(),
             ));
+        }
+        if force {
+            // A parent Todo survives deletion of its assigned Fork. Release it for reassignment.
+            sqlx::query!(
+                "UPDATE todos SET fork_id = NULL, status = CASE WHEN status = 'done' THEN 'done' ELSE 'pending' END, blocked_reason = NULL, updated_at = ? WHERE fork_id IN (SELECT id FROM workspaces WHERE id = ? OR parent_workspace_id = ?)",
+                now(), id, id
+            ).execute(&mut *tx).await?;
         }
         sqlx::query!("DELETE FROM workspaces WHERE parent_workspace_id = ?", id)
             .execute(&mut *tx)
@@ -503,6 +527,7 @@ mod deletion_tests {
         sqlx::query("CREATE TRIGGER reject_parent_delete BEFORE DELETE ON workspaces WHEN OLD.id='parent' BEGIN SELECT RAISE(ABORT,'test deletion failure'); END")
             .execute(&store.pool).await.unwrap();
         assert!(store.delete_workspace("parent").await.is_err());
+        assert!(store.force_delete_workspace("parent").await.is_err());
         assert!(store.workspace("fork").await.is_ok());
         assert_eq!(store.sessions("fork").await.unwrap().len(), 1);
         assert_eq!(

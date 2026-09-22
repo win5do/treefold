@@ -286,7 +286,27 @@ pub(super) async fn workspace_repository_delivery_target(
                 AppError::BadRequest("parent Workspace does not contain this location".into())
             })?;
         return Ok((
-            workspace_repository_git_path(&parent)?.into(),
+            workspace_repository_git_path(&parent)
+                .map_err(|error| match error {
+                    AppError::Api {
+                        code,
+                        status,
+                        message,
+                        details,
+                    } => AppError::Api {
+                        code: match code {
+                            "WORKTREE_DIRECTORY_MISSING" => "PARENT_WORKTREE_DIRECTORY_MISSING",
+                            "WORKTREE_NOT_GIT" => "PARENT_WORKTREE_NOT_GIT",
+                            "WORKTREE_GIT_BROKEN" => "PARENT_WORKTREE_GIT_BROKEN",
+                            other => other,
+                        },
+                        status,
+                        message,
+                        details,
+                    },
+                    other => other,
+                })?
+                .into(),
             parent.branch.unwrap_or_default(),
         ));
     }

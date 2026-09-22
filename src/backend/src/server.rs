@@ -504,6 +504,10 @@ fn app(state: AppState) -> Router {
             "/api/workspaces/{id}/finish-batch/resume",
             post(finish_batch::resume_finish_batch),
         )
+        .route(
+            "/api/workspaces/{id}/force-delete",
+            post(workspace_removal::force_delete_workspace),
+        )
         .route("/api/workspaces/{id}/archive", post(archive_workspace))
         .route("/api/workspaces/{id}/reveal", post(reveal_workspace))
         .route(
@@ -533,6 +537,9 @@ fn app(state: AppState) -> Router {
         .route("/api/settings", get(get_settings).patch(update_settings))
         .fallback(route_not_found)
         .method_not_allowed_fallback(method_not_allowed)
+        .layer(axum::middleware::from_fn(
+            workspace_removal::guard_mutations,
+        ))
         .layer(cors)
         .layer(axum::middleware::from_fn(crate::request_context::correlate))
         .with_state(state)
@@ -618,6 +625,7 @@ mod session;
 mod tests;
 mod verification;
 mod workspace;
+mod workspace_removal;
 mod worktree_names;
 
 use agent::*;

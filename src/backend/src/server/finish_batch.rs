@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::{collections::HashSet, sync::OnceLock};
 use tokio::sync::Mutex;
 
-fn workers() -> &'static Mutex<HashSet<String>> {
+pub(super) fn workers() -> &'static Mutex<HashSet<String>> {
     static WORKERS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     WORKERS.get_or_init(|| Mutex::new(HashSet::new()))
 }
@@ -149,6 +149,7 @@ pub(super) async fn prepare_batch(
             delivered: false,
             cleaned: false,
             error: None,
+            error_code: None,
             operation_id: None,
         });
     }
@@ -233,6 +234,7 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
             }
             batch.items[index].status = if cleanup { "cleaning" } else { "delivering" }.into();
             batch.items[index].error = None;
+            batch.items[index].error_code = None;
             state.store.save_finish_batch(&batch).await?;
             state.runtime.publish_sessions();
             let plan = batch.items[index].plan.clone();
@@ -319,7 +321,12 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
                     item.status = "blocked".into();
                     match result {
                         Ok(operation) => item.operation_id = operation,
-                        Err(error) => item.error = Some(error.to_string()),
+                        Err(error) => {
+                            if let AppError::Api { code, .. } = &error {
+                                item.error_code = Some((*code).into());
+                            }
+                            item.error = Some(error.to_string());
+                        }
                     }
                     batch.status = "paused".into();
                     state.store.save_finish_batch(&batch).await?;

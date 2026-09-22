@@ -419,6 +419,7 @@ export type FinishBatch = {
     delivered: boolean;
     cleaned: boolean;
     error?: string | null;
+    error_code?: string | null;
     operation_id?: string | null;
   })[];
 };
