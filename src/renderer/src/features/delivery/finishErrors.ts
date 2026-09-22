@@ -21,9 +21,8 @@ export function finishErrorText(error: FinishError, t: TFunction) {
     WORKTREE_DIRECTORY_MISSING: "directoryMissing",
     WORKTREE_NOT_GIT: "notGit",
     WORKTREE_GIT_BROKEN: "gitBroken",
-    FORCE_DELETE_NOT_AVAILABLE: "unavailable",
-    FORCE_DELETE_SESSION_ACTIVE: "sessionActive",
-    FORCE_DELETE_OPERATION_ACTIVE: "operationActive",
+    FORCE_SKIP_NOT_AVAILABLE: "skipUnavailable",
+    FINISH_SESSION_ACTIVE: "sessionActive",
   };
   const key = keys[error.code ?? ""];
   return key ? t(`deliveryUi.recovery.${key}`) : error.message;

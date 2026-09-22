@@ -733,7 +733,7 @@ function WorkspaceRepositoryRow({
               {t(`states.${location.git_status}`, { defaultValue: location.git_status })}
             </Badge>
             <Badge>{t(`states.${location.access_mode}`, { defaultValue: location.access_mode })}</Badge>
-            <Badge>{t(`states.${location.delivery_status}`, { defaultValue: location.delivery_status })}</Badge>
+            <Badge>{location.close_outcome === "skipped" ? t("deliveryUi.batchStates.skipped") : t(`states.${location.delivery_status}`, { defaultValue: location.delivery_status })}</Badge>
           </div>
           <code
             className="mt-2 block truncate text-[10px] text-muted-foreground"

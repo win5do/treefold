@@ -136,8 +136,17 @@ pub(super) async fn prepare_batch(
     }
     let mut items = Vec::new();
     for plan in plans {
-        super::delivery::validate_delivery_input(&input(&plan, true))?;
-        verify_plan(state, &plan, false).await?;
+        if plan.code_action == "skip" {
+            verify_skip(state, &plan.repository_id).await?;
+            if plan.delete_worktree || plan.delete_branch {
+                return Err(AppError::BadRequest(
+                    "Skipped repositories cannot be cleaned up".into(),
+                ));
+            }
+        } else {
+            super::delivery::validate_delivery_input(&input(&plan, true))?;
+            verify_plan(state, &plan, false).await?;
+        }
         let repository = repositories
             .iter()
             .find(|r| r.id == plan.repository_id)
@@ -159,6 +168,84 @@ pub(super) async fn prepare_batch(
         items,
         error: None,
     })
+}
+
+// A forced plan may skip only a structurally unavailable source, never a dirty
+// worktree, merge conflict, unavailable parent, or network failure.
+async fn verify_skip(state: &AppState, id: &str) -> Result<()> {
+    let repository = state.store.workspace_repository(id).await?;
+    match super::workspace_repository_git_path(&repository) {
+        Err(AppError::Api {
+            code: "WORKTREE_DIRECTORY_MISSING" | "WORKTREE_NOT_GIT" | "WORKTREE_GIT_BROKEN",
+            ..
+        }) => {}
+        Err(error) => return Err(error),
+        Ok(_) => {
+            return Err(AppError::api(
+                StatusCode::CONFLICT,
+                "FORCE_SKIP_NOT_AVAILABLE",
+                "This repository is available again. Repair or recheck the plan instead of skipping it.",
+            ));
+        }
+    }
+    super::finish_recovery::ensure_stopped(state, &repository.workspace_id).await
+}
+
+#[derive(Deserialize)]
+pub(super) struct SkipRepositories {
+    pub repository_ids: Vec<String>,
+}
+
+pub(super) async fn force_resume_finish_batch(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+    ApiJson(request): ApiJson<SkipRepositories>,
+) -> Result<Json<FinishBatch>> {
+    let mut active = workers().lock().await;
+    if active.contains(&id) {
+        return Err(AppError::BadRequest("Finish is still running".into()));
+    }
+    let mut batch = state
+        .store
+        .finish_batch(&id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    if batch.status == "completed" || request.repository_ids.is_empty() {
+        return Err(AppError::BadRequest(
+            "No paused repositories to skip".into(),
+        ));
+    }
+    let check_state = state.clone();
+    batch = blocking_git_operation(move || async move {
+        let mut seen = HashSet::new();
+        for repository_id in request.repository_ids {
+            if !seen.insert(repository_id.clone()) {
+                return Err(AppError::BadRequest("Duplicate repository".into()));
+            }
+            let item = batch
+                .items
+                .iter_mut()
+                .find(|item| item.plan.repository_id == repository_id && !item.cleaned)
+                .ok_or_else(|| {
+                    AppError::BadRequest("Repository is not an unfinished batch item".into())
+                })?;
+            verify_skip(&check_state, &repository_id).await?;
+            item.plan.code_action = "skip".into();
+            item.plan.delete_worktree = false;
+            item.plan.delete_branch = false;
+            item.status = "pending".into();
+            item.error = None;
+            item.error_code = None;
+        }
+        Ok(batch)
+    })
+    .await?;
+    batch.status = "running".into();
+    batch.error = None;
+    state.store.save_finish_batch(&batch).await?;
+    active.insert(id);
+    launch(state, batch.clone(), true);
+    Ok(Json(batch))
 }
 
 // A retry may accept a moved target after conflict resolution, but never silently
@@ -225,6 +312,65 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
             ));
         }
         for index in 0..batch.items.len() {
+            if batch.items[index].plan.code_action == "skip" {
+                if !batch.items[index].cleaned {
+                    let _gate = super::finish_recovery::mutation_gate().write().await;
+                    let repository_id = batch.items[index].plan.repository_id.clone();
+                    let check_state = state.clone();
+                    let result = blocking_git_operation(move || async move {
+                        // The skip was explicitly authorized while unavailable. A retry
+                        // keeps that decision and never touches the repository's files.
+                        let owner = check_state
+                            .store
+                            .workspace_repository(&repository_id)
+                            .await?
+                            .workspace_id;
+                        super::finish_recovery::ensure_stopped(&check_state, &owner).await?;
+                        let repository = check_state
+                            .store
+                            .workspace_repository(&repository_id)
+                            .await?;
+                        // Preserve a recorded successful delivery if only cleanup is skipped.
+                        if !matches!(
+                            repository.delivery_status.as_str(),
+                            "delivered" | "pushed" | "kept"
+                        ) {
+                            check_state
+                                .store
+                                .finish_workspace_repository(
+                                    &repository_id,
+                                    "discarded",
+                                    "skipped",
+                                    None,
+                                    &crate::store::now(),
+                                )
+                                .await?;
+                        }
+                        Ok(())
+                    })
+                    .await;
+                    let item = &mut batch.items[index];
+                    if let Err(error) = result {
+                        item.status = "blocked".into();
+                        item.error = Some(error.to_string());
+                        item.error_code = match error {
+                            AppError::Api { code, .. } => Some(code.into()),
+                            _ => None,
+                        };
+                        batch.status = "paused".into();
+                        state.store.save_finish_batch(&batch).await?;
+                        state.runtime.publish_sessions();
+                        return Ok(());
+                    }
+                    item.cleaned = true;
+                    item.status = "skipped".into();
+                    item.operation_id = None;
+                    item.error = None;
+                    item.error_code = None;
+                    state.store.save_finish_batch(&batch).await?;
+                }
+                continue;
+            }
             if if cleanup {
                 batch.items[index].cleaned
             } else {

@@ -297,175 +297,193 @@ test("Finish can archive repositories delivered by the earlier per-repository fl
   }
 });
 
-test("Finish offers Force delete only for structural failures and requires confirmation", async () => {
-  const harness = await startUiHarness();
-  let page: Page | undefined;
-  let code = "BAD_REQUEST";
-  let removals = 0;
-  let failRemoval = true;
-  let legacyBatch: FinishBatch | null = null;
-  const refreshes: string[] = [];
-  try {
-    page = await createUiSession({
-      apiUrl: harness.apiUrl,
-      sessionName: "force-delete",
-    });
-    await page.route(
-      `**/api/workspaces/${FIXTURE_IDS.workspace}`,
-      async (route) => {
-        const response = await route.fetch();
-        const detail = await response.json();
-        detail.repositories = [
-          detail.repositories[0],
-          {
+for (const resume of [false, true]) {
+  test(`Force execute ${resume ? "resumes saved progress" : "confirms partial damage"} without bypassing healthy repository checks`, async () => {
+    const harness = await startUiHarness();
+    let page: Page | undefined;
+    const ids = [
+      FIXTURE_IDS.workspacePrimaryLocation,
+      FIXTURE_IDS.workspaceSecondaryLocation,
+    ];
+    let healthyBlocked = !resume;
+    const plans: FinishPlanItem[] = ids.map((repository_id) => ({
+      repository_id,
+      code_action: "local_merge",
+      preflight_id: "saved",
+      delete_worktree: false,
+      delete_branch: false,
+    }));
+    let batch: FinishBatch | null = resume
+      ? {
+          workspace_id: FIXTURE_IDS.workspace,
+          status: "paused",
+          items: plans.map((plan, index) => ({
+            ...plan,
+            repository_name: index ? "frontend" : "backend",
+            status: index ? "delivered" : "blocked",
+            delivered: !!index,
+            cleaned: false,
+            error: index ? null : "Legacy failure",
+          })),
+        }
+      : null;
+    const submissions: unknown[] = [];
+    try {
+      page = await createUiSession({
+        apiUrl: harness.apiUrl,
+        sessionName: "force-finish",
+      });
+      await page.route(
+        `**/api/workspaces/${FIXTURE_IDS.workspace}`,
+        async (route) => {
+          const detail = await (await route.fetch()).json();
+          detail.repositories = ids.map((id, index) => ({
             ...detail.repositories[0],
-            id: FIXTURE_IDS.workspaceSecondaryLocation,
-            repository_name: "frontend",
-          },
-        ];
-        await route.fulfill({ json: detail });
-      },
-    );
-    await page.route(
-      "**/api/workspace-repositories/*/delivery-preflight",
-      (route) =>
-        route.fulfill({
-          status: 409,
-          json: {
-            error: {
-              code: route
-                .request()
-                .url()
-                .includes(FIXTURE_IDS.workspaceSecondaryLocation)
-                ? "BAD_REQUEST"
-                : code,
-              message: "Preflight failed",
-            },
-          },
-        }),
-    );
-    await page.route(
-      `**/api/workspaces/${FIXTURE_IDS.workspace}/finish-batch`,
-      (route) =>
-        route.fulfill({ json: legacyBatch, contentType: "application/json" }),
-    );
-    await page.route(
-      `**/api/workspaces/${FIXTURE_IDS.workspace}/force-delete`,
-      async (route) => {
-        expect(route.request().method()).toBe("POST");
-        removals += 1;
-        await route.fulfill(
-          failRemoval
-            ? {
-                status: 409,
-                json: {
-                  error: {
-                    code: "FORCE_DELETE_SESSION_ACTIVE",
-                    message: "Stop Sessions",
+            id,
+            repository_name: index ? "frontend" : "backend",
+            delivery_mode: "local_merge",
+            remote_name: null,
+          }));
+          await route.fulfill({ json: detail });
+        },
+      );
+      await page.route(
+        "**/api/workspace-repositories/*/delivery-preflight",
+        (route) => {
+          const broken = route.request().url().includes(ids[0]);
+          return route.fulfill(
+            broken
+              ? {
+                  status: 409,
+                  json: {
+                    error: {
+                      code: "WORKTREE_DIRECTORY_MISSING",
+                      message: "Missing",
+                    },
+                  },
+                }
+              : {
+                  json: {
+                    id: "healthy-check",
+                    workspace_repository_id: ids[1],
+                    code_action: "local_merge",
+                    target_branch: "main",
+                    ahead: 1,
+                    behind: 0,
+                    changed_files: [],
+                    warnings: [],
+                    blockers: healthyBlocked
+                      ? ["Parent has uncommitted changes"]
+                      : [],
                   },
                 },
-              }
-            : { status: 204, body: "" },
-        );
-      },
-    );
-    page.on("request", (request) => {
-      if (removals > 1 && request.method() === "GET")
-        refreshes.push(request.url());
-    });
-    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
-    await openUiContextMenu(page, page.getByTestId("sidebar-workspace-node"));
-    await page.getByTestId("finish-workspace-action").click();
-    const dialog = page.getByRole("dialog", {
-      name: "Finish Workspace",
-      exact: true,
-    });
-    await expect(dialog.getByRole("alert")).toHaveText("Preflight failed");
-    await expect(
-      dialog.getByRole("button", { name: "Force delete", exact: true }),
-    ).toHaveCount(0);
-    code = "WORKTREE_DIRECTORY_MISSING";
-    await dialog.getByRole("button", { name: "Recheck" }).click();
-    await expect(dialog.getByRole("alert")).toHaveText(
-      "Directory does not exist",
-    );
-    await expect(
-      dialog.getByRole("button", { name: "Force delete", exact: true }),
-    ).toBeEnabled();
-    const force = dialog.getByRole("button", {
-      name: "Force delete",
-      exact: true,
-    });
-    // Recovery belongs to the owner, so switching to another repository keeps it available.
-    await dialog.getByRole("tab", { name: /frontend/ }).click();
-    await expect(dialog.getByRole("alert")).toHaveText("Preflight failed");
-    await expect(force).toHaveCount(1);
-    await force.click();
-    const confirmation = page.getByRole("alertdialog");
-    await expect(confirmation).toBeVisible();
-    expect(removals).toBe(0);
-    await confirmation
-      .getByRole("button", { name: "Cancel", exact: true })
-      .click();
-    await expect(dialog).toBeVisible();
-    expect(removals).toBe(0);
-    // Old saved failures have no error_code; reopening must inspect actual state.
-    legacyBatch = {
-      workspace_id: FIXTURE_IDS.workspace,
-      status: "paused",
-      items: [
-        {
-          repository_id: FIXTURE_IDS.workspacePrimaryLocation,
-          repository_name: "fixture-repository",
-          preflight_id: "legacy",
-          code_action: "local_merge",
-          delete_worktree: true,
-          delete_branch: true,
-          status: "blocked",
-          delivered: false,
-          cleaned: false,
-          error: "Legacy failure",
+          );
         },
-      ],
-    };
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-    await openUiContextMenu(page, page.getByTestId("sidebar-workspace-node"));
-    await page.getByTestId("finish-workspace-action").click();
-    await expect(dialog.getByRole("alert")).toHaveText(
-      "Directory does not exist",
-    );
-    await force.click();
-    await confirmation
-      .getByRole("button", { name: "Force delete", exact: true })
-      .click();
-    await expect(confirmation.getByRole("alert")).toContainText(
-      "Stop running Sessions",
-    );
-    expect(removals).toBe(1);
-    await page.screenshot({
-      path: "/tmp/treefold-force-delete-confirmation.png",
-    });
-    failRemoval = false;
-    await confirmation
-      .getByRole("button", { name: "Force delete", exact: true })
-      .click();
-    await expect(page).toHaveURL(
-      new RegExp(`/projects/${FIXTURE_IDS.project}$`),
-    );
-    expect(removals).toBe(2);
-    await expect
-      .poll(() =>
-        refreshes.some((url) =>
-          url.includes(`/api/projects/${FIXTURE_IDS.project}`),
-        ),
-      )
-      .toBe(true);
-    harness.assertNoUnexpectedRequests();
-  } finally {
-    try {
-      await closeUiSession(page);
+      );
+      const handle = async (route: import("@playwright/test").Route) => {
+        if (route.request().method() === "POST") {
+          const input = route.request().postDataJSON();
+          submissions.push(input);
+          if (resume) expect(input).toEqual({ repository_ids: [ids[0]] });
+          else {
+            expect(input.repositories[0]).toMatchObject({
+              repository_id: ids[0],
+              code_action: "skip",
+              delete_worktree: false,
+              delete_branch: false,
+            });
+            expect(input.repositories[1]).toMatchObject({
+              repository_id: ids[1],
+              code_action: "local_merge",
+              preflight_id: "healthy-check",
+            });
+          }
+          batch = {
+            workspace_id: FIXTURE_IDS.workspace,
+            status: "completed",
+            items: plans.map((plan, index) => ({
+              ...plan,
+              repository_name: index ? "frontend" : "backend",
+              status: index ? "completed" : "skipped",
+              delivered: !!index,
+              cleaned: true,
+            })),
+          };
+        }
+        await route.fulfill({ json: batch, contentType: "application/json" });
+      };
+      await page.route(
+        `**/api/workspaces/${FIXTURE_IDS.workspace}/finish-batch`,
+        handle,
+      );
+      await page.route(
+        `**/api/workspaces/${FIXTURE_IDS.workspace}/finish-batch/force-resume`,
+        handle,
+      );
+      await page.goto(
+        `${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`,
+      );
+      await openUiContextMenu(page, page.getByTestId("sidebar-workspace-node"));
+      await page.getByTestId("finish-workspace-action").click();
+      const dialog = page.getByRole("dialog", {
+        name: "Finish Workspace",
+        exact: true,
+      });
+      await expect(dialog.getByRole("alert")).toContainText(
+        "Repair the directory or Git worktree manually",
+      );
+      await expect(dialog.getByTestId("finish-confirm-action")).toBeDisabled();
+      const force = dialog.getByRole("button", {
+        name: "Force execute",
+        exact: true,
+      });
+      if (!resume) {
+        await expect(force).toBeDisabled();
+        healthyBlocked = false;
+        await dialog.getByRole("button", { name: "Recheck" }).click();
+      }
+      await expect(force).toBeEnabled();
+      if (!resume)
+        await page.screenshot({
+          path: "/tmp/treefold-force-finish-warning.png",
+          animations: "disabled",
+        });
+      await dialog.getByRole("tab", { name: /frontend/ }).click();
+      await expect(force).toHaveCount(1);
+      await force.click();
+      const confirmation = page.getByRole("alertdialog");
+      await expect(confirmation.getByRole("listitem")).toHaveText(["backend"]);
+      await confirmation
+        .getByRole("button", { name: "Cancel", exact: true })
+        .click();
+      expect(submissions).toHaveLength(0);
+      await force.click();
+      if (!resume)
+        await page.screenshot({
+          path: "/tmp/treefold-force-finish-confirmation.png",
+          animations: "disabled",
+        });
+      await confirmation
+        .getByRole("button", { name: "Force execute", exact: true })
+        .click();
+      await expect(
+        dialog.getByRole("button", { name: "Done", exact: true }),
+      ).toBeVisible();
+      expect(submissions).toHaveLength(1);
+      await expect(dialog.getByRole("tab", { name: /backend/ })).toContainText(
+        "Skipped",
+      );
+      await dialog.getByRole("button", { name: "Done", exact: true }).click();
+      await expect(page).toHaveURL(
+        new RegExp(`/projects/${FIXTURE_IDS.project}$`),
+      );
+      harness.assertNoUnexpectedRequests();
     } finally {
-      await harness.close();
+      try {
+        await closeUiSession(page);
+      } finally {
+        await harness.close();
+      }
     }
-  }
-});
+  });
+}

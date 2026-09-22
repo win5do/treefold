@@ -404,7 +404,7 @@ export type ParentOperationPreview = {
 
 export type FinishPlanItem = {
   repository_id: string;
-  code_action: "local_merge" | "push_branch" | "keep";
+  code_action: "local_merge" | "push_branch" | "keep" | "skip";
   delete_worktree: boolean;
   delete_branch: boolean;
   preflight_id: string;
@@ -415,7 +415,7 @@ export type FinishBatch = {
   error?: string | null;
   items: (FinishPlanItem & {
     repository_name: string;
-    status: "pending" | "delivering" | "delivered" | "cleaning" | "completed" | "blocked";
+    status: "pending" | "delivering" | "delivered" | "cleaning" | "completed" | "blocked" | "skipped";
     delivered: boolean;
     cleaned: boolean;
     error?: string | null;

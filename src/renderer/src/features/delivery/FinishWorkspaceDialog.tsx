@@ -22,7 +22,7 @@ import { NativeSelect as Select } from "@/components/ui/native-select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { ParentOperation, Session, WorkspaceDetail } from "@/domain/types";
 import { useFinishBatch } from "./useFinishBatch";
-import { ForceDeleteWorkspace } from "./ForceDeleteWorkspace";
+import { ForceFinishWorkspace } from "./ForceFinishWorkspace";
 import { finishErrorText, isWorktreeError } from "./finishErrors";
 import { FinishConflict } from "./FinishConflict";
 
@@ -57,20 +57,11 @@ export function FinishWorkspaceDialog({
   const current = repositories.some((item) => item.id === selected)
     ? selected
     : repositories[0]?.id;
+  const skippedCount =
+    flow.batch?.items.filter((item) => item.status === "skipped").length ?? 0;
   const completed = flow.batch?.status === "completed";
   const progress = flow.batch?.items.filter((item) => item.cleaned).length ?? 0;
-  const canForceDelete =
-    flow.loaded &&
-    !flow.busy &&
-    (!flow.batch || flow.batch.status === "paused") &&
-    repositories.some(
-      (item) =>
-        isWorktreeError(flow.checks[item.id]?.code) ||
-        isWorktreeError(
-          flow.batch?.items.find((entry) => entry.repository_id === item.id)
-            ?.error_code,
-        ),
-    );
+  const hasDamagedRepositories = flow.skippedRepositories.length > 0;
   return (
     <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-4xl">
@@ -83,12 +74,15 @@ export function FinishWorkspaceDialog({
           <DialogDescription>
             {t(
               completed
-                ? "deliveryUi.batchCompletedDescription"
+                ? skippedCount
+                  ? "deliveryUi.recovery.completedWithSkips"
+                  : "deliveryUi.batchCompletedDescription"
                 : flow.batch?.status === "paused"
                   ? "deliveryUi.batchPausedDescription"
                   : flow.batch
                     ? "deliveryUi.batchRunningDescription"
                     : "deliveryUi.batchDescription",
+              { count: skippedCount },
             )}
           </DialogDescription>
         </DialogHeader>
@@ -160,14 +154,18 @@ export function FinishWorkspaceDialog({
                 const progressItem = flow.batch?.items.find(
                   (entry) => entry.repository_id === item.id,
                 );
-                const structuralCheck = isWorktreeError(
-                  flow.checks[item.id]?.code,
-                )
-                  ? flow.checks[item.id]
-                  : null;
+                const structuralCheck =
+                  !progressItem?.cleaned &&
+                  isWorktreeError(flow.checks[item.id]?.code)
+                    ? flow.checks[item.id]
+                    : null;
                 const progressError =
                   structuralCheck ??
-                  (progressItem?.error
+                  (progressItem?.error &&
+                  !(
+                    isWorktreeError(progressItem.error_code) &&
+                    flow.preflights[item.id]
+                  )
                     ? {
                         message: progressItem.error,
                         code: progressItem.error_code,
@@ -195,6 +193,11 @@ export function FinishWorkspaceDialog({
                             className="break-words text-destructive"
                           >
                             {finishErrorText(progressError, t)}
+                            {structuralCheck && (
+                              <span className="mt-2 block">
+                                {t("deliveryUi.recovery.repairHint")}
+                              </span>
+                            )}
                           </p>
                         )}
                         {progressItem?.operation_id && (
@@ -298,6 +301,13 @@ export function FinishWorkspaceDialog({
                                 className="break-words text-destructive"
                               >
                                 {finishErrorText(flow.checks[item.id], t)}
+                                {isWorktreeError(
+                                  flow.checks[item.id]?.code,
+                                ) && (
+                                  <span className="mt-2 block">
+                                    {t("deliveryUi.recovery.repairHint")}
+                                  </span>
+                                )}
                               </p>
                             )}
                             {check?.source_dirty && (
@@ -383,24 +393,31 @@ export function FinishWorkspaceDialog({
             {flow.batch
               ? t(
                   completed
-                    ? "deliveryUi.batchCompleted"
+                    ? skippedCount
+                      ? "deliveryUi.recovery.completedWithSkips"
+                      : "deliveryUi.batchCompleted"
                     : "deliveryUi.batchProgress",
-                  { done: progress, total: repositories.length },
+                  {
+                    done: progress,
+                    total: repositories.length,
+                    count: skippedCount,
+                  },
                 )
               : repositories.length
                 ? t("deliveryUi.batchCount", { count: repositories.length })
                 : null}
           </p>
           <div className="flex gap-2">
-            {!flow.batch && repositories.length > 0 && (
-              <Button
-                variant="ghost"
-                disabled={flow.busy}
-                onClick={flow.recheck}
-              >
-                {t("deliveryUi.batchRecheck")}
-              </Button>
-            )}
+            {(!flow.batch || flow.batch.status === "paused") &&
+              repositories.length > 0 && (
+                <Button
+                  variant="ghost"
+                  disabled={flow.busy}
+                  onClick={flow.recheck}
+                >
+                  {t("deliveryUi.batchRecheck")}
+                </Button>
+              )}
             <Button
               variant="secondary"
               onClick={() => (completed ? onCompleted() : onOpenChange(false))}
@@ -413,16 +430,12 @@ export function FinishWorkspaceDialog({
                   : "deliveryUi.cancel",
               )}
             </Button>
-            {workspace && canForceDelete ? (
-              <ForceDeleteWorkspace
-                workspace={workspace}
-                onDeleted={onCompleted}
-              />
-            ) : !completed ? (
+            {!completed && (
               <Button
                 data-testid="finish-confirm-action"
                 disabled={
                   flow.busy ||
+                  hasDamagedRepositories ||
                   !flow.loaded ||
                   (flow.batch ? flow.batch.status === "running" : !flow.ready)
                 }
@@ -436,7 +449,17 @@ export function FinishWorkspaceDialog({
                     : "deliveryUi.batchExecute",
                 )}
               </Button>
-            ) : null}
+            )}
+            {!completed &&
+              hasDamagedRepositories &&
+              flow.batch?.status !== "running" && (
+                <ForceFinishWorkspace
+                  repositories={flow.skippedRepositories}
+                  ready={flow.forceReady}
+                  busy={flow.busy}
+                  execute={() => flow.execute(true)}
+                />
+              )}
           </div>
         </div>
       </DialogContent>

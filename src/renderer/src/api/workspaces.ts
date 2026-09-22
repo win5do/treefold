@@ -26,8 +26,6 @@ export const workspacesApi = {
     request<Workspace>(`/api/workspaces/${id}`, { method: "PATCH", json }),
   delete: (id: string) =>
     request(`/api/workspaces/${id}`, { method: "DELETE" }),
-  forceDelete: (id: string) =>
-    request(`/api/workspaces/${id}/force-delete`, { method: "POST" }),
   createFork: (id: string, json: unknown) =>
     request<Workspace>(`/api/workspaces/${id}/forks`, { method: "POST", json }),
   sessions: (id: string, signal?: AbortSignal) =>
@@ -63,6 +61,8 @@ export const workspacesApi = {
     request<FinishBatch>(`/api/workspaces/${id}/finish-batch`, {
       method: "POST", json: { repositories },
     }),
+  forceResumeFinishBatch: (id: string, repositoryIds: string[]) =>
+    request<FinishBatch>(`/api/workspaces/${id}/finish-batch/force-resume`, { method: "POST", json: { repository_ids: repositoryIds } }),
   resumeFinishBatch: (id: string) =>
     request<FinishBatch>(`/api/workspaces/${id}/finish-batch/resume`, { method: "POST" }),
   parentOperationPreview: (

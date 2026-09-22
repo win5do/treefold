@@ -1,14 +1,11 @@
 use super::*;
-use crate::server::{workspace_removal::force_delete_workspace, workspace_repository_git_path};
+use crate::server::workspace_repository_git_path;
 
 fn assert_code(error: AppError, expected: &str) {
     assert!(
         matches!(&error, AppError::Api { code, .. } if *code == expected),
         "{error:?}"
     );
-}
-async fn remove(f: &Fixture, id: &str) -> Result<StatusCode> {
-    force_delete_workspace(State(f.state.clone()), AxumPath(id.into())).await
 }
 async fn fork(f: &Fixture) -> Workspace {
     let (_, Json(fork)) = crate::server::create_fork(
@@ -72,100 +69,6 @@ async fn recovery_classifies_actual_worktree_state_and_ignores_stale_cached_heal
 }
 
 #[tokio::test]
-async fn recovery_delete_requires_structural_failure_and_preserves_disk_and_git() {
-    use tower::ServiceExt;
-    let f = fixture().await;
-    assert_code(
-        remove(&f, &f.workspace.id).await.unwrap_err(),
-        "FORCE_DELETE_NOT_AVAILABLE",
-    );
-    let child = fork(&f).await;
-    let child_repositories = f
-        .state
-        .store
-        .workspace_repositories(&child.id)
-        .await
-        .unwrap();
-    std::fs::remove_dir_all(f.repositories[0].checkout_path.as_ref().unwrap()).unwrap();
-    // A live Finish worker in any child blocks removing the whole tree.
-    workers().lock().await.insert(child.id.clone());
-    assert_code(
-        remove(&f, &f.workspace.id).await.unwrap_err(),
-        "FORCE_DELETE_OPERATION_ACTIVE",
-    );
-    workers().lock().await.remove(&child.id);
-    assert!(f.state.store.workspace(&child.id).await.is_ok());
-    // Exercise the actual route and middleware, not only the service function.
-    let response = crate::server::app(f.state.clone())
-        .oneshot(
-            axum::http::Request::builder()
-                .method("POST")
-                .uri(format!("/api/workspaces/{}/force-delete", f.workspace.id))
-                .body(axum::body::Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert!(f.state.store.workspace(&f.workspace.id).await.is_err());
-    assert!(f.state.store.workspace(&child.id).await.is_err());
-    assert!(
-        f.state
-            .store
-            .todos(&f.workspace.id)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        f.state
-            .store
-            .workspace_repositories(&f.workspace.id)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    assert!(Path::new(f.repositories[1].checkout_path.as_ref().unwrap()).exists());
-    for repository in child_repositories {
-        assert!(Path::new(repository.checkout_path.as_ref().unwrap()).exists());
-    }
-    for root in &f.roots {
-        assert!(!git(root, &["branch", "--list", "feature/batch"]).is_empty());
-        assert_eq!(
-            std::fs::read_to_string(root.join("shared.txt")).unwrap(),
-            "initial\n"
-        );
-    }
-    // No remaining Workspace record blocks Project removal.
-    f.state
-        .store
-        .delete_project(&f.workspace.project_id)
-        .await
-        .unwrap();
-    assert!(f.roots.iter().all(|path| path.exists()));
-}
-
-#[tokio::test]
-async fn recovery_fork_removal_releases_parent_todo_and_preserves_parent() {
-    let f = fixture().await;
-    let child = fork(&f).await;
-    let repositories = f
-        .state
-        .store
-        .workspace_repositories(&child.id)
-        .await
-        .unwrap();
-    std::fs::remove_dir_all(repositories[0].checkout_path.as_ref().unwrap()).unwrap();
-    remove(&f, &child.id).await.unwrap();
-    let todos = f.state.store.todos(&f.workspace.id).await.unwrap();
-    assert_eq!(todos.len(), 1);
-    assert_eq!(todos[0].status, "pending");
-    assert!(todos[0].fork_id.is_none());
-    assert!(f.state.store.workspace(&f.workspace.id).await.is_ok());
-    assert!(Path::new(repositories[1].checkout_path.as_ref().unwrap()).exists());
-}
-
-#[tokio::test]
 async fn recovery_batch_persists_structural_error_code_for_reopening() {
     let f = fixture().await;
     let initial = batch(&f).await;
@@ -177,19 +80,10 @@ async fn recovery_batch_persists_structural_error_code_for_reopening() {
         paused.items[0].error_code.as_deref(),
         Some("WORKTREE_DIRECTORY_MISSING")
     );
-    remove(&f, &f.workspace.id).await.unwrap();
-    assert!(
-        f.state
-            .store
-            .finish_batch(&f.workspace.id)
-            .await
-            .unwrap()
-            .is_none()
-    );
 }
 
 #[tokio::test]
-async fn recovery_missing_parent_is_not_a_reason_to_delete_healthy_fork() {
+async fn recovery_missing_parent_is_not_a_reason_to_skip_healthy_fork() {
     let f = fixture().await;
     let child = fork(&f).await;
     let repositories = f
@@ -214,8 +108,8 @@ async fn recovery_missing_parent_is_not_a_reason_to_delete_healthy_fork() {
     .unwrap_err();
     assert_code(error, "PARENT_WORKTREE_DIRECTORY_MISSING");
     assert_code(
-        remove(&f, &child.id).await.unwrap_err(),
-        "FORCE_DELETE_NOT_AVAILABLE",
+        verify_skip(&f.state, &repository.id).await.unwrap_err(),
+        "FORCE_SKIP_NOT_AVAILABLE",
     );
 }
 
@@ -236,7 +130,7 @@ async fn recovery_rejects_live_sessions_and_accepts_stopped_sessions() {
     .await
     .unwrap();
     std::fs::remove_dir_all(f.repositories[0].checkout_path.as_ref().unwrap()).unwrap();
-    let rejected = remove(&f, &f.workspace.id).await;
+    let rejected = verify_skip(&f.state, &f.repositories[0].id).await;
     let stopped = stop_session(State(f.state.clone()), AxumPath(session.id.clone())).await;
     // Stop acknowledges the request while the process can still be Stopping.
     // Wait for actual termination; a persisted 'stopped' status is insufficient.
@@ -263,12 +157,161 @@ async fn recovery_rejects_live_sessions_and_accepts_stopped_sessions() {
         }
     })
     .await;
-    let removed = remove(&f, &f.workspace.id).await;
+    let allowed = verify_skip(&f.state, &f.repositories[0].id).await;
     // Always clean up the isolated daemon before making assertions.
     f.state.terminals.stop_daemon().await.unwrap();
-    assert_code(rejected.unwrap_err(), "FORCE_DELETE_SESSION_ACTIVE");
+    assert_code(rejected.unwrap_err(), "FINISH_SESSION_ACTIVE");
     stopped.unwrap();
     terminated.unwrap();
-    removed.unwrap();
-    assert!(f.state.store.session(&session.id).await.is_err());
+    allowed.unwrap();
+}
+
+#[tokio::test]
+async fn force_finish_skips_only_broken_repositories_and_delivers_healthy_ones() {
+    let f = fixture().await;
+    let mut plans = plans(&f).await;
+    // Explicitly preserve the healthy checkout so disk ownership is asserted.
+    plans[1].delete_worktree = false;
+    plans[1].delete_branch = false;
+    plans[0].code_action = "skip".into();
+    plans[0].delete_worktree = false;
+    plans[0].delete_branch = false;
+    assert!(
+        prepare_batch(&f.state, &f.workspace.id, plans.clone())
+            .await
+            .is_err()
+    );
+    let missing = f.repositories[0].checkout_path.as_ref().unwrap();
+    std::fs::remove_dir_all(missing).unwrap();
+    let initial = prepare_batch(&f.state, &f.workspace.id, plans)
+        .await
+        .unwrap();
+    run_batch(&f.state, initial, false).await.unwrap();
+    let completed = saved(&f).await;
+    assert_eq!(completed.status, "completed");
+    assert_eq!(completed.items[0].status, "skipped");
+    assert!(!completed.items[0].delivered);
+    assert_eq!(completed.items[1].status, "completed");
+    assert_eq!(
+        f.state
+            .store
+            .workspace(&f.workspace.id)
+            .await
+            .unwrap()
+            .status,
+        "archived"
+    );
+    assert_eq!(
+        f.state
+            .store
+            .workspace_repository(&f.repositories[0].id)
+            .await
+            .unwrap()
+            .close_outcome
+            .as_deref(),
+        Some("skipped")
+    );
+    assert!(!git(&f.roots[0], &["branch", "--list", "feature/batch"]).is_empty());
+    assert_eq!(
+        std::fs::read_to_string(f.roots[0].join("shared.txt")).unwrap(),
+        "initial\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.roots[1].join("shared.txt")).unwrap(),
+        "feature\n"
+    );
+    assert!(Path::new(f.repositories[1].checkout_path.as_ref().unwrap()).exists());
+}
+
+#[tokio::test]
+async fn force_finish_can_skip_all_repositories_without_claiming_delivery() {
+    let f = fixture().await;
+    let mut plans = plans(&f).await;
+    for (plan, repository) in plans.iter_mut().zip(&f.repositories) {
+        std::fs::remove_dir_all(repository.checkout_path.as_ref().unwrap()).unwrap();
+        plan.code_action = "skip".into();
+        plan.delete_worktree = false;
+        plan.delete_branch = false;
+    }
+    let initial = prepare_batch(&f.state, &f.workspace.id, plans)
+        .await
+        .unwrap();
+    run_batch(&f.state, initial, false).await.unwrap();
+    assert!(
+        saved(&f)
+            .await
+            .items
+            .iter()
+            .all(|item| item.status == "skipped" && !item.delivered)
+    );
+    assert_eq!(
+        f.state
+            .store
+            .workspace(&f.workspace.id)
+            .await
+            .unwrap()
+            .status,
+        "archived"
+    );
+}
+
+#[tokio::test]
+async fn force_finish_resume_keeps_successful_delivery_and_skips_missing_source() {
+    let f = fixture().await;
+    let initial = batch(&f).await;
+    std::fs::remove_dir_all(f.repositories[1].checkout_path.as_ref().unwrap()).unwrap();
+    run_batch(&f.state, initial, false).await.unwrap();
+    let paused = saved(&f).await;
+    assert!(paused.items[0].delivered);
+    let delivered_head = git_head(f.roots[0].to_str().unwrap()).unwrap();
+    let Json(_) = force_resume_finish_batch(
+        State(f.state.clone()),
+        AxumPath(f.workspace.id.clone()),
+        ApiJson(SkipRepositories {
+            repository_ids: vec![f.repositories[1].id.clone()],
+        }),
+    )
+    .await
+    .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        while workers().lock().await.contains(&f.workspace.id) {
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let completed = saved(&f).await;
+    assert_eq!(completed.status, "completed");
+    assert_eq!(completed.items[1].status, "skipped");
+    assert_eq!(
+        git_head(f.roots[0].to_str().unwrap()).unwrap(),
+        delivered_head
+    );
+}
+
+#[tokio::test]
+async fn force_finish_fork_with_skips_does_not_complete_its_todo() {
+    let mut f = fixture().await;
+    let parent_id = f.workspace.id.clone();
+    f.workspace = fork(&f).await;
+    f.repositories = f
+        .state
+        .store
+        .workspace_repositories(&f.workspace.id)
+        .await
+        .unwrap();
+    let mut plans = plans(&f).await;
+    std::fs::remove_dir_all(f.repositories[0].checkout_path.as_ref().unwrap()).unwrap();
+    plans[0].code_action = "skip".into();
+    plans[0].delete_worktree = false;
+    plans[0].delete_branch = false;
+    let initial = prepare_batch(&f.state, &f.workspace.id, plans)
+        .await
+        .unwrap();
+    run_batch(&f.state, initial, false).await.unwrap();
+    assert_eq!(saved(&f).await.status, "completed");
+    assert_eq!(
+        f.state.store.todos(&parent_id).await.unwrap()[0].status,
+        "pending"
+    );
 }

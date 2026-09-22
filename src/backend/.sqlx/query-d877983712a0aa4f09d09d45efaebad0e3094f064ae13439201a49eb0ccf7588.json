@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id FROM workspaces WHERE (id = ? OR parent_workspace_id = ?) AND ((? = 0 AND status != 'archived') OR kind = 'base') LIMIT 1",
+  "query": "SELECT id FROM workspaces WHERE (id = ? OR parent_workspace_id = ?) AND (status != 'archived' OR kind = 'base') LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -16,11 +16,11 @@
       }
     ],
     "parameters": {
-      "Right": 3
+      "Right": 2
     },
     "nullable": [
       false
     ]
   },
-  "hash": "0d74f2f98b3d80ca56d29070660ee368394b1831b67fc7eba9432afd9593e39d"
+  "hash": "d877983712a0aa4f09d09d45efaebad0e3094f064ae13439201a49eb0ccf7588"
 }

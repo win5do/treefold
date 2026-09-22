@@ -505,8 +505,8 @@ fn app(state: AppState) -> Router {
             post(finish_batch::resume_finish_batch),
         )
         .route(
-            "/api/workspaces/{id}/force-delete",
-            post(workspace_removal::force_delete_workspace),
+            "/api/workspaces/{id}/finish-batch/force-resume",
+            post(finish_batch::force_resume_finish_batch),
         )
         .route("/api/workspaces/{id}/archive", post(archive_workspace))
         .route("/api/workspaces/{id}/reveal", post(reveal_workspace))
@@ -537,9 +537,7 @@ fn app(state: AppState) -> Router {
         .route("/api/settings", get(get_settings).patch(update_settings))
         .fallback(route_not_found)
         .method_not_allowed_fallback(method_not_allowed)
-        .layer(axum::middleware::from_fn(
-            workspace_removal::guard_mutations,
-        ))
+        .layer(axum::middleware::from_fn(finish_recovery::guard_mutations))
         .layer(cors)
         .layer(axum::middleware::from_fn(crate::request_context::correlate))
         .with_state(state)
@@ -614,6 +612,7 @@ mod agent;
 mod codex_identity;
 mod delivery;
 mod finish_batch;
+mod finish_recovery;
 mod fork;
 #[path = "server/git.rs"]
 mod git_routes;
@@ -625,7 +624,6 @@ mod session;
 mod tests;
 mod verification;
 mod workspace;
-mod workspace_removal;
 mod worktree_names;
 
 use agent::*;

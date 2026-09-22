@@ -242,20 +242,21 @@ export const enUS = {
   },
   "deliveryUi": {
     "recovery": {
+      "forceExecute": "Force execute",
+      "forceTitle": "Skip damaged repositories?",
+      "forceDescription": "The repositories below will skip their remaining delivery and cleanup steps. Cancel to repair them manually and recheck, or force execution if you accept skipping them.",
+      "forceConsequences": "Other repositories follow their selected strategies. Once all items are handled, this item is archived with history and skipped outcomes retained. Skipped files and branches remain untouched; existing merges are not undone. Resolve any remaining Git state manually.",
+      "repairHint": "Repair the directory or Git worktree manually, then recheck. If it cannot be repaired, use Force execute to skip this repository.",
+      "skipUnavailable": "This repository is available again. Recheck and execute normally.",
+      "completedWithSkips": "Processing finished and this item is archived. Remaining steps were skipped for {{count}} repositories; review their outcomes.",
+
       "parentDirectoryMissing": "The parent Workspace directory does not exist. Resolve the parent Workspace first.",
       "parentNotGit": "The parent Workspace directory is not a valid Git worktree. Resolve the parent Workspace first.",
       "parentGitBroken": "The parent Workspace Git metadata is broken. Resolve the parent Workspace first.",
-      "forceDelete": "Force delete",
-      "title": "Force delete “{{name}}”?",
-      "workspaceDescription": "Permanently remove this Workspace and all its Forks, Session history, Todos, and operation records from the App.",
-      "forkDescription": "Permanently remove this Fork, its Session history, and operation records from the App. Its assigned Todo in the parent Workspace will be kept and unassigned; unfinished Todos will return to pending.",
-      "diskDescription": "Disk files, worktrees, and Git branches will remain unchanged. Completed merges will not be undone. This cannot be undone.",
       "directoryMissing": "Directory does not exist",
       "notGit": "Directory is not a valid Git worktree",
       "gitBroken": "Worktree Git metadata is broken",
-      "unavailable": "Force delete is only available for a missing or invalid Git worktree. Check again.",
-      "sessionActive": "Stop running Sessions in this Workspace, its Forks, and conflict resolvers before force deleting.",
-      "operationActive": "Wait for the running Finish task before force deleting."
+      "sessionActive": "Stop running Sessions in this Workspace, its Forks, and conflict resolvers before continuing.",
     },
     "rEPOSITORY": "REPOSITORY",
     "reviewChanges": "Review Changes",
@@ -288,6 +289,7 @@ export const enUS = {
     "batchNotice": "A Finish operation is in progress or needs attention.",
     "batchView": "View progress",
     "batchStates": {
+      "skipped": "Skipped",
       "pending": "Pending",
       "delivering": "Delivering",
       "delivered": "Delivered",

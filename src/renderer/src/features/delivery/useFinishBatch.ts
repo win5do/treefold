@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { workspacesApi } from "@/api/workspaces";
@@ -9,11 +10,17 @@ import type {
 } from "@/domain/types";
 import { invalidateHierarchyQueries } from "@/features/app/runtimeInvalidation";
 
-import { finishError, type FinishError } from "./finishErrors";
+import {
+  finishError,
+  finishErrorText,
+  isWorktreeError,
+  type FinishError,
+} from "./finishErrors";
 
 type Draft = Omit<FinishPlanItem, "repository_id" | "preflight_id">;
 export function useFinishBatch(workspace: WorkspaceDetail | null) {
   const client = useQueryClient();
+  const { t } = useTranslation();
   const [batch, setBatch] = useState<FinishBatch | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -80,7 +87,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
           timer = setTimeout(() => void poll(), 1000);
       } catch (cause) {
         if (stopped) return;
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(finishErrorText(finishError(cause), t));
         timer = setTimeout(() => void poll(), 2000);
       }
     };
@@ -98,6 +105,8 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     setPreflights({});
     setChecks({});
     for (const [id, draft] of Object.entries(drafts)) {
+      if (batch?.items.find((item) => item.repository_id === id)?.cleaned)
+        continue;
       void workspacesApi
         .preflight(id, draft.code_action, controller.signal)
         .then((value) => {
@@ -129,35 +138,81 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
         !preflights[item.id].blockers.length &&
         !checks[item.id],
     );
-  const execute = async () => {
-    if (!workspace || busy || (!batch && !ready)) return;
+  const skippedRepositories = (workspace?.repositories ?? []).filter(
+    (item) =>
+      !batch?.items.find((entry) => entry.repository_id === item.id)?.cleaned &&
+      (isWorktreeError(checks[item.id]?.code) ||
+        (!drafts[item.id] &&
+          isWorktreeError(
+            batch?.items.find((entry) => entry.repository_id === item.id)
+              ?.error_code,
+          ))),
+  );
+  const skipIds = new Set(skippedRepositories.map((item) => item.id));
+  const forceReady =
+    loaded &&
+    !busy &&
+    (!batch || batch.status === "paused") &&
+    skipIds.size > 0 &&
+    repositories.every(
+      (item) =>
+        skipIds.has(item.id) ||
+        batch?.items.find((entry) => entry.repository_id === item.id)
+          ?.cleaned ||
+        batch?.items.find((entry) => entry.repository_id === item.id)
+          ?.delivered ||
+        (preflights[item.id] &&
+          !preflights[item.id].blockers.length &&
+          !checks[item.id]),
+    );
+  const execute = async (force = false): Promise<boolean> => {
+    if (
+      !workspace ||
+      busy ||
+      (force ? !forceReady : (!batch && !ready) || skipIds.size > 0)
+    )
+      return false;
     setBusy(true);
     setError("");
     try {
       const next = batch
-        ? await workspacesApi.resumeFinishBatch(workspace.id)
+        ? force
+          ? await workspacesApi.forceResumeFinishBatch(workspace.id, [
+              ...skipIds,
+            ])
+          : await workspacesApi.resumeFinishBatch(workspace.id)
         : await workspacesApi.startFinishBatch(
             workspace.id,
             repositories.map((item) => ({
               repository_id: item.id,
               ...drafts[item.id],
-              preflight_id: preflights[item.id].id,
+              ...(force && skipIds.has(item.id)
+                ? {
+                    code_action: "skip" as const,
+                    delete_worktree: false,
+                    delete_branch: false,
+                  }
+                : {}),
+              preflight_id: preflights[item.id]?.id ?? "",
             })),
           );
       setBatch(next);
       setRevision((value) => value + 1);
       await invalidateHierarchyQueries(client);
+      return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(finishErrorText(finishError(cause), t));
       // A lost response does not mean that the backend rejected the batch.
       try {
-        if (await workspacesApi.finishBatch(workspace.id)) {
+        const current = await workspacesApi.finishBatch(workspace.id);
+        if (current && (current.status !== "paused" || !batch)) {
           setRevision((value) => value + 1);
           await invalidateHierarchyQueries(client);
         }
       } catch {
         /* Keep the original error until the operation can be reopened. */
       }
+      return false;
     } finally {
       setBusy(false);
     }
@@ -169,6 +224,8 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     preflights,
     checks,
     ready,
+    forceReady,
+    skippedRepositories,
     busy,
     error,
     execute,

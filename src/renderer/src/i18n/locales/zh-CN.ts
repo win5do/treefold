@@ -244,20 +244,21 @@ export const zhCN = {
   },
   "deliveryUi": {
     "recovery": {
+      "forceExecute": "强制执行",
+      "forceTitle": "确认跳过损坏的仓库？",
+      "forceDescription": "以下仓库将跳过尚未完成的交付和清理步骤。建议取消并手动修复，然后重新检查；若确认无需交付这些仓库，可继续强制执行。",
+      "forceConsequences": "其余仓库按所选策略执行。全部处理后归档当前条目，保留历史并标记已跳过；不会删除被跳过仓库的文件或分支，也不会撤销已有合并。残留的 Git 状态需手动处理。",
+      "repairHint": "请手动修复目录或 Git 工作树后重新检查；无法修复时，只能通过“强制执行”跳过此仓库。",
+      "skipUnavailable": "此仓库已恢复可用，请重新检查后正常执行。",
+      "completedWithSkips": "处理已结束，当前条目已归档。{{count}} 个仓库跳过了剩余步骤，请检查各仓库结果。",
+
       "parentDirectoryMissing": "上级 Workspace 的目录不存在，请先处理上级 Workspace。",
       "parentNotGit": "上级 Workspace 的目录不是有效的 Git 工作树，请先处理上级 Workspace。",
       "parentGitBroken": "上级 Workspace 的 Git 关联已损坏，请先处理上级 Workspace。",
-      "forceDelete": "强制删除",
-      "title": "强制删除“{{name}}”？",
-      "workspaceDescription": "将从 App 中永久删除此 Workspace 及其所有 Fork、Session 历史、Todo 和操作记录。",
-      "forkDescription": "将从 App 中永久删除此 Fork、Session 历史和操作记录。上级 Workspace 中关联的 Todo 会保留并解除指派，未完成的 Todo 将恢复为待办。",
-      "diskDescription": "不会删除磁盘文件、工作树或 Git 分支，也不会撤销已经完成的合并。此操作不可撤销。",
       "directoryMissing": "目录不存在",
       "notGit": "该目录不是有效的 Git 工作树",
       "gitBroken": "工作树的 Git 关联已损坏",
-      "unavailable": "仅当目录不存在或 Git 工作树异常时才能强制删除。请重新检查。",
-      "sessionActive": "请先停止此 Workspace、Fork 及冲突处理中的 Session，再强制删除。",
-      "operationActive": "请等待正在执行的完成任务结束，再强制删除。"
+      "sessionActive": "请先停止此 Workspace、Fork 及冲突处理中的 Session，再继续。",
     },
     "rEPOSITORY": "仓库",
     "reviewChanges": "查看修改",
@@ -290,6 +291,7 @@ export const zhCN = {
     "batchNotice": "有一项完成操作正在执行或需要处理。",
     "batchView": "查看进度",
     "batchStates": {
+      "skipped": "已跳过",
       "pending": "待执行",
       "delivering": "交付中",
       "delivered": "已交付",
