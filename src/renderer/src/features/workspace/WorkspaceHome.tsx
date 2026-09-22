@@ -23,6 +23,7 @@ import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
 import { StatusDot } from "@/components/app/StatusDot";
 import { RecordActionMenu } from "@/features/app/RecordActions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { MetadataList, MetadataListItem } from "@/components/ui/metadata-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -754,20 +755,20 @@ function WorkspaceRepositoryRow({
             </Alert>
           )}
           {location.access_mode === "read_write" && (
-            <div className="mt-2 flex flex-wrap gap-x-4 text-[11px] text-muted-foreground">
-              <span>
-                {t("labels.branch")} <code>{location.branch}</code>
-              </span>
-              <span>
-                {t("labels.base")} <code>{location.base_branch}</code>
-              </span>
-              <span>
-                {t("labels.upstream")} <code>{upstream || "—"}</code>
-              </span>
-              <span>
-                {t("labels.delivery")} <code>{t(`states.${location.delivery_mode}`, { defaultValue: location.delivery_mode })}</code>
-              </span>
-            </div>
+            <MetadataList className="mt-2">
+              <MetadataListItem label={t("labels.branch")}>
+                <code>{location.branch}</code>
+              </MetadataListItem>
+              <MetadataListItem label={t("labels.base")}>
+                <code>{location.base_branch}</code>
+              </MetadataListItem>
+              <MetadataListItem label={t("labels.upstream")}>
+                <code>{upstream || "—"}</code>
+              </MetadataListItem>
+              <MetadataListItem label={t("labels.delivery")}>
+                {t(`states.${location.delivery_mode}`, { defaultValue: location.delivery_mode })}
+              </MetadataListItem>
+            </MetadataList>
           )}
           {scopes.length > 0 && (
             <div

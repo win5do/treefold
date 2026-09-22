@@ -15,6 +15,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
+import { MetadataList, MetadataListItem } from "@/components/ui/metadata-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -94,25 +95,20 @@ export function DirectoryTreeRow({
       ? t("projectsUi.detached", { commit: directory.head_commit.slice(0, 7) })
       : t("projectsUi.detachedHead"));
   const repositoryDetails = (
-    <>
-      <span>
-        {t("labels.current")}{" "}
-        <strong className="font-medium text-foreground">{currentBranch}</strong>
-      </span>
-      <span>·</span>
-      <span>
-        {t("labels.base")}{" "}
-        <strong className="font-medium text-foreground">
-          {directory.base_branch || "—"}
-        </strong>
-      </span>
-      <span>·</span>
-      <span>{repositoryLabel(directory.repository_url)}</span>
-      <span>·</span>
-      <span>
+    <MetadataList size="compact">
+      <MetadataListItem label={t("labels.current")}>
+        <code>{currentBranch}</code>
+      </MetadataListItem>
+      <MetadataListItem label={t("labels.base")}>
+        <code>{directory.base_branch || "—"}</code>
+      </MetadataListItem>
+      <MetadataListItem label={t("labels.repository")}>
+        {repositoryLabel(directory.repository_url)}
+      </MetadataListItem>
+      <MetadataListItem label={t("labels.delivery")}>
         {deliveryStrategyLabel(directory.delivery_mode)}
-      </span>
-    </>
+      </MetadataListItem>
+    </MetadataList>
   );
   const locationSummary = (
     <>
@@ -151,7 +147,7 @@ export function DirectoryTreeRow({
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
           {directory.description || t("projectsUi.noPurposeDescribedYet")}
         </p>
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+        <div className="mt-2 flex min-w-0 flex-col gap-1 text-[10px] text-muted-foreground">
           {isRepository && repositoryDetails}
           <code className="min-w-0 truncate" title={directory.path}>
             {directory.path}
@@ -505,27 +501,20 @@ export function ProjectRepositoryTreeRow({
                   {t("counts.directory", { count: directories.length })}
                 </span>
               </div>
-              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
-                <span>
-                  {t("labels.base")}{" "}
-                  <strong className="font-medium text-foreground">
-                    {repository.base_branch || t("labels.notConfigured")}
-                  </strong>
-                </span>
-                <span>·</span>
-                <span>
-                  {t("labels.current")}{" "}
-                  <strong className="font-medium text-foreground">
-                    {currentBranch}
-                  </strong>
-                </span>
-                <span>·</span>
-                <span>{repositoryLabel(repository.repository_url)}</span>
-                <span>·</span>
-                <span>
+              <MetadataList size="compact" className="mt-2">
+                <MetadataListItem label={t("labels.base")}>
+                  <code>{repository.base_branch || t("labels.notConfigured")}</code>
+                </MetadataListItem>
+                <MetadataListItem label={t("labels.current")}>
+                  <code>{currentBranch}</code>
+                </MetadataListItem>
+                <MetadataListItem label={t("labels.repository")}>
+                  {repositoryLabel(repository.repository_url)}
+                </MetadataListItem>
+                <MetadataListItem label={t("labels.delivery")}>
                   {deliveryStrategyLabel(repository.delivery_mode)}
-                </span>
-              </div>
+                </MetadataListItem>
+              </MetadataList>
               <code
                 className="mt-1 block min-w-0 truncate text-[10px] text-muted-foreground"
                 title={repository.source_root}
