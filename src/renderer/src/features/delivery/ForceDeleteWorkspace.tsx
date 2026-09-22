@@ -47,8 +47,6 @@ export function ForceDeleteWorkspace({
     <>
       <Button
         variant="destructive"
-        size="sm"
-        className="self-start"
         onClick={() => {
           setError(null);
           setOpen(true);

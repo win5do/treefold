@@ -59,6 +59,18 @@ export function FinishWorkspaceDialog({
     : repositories[0]?.id;
   const completed = flow.batch?.status === "completed";
   const progress = flow.batch?.items.filter((item) => item.cleaned).length ?? 0;
+  const canForceDelete =
+    flow.loaded &&
+    !flow.busy &&
+    (!flow.batch || flow.batch.status === "paused") &&
+    repositories.some(
+      (item) =>
+        isWorktreeError(flow.checks[item.id]?.code) ||
+        isWorktreeError(
+          flow.batch?.items.find((entry) => entry.repository_id === item.id)
+            ?.error_code,
+        ),
+    );
   return (
     <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-4xl">
@@ -161,16 +173,6 @@ export function FinishWorkspaceDialog({
                         code: progressItem.error_code,
                       }
                     : null);
-                const recoveryAction =
-                  workspace &&
-                  (!flow.batch || flow.batch.status === "paused") &&
-                  (structuralCheck ||
-                    isWorktreeError(progressItem?.error_code)) ? (
-                    <ForceDeleteWorkspace
-                      workspace={workspace}
-                      onDeleted={onCompleted}
-                    />
-                  ) : null;
                 return (
                   <TabsContent
                     key={item.id}
@@ -195,7 +197,6 @@ export function FinishWorkspaceDialog({
                             {finishErrorText(progressError, t)}
                           </p>
                         )}
-                        {recoveryAction}
                         {progressItem?.operation_id && (
                           <FinishConflict
                             id={progressItem.operation_id}
@@ -299,7 +300,6 @@ export function FinishWorkspaceDialog({
                                 {finishErrorText(flow.checks[item.id], t)}
                               </p>
                             )}
-                            {recoveryAction}
                             {check?.source_dirty && (
                               <div className="flex flex-wrap gap-2">
                                 <Button
@@ -413,7 +413,12 @@ export function FinishWorkspaceDialog({
                   : "deliveryUi.cancel",
               )}
             </Button>
-            {!completed && (
+            {workspace && canForceDelete ? (
+              <ForceDeleteWorkspace
+                workspace={workspace}
+                onDeleted={onCompleted}
+              />
+            ) : !completed ? (
               <Button
                 data-testid="finish-confirm-action"
                 disabled={
@@ -431,7 +436,7 @@ export function FinishWorkspaceDialog({
                     : "deliveryUi.batchExecute",
                 )}
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
       </DialogContent>

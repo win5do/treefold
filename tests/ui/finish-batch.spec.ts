@@ -311,11 +311,37 @@ test("Finish offers Force delete only for structural failures and requires confi
       sessionName: "force-delete",
     });
     await page.route(
+      `**/api/workspaces/${FIXTURE_IDS.workspace}`,
+      async (route) => {
+        const response = await route.fetch();
+        const detail = await response.json();
+        detail.repositories = [
+          detail.repositories[0],
+          {
+            ...detail.repositories[0],
+            id: FIXTURE_IDS.workspaceSecondaryLocation,
+            repository_name: "frontend",
+          },
+        ];
+        await route.fulfill({ json: detail });
+      },
+    );
+    await page.route(
       "**/api/workspace-repositories/*/delivery-preflight",
       (route) =>
         route.fulfill({
           status: 409,
-          json: { error: { code, message: "Preflight failed" } },
+          json: {
+            error: {
+              code: route
+                .request()
+                .url()
+                .includes(FIXTURE_IDS.workspaceSecondaryLocation)
+                ? "BAD_REQUEST"
+                : code,
+              message: "Preflight failed",
+            },
+          },
         }),
     );
     await page.route(
@@ -363,11 +389,17 @@ test("Finish offers Force delete only for structural failures and requires confi
     await expect(dialog.getByRole("alert")).toHaveText(
       "Directory does not exist",
     );
-    await expect(dialog.getByTestId("finish-confirm-action")).toBeDisabled();
+    await expect(
+      dialog.getByRole("button", { name: "Force delete", exact: true }),
+    ).toBeEnabled();
     const force = dialog.getByRole("button", {
       name: "Force delete",
       exact: true,
     });
+    // Recovery belongs to the owner, so switching to another repository keeps it available.
+    await dialog.getByRole("tab", { name: /frontend/ }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("Preflight failed");
+    await expect(force).toHaveCount(1);
     await force.click();
     const confirmation = page.getByRole("alertdialog");
     await expect(confirmation).toBeVisible();
