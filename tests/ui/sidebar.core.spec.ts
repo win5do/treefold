@@ -376,7 +376,7 @@ test("sidebar.core", async () => {
     ).click();
     const workspaceFinishDialog = page.locator('[role="dialog"]');
     await workspaceFinishDialog.waitFor({ timeout: 3_000, state: 'visible' });
-    const workspaceStrategy = workspaceFinishDialog.locator("#finish-code-action");
+    const workspaceStrategy = workspaceFinishDialog.getByRole("combobox", { name: "Finish strategy" });
     assert.deepEqual(
       await workspaceStrategy.evaluate((select) => Array.from((select as HTMLSelectElement).options, (option) => option.value)),
       ["local_merge", "push_branch", "keep"],
@@ -2148,19 +2148,15 @@ test("sidebar.core", async () => {
     assert.match(await preflight.innerText(), /2 ahead/);
     assert.match(await preflight.innerText(), /2 files/);
     assert.match(await preflight.innerText(), /source is 1 commit/);
-    assert.equal(
-      await (finishForkDialog.locator("button:has-text(\"Finish fixture-repository\")")).isEnabled(),
-      true,
-      "a ready preflight must unlock Finish",
-    );
-    const forkStrategy = finishForkDialog.locator("#finish-code-action");
+    await expect(finishForkDialog.getByTestId("finish-confirm-action"), "all ready preflights must unlock Finish").toBeEnabled();
+    const forkStrategy = finishForkDialog.getByRole("combobox", { name: "Finish strategy" });
     assert.deepEqual(
       await forkStrategy.evaluate((select) => Array.from((select as HTMLSelectElement).options, (option) => option.value)),
       ["local_merge", "keep"],
       "Fork Finish must expose only parent merge and preserve strategies",
     );
-    const removeWorktree = finishForkDialog.locator("#finish-delete-worktree");
-    const deleteBranch = finishForkDialog.locator("#finish-delete-branch");
+    const removeWorktree = finishForkDialog.getByRole("checkbox", { name: "Remove managed worktree" });
+    const deleteBranch = finishForkDialog.getByRole("checkbox", { name: "Delete local branch" });
     assert.equal(await removeWorktree.isChecked(), true);
     assert.equal(await deleteBranch.isChecked(), true);
     await selectUiOption(page, forkStrategy, "keep");
@@ -2169,12 +2165,12 @@ test("sidebar.core", async () => {
     assert.equal(await removeWorktree.isEnabled(), true);
     assert.equal(await deleteBranch.isEnabled(), false);
     await (
-      finishForkDialog.locator('label[for="finish-delete-worktree"]')
+      finishForkDialog.getByText("Remove managed worktree", { exact: true })
     ).click();
     assert.equal(await removeWorktree.isChecked(), true);
     assert.equal(await deleteBranch.isEnabled(), true);
     await (
-      finishForkDialog.locator('label[for="finish-delete-branch"]')
+      finishForkDialog.getByText("Delete local branch", { exact: true })
     ).click();
     assert.equal(await deleteBranch.isChecked(), true);
     await pressUiEscape(page);

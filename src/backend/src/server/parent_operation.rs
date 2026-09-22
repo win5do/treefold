@@ -706,7 +706,7 @@ pub(super) async fn reconcile_parent_operation(
                 result_head: Some(&current_head),
                 error: "",
                 terminal: true,
-                undo_available: true,
+                undo_available: operation.origin != "finish",
             })
             .await?;
     } else if current_head == operation.before_head
@@ -810,7 +810,8 @@ pub(super) async fn undo_parent_operation_impl(
     if operation.status == "undone" {
         return Ok(operation);
     }
-    if operation.status != "completed" || !operation.undo_available {
+    if operation.origin == "finish" || operation.status != "completed" || !operation.undo_available
+    {
         return Err(AppError::BadRequest(
             "this operation is no longer safe to undo".into(),
         ));

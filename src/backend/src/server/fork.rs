@@ -165,6 +165,11 @@ pub(super) async fn create_fork_impl(
                 .into(),
         ));
     }
+    if state.store.finish_batch(&parent_id).await?.is_some() {
+        return Err(AppError::BadRequest(
+            "cannot create a Fork after its parent Workspace has started Finish".into(),
+        ));
+    }
     let parent_locations = state.store.workspace_repositories(&parent_id).await?;
     let project = state.store.project(&parent.project_id).await?;
     if project.status != "active" {

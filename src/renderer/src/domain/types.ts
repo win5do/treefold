@@ -402,10 +402,25 @@ export type ParentOperationPreview = {
   operation?: ParentOperation;
 };
 
-export type FinishProgress = {
-  status: "finished" | "paused" | "awaiting_resume";
-  repository: WorkspaceRepository;
-  operation?: ParentOperation;
+export type FinishPlanItem = {
+  repository_id: string;
+  code_action: "local_merge" | "push_branch" | "keep";
+  delete_worktree: boolean;
+  delete_branch: boolean;
+  preflight_id: string;
+};
+export type FinishBatch = {
+  workspace_id: string;
+  status: "running" | "paused" | "completed";
+  error?: string | null;
+  items: (FinishPlanItem & {
+    repository_name: string;
+    status: "pending" | "delivering" | "delivered" | "cleaning" | "completed" | "blocked";
+    delivered: boolean;
+    cleaned: boolean;
+    error?: string | null;
+    operation_id?: string | null;
+  })[];
 };
 export type ProjectDirectoryInspection = {
   path: string;
@@ -445,6 +460,7 @@ export type WorkspaceDetail = Workspace & {
   sessions: Session[];
   todos: Todo[];
   forks: Workspace[];
+  finish_batch?: FinishBatch | null;
 };
 
 export type SystemStatus = {

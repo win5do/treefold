@@ -1,377 +1,409 @@
-import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { GitCompare, SquareTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
 import { NativeSelect as Select } from "@/components/ui/native-select";
-import type { DeliveryPreflight, ParentOperation, Session, WorkspaceDetail } from "@/domain/types";
-import { workspacesApi } from "@/api/workspaces";
-import { sessionsApi } from "@/api/sessions";
-import { ParentOperationPanel } from "@/features/workspace/ParentOperationDialog";
-
-type FinishStrategy = "local_merge" | "push_branch" | "keep";
-type FinishDraft = {
-  codeAction: FinishStrategy;
-  deleteWorktree: boolean;
-  deleteBranch: boolean;
-};
-
-export type FinishPayload = {
-  code_action: FinishStrategy;
-  keep_session_history: boolean;
-  delete_worktree: boolean;
-  delete_branch: boolean;
-  preflight_id?: string;
-  resume_finish?: boolean;
-};
-
-function initialDraft(isFork: boolean, deliveryMode: string): FinishDraft {
-  const codeAction: FinishStrategy = isFork
-    ? "local_merge"
-    : deliveryMode === "local_merge" || deliveryMode === "keep"
-      ? deliveryMode
-      : "push_branch";
-  const cleanup = codeAction !== "keep";
-  return { codeAction, deleteWorktree: cleanup, deleteBranch: cleanup };
-}
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import type { ParentOperation, Session, WorkspaceDetail } from "@/domain/types";
+import { useFinishBatch } from "./useFinishBatch";
+import { FinishConflict } from "./FinishConflict";
 
 export function FinishWorkspaceDialog({
   workspace,
-  busy,
-  operation: operationProp,
-  onOperationChange,
   onOpenChange,
-  onSubmit,
+  onCompleted,
   onOpenSession,
   onOpenShell,
   onReviewChanges,
 }: {
   workspace: WorkspaceDetail | null;
-  busy: boolean;
-  operation: ParentOperation | null;
-  onOperationChange: (operation: ParentOperation | null) => void;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (locationId: string, payload: FinishPayload) => void;
+  onCompleted: () => void;
   onOpenSession: (operation: ParentOperation, session: Session) => void;
   onOpenShell: (locationId: string) => void;
   onReviewChanges: (locationId: string) => void;
 }) {
   const { t } = useTranslation();
-  const finishable = workspace?.repositories.filter(
-    (location) =>
-      location.access_mode === "read_write" &&
-      ["active", "failed", "conflicted", "published"].includes(
-        location.delivery_status,
-      ),
-  ) ?? [];
-  const isFork = workspace?.kind === "fork";
-  const [locationId, setLocationId] = useState("");
-  const [drafts, setDrafts] = useState<Record<string, FinishDraft>>({});
-  const location =
-    finishable.find((item) => item.id === locationId) ?? finishable[0];
-  const draft = location ? drafts[location.id] : undefined;
-  const [preflight, setPreflight] = useState<DeliveryPreflight | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [preflightError, setPreflightError] = useState("");
-  const [operationBusy, setOperationBusy] = useState(false);
-  const [operationError, setOperationError] = useState("");
-  const [resolverSession, setResolverSession] = useState<Session | null>(null);
-
-  useEffect(() => {
-    if (!workspace) return;
-    const locations = workspace.repositories.filter(
-      (item) =>
-        item.access_mode === "read_write" &&
-        ["active", "failed", "conflicted", "published"].includes(
-          item.delivery_status,
-        ),
-    );
-    setLocationId(locations[0]?.id ?? "");
-    setDrafts(
-      Object.fromEntries(
-        locations.map((item) => [
-          item.id,
-          initialDraft(workspace.kind === "fork", item.delivery_mode),
-        ]),
-      ),
-    );
-  }, [workspace?.id]);
-
-  useEffect(() => {
-    if (!location || !draft) return;
-    const controller = new AbortController();
-    setChecking(true);
-    setPreflight(null);
-    setPreflightError("");
-    void workspacesApi
-      .preflight(location.id, draft.codeAction, controller.signal)
-      .then(setPreflight)
-      .catch((cause) => {
-        if (!controller.signal.aborted) {
-          setPreflightError(
-            cause instanceof Error ? cause.message : t("deliveryUi.preflightFailed"),
-          );
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setChecking(false);
-      });
-    return () => controller.abort();
-  }, [location?.id, draft?.codeAction]);
-
-  useEffect(() => {
-    if (
-      !operationProp ||
-      !["active", "conflicted", "resolving", "recovery_required"].includes(
-        operationProp.status,
-      )
-    )
-      return;
-    const timer = window.setInterval(() => {
-      void workspacesApi
-        .parentOperation(operationProp.id)
-        .then(onOperationChange)
-        .catch((cause: Error) => setOperationError(cause.message));
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [operationProp?.id, operationProp?.status, onOperationChange]);
-
-  const updateDraft = (update: Partial<FinishDraft>) => {
-    if (!location || !draft) return;
-    setDrafts((current) => ({
-      ...current,
-      [location.id]: { ...draft, ...update },
-    }));
-  };
-  const selectStrategy = (codeAction: FinishStrategy) => {
-    const cleanup = codeAction !== "keep";
-    updateDraft({ codeAction, deleteWorktree: cleanup, deleteBranch: cleanup });
-  };
-  const blocked = !preflight || preflight.blockers.length > 0;
-  const payload = (resumeFinish = false): FinishPayload | null =>
-    draft
-      ? {
-          code_action: draft.codeAction,
-          keep_session_history: true,
-          delete_worktree: draft.deleteWorktree,
-          delete_branch: draft.deleteBranch,
-          preflight_id: preflight?.id,
-          resume_finish: resumeFinish,
-        }
-      : null;
-  const operationAction = async (action: () => Promise<ParentOperation>) => {
-    setOperationBusy(true);
-    setOperationError("");
-    try {
-      onOperationChange(await action());
-    } catch (cause) {
-      setOperationError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setOperationBusy(false);
-    }
-  };
-
+  const flow = useFinishBatch(workspace);
+  const [selected, setSelected] = useState("");
+  useEffect(() => setSelected(""), [workspace?.id]);
+  const repositories =
+    workspace?.repositories.filter((item) =>
+      flow.batch
+        ? flow.batch.items.some((entry) => entry.repository_id === item.id)
+        : item.access_mode === "read_write" &&
+          ["active", "failed", "conflicted", "published"].includes(
+            item.delivery_status,
+          ),
+    ) ?? [];
+  const current = repositories.some((item) => item.id === selected)
+    ? selected
+    : repositories[0]?.id;
+  const completed = flow.batch?.status === "completed";
+  const progress = flow.batch?.items.filter((item) => item.cleaned).length ?? 0;
   return (
     <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-2xl">
+      <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{t("deliveryUi.finishLocation", { type: isFork ? "Fork" : "Workspace" })}</DialogTitle>
-          <DialogDescription>{t("deliveryUi.finishDescription")}</DialogDescription>
+          <DialogTitle>
+            {t("deliveryUi.batchTitle", {
+              type: workspace?.kind === "fork" ? "Fork" : "Workspace",
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(
+              completed
+                ? "deliveryUi.batchCompletedDescription"
+                : flow.batch?.status === "paused"
+                  ? "deliveryUi.batchPausedDescription"
+                  : flow.batch
+                    ? "deliveryUi.batchRunningDescription"
+                    : "deliveryUi.batchDescription",
+            )}
+          </DialogDescription>
         </DialogHeader>
-        <div
-          data-testid="finish-scroll-region"
-          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1"
-        >
-          <Field>
-            <FieldLabel htmlFor="finish-location">{t("deliveryUi.rEPOSITORY")}</FieldLabel>
-            <Select
-              id="finish-location"
-              className="w-full"
-              value={location?.id ?? ""}
-              onChange={(event) => setLocationId(event.target.value)}
+        {!flow.loaded ? (
+          <p>{t("states.checking")}</p>
+        ) : !repositories.length && !flow.batch ? (
+          <p>{t("deliveryUi.batchReadyToArchive")}</p>
+        ) : (
+          <Tabs
+            orientation="vertical"
+            value={current ?? ""}
+            onValueChange={(value) => setSelected(String(value))}
+            className="min-h-0 flex-1 gap-4 overflow-hidden"
+          >
+            <TabsList
+              aria-label={t("deliveryUi.rEPOSITORY")}
+              variant="line"
+              className="max-h-[60vh] w-40 shrink-0 justify-start overflow-y-auto sm:w-48"
             >
-              {finishable.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.repository_name} · {t(`states.${item.delivery_status}`, { defaultValue: item.delivery_status })}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <section
-            data-testid="delivery-preflight"
-            className="rounded-lg border bg-muted/40 p-4"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-xs font-semibold">
-                {t("deliveryUi.preflightTitle", { name: location?.repository_name })}
-              </h3>
-              <Badge
-                variant={preflight && !preflight.blockers.length ? "success" : "neutral"}
-              >
-                {t(checking ? "states.checking" : blocked ? "states.blocked" : "states.ready")}
-              </Badge>
+              {repositories.map((item) => {
+                const status = flow.batch?.items.find(
+                  (entry) => entry.repository_id === item.id,
+                )?.status;
+                const check = flow.preflights[item.id];
+                return (
+                  <TabsTrigger
+                    key={item.id}
+                    value={item.id}
+                    className="h-auto flex-none flex-wrap gap-2"
+                  >
+                    <span
+                      className="min-w-0 flex-1 truncate"
+                      title={item.repository_name}
+                    >
+                      {item.repository_name}
+                    </span>
+                    <Badge
+                      variant={
+                        status === "blocked" ||
+                        flow.checks[item.id] ||
+                        check?.blockers.length
+                          ? "warning"
+                          : "neutral"
+                      }
+                    >
+                      {status
+                        ? t(`deliveryUi.batchStates.${status}`)
+                        : t(
+                            check
+                              ? check.blockers.length
+                                ? "states.blocked"
+                                : "states.ready"
+                              : flow.checks[item.id]
+                                ? "states.failed"
+                                : "states.checking",
+                          )}
+                    </Badge>
+                  </TabsTrigger>
+                );
+              })}
+            </TabsList>
+            <div
+              data-testid="finish-scroll-region"
+              className="min-h-0 min-w-0 flex-1 overflow-y-auto pr-1"
+            >
+              {repositories.map((item) => {
+                const draft = flow.drafts[item.id];
+                const check = flow.preflights[item.id];
+                const progressItem = flow.batch?.items.find(
+                  (entry) => entry.repository_id === item.id,
+                );
+                return (
+                  <TabsContent
+                    key={item.id}
+                    value={item.id}
+                    className="flex flex-col gap-4"
+                  >
+                    <h3 className="break-words text-sm font-semibold">
+                      {item.repository_name}
+                    </h3>
+                    {flow.batch ? (
+                      <>
+                        <p role="status">
+                          {t(
+                            `deliveryUi.batchStates.${progressItem?.status ?? "pending"}`,
+                          )}
+                        </p>
+                        {progressItem?.error && (
+                          <p
+                            role="alert"
+                            className="break-words text-destructive"
+                          >
+                            {progressItem.error}
+                          </p>
+                        )}
+                        {progressItem?.operation_id && (
+                          <FinishConflict
+                            id={progressItem.operation_id}
+                            onOpenSession={onOpenSession}
+                          />
+                        )}
+                        {flow.batch.status === "paused" && (
+                          <p className="text-muted-foreground">
+                            {t("deliveryUi.batchResumeHint")}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      draft && (
+                        <>
+                          <Field>
+                            <FieldLabel htmlFor={`finish-strategy-${item.id}`}>
+                              {t("deliveryUi.finishStrategy")}
+                            </FieldLabel>
+                            <Select
+                              id={`finish-strategy-${item.id}`}
+                              value={draft.code_action}
+                              onChange={(event) => {
+                                const code_action = event.target
+                                  .value as typeof draft.code_action;
+                                flow.update(item.id, {
+                                  code_action,
+                                  delete_worktree: code_action !== "keep",
+                                  delete_branch: code_action !== "keep",
+                                });
+                              }}
+                            >
+                              <option value="local_merge">
+                                {t("deliveryUi.mergeTarget", {
+                                  target:
+                                    workspace?.kind === "fork"
+                                      ? t("deliveryUi.parentWorkspace")
+                                      : t("deliveryUi.localBaseBranch"),
+                                })}
+                              </option>
+                              {workspace?.kind !== "fork" &&
+                                item.remote_name && (
+                                  <option value="push_branch">
+                                    {t("deliveryUi.pushWorkspaceFeatureBranch")}
+                                  </option>
+                                )}
+                              <option value="keep">
+                                {t("deliveryUi.preserveWithoutDelivery")}
+                              </option>
+                            </Select>
+                          </Field>
+                          <section
+                            data-testid="delivery-preflight"
+                            className="flex flex-col gap-2 rounded-lg border p-4"
+                          >
+                            <p>
+                              {t(
+                                check
+                                  ? check.blockers.length
+                                    ? "states.blocked"
+                                    : "states.ready"
+                                  : "states.checking",
+                              )}
+                            </p>
+                            {check && (
+                              <>
+                                <p className="break-words">
+                                  {t("deliveryUi.batchTarget", {
+                                    branch: check.target_branch,
+                                  })}
+                                </p>
+                                <p>
+                                  {t("deliveryUi.preflightSummary", {
+                                    ahead: check.ahead,
+                                    behind: check.behind,
+                                    files: check.changed_files.length,
+                                  })}
+                                </p>
+                              </>
+                            )}
+                            {check?.warnings.map((text) => (
+                              <p key={text} className="text-warning">
+                                {text}
+                              </p>
+                            ))}
+                            {check?.blockers.map((text) => (
+                              <p
+                                key={text}
+                                className="break-words text-destructive"
+                              >
+                                {text}
+                              </p>
+                            ))}
+                            {flow.checks[item.id] && (
+                              <p
+                                role="alert"
+                                className="break-words text-destructive"
+                              >
+                                {flow.checks[item.id]}
+                              </p>
+                            )}
+                            {check?.source_dirty && (
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => onReviewChanges(item.id)}
+                                >
+                                  <GitCompare data-icon="inline-start" />
+                                  {t("deliveryUi.reviewChanges")}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => onOpenShell(item.id)}
+                                >
+                                  <SquareTerminal data-icon="inline-start" />
+                                  {t("deliveryUi.openShell")}
+                                </Button>
+                              </div>
+                            )}
+                          </section>
+                          <FieldSet>
+                            <FieldLegend>{t("deliveryUi.cleanup")}</FieldLegend>
+                            <FieldGroup>
+                              <Field orientation="horizontal">
+                                <Checkbox
+                                  id={`finish-worktree-${item.id}`}
+                                  checked={draft.delete_worktree}
+                                  onCheckedChange={(value) =>
+                                    flow.update(item.id, {
+                                      delete_worktree: value,
+                                      delete_branch:
+                                        value && draft.delete_branch,
+                                    })
+                                  }
+                                />
+                                <FieldLabel
+                                  htmlFor={`finish-worktree-${item.id}`}
+                                >
+                                  {t("deliveryUi.removeManagedWorktree")}
+                                </FieldLabel>
+                              </Field>
+                              <Field orientation="horizontal">
+                                <Checkbox
+                                  id={`finish-branch-${item.id}`}
+                                  checked={draft.delete_branch}
+                                  disabled={!draft.delete_worktree}
+                                  onCheckedChange={(value) =>
+                                    flow.update(item.id, {
+                                      delete_branch: value,
+                                    })
+                                  }
+                                />
+                                <FieldLabel
+                                  htmlFor={`finish-branch-${item.id}`}
+                                >
+                                  {t("deliveryUi.deleteLocalBranch")}
+                                </FieldLabel>
+                              </Field>
+                            </FieldGroup>
+                          </FieldSet>
+                        </>
+                      )
+                    )}
+                  </TabsContent>
+                );
+              })}
             </div>
-            {preflight && (
-              <p className="mt-3 text-xs text-muted-foreground">
-                {t("deliveryUi.preflightSummary", { ahead: preflight.ahead, behind: preflight.behind, files: preflight.changed_files.length })}
-              </p>
-            )}
-            {preflight?.warnings.map((item) => (
-              <p key={item} className="mt-2 text-xs text-warning">
-                {item}
-              </p>
-            ))}
-            {preflight?.blockers.map((item) => (
-              <p key={item} className="mt-2 text-xs text-destructive">
-                {item}
-              </p>
-            ))}
-            {preflight?.source_dirty && location && (
-              <div className="mt-3 flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => onReviewChanges(location.id)}><GitCompare data-icon="inline-start" />{t("deliveryUi.reviewChanges")}</Button>
-                <Button size="sm" variant="outline" onClick={() => onOpenShell(location.id)}><SquareTerminal data-icon="inline-start" />{t("deliveryUi.openShell")}</Button>
-              </div>
-            )}
-            {preflightError && (
-              <p className="mt-2 text-xs text-destructive">{preflightError}</p>
-            )}
-          </section>
-          <FieldSet className="rounded-lg border p-4">
-            <FieldLegend variant="label">{t("deliveryUi.strategy")}</FieldLegend>
-            <Field>
-              <FieldLabel className="sr-only" htmlFor="finish-code-action">{t("deliveryUi.finishStrategy")}</FieldLabel>
-              <Select
-                id="finish-code-action"
-                className="w-full"
-                value={draft?.codeAction ?? ""}
-                onChange={(event) =>
-                  selectStrategy(event.target.value as FinishStrategy)
-                }
-              >
-                <option value="local_merge">
-                  {t("deliveryUi.mergeTarget", { target: isFork ? t("deliveryUi.parentWorkspace") : t("deliveryUi.localBaseBranch") })}
-                </option>
-                {!isFork && (
-                  <option value="push_branch">{t("deliveryUi.pushWorkspaceFeatureBranch")}</option>
-                )}
-                <option value="keep">{t("deliveryUi.preserveWithoutDelivery")}</option>
-              </Select>
-            </Field>
-          </FieldSet>
-          {operationProp && (
-            <ParentOperationPanel
-              operation={operationProp}
-              busy={operationBusy || busy}
-              resolverSession={resolverSession}
-              onResolve={() => {
-                setOperationBusy(true);
-                void workspacesApi
-                  .resolveParentOperation(operationProp.id)
-                  .then((session) => {
-                    setResolverSession(session);
-                    return workspacesApi.parentOperation(operationProp.id);
-                  })
-                  .then(onOperationChange)
-                  .catch((cause: Error) => setOperationError(cause.message))
-                  .finally(() => setOperationBusy(false));
-              }}
-              onOpenSession={() => {
-                if (resolverSession) onOpenSession(operationProp, resolverSession);
-                else if (operationProp.resolver_session_id) {
-                  void sessionsApi
-                    .get(operationProp.resolver_session_id)
-                    .then((session) => onOpenSession(operationProp, session))
-                    .catch((cause: Error) => setOperationError(cause.message));
-                }
-              }}
-              onAbort={() =>
-                void operationAction(() =>
-                  workspacesApi.abortParentOperation(operationProp.id),
-                )
-              }
-              onUndo={() =>
-                void operationAction(() =>
-                  workspacesApi.undoParentOperation(operationProp.id),
-                )
-              }
-              onResumeFinish={() => {
-                const nextPayload = payload(true);
-                if (location && nextPayload) onSubmit(location.id, nextPayload);
-              }}
-            />
-          )}
-          {operationError && (
-            <p className="text-xs text-destructive">{operationError}</p>
-          )}
-          <FieldSet className="rounded-lg border p-4">
-            <FieldLegend variant="label">{t("deliveryUi.cleanup")}</FieldLegend>
-            <FieldGroup className="gap-3">
-              <Field orientation="horizontal">
-                <Checkbox
-                  id="finish-delete-worktree"
-                  checked={draft?.deleteWorktree ?? false}
-                  onCheckedChange={(checked) =>
-                    updateDraft({
-                      deleteWorktree: checked,
-                      deleteBranch: checked ? draft?.deleteBranch : false,
-                    })
-                  }
-                />
-                <FieldLabel htmlFor="finish-delete-worktree">{t("deliveryUi.removeManagedWorktree")}</FieldLabel>
-              </Field>
-              <Field
-                orientation="horizontal"
-                data-disabled={!draft?.deleteWorktree || undefined}
-              >
-                <Checkbox
-                  id="finish-delete-branch"
-                  checked={draft?.deleteBranch ?? false}
-                  disabled={!draft?.deleteWorktree}
-                  onCheckedChange={(checked) =>
-                    updateDraft({ deleteBranch: checked })
-                  }
-                />
-                <FieldLabel htmlFor="finish-delete-branch">{t("deliveryUi.deleteLocalBranch")}</FieldLabel>
-              </Field>
-            </FieldGroup>
-          </FieldSet>
-        </div>
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() => onOpenChange(false)}
-          >{t("deliveryUi.cancel")}</Button>
-          <Button
-            data-testid="finish-confirm-action"
-            variant="destructive"
-            disabled={
-              busy ||
-              checking ||
-              blocked ||
-              !location ||
-              !draft ||
-              Boolean(
-                operationProp &&
-                  [
-                    "active",
-                    "conflicted",
-                    "resolving",
-                    "completed",
-                    "recovery_required",
-                  ].includes(operationProp.status),
-              )
-            }
-            onClick={() => {
-              const nextPayload = payload();
-              if (location && nextPayload) onSubmit(location.id, nextPayload);
-            }}
+          </Tabs>
+        )}
+        {(flow.error || flow.batch?.error) && (
+          <p
+            role="alert"
+            className="max-h-24 overflow-y-auto break-words text-xs text-destructive"
           >
-            {busy ? t("deliveryUi.finishing") : t("deliveryUi.finish", { name: location?.repository_name ?? t("deliveryUi.location") })}
-          </Button>
+            {flow.error || flow.batch?.error}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <p role="status" className="text-xs text-muted-foreground">
+            {flow.batch
+              ? t(
+                  completed
+                    ? "deliveryUi.batchCompleted"
+                    : "deliveryUi.batchProgress",
+                  { done: progress, total: repositories.length },
+                )
+              : repositories.length
+                ? t("deliveryUi.batchCount", { count: repositories.length })
+                : null}
+          </p>
+          <div className="flex gap-2">
+            {!flow.batch && repositories.length > 0 && (
+              <Button
+                variant="ghost"
+                disabled={flow.busy}
+                onClick={flow.recheck}
+              >
+                {t("deliveryUi.batchRecheck")}
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              onClick={() => (completed ? onCompleted() : onOpenChange(false))}
+            >
+              {t(
+                flow.batch
+                  ? completed
+                    ? "deliveryUi.batchDone"
+                    : "deliveryUi.batchClose"
+                  : "deliveryUi.cancel",
+              )}
+            </Button>
+            {!completed && (
+              <Button
+                data-testid="finish-confirm-action"
+                disabled={
+                  flow.busy ||
+                  !flow.loaded ||
+                  (flow.batch ? flow.batch.status === "running" : !flow.ready)
+                }
+                onClick={() => void flow.execute()}
+              >
+                {t(
+                  flow.batch
+                    ? flow.batch.status === "running"
+                      ? "deliveryUi.finishing"
+                      : "deliveryUi.batchResume"
+                    : "deliveryUi.batchExecute",
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

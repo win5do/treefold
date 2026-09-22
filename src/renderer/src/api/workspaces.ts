@@ -1,7 +1,8 @@
 import { request } from "./client";
 import type {
   DeliveryPreflight,
-  FinishProgress,
+  FinishBatch,
+  FinishPlanItem,
   GitHistory,
   GitDiffComparison,
   GitDiffRequest,
@@ -39,8 +40,6 @@ export const workspacesApi = {
       method: "PATCH",
       json: { session_ids: sessionIds },
     }),
-  archive: (id: string) =>
-    request(`/api/workspaces/${id}/archive`, { method: "POST" }),
   resync: (id: string) =>
     request<WorkspaceDetail>(`/api/workspaces/${id}/resync`, { method: "POST" }),
   sync: (id: string, action: "pull" | "push") =>
@@ -56,11 +55,14 @@ export const workspacesApi = {
     request(`/api/workspace-repositories/${id}/git/${action}`, {
       method: "POST",
     }),
-  finishRepository: (id: string, json: unknown) =>
-    request<FinishProgress>(`/api/workspace-repositories/${id}/finish`, {
-      method: "POST",
-      json,
+  finishBatch: (id: string) =>
+    request<FinishBatch | null>(`/api/workspaces/${id}/finish-batch`),
+  startFinishBatch: (id: string, repositories: FinishPlanItem[]) =>
+    request<FinishBatch>(`/api/workspaces/${id}/finish-batch`, {
+      method: "POST", json: { repositories },
     }),
+  resumeFinishBatch: (id: string) =>
+    request<FinishBatch>(`/api/workspaces/${id}/finish-batch/resume`, { method: "POST" }),
   parentOperationPreview: (
     id: string,
     direction: ParentOperationDirection,

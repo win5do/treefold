@@ -497,8 +497,12 @@ fn app(state: AppState) -> Router {
             post(undo_parent_operation),
         )
         .route(
-            "/api/workspace-repositories/{id}/finish",
-            post(finish_workspace_repository),
+            "/api/workspaces/{id}/finish-batch",
+            get(finish_batch::get_finish_batch).post(finish_batch::start_finish_batch),
+        )
+        .route(
+            "/api/workspaces/{id}/finish-batch/resume",
+            post(finish_batch::resume_finish_batch),
         )
         .route("/api/workspaces/{id}/archive", post(archive_workspace))
         .route("/api/workspaces/{id}/reveal", post(reveal_workspace))
@@ -602,6 +606,7 @@ async fn list_background_processes(
 mod agent;
 mod codex_identity;
 mod delivery;
+mod finish_batch;
 mod fork;
 #[path = "server/git.rs"]
 mod git_routes;

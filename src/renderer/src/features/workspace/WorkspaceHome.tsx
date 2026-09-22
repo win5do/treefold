@@ -69,6 +69,7 @@ export function WorkspaceHome({
     available: boolean;
     session: (kind: "shell" | "codex", directory: Directory) => void;
     fork: () => void;
+    finish: () => void;
   };
   busy: boolean;
   onOpen: (session: Session) => void;
@@ -154,6 +155,15 @@ export function WorkspaceHome({
             </p>
           </div>
         </div>
+        {detail.finish_batch && detail.finish_batch.status !== "completed" && (
+          <Alert className="mt-6">
+            <CircleAlert />
+            <AlertDescription className="flex items-center justify-between gap-3">
+              <span>{t("deliveryUi.batchNotice")}</span>
+              <Button size="sm" onClick={creation.finish}>{t("deliveryUi.batchView")}</Button>
+            </AlertDescription>
+          </Alert>
+        )}
         <section data-testid="workspace-sessions-section" className="mt-8">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold">Session</h2>

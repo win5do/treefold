@@ -1353,7 +1353,6 @@ mod current_workspace_tests {
                 delete_branch: true,
                 commit_message: Some("finish parallel work".into()),
                 preflight_id: Some(preflight.id),
-                resume_finish: false,
             },
             None,
         )
@@ -1674,7 +1673,6 @@ mod current_workspace_tests {
             delete_branch: false,
             commit_message: None,
             preflight_id: Some(preflight.id),
-            resume_finish: false,
         };
         let Json(paused) = finish_workspace_repository_impl(
             state.clone(),
@@ -1708,22 +1706,12 @@ mod current_workspace_tests {
             .await
             .unwrap();
         assert_eq!(completed.status, "completed");
-        assert!(completed.undo_available);
+        assert!(!completed.undo_available);
 
-        let Json(awaiting) = finish_workspace_repository_impl(
-            state.clone(),
-            fork_location.id.clone(),
-            input.clone(),
-        )
-        .await
-        .expect("wait for explicit Resume Finish");
-        assert_eq!(awaiting.status, "awaiting_resume");
-        let mut resume = input;
-        resume.resume_finish = true;
         let Json(finished) =
-            finish_workspace_repository_impl(state.clone(), fork_location.id, resume)
+            finish_workspace_repository_impl(state.clone(), fork_location.id, input)
                 .await
-                .expect("resume Finish");
+                .expect("continue Finish after conflict resolution");
         assert_eq!(finished.status, "finished");
         assert_eq!(finished.repository.delivery_status, "delivered");
         assert!(
@@ -1815,7 +1803,6 @@ mod current_workspace_tests {
                 delete_branch: false,
                 commit_message: None,
                 preflight_id: Some(preflight.id),
-                resume_finish: false,
             },
         )
         .await
@@ -1906,7 +1893,6 @@ mod current_workspace_tests {
                 delete_branch: false,
                 commit_message: None,
                 preflight_id: Some(preflight.id),
-                resume_finish: false,
             },
         )
         .await

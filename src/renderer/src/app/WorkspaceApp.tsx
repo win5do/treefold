@@ -266,8 +266,6 @@ function Workspace() {
     useState<WorkspaceRepository | null>(null);
   const [finishWorkspaceDialog, setFinishWorkspaceDialog] =
     useState<WorkspaceDetail | null>(null);
-  const [finishParentOperation, setFinishParentOperation] =
-    useState<ParentOperation | null>(null);
   const [parentOperationDialog, setParentOperationDialog] = useState<{
     workspace: WorkspaceDetail;
     direction: ParentOperationDirection;
@@ -1380,6 +1378,7 @@ function Workspace() {
                     available: selectedProject?.status === "active" && workspace.status === "active",
                     session: (kind, directory) => void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory)),
                     fork: () => setCreateForkWorkspace(workspace),
+                    finish: () => void openFinishWorkspace(workspace),
                   }}
                   busy={busy}
                   onOpen={(session) =>
@@ -1753,56 +1752,20 @@ function Workspace() {
       />
       <FinishWorkspaceDialog
         workspace={finishWorkspaceDialog}
-        busy={busy}
-        operation={finishParentOperation}
-        onOperationChange={setFinishParentOperation}
         onOpenChange={(open) => {
-          if (!open) {
-            setFinishWorkspaceDialog(null);
-            setFinishParentOperation(null);
-          }
+          if (!open) setFinishWorkspaceDialog(null);
         }}
-        onSubmit={async (locationId, payload) => {
-          if (!finishWorkspaceDialog) return;
+        onCompleted={() => {
           const owner = finishWorkspaceDialog;
-          let updated: WorkspaceDetail | null = null;
-          const ok = await act(async () => {
-            const progress = await workspacesApi.finishRepository(locationId, payload);
-            setFinishParentOperation(progress.operation ?? null);
-            updated = normalizeWorkspace(await workspacesApi.detail(owner.id));
-            if (
-              (updated as WorkspaceDetail).repositories
-                .filter((item) => item.access_mode === "read_write")
-                .every((item) =>
-                  ["delivered", "pushed", "kept", "discarded"].includes(
-                    item.delivery_status,
-                  ),
-                )
-            )
-              await workspacesApi.archive(owner.id);
-          });
-          if (
-            ok &&
-            updated &&
-            (updated as WorkspaceDetail).repositories
-              .filter((item) => item.access_mode === "read_write")
-              .every((item) =>
-                ["delivered", "pushed", "kept", "discarded"].includes(
-                  item.delivery_status,
-                ),
-              )
-          ) {
-            setFinishWorkspaceDialog(null);
-            navigate(
-              owner.parent_workspace_id
-                ? `/workspaces/${owner.parent_workspace_id}`
-                : `/projects/${owner.project.id}`,
-            );
-          } else if (ok && updated) setFinishWorkspaceDialog(updated);
+          setFinishWorkspaceDialog(null);
+          if (owner) {
+            navigate(owner.parent_workspace_id
+              ? `/workspaces/${owner.parent_workspace_id}`
+              : `/projects/${owner.project.id}`);
+          }
         }}
         onOpenSession={(operation, session) => {
           setFinishWorkspaceDialog(null);
-          setFinishParentOperation(null);
           navigate(
             operation.target_scope === "project"
               ? `/projects/${finishWorkspaceDialog?.project.id}/sessions/${session.id}`
@@ -1817,7 +1780,6 @@ function Workspace() {
             (item) => item.repository_id === location?.project_repository_id,
           );
           setFinishWorkspaceDialog(null);
-          setFinishParentOperation(null);
           void createShell(owner, directory);
         }}
         onReviewChanges={(locationId) => {
@@ -1826,7 +1788,6 @@ function Workspace() {
           const repository = owner.repositories.find((item) => item.id === locationId);
           if (!repository) return;
           setFinishWorkspaceDialog(null);
-          setFinishParentOperation(null);
           setInspectorOpen(true);
           const next = new URLSearchParams();
           next.set("view", "git-changes");

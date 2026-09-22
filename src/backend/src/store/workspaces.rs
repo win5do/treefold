@@ -459,6 +459,7 @@ impl Store {
             sessions: self.sessions(id).await?,
             todos,
             forks: self.forks(id).await?,
+            finish_batch: self.finish_batch(id).await?,
             workspace,
         })
     }

@@ -189,4 +189,5 @@ pub struct WorkspaceDetail {
     pub sessions: Vec<Session>,
     pub todos: Vec<Todo>,
     pub forks: Vec<Workspace>,
+    pub finish_batch: Option<super::FinishBatch>,
 }

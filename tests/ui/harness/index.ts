@@ -1,3 +1,4 @@
+import { createFinishRoutes } from "./routes/finish.ts";
 import { createKeymapRoutes } from "./routes/keymap.ts";
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -73,6 +74,7 @@ async function startFixtureApi() {
   let worktreeDeletePolls = 0;
   const amuxStopRequests: string[] = [];
   const repositoryBranches = new Map<string, GitBranches>();
+  const finishRoutes = createFinishRoutes({ fixture, readJson, sendJson });
   const gitDiffRoutes = createGitDiffRoutes({ fixture, readJson, sendJson });
   const parentOperationRoutes = createParentOperationRoutes({
     fixture,
@@ -91,6 +93,7 @@ async function startFixtureApi() {
 
     const requestUrl = new URL(request.url ?? "/", "http://fixture.test");
     const pathname = requestUrl.pathname;
+    if (await finishRoutes.handle(request, response, pathname)) return;
     if (await gitDiffRoutes.handle(request, response, pathname)) return;
     if (await parentOperationRoutes.handle(request, response, pathname)) return;
     if (await keymapRoutes.handle(request, response, pathname)) return;
@@ -1206,23 +1209,6 @@ async function startFixtureApi() {
       }
       renameRequests.push({ kind: "session", id: sessionMatch[1], ...input });
       sendJson(response, 200, { ...session, name: input.name });
-      return;
-    }
-
-    const preflightMatch = pathname.match(
-      /^\/api\/workspace-repositories\/([^/]+)\/delivery-preflight$/,
-    );
-    if (
-      request.method === "POST" &&
-      preflightMatch &&
-      fixture.deliveryPreflights[preflightMatch[1]]
-    ) {
-      const input = await readJson<{ code_action: string }>(request);
-      const base = fixture.deliveryPreflights[preflightMatch[1]];
-      sendJson(response, 201, {
-        ...base,
-        code_action: input.code_action,
-      });
       return;
     }
 

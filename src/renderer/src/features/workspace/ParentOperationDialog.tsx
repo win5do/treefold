@@ -273,7 +273,6 @@ export function ParentOperationPanel({
   onOpenSession,
   onAbort,
   onUndo,
-  onResumeFinish,
 }: {
   operation: ParentOperation;
   busy: boolean;
@@ -281,8 +280,7 @@ export function ParentOperationPanel({
   onResolve: () => void;
   onOpenSession: () => void;
   onAbort: () => void;
-  onUndo: () => void;
-  onResumeFinish?: () => void;
+  onUndo?: () => void;
 }) {
   const { t } = useTranslation();
   const conflicted = operation.status === "conflicted" || operation.status === "resolving";
@@ -306,13 +304,10 @@ export function ParentOperationPanel({
           {conflicted && (
             <Button size="sm" variant="destructive" disabled={busy} onClick={onAbort}>{t("workspaceUi.stopAIAbort")}</Button>
           )}
-          {operation.status === "completed" && operation.undo_available && (
+          {operation.status === "completed" && operation.undo_available && onUndo && operation.origin !== "finish" && (
             <Button size="sm" variant="outline" disabled={busy} onClick={onUndo}>
               {operation.direction === "update" ? t("workspaceUi.undoUpdate") : t("workspaceUi.undoIntegration")}
             </Button>
-          )}
-          {operation.status === "completed" && operation.origin === "finish" && onResumeFinish && (
-            <Button size="sm" disabled={busy} onClick={onResumeFinish}>{t("workspaceUi.resumeFinish")}</Button>
           )}
         </div>
       </AlertDescription>

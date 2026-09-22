@@ -17,6 +17,7 @@ macro_rules! static_sql {
     ($($token:tt)*) => { sqlx::AssertSqlSafe(format!($($token)*)) };
 }
 
+mod finish;
 mod operations;
 mod projects;
 mod sessions;

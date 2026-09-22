@@ -1,26 +1,5 @@
 use super::*;
 
-pub(super) async fn finish_workspace_repository(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-    ApiJson(input): ApiJson<FinishWorkspace>,
-) -> Result<Json<FinishProgress>> {
-    let location = state.store.workspace_repository(&id).await?;
-    let workspace = state.store.workspace(&location.workspace_id).await?;
-    let project_id = workspace.project_id;
-    let common = state
-        .store
-        .repository(&location.project_repository_id)
-        .await?
-        .git_common_dir;
-    let result = blocking_git_operation_for(common, move || async move {
-        finish_workspace_repository_impl(state, id, input).await
-    })
-    .await;
-    project_worktrees_cache().invalidate(&project_id).await;
-    result
-}
-
 pub(super) async fn finish_workspace_repository_impl(
     state: AppState,
     id: String,
@@ -132,10 +111,6 @@ pub(super) async fn finish_workspace_repository_impl(
     let mut linked_operation = None;
     let (status, outcome, integrated) = match input.code_action.as_str() {
         "local_merge" => {
-            let previous = state
-                .store
-                .latest_parent_operation(&location.id, "integrate")
-                .await?;
             let operation = start_parent_operation_impl(
                 &state,
                 &location.id,
@@ -164,16 +139,6 @@ pub(super) async fn finish_workspace_repository_impl(
                     "integration ended with status {}",
                     operation.status
                 )));
-            }
-            let resumed = previous.as_ref().is_some_and(|previous| {
-                previous.id == operation.id && previous.status == "completed"
-            });
-            if resumed && !input.resume_finish {
-                return Ok(Json(FinishProgress {
-                    status: "awaiting_resume".into(),
-                    repository: state.store.workspace_repository(&location.id).await?,
-                    operation: Some(operation),
-                }));
             }
             let head = operation.result_head.clone().ok_or_else(|| {
                 AppError::BadRequest("completed integration has no result HEAD".into())
@@ -208,31 +173,16 @@ pub(super) async fn finish_workspace_repository_impl(
     if let Some(operation) = linked_operation.as_ref() {
         consume_parent_operation(&state, operation).await?;
     }
-    if input.delete_worktree {
-        let project_repository = state
-            .store
-            .repository_as_directory(&location.project_repository_id)
-            .await?;
-        remove_worktree_if_present(&project_repository.path, &source_path, false)?;
-        if input.delete_branch {
-            let (target, require_merged) = match input.code_action.as_str() {
-                "local_merge" => {
-                    let (_, target_branch) =
-                        workspace_repository_delivery_target(&state, &workspace, &location).await?;
-                    (target_branch, true)
-                }
-                "push_branch" => ("FETCH_HEAD".to_owned(), true),
-                _ => ("HEAD".to_owned(), false),
-            };
-            delete_delivered_branch_if_present(
-                &project_repository.path,
-                &branch,
-                &target,
-                &source_head,
-                require_merged,
-            )?;
-        }
-    }
+    cleanup_finished_repository(
+        &state,
+        &workspace,
+        &location,
+        &input,
+        &source_path,
+        &branch,
+        &source_head,
+    )
+    .await?;
     let timestamp = now();
     state
         .store
@@ -261,6 +211,63 @@ pub(super) async fn finish_workspace_repository_impl(
         repository: state.store.workspace_repository(&location.id).await?,
         operation: linked_operation,
     }))
+}
+
+pub(super) async fn cleanup_finished_repository(
+    state: &AppState,
+    workspace: &Workspace,
+    location: &WorkspaceRepository,
+    input: &FinishWorkspace,
+    source_path: &str,
+    branch: &str,
+    source_head: &str,
+) -> Result<()> {
+    if input.delete_worktree {
+        let project_repository = state
+            .store
+            .repository_as_directory(&location.project_repository_id)
+            .await?;
+        // Delivery and cleanup can be separated by a pause or restart. Never remove
+        // a worktree or branch that gained new commits after confirmation.
+        let source_ref = format!("refs/heads/{branch}");
+        if git_ref_names(&project_repository.path, "refs/heads")?
+            .iter()
+            .any(|candidate| candidate == branch)
+        {
+            let current_head = command_output(
+                Path::new(&project_repository.path),
+                "git",
+                &["rev-parse", &source_ref],
+            )
+            .map_err(AppError::BadRequest)?;
+            if current_head != source_head {
+                return Err(AppError::BadRequest("cleanup stopped because the source branch changed after delivery; preserve the new commits before restoring the confirmed branch".into()));
+            }
+        }
+        if Path::new(source_path).exists() {
+            ensure_checked_out_branch(source_path, branch, "Workspace Repository")?;
+        }
+        remove_worktree_if_present(&project_repository.path, &source_path, false)?;
+        if input.delete_branch {
+            let (target, require_merged) = match input.code_action.as_str() {
+                "local_merge" => {
+                    let (_, target_branch) =
+                        workspace_repository_delivery_target(&state, &workspace, &location).await?;
+                    (target_branch, true)
+                }
+                "push_branch" => ("FETCH_HEAD".to_owned(), true),
+                _ => ("HEAD".to_owned(), false),
+            };
+            delete_delivered_branch_if_present(
+                &project_repository.path,
+                &branch,
+                &target,
+                &source_head,
+                require_merged,
+            )?;
+        }
+    }
+    Ok(())
 }
 
 pub(super) async fn workspace_repository_delivery_target(
@@ -423,8 +430,6 @@ pub(super) struct FinishWorkspace {
     #[allow(dead_code)] // Accepted legacy request field; delivery does not auto-commit.
     pub(super) commit_message: Option<String>,
     pub(super) preflight_id: Option<String>,
-    #[serde(default)]
-    pub(super) resume_finish: bool,
 }
 
 #[cfg(test)]
