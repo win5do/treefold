@@ -15,6 +15,7 @@ import {
   Workflow,
 } from "lucide-react";
 import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
+import { DirectoryOpenButton } from "@/features/open-in/DirectoryOpenButton";
 import { MetadataList, MetadataListItem } from "@/components/ui/metadata-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -187,6 +188,7 @@ export function DirectoryTreeRow({
               {locationSummary}
             </div>
           )}
+          <DirectoryOpenButton path={directory.path} name={directory.name} testId={`project-location-open-${directory.id}`} />
           {!readOnly && (
             <div className="flex shrink-0 gap-1">
               <Button
@@ -523,6 +525,7 @@ export function ProjectRepositoryTreeRow({
               </code>
             </div>
           </button>
+          <DirectoryOpenButton path={repository.source_root} name={repository.name} testId={`project-location-open-${repository.id}`} />
           {!readOnly && (
             <div className="flex shrink-0 gap-1">
               <Button
@@ -808,6 +811,7 @@ function ProjectDirectoryTreeRow({
           </p>
         )}
       </div>
+      <DirectoryOpenButton path={directory.path} name={directory.name} testId={`project-directory-open-${directory.id}`} />
       {!readOnly && (
         <ActionMenu
           label={t("projectsUi.actionsForDirectory", { name: directory.name })}

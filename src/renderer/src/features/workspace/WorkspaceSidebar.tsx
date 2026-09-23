@@ -8,7 +8,6 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
-  Copy,
   Download,
   Ellipsis,
   Folder,
@@ -53,7 +52,6 @@ import type {
 import { AmuxResourcesPopover } from "@/features/resources/AmuxResourcesPopover";
 import { AgentIntegrationPopover } from "@/features/integration/AgentIntegrationPopover";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/toast";
 
 export function WorkspaceSidebar({
   projects,
@@ -613,19 +611,6 @@ function SidebarOwnerContextMenu({
   const { t } = useTranslation();
   const directories = stream?.directories ?? project.directories;
   const directoryGroups = groupDirectories(directories);
-  const copyDirectoryPath = (directory: Directory) => {
-    void navigator.clipboard
-      .writeText(directory.path)
-      .then(() =>
-        toast.success(
-          t("sidebar.absolutePathCopied", { name: directory.name }),
-        ),
-      )
-      .catch((cause) => {
-        console.error("Could not copy absolute path", cause);
-        toast.error(t("sidebar.copyAbsolutePathFailed"));
-      });
-  };
   const syncTargets = !stream
     ? project.repositories
         .filter((repository) => repository.git_status === "ready")
@@ -766,27 +751,7 @@ function SidebarOwnerContextMenu({
         )}
         <ContextMenuSeparator />
         <ContextMenuGroup>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger
-              data-testid="copy-absolute-path-menu"
-              disabled={directories.length === 0}
-            >
-              <Copy />
-              {t("sidebar.copyAbsolutePath")}
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent
-              data-testid="copy-absolute-path-submenu"
-              className="w-52"
-            >
-              <DirectoryMenuGroups
-                groups={directoryGroups}
-                surface="context"
-                testIdPrefix="copy-absolute-path"
-                onSelect={copyDirectoryPath}
-              />
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <OpenInMenu project={project} workspaceId={stream?.id} disabled={busy} />
+          <OpenInMenu project={project} workspaceId={stream?.id} directoryName={stream?.name} disabled={busy} />
           <ContextMenuItem data-testid="rename-node-action" onClick={onRename}>
             <Pencil />
             {t("sidebar.rename")}

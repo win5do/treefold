@@ -427,22 +427,14 @@ test("sidebar.core", async () => {
     });
     await moveUiPointerTo(
       page,
-      nodeContextMenu.locator('[data-testid="copy-absolute-path-menu"]'),
+      nodeContextMenu.locator('[data-testid="open-in-menu"]'),
     );
-    const copyPathSubmenu = page.locator('[data-testid="copy-absolute-path-submenu"]');
+    const copyPathSubmenu = page.locator('[data-testid="open-in-submenu"]');
     await copyPathSubmenu.waitFor({ timeout: 3_000, state: 'visible' });
-    const copyDirectoryGroups = await copyPathSubmenu.locator('[data-testid^="directory-group-"]').all();
-    assert.equal(
-      await copyDirectoryGroups[0].getAttribute("data-testid"),
-      `directory-group-${FIXTURE_IDS.primaryRepository}`,
-      "copy path must use the same primary-first Repository groups as Session creation",
-    );
-    await (
-      copyPathSubmenu.locator(`[data-testid="copy-absolute-path-${FIXTURE_IDS.secondaryDirectory}"]`)
-    ).click();
+    await copyPathSubmenu.getByTestId('open-in-copy-path').click();
     await expect.poll(async () =>
         (await page.evaluate(() => window.__treefoldCopiedPath)) ===
-        "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture-api", {
+        "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture", {
         timeout: 3_000,
         message: "copy path action must write the selected Directory path",
       }).toBeTruthy();

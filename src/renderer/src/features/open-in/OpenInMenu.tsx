@@ -1,7 +1,7 @@
 import { Fragment, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Code, FolderOpen, Terminal } from 'lucide-react';
+import { Code, Copy, FolderOpen, Terminal } from 'lucide-react';
 import type { ProjectDetail } from '@/domain/types';
 import { workspaceDetailQuery } from '@/features/workspace/queries';
 import { toast } from '@/lib/toast';
@@ -10,8 +10,8 @@ import {
   ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger,
 } from '@/components/ui/context-menu';
 
-export function OpenInMenu({ project, workspaceId, disabled }: {
-  project: ProjectDetail; workspaceId?: string; disabled: boolean;
+export function OpenInMenu({ project, workspaceId, directoryPath, directoryName, disabled }: {
+  project?: ProjectDetail; workspaceId?: string; directoryPath?: string; directoryName?: string; disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const client = useQueryClient();
@@ -29,14 +29,27 @@ export function OpenInMenu({ project, workspaceId, disabled }: {
     if (!desktop || opening) return;
     setOpening(true);
     try {
-      const directory = workspaceId
+      const directory = directoryPath ?? (workspaceId
         ? (await client.fetchQuery(workspaceDetailQuery(workspaceId))).checkout_path
-        : project.directories.find(item => item.id === project.default_directory_id)?.path;
+        : project?.directories.find(item => item.id === project.default_directory_id)?.path);
       if (!directory) throw new Error(t('sidebar.openDirectoryUnavailable'));
       await desktop.openInApp(id, directory);
     } catch (cause) {
       toast.errorFrom(cause, t('sidebar.openInFailed'));
     } finally { setOpening(false); }
+  }
+  async function copyPath() {
+    try {
+      const directory = directoryPath ?? (workspaceId
+        ? (await client.fetchQuery(workspaceDetailQuery(workspaceId))).checkout_path
+        : project?.directories.find(item => item.id === project.default_directory_id)?.path);
+      if (!directory) throw new Error(t('sidebar.openDirectoryUnavailable'));
+      await navigator.clipboard.writeText(directory);
+      toast.success(t('sidebar.absolutePathCopied', { name: directoryName ?? project?.name ?? '' }));
+    } catch (cause) {
+      console.error('Could not copy absolute path', cause);
+      toast.error(t('sidebar.copyAbsolutePathFailed'));
+    }
   }
   const groups = (['fileManager', 'editor', 'terminal'] as const)
     .map(group => ({ group, apps: (apps.data ?? []).filter(app => app.group === group) }))
@@ -47,6 +60,12 @@ export function OpenInMenu({ project, workspaceId, disabled }: {
         <FolderOpen />{t('sidebar.openIn')}
       </ContextMenuSubTrigger>
       <ContextMenuSubContent data-testid="open-in-submenu" className="w-52">
+        <ContextMenuGroup>
+          <ContextMenuItem data-testid="open-in-copy-path" onClick={() => void copyPath()}>
+            <Copy />{t('sidebar.copyAbsolutePath')}
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
         {groups.map(({ group, apps }, index) => {
           const Icon = group === 'fileManager' ? FolderOpen : group === 'terminal' ? Terminal : Code;
           return <Fragment key={group}>
