@@ -1,3 +1,4 @@
+import { gitHistoryKeys } from "@/features/review/queries";
 import { invalidateHierarchyQueries } from "@/features/app/runtimeInvalidation";
 import { useSettingsSave } from "@/features/settings/useSettingsSave";
 import { useAppActions } from "@/features/actions/useAppActions";
@@ -1614,9 +1615,14 @@ function Workspace() {
         }}
         onSwitch={async (payload) => {
           if (!branchRepository) return;
-          await act(() =>
-            projectsApi.checkoutRepository(branchRepository.id, payload),
-          );
+          const repositoryId = branchRepository.id;
+          await act(async () => {
+            await projectsApi.checkoutRepository(repositoryId, payload);
+            setBranchRepository(null);
+            await queryClient.invalidateQueries({
+              queryKey: gitHistoryKeys.repository("project", repositoryId),
+            });
+          });
         }}
         onDelete={async (payload) => {
           if (!branchRepository) return;

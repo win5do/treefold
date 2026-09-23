@@ -772,7 +772,7 @@ export function RepositoryBranchesDialog({
                     current={branch === branches.current}
                     busy={busy || loading}
                     target={{ kind: "local", branch }}
-                    onSwitch={(target) => runAndReload(onSwitch, target)}
+                    onSwitch={onSwitch}
                     onDelete={(target) => runAndReload(onDelete, target)}
                   />
                 ))}
@@ -801,7 +801,7 @@ export function RepositoryBranchesDialog({
                         current={false}
                         busy={busy || loading}
                         target={{ kind: "remote", remote: remote.name, branch }}
-                        onSwitch={(target) => runAndReload(onSwitch, target)}
+                        onSwitch={onSwitch}
                         onDelete={(target) => runAndReload(onDelete, target)}
                       />
                     ))}

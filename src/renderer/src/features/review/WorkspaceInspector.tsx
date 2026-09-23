@@ -1,7 +1,9 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { gitHistoryQuery } from "./queries";
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import type * as React from "react";
-import { Bot, Check, Copy, GitBranch, GitCommitHorizontal, GitCompare, History, Info, PanelsTopLeft, RotateCcw, TerminalSquare, Undo2 } from "lucide-react";
+import { Bot, Check, Copy, Combine, GitBranch, GitCommitHorizontal, GitCompare, History, Info, PanelsTopLeft, RotateCcw, TerminalSquare, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,8 +30,7 @@ type InspectorRepository = { id: string; name: string };
 export function WorkspaceInspector({ open, project, workspace, session, gitChangesActive, onOpenChanges, onOpenDiff }: { open: boolean; project: ProjectDetail; workspace: WorkspaceDetail | null; session: Session | null; gitChangesActive: boolean; onOpenChanges: (repository: InspectorRepository) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState<"info" | "changes" | "history">("changes");
-  const [history, setHistory] = useState<GitHistory | null>(null);
-  const [historyError, setHistoryError] = useState("");
+  const queryClient = useQueryClient();
   useEffect(() => { if (open) setTab("changes"); }, [open]);
   useEffect(() => { if (gitChangesActive) setTab("changes"); }, [gitChangesActive]);
   const historyRepositories = workspace
@@ -62,22 +63,11 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
     setHistoryRepositoryId(defaultHistoryRepositoryId);
   }, [defaultHistoryRepositoryId, project.id, workspace?.id]);
 
-  useEffect(() => {
-    if (!open || tab !== "history") return;
-    const controller = new AbortController();
-    setHistory(null);
-    setHistoryError("");
-    if (!activeHistoryRepositoryId) return () => controller.abort();
-    const load = workspace
-      ? workspacesApi.repositoryHistory(activeHistoryRepositoryId, controller.signal)
-      : projectsApi.history(activeHistoryRepositoryId, controller.signal);
-    void load.then((value) => {
-      if (!controller.signal.aborted) setHistory(value);
-    }).catch((cause) => {
-      if (!controller.signal.aborted) setHistoryError(cause instanceof Error ? cause.message : t("reviewUi.gitHistoryCouldNotBeLoaded"));
-    });
-    return () => controller.abort();
-  }, [activeHistoryRepositoryId, open, tab, workspace?.id]);
+  const historyOptions = gitHistoryQuery(workspace ? "workspace" : "project", activeHistoryRepositoryId);
+  const historyQuery = useQuery({ ...historyOptions, enabled: open && tab === "history" && Boolean(activeHistoryRepositoryId) });
+  const history = historyQuery.data ?? null;
+  const historyError = historyQuery.error?.message ?? "";
+  const setHistory = (value: GitHistory) => queryClient.setQueryData(historyOptions.queryKey, value);
 
   return <aside data-testid="right-sidebar" aria-hidden={!open} inert={!open} className={cn("absolute inset-y-0 right-0 z-20 flex w-[min(88vw,340px)] shrink-0 flex-col border-l border-border bg-background shadow-2xl transition-transform duration-200 ease-out lg:shadow-none", open ? "translate-x-0" : "translate-x-full pointer-events-none")}>
     <div className="shrink-0 border-b border-border p-2">
@@ -265,7 +255,7 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
             <ContextMenuItem data-testid="copy-git-commit-action" onClick={() => copyCommit(commit.hash)}>
               <Copy data-icon="inline-start" />{t("reviewUi.copyCommit")}</ContextMenuItem>
             <ContextMenuItem disabled={!selection || selection.last <= selection.first} onClick={() => setSquashOpen(true)}>
-              {t("squashUi.menu")}
+              <Combine data-icon="inline-start" />{t("squashUi.menu")}
             </ContextMenuItem>
             <ContextMenuItem onClick={() => openAction("revert", commit)}>
               <Undo2 data-icon="inline-start" />{t("reviewUi.revertCommit")}</ContextMenuItem>
