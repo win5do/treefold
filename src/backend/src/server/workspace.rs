@@ -62,14 +62,19 @@ pub(super) fn inspect_project_path_value(value: &str) -> Result<ProjectPathInspe
             .map_err(|error| AppError::BadRequest(format!("cannot read directory: {error}")))?
             .filter_map(std::result::Result::ok)
             .filter_map(|entry| {
-                let kind = entry.file_type().ok()?;
-                kind.is_dir().then_some(entry.path())
+                let path = entry.path();
+                // Follow directory symlinks; broken links and file targets are not candidates.
+                path.is_dir().then_some(path)
             })
             .collect::<Vec<_>>();
         children.sort();
+        let mut seen = HashSet::new();
         for child in children {
             let child = child.to_string_lossy().into_owned();
             let (child, child_is_git) = inspect_path(&child)?;
+            if !seen.insert(child.clone()) {
+                continue;
+            }
             let repository_root = if child_is_git {
                 Some(
                     command_output(Path::new(&child), "git", &["rev-parse", "--show-toplevel"])
