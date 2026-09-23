@@ -375,6 +375,10 @@ fn app(state: AppState) -> Router {
             post(project_repository_commit),
         )
         .route(
+            "/api/project-repositories/{id}/git/squash",
+            post(squash::project),
+        )
+        .route(
             "/api/project-repositories/{id}/git/revert",
             post(project_repository_revert_commit),
         )
@@ -454,6 +458,10 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/workspace-repositories/{id}/git/commit",
             post(workspace_repository_commit),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git/squash",
+            post(squash::workspace),
         )
         .route(
             "/api/workspace-repositories/{id}/git/revert",
@@ -620,6 +628,8 @@ mod hosting;
 mod keymap;
 mod parent_operation;
 mod session;
+mod squash;
+mod squash_delivery;
 #[cfg(test)]
 mod tests;
 mod verification;

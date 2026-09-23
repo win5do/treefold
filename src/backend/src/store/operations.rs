@@ -258,6 +258,16 @@ impl Store {
     ) -> Result<Option<ParentOperation>> {
         self.parent_optional(static_sql!("SELECT {PARENT} FROM parent_operations WHERE workspace_repository_id=? AND direction=? ORDER BY updated_at DESC,rowid DESC LIMIT 1"),id,Some(direction)).await
     }
+    /// Completed integrations remain ownership boundaries even when a newer
+    /// operation failed or was aborted. Looking only at the latest row loses them.
+    pub async fn has_completed_integration(&self, id: &str) -> Result<bool> {
+        let row = sqlx::query!(
+            "SELECT COUNT(*) AS count FROM parent_operations WHERE workspace_repository_id = ? AND direction = 'integrate' AND status = 'completed'",
+            id
+        ).fetch_one(&self.pool).await?;
+        Ok(row.count > 0)
+    }
+
     pub async fn active_parent_operation_for_target(
         &self,
         id: &str,

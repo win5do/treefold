@@ -16,7 +16,8 @@ pub(super) async fn create_workspace_repository_preflight_impl(
     id: String,
     input: CreateDeliveryPreflight,
 ) -> Result<(StatusCode, Json<DeliveryPreflight>)> {
-    if !["local_merge", "push_branch", "keep"].contains(&input.code_action.as_str()) {
+    if !["local_merge", "squash_merge", "push_branch", "keep"].contains(&input.code_action.as_str())
+    {
         return Err(AppError::BadRequest("invalid code action".into()));
     }
     let location = state.store.workspace_repository(&id).await?;
@@ -34,8 +35,12 @@ pub(super) async fn create_workspace_repository_preflight_impl(
         .ok_or_else(|| AppError::BadRequest("Workspace Repository has no branch".into()))?;
     ensure_checked_out_branch(source_path, source_branch, "Workspace Repository")?;
     let source_head = git_head(source_path)?;
-    let source_status = command_output(Path::new(source_path), "git", &["status", "--porcelain"])
-        .map_err(AppError::BadRequest)?;
+    let source_status = command_output(
+        Path::new(source_path),
+        "git",
+        &["status", "--porcelain", "--untracked-files=all"],
+    )
+    .map_err(AppError::BadRequest)?;
     let (target_path, local_target_branch) =
         workspace_repository_delivery_target(&state, &workspace, &location).await?;
     let local_target_head = command_output(
@@ -69,9 +74,13 @@ pub(super) async fn create_workspace_repository_preflight_impl(
             local_target_head,
         )
     };
-    let target_status = if input.code_action == "local_merge" {
-        command_output(Path::new(&target_path), "git", &["status", "--porcelain"])
-            .map_err(AppError::BadRequest)?
+    let target_status = if matches!(input.code_action.as_str(), "local_merge" | "squash_merge") {
+        command_output(
+            Path::new(&target_path),
+            "git",
+            &["status", "--porcelain", "--untracked-files=all"],
+        )
+        .map_err(AppError::BadRequest)?
     } else {
         String::new()
     };
@@ -118,7 +127,7 @@ pub(super) async fn create_workspace_repository_preflight_impl(
     );
     let mut blockers = Vec::new();
     let mut warnings = Vec::new();
-    if input.code_action == "local_merge" {
+    if matches!(input.code_action.as_str(), "local_merge" | "squash_merge") {
         if !target_status.is_empty() {
             blockers.push("merge target working tree is dirty".into());
         }
@@ -253,7 +262,7 @@ pub(super) async fn validate_preflight_snapshot(
         let source_status = command_output(
             Path::new(&workspace.checkout_path),
             "git",
-            &["status", "--porcelain"],
+            &["status", "--porcelain", "--untracked-files=all"],
         )
         .map_err(AppError::BadRequest)?;
         if preflight.source_head != source_head
@@ -268,7 +277,7 @@ pub(super) async fn validate_preflight_snapshot(
     }
     let repository_root =
         repository_root_for_directory(state, &workspace.project_directory_id).await?;
-    let target_head = if input.code_action == "local_merge" {
+    let target_head = if matches!(input.code_action.as_str(), "local_merge" | "squash_merge") {
         git_head(target_path)?
     } else {
         command_output(
@@ -281,7 +290,7 @@ pub(super) async fn validate_preflight_snapshot(
     let source_status = command_output(
         Path::new(&workspace.checkout_path),
         "git",
-        &["status", "--porcelain"],
+        &["status", "--porcelain", "--untracked-files=all"],
     )
     .map_err(AppError::BadRequest)?;
     if preflight.source_head != source_head

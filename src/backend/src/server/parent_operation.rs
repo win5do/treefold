@@ -150,7 +150,10 @@ pub(super) async fn resolve_parent_operation_with_codex(
             AppError::BadRequest("resolver Workspace has no matching Repository directory".into())
         })?;
     let conflicts = unmerged_paths(&operation.target_path)?;
-    let continue_command = if operation.strategy == "rebase" {
+    let squash_command = super::squash_delivery::continue_command(&operation);
+    let continue_command = if operation.strategy == "squash" {
+        squash_command.as_str()
+    } else if operation.strategy == "rebase" {
         "git rebase --continue (repeat until the rebase is complete)"
     } else {
         "git merge --continue"
@@ -247,7 +250,7 @@ pub(super) fn validate_parent_direction(direction: &str) -> Result<()> {
 
 pub(super) fn validate_parent_strategy(direction: &str, strategy: &str) -> Result<()> {
     if (direction == "update" && matches!(strategy, "rebase" | "merge"))
-        || (direction == "integrate" && strategy == "merge")
+        || (direction == "integrate" && matches!(strategy, "merge" | "squash"))
     {
         Ok(())
     } else {
@@ -415,9 +418,21 @@ pub(super) async fn start_parent_operation_impl(
             current.status.as_str(),
             "active" | "conflicted" | "resolving" | "recovery_required"
         ) {
+            if current.strategy != strategy {
+                return Err(AppError::BadRequest(
+                    "a different integration strategy is already in progress".into(),
+                ));
+            }
             return Ok(current);
         }
         if origin == "finish" && current.origin == "finish" && current.status == "completed" {
+            if current.strategy != strategy
+                || git_head(&current.source_path)? != current.source_head
+            {
+                return Err(AppError::BadRequest(
+                    "delivery strategy differs from the completed operation".into(),
+                ));
+            }
             return Ok(current);
         }
     }
@@ -525,7 +540,9 @@ pub(super) async fn execute_parent_operation(
     } else {
         &operation.source_head
     };
-    let result = if operation.strategy == "rebase" {
+    let result = if operation.strategy == "squash" {
+        super::squash_delivery::execute(operation)
+    } else if operation.strategy == "rebase" {
         git_rebase_output(Path::new(&operation.target_path), &[incoming])
     } else {
         command_output(
@@ -541,7 +558,15 @@ pub(super) async fn execute_parent_operation(
         }
         Err(error)
             if git_operation_in_progress(&operation.target_path)?
-                || has_unmerged_paths(&operation.target_path)? =>
+                || has_unmerged_paths(&operation.target_path)?
+                || (operation.strategy == "squash"
+                    && !command_output(
+                        Path::new(&operation.target_path),
+                        "git",
+                        &["status", "--porcelain"],
+                    )
+                    .map_err(AppError::BadRequest)?
+                    .is_empty()) =>
         {
             state
                 .store
@@ -608,6 +633,9 @@ pub(super) async fn reconcile_parent_operation(
         "completed" | "aborted" | "undone" | "failed"
     ) {
         return Ok(operation.clone());
+    }
+    if operation.strategy == "squash" {
+        return super::squash_delivery::reconcile(state, operation).await;
     }
     if git_operation_in_progress(&operation.target_path)? {
         let conflicted = has_unmerged_paths(&operation.target_path)?;
@@ -759,6 +787,12 @@ pub(super) async fn abort_parent_operation_impl(
         &operation.target_branch,
         "operation target",
     )?;
+    if operation.strategy == "squash" && git_head(&operation.target_path)? != operation.before_head
+    {
+        return Err(AppError::BadRequest(
+            "Squash target moved; abort cannot overwrite newer commits".into(),
+        ));
+    }
     if git_operation_in_progress(&operation.target_path)? {
         let args = if operation.strategy == "rebase" {
             ["rebase", "--abort"]

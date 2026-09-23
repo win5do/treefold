@@ -88,7 +88,8 @@ export const enUS = {
     synced: "Agent Integration synchronized",
     uninstalled: "Agent Integration uninstalled",
     failed: "Agent Integration failed",
-    states: { ready: "Ready", not_installed: "Not installed", outdated: "Outdated", partial: "Partial", conflict: "Conflict", unavailable: "Unavailable" },
+    states: {
+    "squash": "squash merge", ready: "Ready", not_installed: "Not installed", outdated: "Outdated", partial: "Partial", conflict: "Conflict", unavailable: "Unavailable" },
   },
   overview: {
     eyebrow: "Local Agent workspace",
@@ -527,6 +528,36 @@ export const enUS = {
     "daemonTitle": "amux Daemon",
     "daemonStopped": "amux Daemon stopped"
   },
+  squashUi: {
+    errors: {
+      "SQUASH_STALE": "HEAD changed. Refresh history and select again.",
+      "SQUASH_DIRTY": "Commit or discard all changes, including untracked files, and finish any Git operation first.",
+      "SQUASH_MERGE": "The selection or later history contains a merge commit.",
+      "SQUASH_BASE": "The base commit and earlier history cannot be rewritten.",
+      "SQUASH_RANGE": "Select consecutive commits on the current branch.",
+      "SQUASH_COUNT": "Select at least two consecutive commits.",
+      "SQUASH_OWNERSHIP": "Only an active writable Repository without a Finish operation can be squashed.",
+      "SQUASH_DELIVERED": "This Repository has an active operation or has already been delivered. Finish the operation or use the target Repository.",
+      "SQUASH_TARGET": "Selected history is already integrated into the target. Use the target Repository.",
+      "SQUASH_UNDO": "Undo is only available while HEAD still equals the squash result.",
+      "SQUASH_PUBLISHED": "Rewritten history is referenced by a remote branch or tag. Refresh remote refs before checking again."
+},
+    "menu": "Squash Commits…",
+    "title": "Squash commits",
+    "description": "Combine a consecutive range after the base. The worktree must be clean. Merge commits, published history, and delivered commits cannot be rewritten.",
+    "summary": "Combine {{count}} commits into one; {{replayed}} later commits will also receive new hashes.",
+    "base": "Base (preserved): {{base}}",
+    "shared": "These local branches keep the old history: {{branches}}. Later merges may need additional conflict resolution.",
+    "message": "Commit message",
+    "metadata": "Rewritten commits receive new committer metadata and are unsigned. Commit hooks are not run. Later commits retain their authors, messages, and file contents.",
+    "completed": "Commits squashed.",
+    "undo": "Undo squash",
+    "undoHint": "Undo is available only while the branch remains at the squash result and has not been published or delivered.",
+    "failed": "Squash could not be completed:",
+    "delivery": "Squash merge into target",
+    "deliveryHint": "Create one commit in the target and keep the source history unchanged. Both worktrees must be clean. Cleanup follows the options below.",
+    "resolveHint": "Resolve and stage the conflicts, then run:"
+},
   "reviewUi": {
     "gitHistoryCouldNotBeLoaded": "Git history could not be loaded",
     "gitRepository": "Git repository",

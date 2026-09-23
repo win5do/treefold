@@ -90,7 +90,8 @@ export const zhCN = {
     synced: "Agent 集成已同步",
     uninstalled: "Agent 集成已卸载",
     failed: "Agent 集成操作失败",
-    states: { ready: "正常", not_installed: "未安装", outdated: "待更新", partial: "不完整", conflict: "冲突", unavailable: "不可用" },
+    states: {
+    "squash": "压缩合并", ready: "正常", not_installed: "未安装", outdated: "待更新", partial: "不完整", conflict: "冲突", unavailable: "不可用" },
   },
   overview: {
     eyebrow: "本地 Agent 工作环境",
@@ -529,6 +530,36 @@ export const zhCN = {
     "daemonTitle": "amux 守护进程",
     "daemonStopped": "amux 守护进程已停止"
   },
+  squashUi: {
+    errors: {
+      "SQUASH_STALE": "HEAD 已改变，请刷新历史并重新选择。",
+      "SQUASH_DIRTY": "请先提交或处理所有改动（包括未跟踪文件），并结束进行中的 Git 操作。",
+      "SQUASH_MERGE": "选区或其后直到 HEAD 的历史包含合并提交，不能压缩。",
+      "SQUASH_BASE": "不能改写 base 或更早的提交。",
+      "SQUASH_RANGE": "请选择当前分支上连续的提交。",
+      "SQUASH_COUNT": "请至少选择两个连续提交。",
+      "SQUASH_OWNERSHIP": "只能压缩尚未开始完成流程、仍处于活跃状态的可写仓库。",
+      "SQUASH_DELIVERED": "此仓库有进行中的操作，或已交付。请先结束操作，或到目标仓库整理历史。",
+      "SQUASH_TARGET": "所选历史已集成到目标分支，请到目标仓库操作。",
+      "SQUASH_UNDO": "仅当 HEAD 仍是压缩结果时才能撤销。",
+      "SQUASH_PUBLISHED": "待改写的历史被远端分支或标签引用。请更新远端引用后重新检查。"
+},
+    "menu": "Squash Commits…",
+    "title": "压缩提交",
+    "description": "压缩 base 之后的一段连续提交。工作目录必须干净；不能改写合并提交、已发布或已交付的历史。",
+    "summary": "将 {{count}} 个提交压缩为一个；后续 {{replayed}} 个提交的哈希也会改变。",
+    "base": "保留的 base：{{base}}",
+    "shared": "以下本地分支保留原历史：{{branches}}。之后再次合并可能需要额外处理冲突。",
+    "message": "提交说明",
+    "metadata": "改写后的提交会更新提交者信息，不保留签名，也不运行提交钩子。后续提交保留作者、提交说明和文件内容。",
+    "completed": "提交已压缩。",
+    "undo": "撤销压缩",
+    "undoHint": "仅当分支仍停留在压缩结果，且尚未发布或交付时，才能撤销。",
+    "failed": "无法完成压缩：",
+    "delivery": "压缩合并到目标分支",
+    "deliveryHint": "在目标分支上生成一个提交，源分支历史保持不变。两边的工作目录都必须干净；后续清理按下方选项执行。",
+    "resolveHint": "解决冲突并暂存后执行："
+},
   "reviewUi": {
     "gitHistoryCouldNotBeLoaded": "无法加载 Git 历史",
     "gitRepository": "Git 仓库",

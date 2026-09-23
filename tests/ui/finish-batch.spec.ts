@@ -133,6 +133,8 @@ test("Finish confirms all repositories and resumes saved progress after closing"
     });
     const first = dialog.getByRole("tab", { name: new RegExp(names[0]) });
     const second = dialog.getByRole("tab", { name: new RegExp(names[1]) });
+    const firstPanel = dialog.getByRole("tabpanel", { name: new RegExp(names[0]) });
+    const secondPanel = dialog.getByRole("tabpanel", { name: new RegExp(names[1]) });
     await expect(second).toContainText(/blocked/i);
     await expect(dialog.getByTestId("finish-confirm-action")).toBeDisabled();
     // Vertical tabs support keyboard selection and keep each repository's draft.
@@ -146,20 +148,23 @@ test("Finish confirms all repositories and resumes saved progress after closing"
         exact: true,
       }),
     ).toBeVisible();
-    await dialog
+    await secondPanel
       .getByRole("combobox", { name: "Finish strategy" })
       .selectOption("keep");
     await expect(
-      dialog.getByRole("checkbox", { name: "Delete local branch" }),
+      secondPanel.getByRole("checkbox", { name: "Delete local branch" }),
     ).toBeDisabled();
     await first.click();
     await expect(
-      dialog.getByRole("combobox", { name: "Finish strategy" }),
+      firstPanel.getByRole("combobox", { name: "Finish strategy" }),
     ).toHaveValue("local_merge");
     await second.click();
     await expect(
-      dialog.getByRole("combobox", { name: "Finish strategy" }),
+      secondPanel.getByRole("combobox", { name: "Finish strategy" }),
     ).toHaveValue("keep");
+    await first.click();
+    await firstPanel.getByRole("combobox", { name: "Finish strategy" }).selectOption("squash_merge");
+    await second.click();
     blocked = false;
     await dialog.getByRole("button", { name: "Recheck", exact: true }).click();
     await expect(dialog.getByTestId("finish-confirm-action")).toBeEnabled();
@@ -175,10 +180,10 @@ test("Finish confirms all repositories and resumes saved progress after closing"
     expect(submissions[0]).toEqual([
       {
         repository_id: ids[0],
-        code_action: "local_merge",
+        code_action: "squash_merge",
         delete_worktree: true,
         delete_branch: true,
-        preflight_id: `preflight-${ids[0]}-local_merge`,
+        preflight_id: `preflight-${ids[0]}-squash_merge`,
       },
       {
         repository_id: ids[1],

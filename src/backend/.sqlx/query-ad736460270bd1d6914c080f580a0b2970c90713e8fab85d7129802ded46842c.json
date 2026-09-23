@@ -1,0 +1,21 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS count FROM parent_operations WHERE workspace_repository_id = ? AND direction = 'integrate' AND status = 'completed'",
+  "describe": {
+    "columns": [
+      {
+        "name": "count",
+        "ordinal": 0,
+        "type_info": "Integer",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ad736460270bd1d6914c080f580a0b2970c90713e8fab85d7129802ded46842c"
+}

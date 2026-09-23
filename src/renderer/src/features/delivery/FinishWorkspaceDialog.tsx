@@ -232,6 +232,7 @@ export function FinishWorkspaceDialog({
                                 });
                               }}
                             >
+                              <option value="squash_merge">{t("squashUi.delivery")}</option>
                               <option value="local_merge">
                                 {t("deliveryUi.mergeTarget", {
                                   target:
@@ -250,6 +251,7 @@ export function FinishWorkspaceDialog({
                                 {t("deliveryUi.preserveWithoutDelivery")}
                               </option>
                             </Select>
+                            {draft.code_action === "squash_merge" && <p className="text-xs text-muted-foreground">{t("squashUi.deliveryHint")}</p>}
                           </Field>
                           <section
                             data-testid="delivery-preflight"

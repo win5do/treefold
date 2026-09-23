@@ -293,6 +293,7 @@ export function ParentOperationPanel({
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-2">
         {operation.error && <p>{operation.error}</p>}
+        {operation.strategy === "squash" && conflicted && <p>{t("squashUi.resolveHint")} <code className="break-all">git commit --allow-empty -m "Squash delivery" -m "Treefold-Squash: {operation.id}"</code></p>}
         <div className="flex flex-wrap gap-2">
           {conflicted && (
             <Button size="sm" disabled={busy} onClick={onResolve}>
@@ -301,7 +302,7 @@ export function ParentOperationPanel({
           {(resolverSession || operation.resolver_session_id) && (
             <Button size="sm" variant="outline" onClick={onOpenSession}>{t("workspaceUi.openSession")}</Button>
           )}
-          {conflicted && (
+          {(conflicted || operation.status === "recovery_required") && (
             <Button size="sm" variant="destructive" disabled={busy} onClick={onAbort}>{t("workspaceUi.stopAIAbort")}</Button>
           )}
           {operation.status === "completed" && operation.undo_available && onUndo && operation.origin !== "finish" && (

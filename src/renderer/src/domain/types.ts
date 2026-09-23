@@ -347,7 +347,7 @@ export type DeliveryPreflight = {
 };
 
 export type ParentOperationDirection = "update" | "integrate";
-export type ParentOperationStrategy = "rebase" | "merge";
+export type ParentOperationStrategy = "rebase" | "merge" | "squash";
 
 export type ParentOperation = {
   id: string;
@@ -404,7 +404,7 @@ export type ParentOperationPreview = {
 
 export type FinishPlanItem = {
   repository_id: string;
-  code_action: "local_merge" | "push_branch" | "keep" | "skip";
+  code_action: "local_merge" | "squash_merge" | "push_branch" | "keep" | "skip";
   delete_worktree: boolean;
   delete_branch: boolean;
   preflight_id: string;

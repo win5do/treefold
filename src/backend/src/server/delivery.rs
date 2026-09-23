@@ -55,8 +55,12 @@ pub(super) async fn finish_workspace_repository_impl(
         .ok_or_else(|| AppError::BadRequest("Workspace Repository has no branch".into()))?
         .to_owned();
     ensure_checked_out_branch(&source_path, &branch, "Workspace Repository")?;
-    let source_status = command_output(Path::new(&source_path), "git", &["status", "--porcelain"])
-        .map_err(AppError::BadRequest)?;
+    let source_status = command_output(
+        Path::new(&source_path),
+        "git",
+        &["status", "--porcelain", "--untracked-files=all"],
+    )
+    .map_err(AppError::BadRequest)?;
     let source_head = git_head(&source_path)?;
     if source_head != preflight.source_head || source_status != preflight.source_status {
         return Err(AppError::BadRequest(
@@ -69,7 +73,7 @@ pub(super) async fn finish_workspace_repository_impl(
                 .into(),
         ));
     }
-    if input.code_action == "local_merge" {
+    if matches!(input.code_action.as_str(), "local_merge" | "squash_merge") {
         let previous = state
             .store
             .latest_parent_operation(&location.id, "integrate")
@@ -110,12 +114,16 @@ pub(super) async fn finish_workspace_repository_impl(
     }
     let mut linked_operation = None;
     let (status, outcome, integrated) = match input.code_action.as_str() {
-        "local_merge" => {
+        "local_merge" | "squash_merge" => {
             let operation = start_parent_operation_impl(
                 &state,
                 &location.id,
                 "integrate",
-                "merge",
+                if input.code_action == "squash_merge" {
+                    "squash"
+                } else {
+                    "merge"
+                },
                 "finish",
                 Some(&location.id),
             )
@@ -143,8 +151,17 @@ pub(super) async fn finish_workspace_repository_impl(
             let head = operation.result_head.clone().ok_or_else(|| {
                 AppError::BadRequest("completed integration has no result HEAD".into())
             })?;
+            if input.code_action == "squash_merge" {
+                let (target_path, target_branch) =
+                    workspace_repository_delivery_target(&state, &workspace, &location).await?;
+                if !git_is_ancestor(&target_path, &head, &format!("refs/heads/{target_branch}"))? {
+                    return Err(AppError::BadRequest(
+                        "squash result is no longer in the delivery target".into(),
+                    ));
+                }
+            }
             linked_operation = Some(operation);
-            ("delivered", "local_merge", Some(head))
+            ("delivered", input.code_action.as_str(), Some(head))
         }
         "push_branch" => {
             let remote = location.remote_name.as_deref().ok_or_else(|| {
@@ -194,7 +211,7 @@ pub(super) async fn finish_workspace_repository_impl(
             &timestamp,
         )
         .await?;
-    if workspace.kind == "fork" && outcome == "local_merge" {
+    if workspace.kind == "fork" && matches!(outcome, "local_merge" | "squash_merge") {
         let all_delivered = state
             .store
             .workspace_repositories(&workspace.id)
@@ -246,6 +263,31 @@ pub(super) async fn cleanup_finished_repository(
         }
         if Path::new(source_path).exists() {
             ensure_checked_out_branch(source_path, branch, "Workspace Repository")?;
+        }
+        if input.code_action == "squash_merge" {
+            let operation = state
+                .store
+                .latest_parent_operation(&location.id, "integrate")
+                .await?
+                .ok_or_else(|| AppError::BadRequest("squash delivery record is missing".into()))?;
+            let (target_path, target_branch) =
+                workspace_repository_delivery_target(state, workspace, location).await?;
+            if operation.strategy != "squash"
+                || operation.status != "completed"
+                || operation.source_head != source_head
+                || !git_is_ancestor(
+                    &target_path,
+                    operation
+                        .result_head
+                        .as_deref()
+                        .ok_or_else(|| AppError::BadRequest("squash result is missing".into()))?,
+                    &format!("refs/heads/{target_branch}"),
+                )?
+            {
+                return Err(AppError::BadRequest(
+                    "squash delivery no longer matches the source and target".into(),
+                ));
+            }
         }
         remove_worktree_if_present(&project_repository.path, &source_path, false)?;
         if input.delete_branch {
@@ -805,7 +847,8 @@ pub(super) async fn finish_workspace_steps(
 }
 
 pub(super) fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
-    if !["local_merge", "push_branch", "keep"].contains(&input.code_action.as_str()) {
+    if !["local_merge", "squash_merge", "push_branch", "keep"].contains(&input.code_action.as_str())
+    {
         return Err(AppError::BadRequest("invalid code action".into()));
     }
     if input.push_after_merge {
@@ -968,8 +1011,12 @@ pub(super) fn delete_delivered_branch_if_present(
 }
 
 pub(super) fn ensure_clean_workspace(path: &str, label: &str) -> Result<()> {
-    let status = command_output(Path::new(path), "git", &["status", "--porcelain"])
-        .map_err(AppError::BadRequest)?;
+    let status = command_output(
+        Path::new(path),
+        "git",
+        &["status", "--porcelain", "--untracked-files=all"],
+    )
+    .map_err(AppError::BadRequest)?;
     if !status.is_empty() {
         return Err(AppError::BadRequest(format!(
             "{label} has uncommitted changes"

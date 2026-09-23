@@ -21,6 +21,8 @@ import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 
+import { HistorySquashDialog } from "./HistorySquashDialog";
+
 type InspectorRepository = { id: string; name: string };
 
 export function WorkspaceInspector({ open, project, workspace, session, gitChangesActive, onOpenChanges, onOpenDiff }: { open: boolean; project: ProjectDetail; workspace: WorkspaceDetail | null; session: Session | null; gitChangesActive: boolean; onOpenChanges: (repository: InspectorRepository) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
@@ -162,6 +164,7 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
 
 function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, error, onHistoryChange, onOpenDiff }: { repositoryKind: "project" | "workspace"; repositories: { id: string; name: string }[]; repositoryId: string; history: GitHistory | null; error: string; onHistoryChange: (history: GitHistory) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
   const { t } = useTranslation();
+  const [squashOpen, setSquashOpen] = useState(false);
   const [selection, setSelection] = useState<{ anchor: number; first: number; last: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ kind: "revert" | "reset"; commit: GitCommit } | null>(null);
   const [resetMode, setResetMode] = useState<"soft" | "mixed" | "hard">("mixed");
@@ -261,6 +264,9 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
               <GitCompare data-icon="inline-start" />{t("reviewUi.viewDiff")}</ContextMenuItem>
             <ContextMenuItem data-testid="copy-git-commit-action" onClick={() => copyCommit(commit.hash)}>
               <Copy data-icon="inline-start" />{t("reviewUi.copyCommit")}</ContextMenuItem>
+            <ContextMenuItem disabled={!selection || selection.last <= selection.first} onClick={() => setSquashOpen(true)}>
+              {t("squashUi.menu")}
+            </ContextMenuItem>
             <ContextMenuItem onClick={() => openAction("revert", commit)}>
               <Undo2 data-icon="inline-start" />{t("reviewUi.revertCommit")}</ContextMenuItem>
             <ContextMenuItem variant="destructive" onClick={() => openAction("reset", commit)}>
@@ -270,6 +276,7 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
       </ContextMenu>;
     })}</div>}
   </div>
+  <HistorySquashDialog open={squashOpen} onOpenChange={setSquashOpen} repositoryKind={repositoryKind} repositoryId={repositoryId} commits={history && selection ? history.commits.slice(selection.first, selection.last + 1).reverse() : []} head={history?.commits[0]?.hash ?? ""} onHistoryChange={onHistoryChange} />
   <Dialog open={Boolean(pendingAction)} onOpenChange={(nextOpen) => { if (!nextOpen && !actionPending) setPendingAction(null); }}>
     <DialogContent>
       <DialogHeader>

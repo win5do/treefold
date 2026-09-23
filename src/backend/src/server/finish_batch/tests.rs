@@ -558,3 +558,427 @@ async fn finish_batch_archives_legacy_completed_repositories_without_repeating_d
 }
 
 mod recovery;
+
+async fn squash_plans(f: &Fixture, cleanup: bool) -> Vec<FinishPlanItem> {
+    let mut plans = plans(f).await;
+    for plan in &mut plans {
+        plan.code_action = "squash_merge".into();
+        plan.delete_worktree = cleanup;
+        plan.delete_branch = cleanup;
+        let (_, Json(check)) = create_workspace_repository_preflight_impl(
+            f.state.clone(),
+            plan.repository_id.clone(),
+            CreateDeliveryPreflight {
+                code_action: "squash_merge".into(),
+            },
+        )
+        .await
+        .unwrap();
+        plan.preflight_id = check.id;
+    }
+    plans
+}
+
+#[tokio::test]
+async fn finish_batch_squash_preserves_source_and_creates_one_target_commit() {
+    let f = fixture().await;
+    let mut sources = Vec::new();
+    for repository in &f.repositories {
+        let path = Path::new(repository.checkout_path.as_ref().unwrap());
+        commit(path, "second.txt", "second commit");
+        sources.push(git(path, &["rev-parse", "HEAD"]));
+    }
+    let plan = squash_plans(&f, false).await;
+    run_batch(
+        &f.state,
+        prepare_batch(&f.state, &f.workspace.id, plan)
+            .await
+            .unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved(&f).await.status, "completed");
+    for (index, repository) in f.repositories.iter().enumerate() {
+        assert_eq!(
+            git(
+                Path::new(repository.checkout_path.as_ref().unwrap()),
+                &["rev-parse", "HEAD"]
+            ),
+            sources[index]
+        );
+        assert_eq!(git(&f.roots[index], &["rev-list", "--count", "main"]), "2");
+        assert_eq!(
+            git(&f.roots[index], &["rev-parse", "HEAD^{tree}"]),
+            git(
+                &f.roots[index],
+                &["rev-parse", &format!("{}^{{tree}}", sources[index])]
+            )
+        );
+        assert_eq!(
+            f.state
+                .store
+                .workspace_repository(&repository.id)
+                .await
+                .unwrap()
+                .close_outcome
+                .as_deref(),
+            Some("squash_merge")
+        );
+    }
+}
+
+#[tokio::test]
+async fn finish_batch_squash_conflict_restart_retry_and_cleanup() {
+    let f = fixture().await;
+    commit(&f.roots[1], "shared.txt", "target conflict");
+    let plan = squash_plans(&f, true).await;
+    run_batch(
+        &f.state,
+        prepare_batch(&f.state, &f.workspace.id, plan)
+            .await
+            .unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+    let paused = saved(&f).await;
+    assert_eq!(paused.status, "paused");
+    assert!(paused.items[0].delivered);
+    assert!(!paused.items[0].cleaned);
+    let first_head = git(&f.roots[0], &["rev-parse", "HEAD"]);
+    let op = f
+        .state
+        .store
+        .latest_parent_operation(&f.repositories[1].id, "integrate")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(op.strategy, "squash");
+    assert_eq!(op.status, "conflicted");
+    std::fs::write(f.roots[1].join("shared.txt"), "resolved").unwrap();
+    git(&f.roots[1], &["add", "shared.txt"]);
+    // Polling while conflicts are staged must not incorrectly mark the operation aborted.
+    assert_eq!(
+        reconcile_parent_operation(&f.state, &op)
+            .await
+            .unwrap()
+            .status,
+        "conflicted"
+    );
+    git(
+        &f.roots[1],
+        &[
+            "commit",
+            "-m",
+            "resolved",
+            "-m",
+            &format!("Treefold-Squash: {}", op.id),
+        ],
+    );
+    let restarted = state(&f._directory.path().join("home")).await;
+    let completed = reconcile_parent_operation(&restarted, &op).await.unwrap();
+    assert_eq!(completed.status, "completed");
+    run_batch(&restarted, paused, true).await.unwrap();
+    assert_eq!(saved(&f).await.status, "completed");
+    assert_eq!(git(&f.roots[0], &["rev-parse", "HEAD"]), first_head);
+    for (index, repository) in f.repositories.iter().enumerate() {
+        assert!(!Path::new(repository.checkout_path.as_ref().unwrap()).exists());
+        assert!(
+            !git(&f.roots[index], &["branch", "--list"])
+                .contains(repository.branch.as_ref().unwrap())
+        );
+    }
+}
+
+#[tokio::test]
+async fn finish_batch_squash_rejects_dirty_worktrees_and_abort_restores_target() {
+    let f = fixture().await;
+    let source = Path::new(f.repositories[0].checkout_path.as_ref().unwrap());
+    std::fs::write(source.join("untracked"), "untracked").unwrap();
+    let plan = squash_plans(&f, false).await;
+    assert!(
+        prepare_batch(&f.state, &f.workspace.id, plan)
+            .await
+            .is_err()
+    );
+    std::fs::remove_file(source.join("untracked")).unwrap();
+    std::fs::write(f.roots[0].join("untracked"), "untracked").unwrap();
+    let plan = squash_plans(&f, false).await;
+    assert!(
+        prepare_batch(&f.state, &f.workspace.id, plan)
+            .await
+            .is_err()
+    );
+    std::fs::remove_file(f.roots[0].join("untracked")).unwrap();
+    commit(&f.roots[0], "shared.txt", "conflict");
+    let before = git(&f.roots[0], &["rev-parse", "HEAD"]);
+    let op = crate::server::start_parent_operation_impl(
+        &f.state,
+        &f.repositories[0].id,
+        "integrate",
+        "squash",
+        "finish",
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(op.status, "conflicted");
+    let aborted = crate::server::abort_parent_operation_impl(&f.state, &op)
+        .await
+        .unwrap();
+    assert_eq!(aborted.status, "aborted");
+    assert_eq!(git(&f.roots[0], &["rev-parse", "HEAD"]), before);
+    assert!(git(&f.roots[0], &["status", "--porcelain"]).is_empty());
+}
+
+#[tokio::test]
+async fn squash_api_enforces_workspace_ownership_and_delivery_boundary() {
+    use crate::model::SquashRequest;
+    let f = fixture().await;
+    let repository = &f.repositories[0];
+    let path = Path::new(repository.checkout_path.as_ref().unwrap());
+    let first = git(path, &["rev-parse", "HEAD"]);
+    commit(path, "second", "second");
+    let head = git(path, &["rev-parse", "HEAD"]);
+    let request = SquashRequest::Preview {
+        commits: vec![first, head.clone()],
+        expected_head: head,
+    };
+    let _ = crate::server::squash::workspace(
+        State(f.state.clone()),
+        AxumPath(repository.id.clone()),
+        ApiJson(request.clone()),
+    )
+    .await
+    .unwrap();
+    // Even though squash-delivered source commits are NOT target ancestors,
+    // its operation journal must block a later history rewrite.
+    let mut delivered = crate::server::start_parent_operation_impl(
+        &f.state,
+        &repository.id,
+        "integrate",
+        "squash",
+        "standalone",
+        None,
+    )
+    .await
+    .unwrap();
+    // A newer failed attempt must not hide the earlier successful integration.
+    delivered.id = crate::server::new_id();
+    delivered.status = "failed".into();
+    delivered.phase = "failed".into();
+    f.state
+        .store
+        .create_parent_operation(&delivered)
+        .await
+        .unwrap();
+    assert!(
+        crate::server::squash::workspace(
+            State(f.state.clone()),
+            AxumPath(repository.id.clone()),
+            ApiJson(request)
+        )
+        .await
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn finish_batch_squash_fork_targets_parent_and_preserves_fork_history() {
+    let f = fixture().await;
+    let (_, Json(fork)) = crate::server::create_fork(
+        State(f.state.clone()),
+        AxumPath(f.workspace.id.clone()),
+        ApiJson(crate::server::CreateFork {
+            generated_branch: None,
+            branch: None,
+            description: None,
+        }),
+    )
+    .await
+    .unwrap();
+    let repositories = f
+        .state
+        .store
+        .workspace_repositories(&fork.id)
+        .await
+        .unwrap();
+    let mut plans = Vec::new();
+    let mut heads = Vec::new();
+    for repository in &repositories {
+        let path = Path::new(repository.checkout_path.as_ref().unwrap());
+        commit(path, "fork-one", "one");
+        commit(path, "fork-two", "two");
+        heads.push(git(path, &["rev-parse", "HEAD"]));
+        let (_, Json(check)) = create_workspace_repository_preflight_impl(
+            f.state.clone(),
+            repository.id.clone(),
+            CreateDeliveryPreflight {
+                code_action: "squash_merge".into(),
+            },
+        )
+        .await
+        .unwrap();
+        plans.push(FinishPlanItem {
+            repository_id: repository.id.clone(),
+            code_action: "squash_merge".into(),
+            delete_worktree: false,
+            delete_branch: false,
+            preflight_id: check.id,
+        });
+    }
+    run_batch(
+        &f.state,
+        prepare_batch(&f.state, &fork.id, plans).await.unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+    for (index, repository) in repositories.iter().enumerate() {
+        let parent = f
+            .repositories
+            .iter()
+            .find(|r| r.project_repository_id == repository.project_repository_id)
+            .unwrap();
+        assert_eq!(
+            git(
+                Path::new(parent.checkout_path.as_ref().unwrap()),
+                &["rev-list", "--count", "HEAD"]
+            ),
+            "3"
+        );
+        assert_eq!(
+            git(
+                Path::new(repository.checkout_path.as_ref().unwrap()),
+                &["rev-parse", "HEAD"]
+            ),
+            heads[index]
+        );
+    }
+    assert_eq!(
+        f.state.store.workspace(&fork.id).await.unwrap().status,
+        "archived"
+    );
+    assert_eq!(
+        f.state
+            .store
+            .workspace(&f.workspace.id)
+            .await
+            .unwrap()
+            .status,
+        "active"
+    );
+}
+
+#[tokio::test]
+async fn squash_migration_preserves_existing_delivery_records_and_indexes() {
+    use sqlx::Connection;
+    let f = fixture().await;
+    let op = crate::server::start_parent_operation_impl(
+        &f.state,
+        &f.repositories[0].id,
+        "integrate",
+        "merge",
+        "finish",
+        None,
+    )
+    .await
+    .unwrap();
+    let database = f._directory.path().join("home/data/treefold_1.sqlite");
+    let mut connection =
+        sqlx::SqliteConnection::connect(&format!("sqlite://{}", database.display()))
+            .await
+            .unwrap();
+    sqlx::raw_sql("PRAGMA foreign_keys=ON")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    // Reconstruct the pre-change table with real related records present, then
+    // apply the exact forward migration to a nonempty operation journal.
+    let initial = include_str!("../../../migrations/g1/20260902000000_initial.sql");
+    let schema = initial
+        .split("CREATE TABLE parent_operations (")
+        .nth(1)
+        .unwrap()
+        .split("CREATE TABLE delivery_preflights")
+        .next()
+        .unwrap();
+    let (columns, indexes) = schema.split_once("CREATE INDEX").unwrap();
+    let old_schema = format!(
+        "CREATE TABLE parent_operations_old ({columns}INSERT INTO parent_operations_old SELECT * FROM parent_operations; DROP TABLE parent_operations; ALTER TABLE parent_operations_old RENAME TO parent_operations; CREATE INDEX{indexes}"
+    );
+    sqlx::raw_sql(sqlx::AssertSqlSafe(old_schema))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/g1/20260923090000_parent_operation_squash.sql"
+    ))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let restored = f.state.store.parent_operation(&op.id).await.unwrap();
+    assert_eq!(restored.source_head, op.source_head);
+    assert_eq!(restored.result_head, op.result_head);
+    assert_eq!(restored.status, op.status);
+    assert_eq!(restored.strategy, "merge");
+    let failures = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&mut connection)
+        .await
+        .unwrap();
+    assert!(failures.is_empty());
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM sqlite_master WHERE type='index' AND name IN ('parent_operations_repository_updated','parent_operations_target_updated')").fetch_one(&mut connection).await.unwrap();
+    assert_eq!(count, 2);
+}
+
+#[tokio::test]
+async fn squash_project_api_uses_root_boundary_even_with_project_session_records() {
+    use crate::model::SquashRequest;
+    let f = fixture().await;
+    let path = &f.roots[0];
+    let base = git(path, &["rev-parse", "HEAD"]);
+    commit(path, "project-one", "one");
+    let first = git(path, &["rev-parse", "HEAD"]);
+    commit(path, "project-two", "two");
+    let head = git(path, &["rev-parse", "HEAD"]);
+    crate::server::sync_project_session_workspace(&f.state, &f.workspace.project_id)
+        .await
+        .unwrap();
+    let id = f.repositories[0].project_repository_id.clone();
+    let Json(preview) = crate::server::squash::project(
+        State(f.state.clone()),
+        AxumPath(id.clone()),
+        ApiJson(SquashRequest::Preview {
+            commits: vec![first.clone(), head.clone()],
+            expected_head: head.clone(),
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(preview.preview.unwrap().base, base);
+    let Json(result) = crate::server::squash::project(
+        State(f.state.clone()),
+        AxumPath(id.clone()),
+        ApiJson(SquashRequest::Apply {
+            commits: vec![first, head.clone()],
+            expected_head: head.clone(),
+            message: "project squash".into(),
+        }),
+    )
+    .await
+    .unwrap();
+    let after = git(path, &["rev-parse", "HEAD"]);
+    assert_ne!(after, head);
+    let _ = crate::server::squash::project(
+        State(f.state.clone()),
+        AxumPath(id),
+        ApiJson(SquashRequest::Undo {
+            recovery_id: result.recovery_id.unwrap(),
+            expected_head: after,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(git(path, &["rev-parse", "HEAD"]), head);
+}
