@@ -178,8 +178,8 @@ export function CreateWorkspaceDialog({
   return (
     <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle className="text-lg font-semibold">{t("workspaceUi.newWorkspace")}</DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">{t("workspaceUi.eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode")}</DialogDescription>
+        <DialogTitle>{t("workspaceUi.newWorkspace")}</DialogTitle>
+        <DialogDescription className="mt-1">{t("workspaceUi.eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode")}</DialogDescription>
         <form
           key={project ? project.id : "closed"}
           className="mt-6 flex max-h-[70vh] flex-col gap-4 overflow-y-auto"
@@ -217,7 +217,7 @@ export function CreateWorkspaceDialog({
                     <FieldLabel htmlFor={`base-branch-${repository.id}`}>{t("workspaceUi.baseBranch")}</FieldLabel>
                     <Select
                       id={`base-branch-${repository.id}`}
-                      className="w-full font-mono"
+                      className="w-full"
                       name={`base_branch:${repository.id}`}
                       value={baseBranches[repository.id] || ""}
                       onChange={(event) =>
@@ -263,7 +263,7 @@ export function CreateWorkspaceDialog({
                       <FieldLabel htmlFor={`base-remote-${repository.id}`}>{t("workspaceUi.remote")}</FieldLabel>
                       <Select
                         id={`base-remote-${repository.id}`}
-                        className="w-full font-mono"
+                        className="w-full"
                         name={`base_remote:${repository.id}`}
                         value={remotes[repository.id] || ""}
                         onChange={(event) =>
@@ -293,7 +293,6 @@ export function CreateWorkspaceDialog({
               <FieldLabel htmlFor="workspace-remote-branch">{t("workspaceUi.remoteFeatureBranch")}</FieldLabel>
               <Input
                 id="workspace-remote-branch"
-                className="font-mono text-xs"
                 name="remote_branch"
                 value={remoteBranchEdited ? remoteBranch : sharedBranch}
                 onChange={(event) => {
