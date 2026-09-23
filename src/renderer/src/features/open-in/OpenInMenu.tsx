@@ -9,15 +9,26 @@ import {
   ContextMenuGroup, ContextMenuItem, ContextMenuSeparator,
   ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger,
 } from '@/components/ui/context-menu';
+import {
+  DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator,
+  DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger,
+} from '@/components/ui/dropdown-menu';
 
-export function OpenInMenu({ project, workspaceId, directoryPath, directoryName, disabled }: {
+export function OpenInMenu({ project, workspaceId, directoryPath, directoryName, disabled, surface = 'context' }: {
   project?: ProjectDetail; workspaceId?: string; directoryPath?: string; directoryName?: string; disabled?: boolean;
+  surface?: 'context' | 'dropdown';
 }) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
   const desktop = window.treefoldDesktop;
+  const Sub = surface === 'dropdown' ? DropdownMenuSub : ContextMenuSub;
+  const SubTrigger = surface === 'dropdown' ? DropdownMenuSubTrigger : ContextMenuSubTrigger;
+  const SubContent = surface === 'dropdown' ? DropdownMenuSubContent : ContextMenuSubContent;
+  const Group = surface === 'dropdown' ? DropdownMenuGroup : ContextMenuGroup;
+  const Item = surface === 'dropdown' ? DropdownMenuItem : ContextMenuItem;
+  const Separator = surface === 'dropdown' ? DropdownMenuSeparator : ContextMenuSeparator;
   const apps = useQuery({
     queryKey: ['desktop', 'open-in-apps'],
     queryFn: () => desktop!.listOpenInApps(),
@@ -25,26 +36,25 @@ export function OpenInMenu({ project, workspaceId, directoryPath, directoryName,
     staleTime: 0,
     retry: false,
   });
+  async function resolveDirectory() {
+    const directory = directoryPath ?? (workspaceId
+      ? (await client.fetchQuery(workspaceDetailQuery(workspaceId))).checkout_path
+      : project?.directories.find(item => item.id === project.default_directory_id)?.path);
+    if (!directory) throw new Error(t('sidebar.openDirectoryUnavailable'));
+    return directory;
+  }
   async function select(id: string) {
     if (!desktop || opening) return;
     setOpening(true);
     try {
-      const directory = directoryPath ?? (workspaceId
-        ? (await client.fetchQuery(workspaceDetailQuery(workspaceId))).checkout_path
-        : project?.directories.find(item => item.id === project.default_directory_id)?.path);
-      if (!directory) throw new Error(t('sidebar.openDirectoryUnavailable'));
-      await desktop.openInApp(id, directory);
+      await desktop.openInApp(id, await resolveDirectory());
     } catch (cause) {
       toast.errorFrom(cause, t('sidebar.openInFailed'));
     } finally { setOpening(false); }
   }
   async function copyPath() {
     try {
-      const directory = directoryPath ?? (workspaceId
-        ? (await client.fetchQuery(workspaceDetailQuery(workspaceId))).checkout_path
-        : project?.directories.find(item => item.id === project.default_directory_id)?.path);
-      if (!directory) throw new Error(t('sidebar.openDirectoryUnavailable'));
-      await navigator.clipboard.writeText(directory);
+      await navigator.clipboard.writeText(await resolveDirectory());
       toast.success(t('sidebar.absolutePathCopied', { name: directoryName ?? project?.name ?? '' }));
     } catch (cause) {
       console.error('Could not copy absolute path', cause);
@@ -55,31 +65,31 @@ export function OpenInMenu({ project, workspaceId, directoryPath, directoryName,
     .map(group => ({ group, apps: (apps.data ?? []).filter(app => app.group === group) }))
     .filter(group => group.apps.length > 0);
   return (
-    <ContextMenuSub onOpenChange={setOpen}>
-      <ContextMenuSubTrigger data-testid="open-in-menu" disabled={disabled || opening || !desktop}>
+    <Sub onOpenChange={setOpen}>
+      <SubTrigger data-testid="open-in-menu" disabled={disabled || opening || !desktop}>
         <FolderOpen />{t('sidebar.openIn')}
-      </ContextMenuSubTrigger>
-      <ContextMenuSubContent data-testid="open-in-submenu" className="w-52">
-        <ContextMenuGroup>
-          <ContextMenuItem data-testid="open-in-copy-path" onClick={() => void copyPath()}>
+      </SubTrigger>
+      <SubContent data-testid="open-in-submenu" className="w-52">
+        <Group>
+          <Item data-testid="open-in-copy-path" onClick={() => void copyPath()}>
             <Copy />{t('sidebar.copyAbsolutePath')}
-          </ContextMenuItem>
-        </ContextMenuGroup>
-        <ContextMenuSeparator />
+          </Item>
+        </Group>
+        <Separator />
         {groups.map(({ group, apps }, index) => {
           const Icon = group === 'fileManager' ? FolderOpen : group === 'terminal' ? Terminal : Code;
           return <Fragment key={group}>
-            {index > 0 && <ContextMenuSeparator />}
-            <ContextMenuGroup>
-              {apps.map(app => <ContextMenuItem key={app.id} onClick={() => void select(app.id)}>
+            {index > 0 && <Separator />}
+            <Group>
+              {apps.map(app => <Item key={app.id} onClick={() => void select(app.id)}>
                 <Icon />{app.label}
-              </ContextMenuItem>)}
-            </ContextMenuGroup>
+              </Item>)}
+            </Group>
           </Fragment>;
         })}
-        {apps.isError ? <ContextMenuGroup><ContextMenuItem onClick={() => void apps.refetch()}>{t('sidebar.openInRetry')}</ContextMenuItem></ContextMenuGroup>
-          : groups.length === 0 && <ContextMenuGroup><ContextMenuItem disabled>{t(apps.isPending ? 'sidebar.openInLoading' : 'sidebar.openInEmpty')}</ContextMenuItem></ContextMenuGroup>}
-      </ContextMenuSubContent>
-    </ContextMenuSub>
+        {apps.isError ? <Group><Item onClick={() => void apps.refetch()}>{t('sidebar.openInRetry')}</Item></Group>
+          : groups.length === 0 && <Group><Item disabled>{t(apps.isPending ? 'sidebar.openInLoading' : 'sidebar.openInEmpty')}</Item></Group>}
+      </SubContent>
+    </Sub>
   );
 }

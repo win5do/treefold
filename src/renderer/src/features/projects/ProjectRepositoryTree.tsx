@@ -15,7 +15,8 @@ import {
   Workflow,
 } from "lucide-react";
 import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
-import { DirectoryOpenButton } from "@/features/open-in/DirectoryOpenButton";
+import { DirectoryActionsMenu } from "@/features/open-in/DirectoryActionsMenu";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MetadataList, MetadataListItem } from "@/components/ui/metadata-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -188,9 +189,8 @@ export function DirectoryTreeRow({
               {locationSummary}
             </div>
           )}
-          <DirectoryOpenButton path={directory.path} name={directory.name} testId={`project-location-open-${directory.id}`} />
-          {!readOnly && (
-            <div className="flex shrink-0 gap-1">
+          <div className="flex shrink-0 gap-1">
+            {!readOnly && (
               <Button
                 data-testid={`project-location-refresh-${directory.id}`}
                 size="icon"
@@ -202,38 +202,50 @@ export function DirectoryTreeRow({
               >
                 <RefreshCw data-icon="inline-start" />
               </Button>
-              <ActionMenu
-                label={t("projectsUi.actionsFor", { name: directory.name })}
-                testId={`project-location-actions-${directory.id}`}
-                disabled={busy}
-              >
-                {directory.git_status === "ready" &&
-                  directory.role !== "primary" && (
-                    <ActionMenuItem
-                      icon={<FolderGit2 className="size-3.5" />}
+            )}
+            <DirectoryActionsMenu
+              path={directory.path}
+              name={directory.name}
+              label={t("projectsUi.actionsFor", { name: directory.name })}
+              testId={`project-location-actions-${directory.id}`}
+              disabled={busy}
+            >
+              {!readOnly && (
+                <>
+                  {directory.git_status === "ready" &&
+                    directory.role !== "primary" && (
+                      <DropdownMenuItem
+                        disabled={busy}
+                        data-testid={`project-location-make-default-${directory.id}`}
+                        onClick={onMakeDefault}
+                      >
+                        <FolderGit2 />
+                        {t("projectsUi.makeDefault")}
+                      </DropdownMenuItem>
+                    )}
+                  {["missing", "broken", "mismatch"].includes(
+                    directory.git_status,
+                  ) && (
+                    <DropdownMenuItem
                       disabled={busy}
-                      testId={`project-location-make-default-${directory.id}`}
-                      onClick={onMakeDefault}
-                    >{t("projectsUi.makeDefault")}</ActionMenuItem>
+                      onClick={onReattach}
+                    >
+                      <RefreshCw />
+                      {t("projectsUi.relink")}
+                    </DropdownMenuItem>
                   )}
-                {["missing", "broken", "mismatch"].includes(
-                  directory.git_status,
-                ) && (
-                  <ActionMenuItem
-                    icon={<RefreshCw className="size-3.5" />}
+                  <DropdownMenuItem
                     disabled={busy}
-                    onClick={onReattach}
-                  >{t("projectsUi.relink")}</ActionMenuItem>
-                )}
-                <ActionMenuItem
-                  icon={<Pencil className="size-3.5" />}
-                  disabled={busy}
-                  testId={`project-location-edit-${directory.id}`}
-                  onClick={onEdit}
-                >{t("projectsUi.editLocation")}</ActionMenuItem>
-              </ActionMenu>
-            </div>
-          )}
+                    data-testid={`project-location-edit-${directory.id}`}
+                    onClick={onEdit}
+                  >
+                    <Pencil />
+                    {t("projectsUi.editLocation")}
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DirectoryActionsMenu>
+          </div>
         </div>
         {isRepository && expanded && (
           <CollapsibleContent
@@ -525,7 +537,6 @@ export function ProjectRepositoryTreeRow({
               </code>
             </div>
           </button>
-          <DirectoryOpenButton path={repository.source_root} name={repository.name} testId={`project-location-open-${repository.id}`} />
           {!readOnly && (
             <div className="flex shrink-0 gap-1">
               <Button
@@ -811,31 +822,37 @@ function ProjectDirectoryTreeRow({
           </p>
         )}
       </div>
-      <DirectoryOpenButton path={directory.path} name={directory.name} testId={`project-directory-open-${directory.id}`} />
-      {!readOnly && (
-        <ActionMenu
-          label={t("projectsUi.actionsForDirectory", { name: directory.name })}
-          testId={`project-directory-actions-${directory.id}`}
-          disabled={busy}
-        >
-          {directory.role !== "primary" && (
-            <ActionMenuItem
-              icon={<Folder className="size-3.5" />}
-              testId={`project-directory-make-default-${directory.id}`}
-              onClick={onMakeDefault}
-            >{t("projectsUi.makeDefault")}</ActionMenuItem>
-          )}
-          <ActionMenuItem
-            icon={<Pencil className="size-3.5" />}
-            testId={`project-directory-edit-${directory.id}`}
-            onClick={onEdit}
-          >{t("projectsUi.editDirectory2")}</ActionMenuItem>
-          <ActionMenuItem
-            icon={<Trash2 className="size-3.5" />}
-            onClick={onDelete}
-          >{t("projectsUi.removeFromProject")}</ActionMenuItem>
-        </ActionMenu>
-      )}
+      <DirectoryActionsMenu
+        path={directory.path}
+        name={directory.name}
+        testId={`project-directory-actions-${directory.id}`}
+        disabled={busy}
+      >
+        {!readOnly && (
+          <>
+            {directory.role !== "primary" && (
+              <DropdownMenuItem
+                data-testid={`project-directory-make-default-${directory.id}`}
+                onClick={onMakeDefault}
+              >
+                <Folder />
+                {t("projectsUi.makeDefault")}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              data-testid={`project-directory-edit-${directory.id}`}
+              onClick={onEdit}
+            >
+              <Pencil />
+              {t("projectsUi.editDirectory2")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onDelete}>
+              <Trash2 />
+              {t("projectsUi.removeFromProject")}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DirectoryActionsMenu>
     </div>
   );
 }

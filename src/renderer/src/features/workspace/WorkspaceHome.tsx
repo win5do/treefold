@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { todosApi } from "@/api/todos";
 import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
-import { DirectoryOpenButton } from "@/features/open-in/DirectoryOpenButton";
+import { DirectoryActionsMenu } from "@/features/open-in/DirectoryActionsMenu";
 import { StatusDot } from "@/components/app/StatusDot";
 import { RecordActionMenu } from "@/features/app/RecordActions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -633,7 +633,11 @@ export function WorkspaceHome({
                       </code>
                     </div>
                     <Badge>{t("labels.readOnly")}</Badge>
-                    <DirectoryOpenButton path={directory.path} name={directory.name} testId={`workspace-directory-open-${directory.project_directory_id}`} />
+                    <DirectoryActionsMenu
+                      path={directory.path}
+                      name={directory.name}
+                      testId={`workspace-directory-actions-${directory.project_directory_id}`}
+                    />
                   </div>
                 ))}
             </div>
@@ -793,13 +797,16 @@ function WorkspaceRepositoryRow({
                   >
                     {formatRepositoryRelativePath(scope.relative_path)}
                   </code>
-                  <DirectoryOpenButton path={scope.path} name={scope.name} testId={`workspace-directory-open-${scope.project_directory_id}`} />
+                  <DirectoryActionsMenu
+                    path={scope.path}
+                    name={scope.name}
+                    testId={`workspace-directory-actions-${scope.project_directory_id}`}
+                  />
                 </div>
               ))}
             </div>
           )}
         </div>
-        <DirectoryOpenButton path={location.checkout_path ?? location.source_root} name={location.repository_name} testId={`workspace-location-open-${location.id}`} />
         {actionsEnabled && writableGit && (
           <div className="-mt-2 self-start">
             <ActionMenu

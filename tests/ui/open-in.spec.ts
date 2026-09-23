@@ -1,7 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 import { startUiHarness } from './ui-harness.ts';
 import { createUiSession, closeUiSession, openInRequests, moveUiPointerTo } from './harness/session.ts';
-import { FIXTURE_IDS, FIXTURE_NAMES } from './fixtures/sidebar-core.ts';
+import { FIXTURE_IDS } from './fixtures/sidebar-core.ts';
+import { expectAnchoredOverlay } from './overlay-assertions.ts';
 
 const apps = [
   { id: 'finder', label: 'Finder', group: 'fileManager' as const },
@@ -63,30 +64,76 @@ test('Open With reports a desktop launch error', async () => {
   } finally { try { await closeUiSession(page); } finally { await harness.close(); } }
 });
 
-test('Directory row buttons expose Open With on Project, Workspace and Fork pages', async () => {
+test('Directory menus stay at the clicked row and copy or open that row in Project, Workspace and Fork', async () => {
   const harness = await startUiHarness();
   let page: Page | undefined;
   try {
-    page = await createUiSession({ apiUrl: harness.apiUrl, openInApps: apps });
+    page = await createUiSession({ apiUrl: harness.apiUrl, openInApps: apps, windowSize: '1100,720' });
     await page.goto(harness.baseUrl);
-    await expect(page.getByTestId('open-settings')).toBeVisible();
+    await expect(page.getByTestId('open-settings')).toHaveAccessibleName('Settings');
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async (path: string) => { window.__treefoldCopiedPath = path; } },
+      });
+    });
     const scenarios = [
-      [FIXTURE_NAMES.project, `project-location-open-${FIXTURE_IDS.primaryRepository}`],
-      [FIXTURE_NAMES.workspace, `workspace-location-open-${FIXTURE_IDS.workspacePrimaryLocation}`],
-      [FIXTURE_NAMES.fork, `workspace-directory-open-${FIXTURE_IDS.primaryDirectory}`],
+      [`/projects/${FIXTURE_IDS.project}`, `project-directory-actions-${FIXTURE_IDS.monorepoDirectory}`, '/tmp/treefold-ui-fixture/repository-with-a-long-readable-path/apps/web'],
+      [`/workspaces/${FIXTURE_IDS.workspace}`, `workspace-directory-actions-${FIXTURE_IDS.monorepoDirectory}`, '/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture/apps/web'],
+      [`/workspaces/${FIXTURE_IDS.fork}`, `workspace-directory-actions-${FIXTURE_IDS.monorepoDirectory}`, '/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture/apps/web'],
+      [`/workspaces/${FIXTURE_IDS.fork}`, `workspace-directory-actions-${FIXTURE_IDS.attachedDirectory}`, '/tmp/treefold-ui-fixture/attached-documentation'],
     ];
-    for (const [name, trigger] of scenarios) {
-      for (const parent of ['sidebar-project-node', 'sidebar-workspace-node']) {
-        const toggle = page.getByTestId(parent).first().getByTestId('sidebar-tree-toggle').first();
-        if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
+    const expected: { id: string; directory: string }[] = [];
+    for (const [index, [route, menuId, directory]] of scenarios.entries()) {
+      await page.evaluate(route => { window.location.hash = route; }, route);
+      const trigger = page.getByTestId(`${menuId}-trigger`);
+      // Stress the lower edge without scrolling an already-open menu.
+      await trigger.waitFor({ state: 'visible' });
+      await trigger.evaluate(node => node.scrollIntoView({ block: 'end' }));
+      await trigger.click();
+      const menu = page.getByTestId(menuId);
+      const openWith = menu.getByRole('menuitem', { name: 'Open With', exact: true });
+      if (index === 0) await expectAnchoredOverlay(menu, trigger);
+      await openWith.hover();
+      const submenu = page.getByTestId('open-in-submenu').filter({ visible: true });
+      const finder = submenu.getByRole('menuitem', { name: 'Finder', exact: true });
+      await expect(finder).toBeVisible();
+      if (index === 0) {
+        await expectAnchoredOverlay(submenu, openWith);
+        await page.screenshot({ path: '/tmp/treefold-directory-menu-anchored.png' });
       }
-      await page.locator(`[data-testid^="sidebar-"] button[title="${name}"]`).first().click();
-      await page.getByTestId(trigger).first().click();
-      await page.getByTestId('open-in-menu').filter({ visible: true }).hover({ force: true });
-      await expect(page.getByTestId('open-in-copy-path').filter({ visible: true })).toBeVisible();
-      await page.keyboard.press('Escape');
-      await page.keyboard.press('Escape');
+      await finder.hover();
+      await submenu.getByRole('menuitem', { name: 'Copy Absolute Path', exact: true }).click();
+      await expect.poll(() => page!.evaluate(() => window.__treefoldCopiedPath)).toBe(directory);
+      await expect(menu).toBeHidden();
+      await trigger.click();
+      await openWith.hover();
+      await finder.click();
+      expected.push({ id: 'finder', directory });
+      await expect.poll(() => openInRequests(page!)).toEqual(expected);
+      await expect(menu).toBeHidden();
+      if (index === 0) {
+        // The same menu must work from the keyboard and restore trigger focus.
+        await trigger.focus();
+        await trigger.press('ArrowDown');
+        await expect(openWith).toBeFocused();
+        await openWith.press('ArrowRight');
+        await expect(submenu.getByRole('menuitem', { name: 'Copy Absolute Path', exact: true })).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(submenu).toBeHidden();
+        await expect(openWith).toBeFocused();
+        await page.keyboard.press('Escape');
+        await expect(menu).toBeHidden();
+        await expect(trigger).toBeFocused();
+        await trigger.click();
+        await expect(menu).toBeVisible();
+        await page.getByRole('heading', { name: 'Repositories', exact: true }).click();
+        await expect(menu).toBeHidden();
+      }
     }
     harness.assertNoUnexpectedRequests();
+  } catch (error) {
+    await page?.screenshot({ path: '/tmp/treefold-directory-menu-failure.png' }).catch(() => {});
+    throw error;
   } finally { try { await closeUiSession(page); } finally { await harness.close(); } }
 });

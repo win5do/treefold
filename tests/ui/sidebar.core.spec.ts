@@ -1245,13 +1245,15 @@ test("sidebar.core", async () => {
       false,
       "archived Project details must not expose location creation",
     );
-    assert.equal(
-      await (
-        archivedProjectPage.locator('[data-testid^="project-location-actions-"]')
-      ).count().then(count => count > 0),
-      false,
-      "archived Project details must not expose location edits",
-    );
+    // Archived directories can still be opened locally, but cannot be edited.
+    for (const menuId of [
+      `project-directory-actions-${FIXTURE_IDS.primaryDirectory}`,
+      `project-location-actions-${FIXTURE_IDS.attachedDirectory}`,
+    ]) {
+      await clickUiElement(page, page.getByTestId(`${menuId}-trigger`));
+      await expect(page.getByTestId(menuId).getByRole('menuitem')).toHaveText(['Open With']);
+      await pressUiEscape(page);
+    }
     assert.equal(
       await archivedProjectPage.locator('[data-testid^="project-session-"]').getByRole("button", { name: "Open", exact: true }).count().then(count => count > 0),
       false,
