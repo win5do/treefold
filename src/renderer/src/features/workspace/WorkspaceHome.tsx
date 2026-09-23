@@ -776,36 +776,6 @@ function WorkspaceRepositoryRow({
               </MetadataListItem>
             </MetadataList>
           )}
-          {scopes.length > 0 && (
-            <div
-              className="mt-3 border-t border-border/60 pt-2"
-              data-testid={`workspace-repository-scopes-${location.id}`}
-            >
-              {scopes.map((scope) => (
-                <div
-                  key={scope.id}
-                  data-testid={`workspace-directory-${scope.project_directory_id}`}
-                  className="flex min-w-0 items-center gap-2 py-1.5"
-                >
-                  <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate text-xs font-medium">
-                    {scope.name}
-                  </span>
-                  <code
-                    className="ml-auto max-w-1/2 truncate text-[10px] text-muted-foreground"
-                    title={scope.path}
-                  >
-                    {formatRepositoryRelativePath(scope.relative_path)}
-                  </code>
-                  <DirectoryActionsMenu
-                    path={scope.path}
-                    name={scope.name}
-                    testId={`workspace-directory-actions-${scope.project_directory_id}`}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
         </div>
         {actionsEnabled && writableGit && (
           <div className="-mt-2 self-start">
@@ -834,6 +804,36 @@ function WorkspaceRepositoryRow({
           </div>
         )}
       </div>
+      {scopes.length > 0 && (
+        <div
+          className="mt-3 border-t border-border/60 pt-2"
+          data-testid={`workspace-repository-scopes-${location.id}`}
+        >
+          {scopes.map((scope) => (
+            <div
+              key={scope.id}
+              data-testid={`workspace-directory-${scope.project_directory_id}`}
+              className="flex min-w-0 items-center gap-2 py-1.5"
+            >
+              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate text-xs font-medium">
+                {scope.name}
+              </span>
+              <code
+                className="ml-auto max-w-1/2 truncate text-[10px] text-muted-foreground"
+                title={scope.path}
+              >
+                {formatRepositoryRelativePath(scope.relative_path)}
+              </code>
+              <DirectoryActionsMenu
+                path={scope.path}
+                name={scope.name}
+                testId={`workspace-directory-actions-${scope.project_directory_id}`}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </article>
   );
 }
