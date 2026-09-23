@@ -92,6 +92,50 @@ mod current_workspace_tests {
         command_output(repository, "git", &["commit", "-m", "initial"]).expect("commit fixture");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn project_path_inspection_follows_directory_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "treefold-project-symlink-test-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let container = root.join("links");
+        let repository = root.join("repository");
+        let context = root.join("docs");
+        initialize_repository(&repository);
+        std::fs::create_dir_all(&container).unwrap();
+        std::fs::create_dir_all(&context).unwrap();
+        std::fs::write(root.join("file"), "fixture").unwrap();
+        symlink("../repository", container.join("repo")).unwrap();
+        symlink(&repository, container.join("repo-alias")).unwrap();
+        symlink("../docs", container.join("docs")).unwrap();
+        symlink("../missing", container.join("broken")).unwrap();
+        symlink("../file", container.join("file")).unwrap();
+        symlink("loop", container.join("loop")).unwrap();
+
+        let inspected = inspect_project_path_value(container.to_str().unwrap()).unwrap();
+        let repository = std::fs::canonicalize(repository).unwrap();
+        let context = std::fs::canonicalize(context).unwrap();
+        assert_eq!(inspected.candidates.len(), 2);
+        let git = inspected
+            .candidates
+            .iter()
+            .find(|item| item.is_git)
+            .unwrap();
+        assert_eq!(git.path, repository.to_string_lossy());
+        assert_eq!(git.repository_root.as_deref(), repository.to_str());
+        assert!(inspected.candidates.iter().any(|item| {
+            item.path == context.to_string_lossy() && !item.is_git && item.repository_root.is_none()
+        }));
+        let direct = inspect_project_path_value(container.join("repo").to_str().unwrap()).unwrap();
+        assert_eq!(direct.candidates.len(), 1);
+        assert_eq!(direct.candidates[0].path, git.path);
+        assert!(direct.candidates[0].is_git);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[tokio::test]
     async fn project_path_inspection_and_creation_keep_selected_locations() {
         let root = std::env::temp_dir().join(format!(
