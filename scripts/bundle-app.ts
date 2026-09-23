@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { build, Platform } from 'electron-builder';
 import { valid } from 'semver';
@@ -21,12 +21,18 @@ export async function bundleApp({ localInstall = false, directoryOnly = false }:
   execFileSync('cargo', ['xtask', 'sidecars', 'bundle'], { cwd: root, env, stdio: 'inherit' });
   execFileSync('npm', ['run', 'build'], { cwd: root, env, stdio: 'inherit' });
 
+  // Keep only the current package; preserve previous artifacts if compilation fails.
+  const outputDirectory = path.join(root, 'release');
+  // Finder can recreate .DS_Store while the output directory is being removed.
+  rmSync(outputDirectory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+
   let appPath: string | undefined;
   const artifacts = await build({
     projectDir: root,
     targets: Platform.MAC.createTarget(directoryOnly ? 'dir' : undefined),
     publish: 'never',
     config: {
+      directories: { output: outputDirectory },
       extraMetadata: { version },
       buildVersion: version,
       afterSign(context) {
