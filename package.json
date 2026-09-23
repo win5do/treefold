@@ -10,8 +10,8 @@
   "scripts": {
     "actions:generate": "node scripts/generate-action-keymap.ts",
     "actions:check": "node scripts/generate-action-keymap.ts --check",
-    "dev": "electron-vite dev --watch",
-    "dev:no-watch": "electron-vite dev",
+    "dev": "electron-vite dev",
+    "dev:watch": "electron-vite dev --watch",
     "build": "npm run typecheck && electron-vite build",
     "test:ui": "playwright test --project=ui",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:tools",

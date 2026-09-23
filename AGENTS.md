@@ -77,14 +77,16 @@ task runner but is optional.
   generated `src/backend/src/keymap/action_definitions.rs`. `just actions-check`
   (included in `just check`) detects drift. Rust builds consume the committed
   module and do not execute Node.
-- Run `just app-dev` for hot reload with repository-local state under
+- Run `just app-dev` for renderer HMR with repository-local state under
   `.treefold-dev/`; use `just app-default` only when intentionally developing
   against `~/.treefold`.
 - `TREEFOLD_DEV_HOME` relocates development state. `TREEFOLD_UI_PORT` and
   `TREEFOLD_API_PORT` override the default development ports `15011` and an
   automatically selected API port.
-- Use `app-dev-no-watch` or `app-default-no-watch` when main/preload/Rust watching is not
-  needed; renderer HMR remains enabled.
+- Use `app-dev-watch` or `app-default-watch` to also watch main/preload/Rust
+  and automatically rebuild on changes. The default recipes keep renderer HMR
+  enabled without main/preload/Rust watching. npm equivalents are `npm run dev`
+  and `npm run dev:watch`.
 - Run `just --list` to discover tasks, `just check` for the standard validation
   set, and `just build` for a full application build. `just typecheck` runs only
   TypeScript checks; `just check-backend` checks Rust formatting and compilation.

@@ -7,21 +7,21 @@ help:
 default-home := env("HOME") + "/.treefold"
 dev-home := env("TREEFOLD_DEV_HOME", justfile_directory() + "/.treefold-dev")
 
-# Start desktop development with isolated local data and hot reload.
+# Start desktop development with isolated local data and renderer HMR.
 app-dev:
     TREEFOLD_HOME="{{ dev-home }}" npm run dev
 
-# Start desktop development against ~/.treefold intentionally.
+# Start desktop development against ~/.treefold with renderer HMR.
 app-default:
     TREEFOLD_HOME="{{ default-home }}" npm run dev
 
-# Start isolated desktop development without main/preload/Rust watching.
-app-dev-no-watch:
-    TREEFOLD_HOME="{{ dev-home }}" npm run dev:no-watch
+# Start isolated desktop development with renderer HMR and main/preload/Rust watching.
+app-dev-watch:
+    TREEFOLD_HOME="{{ dev-home }}" npm run dev:watch
 
-# Use ~/.treefold without main/preload/Rust watching.
-app-default-no-watch:
-    TREEFOLD_HOME="{{ default-home }}" npm run dev:no-watch
+# Use ~/.treefold with renderer HMR and main/preload/Rust watching.
+app-default-watch:
+    TREEFOLD_HOME="{{ default-home }}" npm run dev:watch
 
 # Run TypeScript, database, and Rust checks.
 check: actions-check typecheck database-check check-backend

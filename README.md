@@ -89,8 +89,9 @@ On macOS, install stable Rust, Node.js 24.12+, Git, and just, then run
 `npm install` once.
 
 ```bash
-just app-dev  # Run locally with hot reload and isolated .treefold-dev data
-just build    # Build a signed App and DMG in release/
+just app-dev        # Run with renderer HMR and isolated .treefold-dev data
+just app-dev-watch  # Also watch and rebuild main/preload/Rust
+just build          # Build a signed App and DMG in release/
 ```
 
 See [AGENTS.md](AGENTS.md#development-environment-and-commands) for development,
