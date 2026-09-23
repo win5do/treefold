@@ -42,6 +42,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
           id,
           repository_name: names[index],
           delivery_status: "active",
+          branch_ownership: index === 0 ? "user" : "managed",
           remote_name: null,
           delivery_mode: "local_merge",
           access_mode: "read_write",
@@ -135,6 +136,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
     const second = dialog.getByRole("tab", { name: new RegExp(names[1]) });
     const firstPanel = dialog.getByRole("tabpanel", { name: new RegExp(names[0]) });
     const secondPanel = dialog.getByRole("tabpanel", { name: new RegExp(names[1]) });
+    await expect(firstPanel.getByRole("checkbox", { name: "Delete local branch" })).not.toBeChecked();
     await expect(second).toContainText(/blocked/i);
     await expect(dialog.getByTestId("finish-confirm-action")).toBeDisabled();
     // Vertical tabs support keyboard selection and keep each repository's draft.
@@ -148,6 +150,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
         exact: true,
       }),
     ).toBeVisible();
+    await expect(secondPanel.getByRole("checkbox", { name: "Delete local branch" })).toBeChecked();
     await secondPanel
       .getByRole("combobox", { name: "Finish strategy" })
       .selectOption("keep");
@@ -182,7 +185,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
         repository_id: ids[0],
         code_action: "squash_merge",
         delete_worktree: true,
-        delete_branch: true,
+        delete_branch: false,
         preflight_id: `preflight-${ids[0]}-squash_merge`,
       },
       {

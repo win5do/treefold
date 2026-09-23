@@ -699,7 +699,7 @@ export const zhCN = {
     "recoveryRequired": "需要恢复",
     "couldNotLoadRepositoryBranches": "无法加载仓库分支",
     "newWorkspace": "新建 Workspace",
-    "eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode": "每个 Git 位置使用各自的基准分支和交付方式。",
+    "eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode": "已有本地分支未被其他 worktree 占用时会直接复用；不存在的分支从各仓库的基准分支创建。每个仓库保留各自的交付方式。",
     "workspaceDescription": "Workspace 描述",
     "scopeAndExpectedOutcome": "范围与预期结果",
     "sharedLocalBranch": "共用的本地分支名称",

@@ -2057,6 +2057,7 @@ pub(super) struct WorkspaceWorktreePlan {
     pub(super) checkout_path: String,
     pub(super) branch: String,
     pub(super) start_ref: String,
+    pub(super) reuse_branch: bool,
     pub(super) setup_directory_id: String,
     pub(super) setup_workdir: String,
 }
@@ -2157,6 +2158,7 @@ pub(super) async fn create_workspace_impl(
         trimmed(input.generated_branch)
             .filter(|value| !value.is_empty())
             .as_deref(),
+        true,
     )?;
     let default_delivery_mode = locations
         .iter()
@@ -2226,6 +2228,11 @@ pub(super) async fn create_workspace_impl(
             remote_branch,
             location_delivery_mode,
         );
+        let reuse_branch = explicit_branch.is_some()
+            && git_ref_names(&location.path, "refs/heads")?.contains(&branch);
+        if reuse_branch {
+            snapshot.branch_ownership = "user".into();
+        }
         snapshot.git_status = "creating".into();
         snapshot.start_commit = None;
         plans.push(WorkspaceWorktreePlan {
@@ -2233,7 +2240,12 @@ pub(super) async fn create_workspace_impl(
             workspace_repository_id: snapshot.id.clone(),
             checkout_path,
             branch: branch.clone(),
-            start_ref: base_branch.clone(),
+            start_ref: if reuse_branch {
+                format!("refs/heads/{branch}")
+            } else {
+                base_branch.clone()
+            },
+            reuse_branch,
             setup_directory_id: directories
                 .iter()
                 .find(|directory| directory.repository_id.as_deref() == Some(&location.id))
@@ -2351,7 +2363,7 @@ pub(super) fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> Workspac
         )
         .map_err(|_| {
             format!(
-                "base branch '{}' was not found in {}",
+                "starting branch '{}' was not found in {}",
                 plan.start_ref, plan.location.name
             )
         })?;
@@ -2359,19 +2371,21 @@ pub(super) fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> Workspac
             std::fs::create_dir_all(parent)
                 .map_err(|error| format!("create worktree directory: {error}"))?;
         }
-        command_output(
-            Path::new(&plan.location.path),
-            "git",
-            &[
+        let args = if plan.reuse_branch {
+            vec!["worktree", "add", "--", &plan.checkout_path, &plan.branch]
+        } else {
+            vec![
                 "worktree",
                 "add",
                 "-b",
                 &plan.branch,
+                "--",
                 &plan.checkout_path,
                 &plan.start_ref,
-            ],
-        )
-        .map_err(|error| format!("create worktree for {}: {error}", plan.location.name))?;
+            ]
+        };
+        command_output(Path::new(&plan.location.path), "git", &args)
+            .map_err(|error| format!("create worktree for {}: {error}", plan.location.name))?;
         Ok::<_, String>(start_commit)
     })();
 

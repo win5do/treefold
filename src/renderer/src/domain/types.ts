@@ -173,6 +173,7 @@ export type WorkspaceRepository = {
   creation_error?: string;
   checkout_path?: string;
   branch?: string;
+  branch_ownership: string;
   base_branch?: string;
   start_commit?: string;
   remote_name?: string;
