@@ -697,7 +697,7 @@ export const enUS = {
     "recoveryRequired": "Recovery required",
     "couldNotLoadRepositoryBranches": "Could not load repository branches",
     "newWorkspace": "New Workspace",
-    "eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode": "Each Git location uses its own base branch and delivery mode.",
+    "eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode": "An existing local branch is reused if it is not checked out elsewhere. Missing branches are created from each Repository’s base branch. Each Repository keeps its own delivery mode.",
     "workspaceDescription": "Workspace description",
     "scopeAndExpectedOutcome": "Scope and expected outcome",
     "sharedLocalBranch": "Shared local branch",

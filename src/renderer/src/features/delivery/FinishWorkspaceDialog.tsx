@@ -228,7 +228,8 @@ export function FinishWorkspaceDialog({
                                 flow.update(item.id, {
                                   code_action,
                                   delete_worktree: code_action !== "keep",
-                                  delete_branch: code_action !== "keep",
+                                  delete_branch:
+                                    code_action !== "keep" && item.branch_ownership === "managed",
                                 });
                               }}
                             >

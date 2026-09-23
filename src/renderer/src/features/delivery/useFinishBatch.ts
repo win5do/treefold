@@ -63,7 +63,8 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
             {
               code_action,
               delete_worktree: code_action !== "keep",
-              delete_branch: code_action !== "keep",
+              delete_branch:
+                code_action !== "keep" && item.branch_ownership === "managed",
             },
           ];
         }),

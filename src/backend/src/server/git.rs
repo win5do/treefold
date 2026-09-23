@@ -1844,6 +1844,7 @@ pub(super) fn choose_shared_branch(
     locations: &[Directory],
     explicit: Option<&str>,
     generated: Option<&str>,
+    reuse_existing: bool,
 ) -> Result<String> {
     for attempt in 0..32 {
         let candidate = explicit
@@ -1880,8 +1881,20 @@ pub(super) fn choose_shared_branch(
             )
             .is_ok()
             {
-                conflict = true;
-                break;
+                if reuse_existing && explicit.is_some() {
+                    if let Some(worktree) = git_worktrees(&location.path)?
+                        .into_iter()
+                        .find(|worktree| worktree.branch == candidate)
+                    {
+                        return Err(AppError::BadRequest(format!(
+                            "branch '{}' in Repository '{}' is already checked out at {}",
+                            candidate, location.name, worktree.path
+                        )));
+                    }
+                } else {
+                    conflict = true;
+                    break;
+                }
             }
         }
         if !conflict {

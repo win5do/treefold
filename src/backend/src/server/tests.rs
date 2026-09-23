@@ -92,6 +92,174 @@ mod current_workspace_tests {
         command_output(repository, "git", &["commit", "-m", "initial"]).expect("commit fixture");
     }
 
+    #[tokio::test]
+    async fn workspace_reuses_existing_branch_and_preserves_it_after_cleanup() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let first = root.join("first");
+        let second = root.join("second");
+        initialize_repository(&first);
+        initialize_repository(&second);
+        command_output(&first, "git", &["checkout", "-b", "feature/existing"]).unwrap();
+        command_output(
+            &first,
+            "git",
+            &["commit", "--allow-empty", "-m", "feature commit"],
+        )
+        .unwrap();
+        let original = git_head(first.to_str().unwrap()).unwrap();
+        command_output(&first, "git", &["checkout", "main"]).unwrap();
+        let state = test_state(root).await;
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Existing branch".into()),
+                description: None,
+                path: Some(first.to_string_lossy().into_owned()),
+                locations: None,
+                preferred_remote: None,
+                default_base_branch: Some("main".into()),
+                default_target_branch: None,
+                default_delivery_mode: Some("local_merge".into()),
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = create_directory(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(CreateDirectory {
+                path: second.to_string_lossy().into_owned(),
+                description: None,
+                worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let mut locations = Vec::new();
+        for repository in state.store.repositories(&project.id).await.unwrap() {
+            state
+                .store
+                .update_repository(&repository.id, "", ".", "main", "local_merge")
+                .await
+                .unwrap();
+            locations.push(
+                state
+                    .store
+                    .repository_as_directory(&repository.id)
+                    .await
+                    .unwrap(),
+            );
+        }
+        // Generated names and Forks must still allocate new branches.
+        assert_ne!(
+            super::choose_shared_branch(&locations, None, Some("feature/existing"), true).unwrap(),
+            "feature/existing"
+        );
+        assert!(
+            super::choose_shared_branch(&locations, Some("feature/existing"), None, false).is_err()
+        );
+        let input = || CreateWorkspace {
+            branch: Some("feature/existing".into()),
+            generated_branch: None,
+            description: None,
+            remote_name: None,
+            remote_branch: None,
+        };
+        // Occupancy in either Repository must reject the request before creating records.
+        command_output(&second, "git", &["checkout", "-b", "feature/existing"]).unwrap();
+        let error = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(input()),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains(second.to_str().unwrap()));
+        command_output(&second, "git", &["checkout", "main"]).unwrap();
+        command_output(&second, "git", &["branch", "-D", "feature/existing"]).unwrap();
+        let (_, Json(workspace)) = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+            ApiJson(input()),
+        )
+        .await
+        .unwrap();
+        let snapshots = state
+            .store
+            .workspace_repositories(&workspace.id)
+            .await
+            .unwrap();
+        assert_eq!(snapshots.len(), 2);
+        for snapshot in &snapshots {
+            assert_eq!(
+                snapshot.git_status, "ready",
+                "{:?}",
+                snapshot.creation_error
+            );
+            let reused =
+                normalized_path(&snapshot.source_root) == normalized_path(first.to_str().unwrap());
+            assert_eq!(
+                snapshot.branch_ownership,
+                if reused { "user" } else { "managed" }
+            );
+            let expected = if reused {
+                original.clone()
+            } else {
+                git_head(second.to_str().unwrap()).unwrap()
+            };
+            assert_eq!(
+                git_head(snapshot.checkout_path.as_deref().unwrap()).unwrap(),
+                expected
+            );
+            assert_eq!(snapshot.start_commit.as_deref(), Some(expected.as_str()));
+        }
+        let error = create_workspace(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(input()),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("already checked out"));
+        let reused = snapshots
+            .iter()
+            .find(|item| item.branch_ownership == "user")
+            .unwrap();
+        let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
+            state.clone(),
+            reused.id.clone(),
+            CreateDeliveryPreflight {
+                code_action: "keep".into(),
+            },
+        )
+        .await
+        .unwrap();
+        let _ = finish_workspace_repository_impl(
+            state.clone(),
+            reused.id.clone(),
+            FinishWorkspace {
+                code_action: "keep".into(),
+                todo_action: "".into(),
+                push_after_merge: false,
+                keep_session_history: true,
+                delete_worktree: true,
+                delete_branch: false,
+                commit_message: None,
+                preflight_id: Some(preflight.id),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(!Path::new(reused.checkout_path.as_deref().unwrap()).exists());
+        assert_eq!(
+            command_output(&first, "git", &["rev-parse", "refs/heads/feature/existing"]).unwrap(),
+            original
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn project_path_inspection_follows_directory_symlinks() {

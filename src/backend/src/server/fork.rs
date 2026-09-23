@@ -190,6 +190,7 @@ pub(super) async fn create_fork_impl(
         trimmed(input.generated_branch)
             .filter(|value| !value.is_empty())
             .as_deref(),
+        false,
     )?;
     let worktree_root = super::worktree_names::reserve_worktree_root(&state.settings)?;
     let timestamp = now();
@@ -259,6 +260,7 @@ pub(super) async fn create_fork_impl(
         };
         snapshot.forked_from_commit = Some(start_commit.clone());
         plans.push(WorkspaceWorktreePlan {
+            reuse_branch: false,
             location: project_repository,
             workspace_repository_id: snapshot.id.clone(),
             checkout_path,

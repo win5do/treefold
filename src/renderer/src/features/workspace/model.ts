@@ -132,7 +132,7 @@ export function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
     branch: primary?.branch ?? "",
     remote_name: primary?.remote_name,
     remote_branch: primary?.remote_branch,
-    branch_ownership: "managed",
+    branch_ownership: primary?.branch_ownership ?? "managed",
     delivery_mode:
       (primary?.delivery_mode as Workspace["delivery_mode"]) ?? "push_branch",
     delivery_status: primary?.delivery_status ?? "active",
