@@ -34,6 +34,12 @@ const deliveryModes = [
   ['保留现场', '暂不交付代码，保留工作区以便继续处理。'],
 ] as const;
 
+const gitFeatures = [
+  ['Git Changes', '按仓库查看文件修改、增删行数与暂存状态，打开 diff 后再决定 stage、unstage 或 commit。'],
+  ['Git History', '浏览 commit、作者、时间与 hash；选择单个 commit 或一段历史查看对应 diff。'],
+  ['History Actions', '从历史记录执行 Revert Commit 或 Reset to Commit，并在确认前查看不同 reset mode 的影响。'],
+] as const;
+
 const scenarios = [
   ['单仓库', '为不同 feature 创建独立 Workspace，避免 Agent 争用同一工作目录。', '01 / SINGLE REPO'],
   ['多仓库', '同一个 Workspace 为每个仓库管理对应的 worktree 与交付状态。', '02 / MULTI REPO'],
@@ -132,9 +138,55 @@ const scenarios = [
       </div>
     </section>
 
+    <section id="git" class="scroll-mt-20 bg-ink py-24 text-white sm:py-28">
+      <div class="site-container grid gap-12 lg:grid-cols-[.9fr_1.1fr] lg:items-center lg:gap-16">
+        <div>
+          <div class="section-kicker text-accent">02 / GIT VISIBILITY</div>
+          <h2 class="section-title mt-5">修改和历史，<br />都在同一个视野里。</h2>
+          <p class="mt-6 max-w-[520px] text-[16px] leading-8 text-white/60">不用离开当前 Project、Workspace 或 Fork，就能查看仓库的 Git Changes 与 Git History。先看清 diff 和上下文，再执行提交、撤销或重置。</p>
+          <div class="mt-9 grid gap-3">
+            {gitFeatures.map(([name, description]) => (
+              <article class="rounded-xl border border-white/10 bg-white/[.035] px-5 py-4">
+                <h3 class="font-mono text-xs font-bold text-accent">{name}</h3>
+                <p class="mt-2 text-sm leading-6 text-white/55">{description}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <div class="overflow-hidden rounded-xl border border-white/15 bg-[#18231e] shadow-[0_30px_80px_#0007]" aria-label="Git History 功能示意">
+          <div class="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-5">
+            <div class="flex gap-5 text-xs"><span class="text-white/40">Changes</span><strong class="border-b border-accent pb-3 text-accent">Git History</strong></div>
+            <span class="font-mono text-[9px] text-white/35">feature/auth-flow</span>
+          </div>
+          <div class="grid min-h-[390px] sm:grid-cols-[minmax(0,1fr)_176px]">
+            <div class="divide-y divide-white/10">
+              <div class="bg-white/[.055] px-5 py-5">
+                <div class="flex items-start justify-between gap-4"><strong class="text-sm">Validate session ownership</strong><code class="shrink-0 text-[10px] text-white/40">8f3ab21</code></div>
+                <p class="mt-2 text-[11px] text-white/40">Mina · 09:42 · 4 files <span class="text-[#a6d7a3]">+86</span> <span class="text-[#f3a69f]">−14</span></p>
+              </div>
+              <div class="px-5 py-5">
+                <div class="flex items-start justify-between gap-4"><strong class="text-sm text-white/75">Add workspace delivery checks</strong><code class="shrink-0 text-[10px] text-white/35">62bd908</code></div>
+                <p class="mt-2 text-[11px] text-white/35">Leo · Yesterday · 2 files <span class="text-[#a6d7a3]">+31</span> <span class="text-[#f3a69f]">−5</span></p>
+              </div>
+              <div class="px-5 py-5">
+                <div class="flex items-start justify-between gap-4"><strong class="text-sm text-white/55">Refine todo assignment</strong><code class="shrink-0 text-[10px] text-white/30">1ca77ef</code></div>
+                <p class="mt-2 text-[11px] text-white/30">Mina · Monday · 6 files <span class="text-[#a6d7a3]">+104</span> <span class="text-[#f3a69f]">−28</span></p>
+              </div>
+            </div>
+            <div class="border-t border-white/10 bg-[#202e27] p-3 sm:border-t-0 sm:border-l">
+              <div class="mb-3 px-2 font-mono text-[9px] tracking-[.12em] text-white/30">COMMIT ACTIONS</div>
+              <div class="space-y-1 font-mono text-[11px]"><div class="rounded-md bg-accent/10 px-3 py-2.5 text-accent">View Diff</div><div class="px-3 py-2.5 text-white/65">Copy Commit</div><div class="px-3 py-2.5 text-white/65">Revert Commit</div><div class="rounded-md px-3 py-2.5 text-[#f3a69f]">Reset to Commit</div></div>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-5 py-4 text-[10px] text-white/35"><span>VISUAL DIFF · STAGE · COMMIT</span><span>SOFT · MIXED · HARD</span></div>
+        </div>
+      </div>
+    </section>
+
     <section id="workflow" class="scroll-mt-20 border-y border-[#dce5db] bg-[#eaf0e8] py-24 sm:py-28">
       <div class="site-container">
-        <div class="flex flex-col justify-between gap-8 lg:flex-row lg:items-end"><div class="max-w-[840px]"><div class="section-kicker text-pine">02 / FOLD THE WORK BACK</div><h2 class="section-title mt-5">展开任务。<br />把结果带回主线。</h2></div><p class="max-w-[330px] text-sm leading-7 text-muted">Treefold 让 Git 操作留在可见的工作流里：创建、同步、检查、交付，然后清理已完成的工作。</p></div>
+        <div class="flex flex-col justify-between gap-8 lg:flex-row lg:items-end"><div class="max-w-[840px]"><div class="section-kicker text-pine">03 / FOLD THE WORK BACK</div><h2 class="section-title mt-5">展开任务。<br />把结果带回主线。</h2></div><p class="max-w-[330px] text-sm leading-7 text-muted">Treefold 让 Git 操作留在可见的工作流里：创建、同步、检查、交付，然后清理已完成的工作。</p></div>
         <div class="workflow-track mt-16 grid gap-8 md:grid-cols-4 md:gap-5">
           <div><span class="relative z-10 flex size-11 items-center justify-center rounded-full border border-pine bg-paper font-mono text-xs font-bold text-pine">01</span><h3 class="mt-6 text-xl font-semibold">创建 Workspace</h3><p class="mt-3 text-sm leading-7 text-muted">为 feature 建立独立 branch 与 worktree。</p></div>
           <div><span class="relative z-10 flex size-11 items-center justify-center rounded-full border border-pine bg-paper font-mono text-xs font-bold text-pine">02</span><h3 class="mt-6 text-xl font-semibold">并行处理 Todo</h3><p class="mt-3 text-sm leading-7 text-muted">从 Todo 创建 Fork，Agent 在独立目录完成子任务。</p></div>
@@ -154,12 +206,12 @@ const scenarios = [
 
     <section id="agents" class="scroll-mt-20 overflow-hidden bg-ink py-24 text-white sm:py-28">
       <div class="site-container grid gap-12 lg:grid-cols-[.9fr_1.1fr] lg:items-center lg:gap-16">
-        <div><div class="section-kicker text-accent">03 / AGENT INTEGRATION</div><h2 class="section-title mt-5">Agent 启动进程。<br />App 持续托管。</h2><p class="mt-6 max-w-[480px] text-[16px] leading-8 text-white/60">Agent 能读取当前 Project 与 Workspace 上下文、创建或更新 Todo，也能启动由 Treefold 集成的 amux 托管的进程。即使 Agent Session 已结束，进程仍可留在 App 中继续运行。</p><div class="mt-8 grid gap-3 text-sm text-white/75"><div class="flex gap-3"><span class="text-accent">↗</span><span>Todo 关联 Fork，子任务和代码有明确归属</span></div><div class="flex gap-3"><span class="text-accent">↗</span><span>实时查看命令日志，TTY 进程可继续输入</span></div><div class="flex gap-3"><span class="text-accent">↗</span><span>在 App 内查看、重启或停止托管进程</span></div></div><p class="mt-8 text-xs leading-6 text-white/35">退出 App 后是否保持进程运行，由 amux 设置决定。</p></div>
+        <div><div class="section-kicker text-accent">04 / AGENT INTEGRATION</div><h2 class="section-title mt-5">Agent 启动进程。<br />App 持续托管。</h2><p class="mt-6 max-w-[480px] text-[16px] leading-8 text-white/60">Agent 能读取当前 Project 与 Workspace 上下文、创建或更新 Todo，也能启动由 Treefold 集成的 amux 托管的进程。即使 Agent Session 已结束，进程仍可留在 App 中继续运行。</p><div class="mt-8 grid gap-3 text-sm text-white/75"><div class="flex gap-3"><span class="text-accent">↗</span><span>Todo 关联 Fork，子任务和代码有明确归属</span></div><div class="flex gap-3"><span class="text-accent">↗</span><span>实时查看命令日志，TTY 进程可继续输入</span></div><div class="flex gap-3"><span class="text-accent">↗</span><span>在 App 内查看、重启或停止托管进程</span></div></div><p class="mt-8 text-xs leading-6 text-white/35">退出 App 后是否保持进程运行，由 amux 设置决定。</p></div>
         <div class="overflow-hidden rounded-xl border border-white/15 bg-[#1c2922] shadow-[0_30px_80px_#0007]"><div class="flex items-center justify-between border-b border-white/10 px-5 py-4"><div class="flex items-center gap-2"><span class="size-2 rounded-full bg-accent"></span><strong class="text-sm">api · TTY</strong></div><span class="rounded-full bg-accent/10 px-2.5 py-1 font-mono text-[10px] text-accent">RUNNING</span></div><div class="space-y-3 px-5 py-5 font-mono text-[11px] leading-6 sm:px-8 sm:py-7 sm:text-xs"><div class="terminal-line"><span class="line-number">01</span><span><span class="text-accent">$</span> amux run --name api -- cargo run</span></div><div class="terminal-line"><span class="line-number">02</span><span class="text-white/40">Compiling service...</span></div><div class="terminal-line"><span class="line-number">03</span><span class="text-white/40">Listening on 127.0.0.1:3001</span></div><div class="terminal-line"><span class="line-number">04</span><span class="text-[#a6d7a3]">GET /api/health 200</span></div><div class="terminal-line"><span class="line-number">05</span><span class="text-white/50">Agent Session 已结束 · 进程继续运行</span></div></div><div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-5 py-4 text-[11px] text-white/45 sm:px-8"><span>归属：Project / atlas / api</span><span>LOGS · INPUT · STOP</span></div></div>
       </div>
     </section>
 
-    <section id="scenarios" class="scroll-mt-20 bg-paper py-24 sm:py-28"><div class="site-container"><div class="max-w-[770px]"><div class="section-kicker text-pine">04 / FITS YOUR CODEBASE</div><h2 class="section-title mt-5">代码怎么组织，<br />工作就怎么展开。</h2><p class="mt-6 text-[16px] leading-8 text-muted">从一个仓库到多个仓库，Treefold 管理真实的 Git worktree，同时让 Session 从合适的目录开始。</p></div><div class="mt-12 grid gap-4 md:grid-cols-2">{scenarios.map(([name, description, tag]) => (<article class="rounded-2xl border border-[#dce5db] bg-white p-7 sm:p-8"><div class="font-mono text-[10px] font-bold tracking-[.12em] text-pine">{tag}</div><h3 class="mt-8 text-2xl font-semibold tracking-[-.04em]">{name}</h3><p class="mt-4 max-w-[470px] text-sm leading-7 text-muted">{description}</p></article>))}</div></div></section>
+    <section id="scenarios" class="scroll-mt-20 bg-paper py-24 sm:py-28"><div class="site-container"><div class="max-w-[770px]"><div class="section-kicker text-pine">05 / FITS YOUR CODEBASE</div><h2 class="section-title mt-5">代码怎么组织，<br />工作就怎么展开。</h2><p class="mt-6 text-[16px] leading-8 text-muted">从一个仓库到多个仓库，Treefold 管理真实的 Git worktree，同时让 Session 从合适的目录开始。</p></div><div class="mt-12 grid gap-4 md:grid-cols-2">{scenarios.map(([name, description, tag]) => (<article class="rounded-2xl border border-[#dce5db] bg-white p-7 sm:p-8"><div class="font-mono text-[10px] font-bold tracking-[.12em] text-pine">{tag}</div><h3 class="mt-8 text-2xl font-semibold tracking-[-.04em]">{name}</h3><p class="mt-4 max-w-[470px] text-sm leading-7 text-muted">{description}</p></article>))}</div></div></section>
 
     <section class="bg-[#d8e9d2] py-20 sm:py-24"><div class="site-container flex flex-col justify-between gap-8 lg:flex-row lg:items-end"><div><div class="section-kicker text-pine">FREE & OPEN SOURCE</div><h2 class="mt-5 max-w-[750px] text-[clamp(2.4rem,5vw,4.8rem)] leading-[1.1] font-semibold tracking-[-.065em]">把并行的工作，<br />收成可以交付的结果。</h2><p class="mt-5 text-sm text-[#4d6754]">Treefold for macOS · 本地优先 · AGPL-3.0-only</p></div><div class="flex flex-wrap gap-3"><a href="/download" class="button-primary !bg-ink !text-white hover:!bg-pine">前往下载 <span aria-hidden="true">↗</span></a><a href={github} target="_blank" rel="noopener noreferrer" class="inline-flex min-h-[54px] items-center justify-center gap-3 rounded-lg border border-pine/40 px-5 text-sm font-bold text-ink transition-colors hover:border-pine">查看源码 ↗</a></div></div></section>
   </main>
