@@ -1708,11 +1708,6 @@ test("sidebar.core", async () => {
     const editDirectoryDialog = page.locator('[role="dialog"]');
     await editDirectoryDialog.waitFor({ timeout: 3_000, state: 'visible' });
     assert.equal(
-      await editDirectoryDialog.locator('input[name="base_branch"]').count().then(count => count > 0),
-      false,
-      "directory editing must not expose repository branch settings",
-    );
-    assert.equal(
       await editDirectoryDialog.locator('select[name="delivery_mode"]').count().then(count => count > 0),
       false,
       "directory editing must not expose repository delivery settings",
@@ -1784,13 +1779,6 @@ test("sidebar.core", async () => {
     ).click();
     const deferredSetupDialog = page.locator('[role="dialog"]');
     await deferredSetupDialog.waitFor({ timeout: 3_000, state: 'visible' });
-    const deferredBaseBranch = deferredSetupDialog.locator('select[name^="base_branch:"]');
-    await expect(deferredBaseBranch).toBeEnabled({ timeout: 3_000 });
-    assert.match(
-      await deferredBaseBranch.innerText(),
-      /main[\s\S]*release\/ui-fixture/,
-      "deferred base selection must list only local branches",
-    );
     assert.equal(
       await (
         deferredSetupDialog.locator('select[name^="delivery_mode:"]')
@@ -1920,23 +1908,11 @@ test("sidebar.core", async () => {
     ).click();
     const setupCommand = page.locator('textarea[aria-label="Worktree setup command"]');
     await setupCommand.waitFor({ timeout: 3_000, state: 'visible' });
-    const baseBranchSelect = page.locator('select[name="base_branch"]');
-    await expect(baseBranchSelect).toBeEnabled({ timeout: 3_000 });
-    assert.equal(
-      await baseBranchSelect.isVisible(),
-      true,
-      "base branch must be selected from repository settings",
-    );
-    assert.match(
-      await baseBranchSelect.innerText(),
-      /main[\s\S]*release\/ui-fixture/,
-      "base branch options must come from local branches",
-    );
     const baseRemoteSelect = page.locator('select[name="base_remote"]');
     assert.equal(
       await baseRemoteSelect.isVisible(),
       true,
-      "Pull and Push remote must be selected from repository settings",
+      "Workspace delivery remote can be selected from repository settings",
     );
     assert.match(
       await baseRemoteSelect.innerText(),
@@ -1959,15 +1935,6 @@ test("sidebar.core", async () => {
       harness.repositoryUpdateRequests.at(-1)!.id,
       FIXTURE_IDS.primaryRepository,
       "repository settings must PATCH the repository resource",
-    );
-    assert.deepEqual(
-      harness.repositoryBaseRequests.at(-1),
-      {
-        id: FIXTURE_IDS.primaryRepository,
-        branch: "main",
-        remote: "origin",
-      },
-      "repository settings must persist the local base branch and sync remote",
     );
     assert.match(
       await (page.locator('[data-testid="page-content"]')).innerText(),

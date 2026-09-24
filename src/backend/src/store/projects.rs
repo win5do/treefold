@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 const PROJECT_COLUMNS: &str =
     "id,name,description,status,default_directory_id,created_at,updated_at";
-const REPOSITORY_COLUMNS: &str = "id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at";
-const DIRECTORY_COLUMNS: &str = "d.id,d.project_id,d.repository_id,d.name,d.description,d.relative_path,d.external_path,d.status,d.created_at,d.updated_at,r.name AS repository_name,r.source_root,r.git_common_dir,r.repository_url,r.preferred_remote_name,r.base_branch,r.delivery_mode,r.setup_command,r.setup_workdir,r.git_status AS repository_status,r.last_checked_at";
+const REPOSITORY_COLUMNS: &str = "id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at";
+const DIRECTORY_COLUMNS: &str = "d.id,d.project_id,d.repository_id,d.name,d.description,d.relative_path,d.external_path,d.status,d.created_at,d.updated_at,r.name AS repository_name,r.source_root,r.git_common_dir,r.repository_url,r.preferred_remote_name,r.delivery_mode,r.setup_command,r.setup_workdir,r.git_status AS repository_status,r.last_checked_at";
 
 #[derive(sqlx::FromRow)]
 struct ProjectRow {
@@ -30,14 +30,12 @@ impl From<ProjectRow> for Project {
             description: r.description,
             status: r.status,
             default_location_id: r.default_directory_id.clone(),
-            default_base_branch: "main".into(),
             default_delivery_mode: "push_branch".into(),
             created_at: r.created_at,
             updated_at: r.updated_at,
             primary_directory_id: r.default_directory_id.unwrap_or_default(),
             git_common_dir: String::new(),
             preferred_remote: None,
-            default_target_branch: "main".into(),
         }
     }
 }
@@ -58,7 +56,6 @@ struct DirectoryRow {
     git_common_dir: Option<String>,
     repository_url: Option<String>,
     preferred_remote_name: Option<String>,
-    base_branch: Option<String>,
     delivery_mode: Option<String>,
     setup_command: Option<String>,
     setup_workdir: Option<String>,
@@ -81,7 +78,6 @@ impl DirectoryRow {
             ),
             repository_url: self.repository_url.clone(),
             preferred_remote_name: self.preferred_remote_name.clone(),
-            base_branch: self.base_branch.clone(),
             delivery_mode: self.delivery_mode.clone(),
             git_common_dir: self.git_common_dir.clone(),
             git_status: if is_git {
@@ -190,13 +186,7 @@ impl Store {
         sqlx::query("INSERT INTO projects(id,name,description,status,default_directory_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?)").bind(&p.id).bind(&p.name).bind(&p.description).bind(&p.status).bind(&p.default_location_id).bind(&p.created_at).bind(&p.updated_at).execute(&self.pool).await?;
         Ok(())
     }
-    pub async fn update_project_defaults(
-        &self,
-        id: &str,
-        d: Option<&str>,
-        _: &str,
-        _: &str,
-    ) -> Result<()> {
+    pub async fn update_project_defaults(&self, id: &str, d: Option<&str>, _: &str) -> Result<()> {
         let r = sqlx::query("UPDATE projects SET default_directory_id=?,updated_at=? WHERE id=?")
             .bind(d)
             .bind(now())
@@ -264,7 +254,6 @@ impl Store {
             path: r.source_root.clone(),
             repository_url: r.repository_url.clone(),
             preferred_remote_name: r.preferred_remote_name,
-            base_branch: r.base_branch,
             delivery_mode: r.delivery_mode,
             git_common_dir: Some(r.git_common_dir),
             git_status: r.git_status,
@@ -337,7 +326,7 @@ impl Store {
                 id
             } else {
                 let id = forced.map(str::to_owned).unwrap_or_else(new_id);
-                sqlx::query("INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,base_branch,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&id).bind(&d.project_id).bind(basename(root)).bind(root).bind(common).bind(ownership).bind(&d.repository_url).bind(&d.preferred_remote_name).bind(&d.base_branch).bind(&d.delivery_mode).bind(&d.worktree_setup_command).bind(".").bind(&d.git_status).bind(&d.last_checked_at).bind(&d.created_at).bind(&d.updated_at).execute(&mut *tx).await?;
+                sqlx::query("INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,delivery_mode,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&id).bind(&d.project_id).bind(basename(root)).bind(root).bind(common).bind(ownership).bind(&d.repository_url).bind(&d.preferred_remote_name).bind(&d.delivery_mode).bind(&d.worktree_setup_command).bind(".").bind(&d.git_status).bind(&d.last_checked_at).bind(&d.created_at).bind(&d.updated_at).execute(&mut *tx).await?;
                 id
             }
         } else {
@@ -384,7 +373,6 @@ impl Store {
         name: &str,
         description: &str,
         setup: &str,
-        base: Option<&str>,
         mode: Option<&str>,
     ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
@@ -396,7 +384,7 @@ impl Store {
         .await?;
         sqlx::query("UPDATE project_directories SET name=?,description=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(name).bind(description).bind(now()).bind(id).execute(&mut *tx).await?;
         if let Some(repo) = repo {
-            sqlx::query("UPDATE project_repositories SET setup_command=?,base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),updated_at=? WHERE id=?").bind(setup).bind(base).bind(mode).bind(now()).bind(repo).execute(&mut *tx).await?;
+            sqlx::query("UPDATE project_repositories SET setup_command=?,delivery_mode=COALESCE(?,delivery_mode),updated_at=? WHERE id=?").bind(setup).bind(mode).bind(now()).bind(repo).execute(&mut *tx).await?;
         }
         tx.commit().await?;
         Ok(())
@@ -406,23 +394,12 @@ impl Store {
         id: &str,
         setup: &str,
         workdir: &str,
-        base: &str,
         mode: &str,
+        remote: Option<Option<&str>>,
     ) -> Result<()> {
-        let r=sqlx::query("UPDATE project_repositories SET setup_command=?,setup_workdir=?,base_branch=?,delivery_mode=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(setup).bind(workdir).bind(base).bind(mode).bind(now()).bind(id).execute(&self.pool).await?;
-        if r.rows_affected() == 0 {
-            Err(AppError::NotFound)
-        } else {
-            Ok(())
-        }
-    }
-    pub async fn update_repository_base(
-        &self,
-        id: &str,
-        base: &str,
-        remote: Option<&str>,
-    ) -> Result<()> {
-        let r=sqlx::query("UPDATE project_repositories SET base_branch=?,preferred_remote_name=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(base).bind(remote).bind(now()).bind(id).execute(&self.pool).await?;
+        let update_remote = remote.is_some();
+        let remote_name = remote.flatten();
+        let r = sqlx::query!("UPDATE project_repositories SET setup_command=?,setup_workdir=?,delivery_mode=?,preferred_remote_name=CASE WHEN ? THEN ? ELSE preferred_remote_name END,updated_at=? WHERE id=? AND deleted_at IS NULL", setup, workdir, mode, update_remote, remote_name, now(), id).execute(&self.pool).await?;
         if r.rows_affected() == 0 {
             Err(AppError::NotFound)
         } else {
@@ -430,7 +407,7 @@ impl Store {
         }
     }
     pub async fn refresh_repository(&self, r: &ProjectRepository) -> Result<()> {
-        let q=sqlx::query("UPDATE project_repositories SET name=?,source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,base_branch=?,delivery_mode=?,setup_command=?,setup_workdir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&r.name).bind(&r.source_root).bind(&r.git_common_dir).bind(&r.repository_url).bind(&r.preferred_remote_name).bind(&r.base_branch).bind(&r.delivery_mode).bind(&r.setup_command).bind(&r.setup_workdir).bind(&r.git_status).bind(&r.last_checked_at).bind(&r.updated_at).bind(&r.id).execute(&self.pool).await?;
+        let q=sqlx::query("UPDATE project_repositories SET name=?,source_root=?,git_common_dir=?,repository_url=?,preferred_remote_name=?,delivery_mode=?,setup_command=?,setup_workdir=?,git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&r.name).bind(&r.source_root).bind(&r.git_common_dir).bind(&r.repository_url).bind(&r.preferred_remote_name).bind(&r.delivery_mode).bind(&r.setup_command).bind(&r.setup_workdir).bind(&r.git_status).bind(&r.last_checked_at).bind(&r.updated_at).bind(&r.id).execute(&self.pool).await?;
         if q.rows_affected() == 0 {
             Err(AppError::NotFound)
         } else {
@@ -463,7 +440,7 @@ impl Store {
         .await?;
         sqlx::query("UPDATE project_directories SET name=?,status=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&d.name).bind(&d.git_status).bind(&d.updated_at).bind(&d.id).execute(&mut *tx).await?;
         if let Some(repo) = repo {
-            sqlx::query("UPDATE project_repositories SET source_root=COALESCE(?,source_root),repository_url=COALESCE(repository_url,?),preferred_remote_name=COALESCE(preferred_remote_name,?),base_branch=COALESCE(?,base_branch),delivery_mode=COALESCE(?,delivery_mode),git_common_dir=COALESCE(?,git_common_dir),git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&d.checkout_path).bind(&d.repository_url).bind(&d.preferred_remote_name).bind(&d.base_branch).bind(&d.delivery_mode).bind(&d.git_common_dir).bind(&d.git_status).bind(&d.last_checked_at).bind(&d.updated_at).bind(repo).execute(&mut *tx).await?;
+            sqlx::query("UPDATE project_repositories SET source_root=COALESCE(?,source_root),repository_url=COALESCE(repository_url,?),preferred_remote_name=COALESCE(preferred_remote_name,?),delivery_mode=COALESCE(?,delivery_mode),git_common_dir=COALESCE(?,git_common_dir),git_status=?,last_checked_at=?,updated_at=? WHERE id=? AND deleted_at IS NULL").bind(&d.checkout_path).bind(&d.repository_url).bind(&d.preferred_remote_name).bind(&d.delivery_mode).bind(&d.git_common_dir).bind(&d.git_status).bind(&d.last_checked_at).bind(&d.updated_at).bind(repo).execute(&mut *tx).await?;
         }
         tx.commit().await?;
         Ok(())

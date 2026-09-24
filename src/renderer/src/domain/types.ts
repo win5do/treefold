@@ -7,11 +7,9 @@ export type Project = {
   status: "active" | "archived";
   default_directory_id?: string;
   default_location_id?: string;
-  default_base_branch: string;
   primary_directory_id: string;
   git_common_dir: string;
   preferred_remote?: string;
-  default_target_branch: string;
   default_delivery_mode: "push_branch" | "local_merge" | "keep";
   updated_at: string;
 };
@@ -40,7 +38,6 @@ export type Directory = {
   path: string;
   repository_url?: string;
   preferred_remote_name?: string;
-  base_branch?: string;
   delivery_mode?: "push_branch" | "local_merge" | "keep";
   git_common_dir?: string;
   git_status:
@@ -71,7 +68,6 @@ export type ProjectRepository = {
   source_ownership: "managed" | "external";
   repository_url?: string;
   preferred_remote_name?: string;
-  base_branch?: string;
   delivery_mode?: "push_branch" | "local_merge" | "keep";
   setup_command: string;
   setup_workdir: string;
@@ -435,7 +431,6 @@ export type ProjectDirectoryInspection = {
   repository_id?: string;
   repository_url?: string;
   preferred_remote_name?: string;
-  base_branch?: string;
 };
 
 export type LocationDraft = {

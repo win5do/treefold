@@ -21,8 +21,6 @@ pub(super) struct CreateProject {
     pub(super) path: Option<String>,
     pub(super) locations: Option<Vec<String>>,
     pub(super) preferred_remote: Option<String>,
-    pub(super) default_base_branch: Option<String>,
-    pub(super) default_target_branch: Option<String>,
     pub(super) default_delivery_mode: Option<String>,
     pub(super) directory_description: Option<String>,
     pub(super) directory_worktree_setup_command: Option<String>,
@@ -135,10 +133,6 @@ pub(super) async fn create_project(
         .filter(|v| !v.is_empty())
         .or_else(|| input.path.as_deref().map(basename))
         .ok_or_else(|| AppError::BadRequest("name is required".into()))?;
-    let default_base_branch = trimmed(input.default_base_branch)
-        .or_else(|| trimmed(input.default_target_branch))
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "main".into());
     let default_delivery_mode = trimmed(input.default_delivery_mode)
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| "push_branch".into());
@@ -167,14 +161,12 @@ pub(super) async fn create_project(
         description: trimmed(input.description).unwrap_or_default(),
         status: "active".into(),
         default_location_id: None,
-        default_base_branch: default_base_branch.clone(),
         default_delivery_mode,
         created_at: timestamp.clone(),
         updated_at: timestamp.clone(),
         primary_directory_id: String::new(),
         git_common_dir: String::new(),
         preferred_remote: None,
-        default_target_branch: default_base_branch,
     };
     state.store.create_empty_project(&project).await?;
     if let Some(locations) = locations {
@@ -188,7 +180,6 @@ pub(super) async fn create_project(
                 path,
                 repository_url: None,
                 preferred_remote_name: None,
-                base_branch: is_git.then(|| project.default_base_branch.clone()),
                 delivery_mode: is_git.then(|| project.default_delivery_mode.clone()),
                 git_common_dir: None,
                 git_status: if is_git { "ready" } else { "not_git" }.into(),
@@ -239,7 +230,6 @@ pub(super) async fn create_project(
             path,
             repository_url: None,
             preferred_remote_name: trimmed(input.preferred_remote).filter(|v| !v.is_empty()),
-            base_branch: Some(project.default_base_branch.clone()),
             delivery_mode: Some(project.default_delivery_mode.clone()),
             git_common_dir: None,
             git_status: if is_git { "ready" } else { "not_git" }.into(),
@@ -271,7 +261,6 @@ pub(super) struct UpdateProject {
     pub(super) status: Option<String>,
     #[serde(rename = "default_directory_id", alias = "default_location_id")]
     pub(super) default_location_id: Option<String>,
-    pub(super) default_base_branch: Option<String>,
     pub(super) default_delivery_mode: Option<String>,
 }
 
@@ -286,7 +275,6 @@ pub(super) async fn update_project(
             && input.name.is_none()
             && input.description.is_none()
             && input.default_location_id.is_none()
-            && input.default_base_branch.is_none()
             && input.default_delivery_mode.is_none();
         if !restoring {
             return Err(AppError::BadRequest(
@@ -358,25 +346,18 @@ pub(super) async fn update_project(
     if input.status.is_some() {
         state.store.update_project_status(&id, status).await?;
     }
-    if input.default_location_id.is_some()
-        || input.default_base_branch.is_some()
-        || input.default_delivery_mode.is_some()
-    {
+    if input.default_location_id.is_some() || input.default_delivery_mode.is_some() {
         let default_id = input
             .default_location_id
             .as_deref()
             .or(current.default_location_id.as_deref());
-        let branch = input
-            .default_base_branch
-            .as_deref()
-            .unwrap_or(&current.default_base_branch);
         let mode = input
             .default_delivery_mode
             .as_deref()
             .unwrap_or(&current.default_delivery_mode);
         state
             .store
-            .update_project_defaults(&id, default_id, branch, mode)
+            .update_project_defaults(&id, default_id, mode)
             .await?;
     }
     if status == "archived" && current.status != "archived" {
@@ -1013,7 +994,6 @@ pub(super) struct ProjectDirectoryInspection {
     repository_id: Option<String>,
     repository_url: Option<String>,
     preferred_remote_name: Option<String>,
-    base_branch: Option<String>,
 }
 
 pub(super) async fn inspect_project_directory(
@@ -1030,7 +1010,6 @@ pub(super) async fn inspect_project_directory(
         path,
         repository_url: None,
         preferred_remote_name: None,
-        base_branch: None,
         delivery_mode: None,
         git_common_dir: None,
         git_status: if is_git { "ready" } else { "not_git" }.into(),
@@ -1090,7 +1069,6 @@ pub(super) async fn inspect_project_directory(
         repository_id,
         repository_url: location.repository_url,
         preferred_remote_name: location.preferred_remote_name,
-        base_branch: location.base_branch,
     }))
 }
 
@@ -1198,7 +1176,6 @@ pub(super) async fn clone_project_repository_impl(
                 .unwrap_or("origin")
                 .to_owned(),
         ),
-        base_branch: None,
         delivery_mode: None,
         git_common_dir: None,
         git_status: "creating".into(),
@@ -1215,7 +1192,6 @@ pub(super) async fn clone_project_repository_impl(
         created_at: timestamp,
     };
     refresh_location_observation(&mut directory)?;
-    directory.base_branch = None;
     if directory.git_status != "ready" || directory.git_common_dir.is_none() {
         let _ = std::fs::remove_dir_all(parent);
         return Err(AppError::BadRequest(
@@ -1266,7 +1242,6 @@ pub(super) async fn create_directory(
         path,
         repository_url: None,
         preferred_remote_name: None,
-        base_branch: None,
         delivery_mode: None,
         git_common_dir: None,
         git_status: if is_git {
@@ -1288,7 +1263,6 @@ pub(super) async fn create_directory(
     };
     let mut directory = directory;
     refresh_location_observation(&mut directory)?;
-    directory.base_branch = None;
     if project.default_location_id.is_none() && directory.git_status != "ready" {
         return Err(AppError::BadRequest(
             "a Project's first location must be a ready Git repository".into(),
@@ -1679,7 +1653,6 @@ pub(super) struct UpdateDirectory {
     name: Option<String>,
     description: Option<String>,
     worktree_setup_command: Option<String>,
-    base_branch: Option<String>,
     delivery_mode: Option<String>,
 }
 pub(super) async fn update_directory(
@@ -1692,9 +1665,8 @@ pub(super) async fn update_directory(
     let name = trimmed(input.name)
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| current.name.clone());
-    let base_branch = trimmed(input.base_branch).filter(|value| !value.is_empty());
     let delivery_mode = trimmed(input.delivery_mode).filter(|value| !value.is_empty());
-    if current.git_common_dir.is_none() && (base_branch.is_some() || delivery_mode.is_some()) {
+    if current.git_common_dir.is_none() && delivery_mode.is_some() {
         return Err(AppError::BadRequest(
             "Git settings can only be configured for a Git location".into(),
         ));
@@ -1718,11 +1690,6 @@ pub(super) async fn update_directory(
                 .unwrap_or_default()
                 .as_str(),
             if current.git_common_dir.is_some() {
-                base_branch.as_deref().or(current.base_branch.as_deref())
-            } else {
-                None
-            },
-            if current.git_common_dir.is_some() {
                 delivery_mode
                     .as_deref()
                     .or(current.delivery_mode.as_deref())
@@ -1740,7 +1707,7 @@ pub(super) async fn update_directory(
 pub(super) struct UpdateProjectRepository {
     setup_command: Option<String>,
     setup_workdir: Option<String>,
-    base_branch: Option<String>,
+    preferred_remote_name: Option<String>,
     delivery_mode: Option<String>,
 }
 
@@ -1751,10 +1718,6 @@ pub(super) async fn update_project_repository(
 ) -> Result<Json<ProjectRepository>> {
     let current = state.store.repository(&id).await?;
     ensure_active_project(&state.store.project(&current.project_id).await?)?;
-    let base_branch = trimmed(input.base_branch)
-        .filter(|value| !value.is_empty())
-        .or(current.base_branch)
-        .ok_or_else(|| AppError::BadRequest("base branch is required".into()))?;
     let delivery_mode = trimmed(input.delivery_mode)
         .filter(|value| !value.is_empty())
         .or(current.delivery_mode)
@@ -1763,6 +1726,19 @@ pub(super) async fn update_project_repository(
         return Err(AppError::BadRequest(
             "delivery_mode must be push_branch, local_merge, or keep".into(),
         ));
+    }
+    let remote = input
+        .preferred_remote_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    if let Some(remote) = remote {
+        if !git_remote_names(&current.source_root)?
+            .iter()
+            .any(|name| name == remote)
+        {
+            return Err(AppError::BadRequest("remote was not found".into()));
+        }
     }
     let setup_workdir = validate_setup_workdir(
         &current.source_root,
@@ -1779,66 +1755,9 @@ pub(super) async fn update_project_repository(
                 .unwrap_or(current.setup_command)
                 .as_str(),
             &setup_workdir,
-            &base_branch,
             &delivery_mode,
+            input.preferred_remote_name.as_ref().map(|_| remote),
         )
-        .await?;
-    Ok(Json(state.store.repository(&id).await?))
-}
-
-#[derive(Deserialize)]
-pub(super) struct SetBaseBranch {
-    branch: String,
-    remote: Option<String>,
-}
-
-pub(super) async fn set_project_repository_base_branch(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-    ApiJson(input): ApiJson<SetBaseBranch>,
-) -> Result<Json<ProjectRepository>> {
-    let repository = state.store.repository(&id).await?;
-    blocking_git_operation_for(repository.git_common_dir.clone(), move || async move {
-        set_project_repository_base_branch_impl(state, id, input).await
-    })
-    .await
-}
-
-pub(super) async fn set_project_repository_base_branch_impl(
-    state: AppState,
-    id: String,
-    input: SetBaseBranch,
-) -> Result<Json<ProjectRepository>> {
-    let repository = state.store.repository(&id).await?;
-    ensure_active_project(&state.store.project(&repository.project_id).await?)?;
-    let branch = input.branch.trim();
-    if branch.is_empty() {
-        return Err(AppError::BadRequest("base branch is required".into()));
-    }
-    let source = Path::new(&repository.source_root);
-    let local_ref = format!("refs/heads/{branch}");
-    command_output(
-        source,
-        "git",
-        &["show-ref", "--verify", "--quiet", &local_ref],
-    )
-    .map_err(|_| AppError::BadRequest("local branch was not found".into()))?;
-    let remote = input
-        .remote
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if let Some(remote) = remote {
-        if !git_remote_names(&repository.source_root)?
-            .iter()
-            .any(|name| name == remote)
-        {
-            return Err(AppError::BadRequest("remote was not found".into()));
-        }
-    }
-    state
-        .store
-        .update_repository_base(&id, branch, remote)
         .await?;
     Ok(Json(state.store.repository(&id).await?))
 }
@@ -2043,6 +1962,7 @@ pub(super) async fn checkout_directory_branch_impl(
 
 #[derive(Deserialize)]
 pub(super) struct CreateWorkspace {
+    pub(super) expected_base_branches: Option<std::collections::HashMap<String, String>>,
     pub(super) description: Option<String>,
     pub(super) branch: Option<String>,
     pub(super) remote_name: Option<String>,
@@ -2172,12 +2092,15 @@ pub(super) async fn create_workspace_impl(
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
     for location in &locations {
-        let base_branch = location.base_branch.clone().ok_or_else(|| {
-            AppError::BadRequest(format!(
-                "Repository '{}' base branch is not configured",
-                location.name
-            ))
-        })?;
+        let base_branch = current_project_branch(&location.path)?;
+        if let Some(expected) = input.expected_base_branches.as_ref() {
+            if expected.get(&location.id) != Some(&base_branch) {
+                return Err(AppError::BadRequest(format!(
+                    "Repository '{}' current branch changed; reopen Workspace creation to review its base",
+                    location.name
+                )));
+            }
+        }
         let location_delivery_mode = location.delivery_mode.clone().ok_or_else(|| {
             AppError::BadRequest(format!(
                 "Repository '{}' delivery mode is not configured",
@@ -2243,7 +2166,7 @@ pub(super) async fn create_workspace_impl(
             start_ref: if reuse_branch {
                 format!("refs/heads/{branch}")
             } else {
-                base_branch.clone()
+                git_head(&location.path)?
             },
             reuse_branch,
             setup_directory_id: directories

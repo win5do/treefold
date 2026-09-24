@@ -29,7 +29,6 @@ import type {
 
 function repositoryNeedsSetup(repository: ProjectRepository) {
   return (
-    !repository.base_branch ||
     !repository.delivery_mode ||
     (repository.delivery_mode === "push_branch" &&
       !repository.preferred_remote_name)
@@ -60,7 +59,6 @@ export function CreateWorkspaceDialog({
     return directory?.repository_id;
   }, [project]);
   const [branches, setBranches] = useState<Record<string, GitBranches>>({});
-  const [baseBranches, setBaseBranches] = useState<Record<string, string>>({});
   const [remotes, setRemotes] = useState<Record<string, string>>({});
   const [deliveryModes, setDeliveryModes] = useState<
     Record<string, "push_branch" | "local_merge" | "keep">
@@ -73,7 +71,6 @@ export function CreateWorkspaceDialog({
 
   useEffect(() => {
     setBranches({});
-    setBaseBranches({});
     setRemotes({});
     setOptionsError("");
     setSharedBranch("");
@@ -87,14 +84,14 @@ export function CreateWorkspaceDialog({
         ]),
       ),
     );
-    if (!project || setupRepositories.length === 0) {
+    if (!project) {
       setLoading(false);
       return;
     }
     const controller = new AbortController();
     setLoading(true);
     Promise.all(
-      setupRepositories.map(async (repository) => [
+      repositories.map(async (repository) => [
         repository.id,
         await projectsApi.repositoryBranches(repository.id, controller.signal),
       ] as const),
@@ -104,28 +101,13 @@ export function CreateWorkspaceDialog({
         setDeliveryModes((current) => {
           const next = { ...current };
           for (const [id, options] of entries) {
-            if (options.remotes.length === 0 && (next[id] ?? "push_branch") === "push_branch") {
+            if (setupRepositories.some(repository => repository.id === id) && options.remotes.length === 0 && (next[id] ?? "push_branch") === "push_branch") {
               next[id] = "local_merge";
             }
           }
           return next;
         });
         setBranches(Object.fromEntries(entries));
-        setBaseBranches(
-          Object.fromEntries(
-            entries.map(([id, options]) => {
-              const repository = setupRepositories.find(
-                (item) => item.id === id,
-              );
-              const selected =
-                repository?.base_branch &&
-                options.local.includes(repository.base_branch)
-                  ? repository.base_branch
-                  : options.current || options.local[0] || "";
-              return [id, selected];
-            }),
-          ),
-        );
         setRemotes(
           Object.fromEntries(
             entries.map(([id, options]) => {
@@ -156,7 +138,7 @@ export function CreateWorkspaceDialog({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [project?.id, setupRepositories]);
+  }, [project?.id, repositories]);
 
   const defaultRepository = repositories.find(
     (repository) => repository.id === defaultRepositoryId,
@@ -166,11 +148,11 @@ export function CreateWorkspaceDialog({
       defaultRepository.delivery_mode ??
       "push_branch"
     : "keep";
-  const invalidSetup = setupRepositories.some((repository) => {
+  const invalidSetup = repositories.some((repository) => {
     const options = branches[repository.id];
     const mode = deliveryModes[repository.id] ?? "push_branch";
     return (
-      !options?.local.length ||
+      !options?.current || !options.local.includes(options.current) ||
       (mode === "push_branch" && options.remotes.length === 0)
     );
   });
@@ -201,6 +183,17 @@ export function CreateWorkspaceDialog({
             />
           </FieldGroup>
 
+          <FieldSet>
+            <FieldLegend>{t("workspaceUi.baseBranch")}</FieldLegend>
+            <FieldDescription>{t("workspaceUi.currentBranchBaseHint")}</FieldDescription>
+            {repositories.map((repository) => (
+              <Field key={repository.id}>
+                <FieldLabel htmlFor={`workspace-base-${repository.id}`}>{repository.name}</FieldLabel>
+                <Input id={`workspace-base-${repository.id}`} name={`expected_base:${repository.id}`} readOnly value={branches[repository.id]?.current || ""} />
+                {branches[repository.id] && (!branches[repository.id].current || !branches[repository.id].local.includes(branches[repository.id].current)) && <FieldDescription>{t("workspaceUi.currentBranchUnavailable")}</FieldDescription>}
+              </Field>
+            ))}
+          </FieldSet>
           {setupRepositories.map((repository) => {
             const options = branches[repository.id];
             const mode = deliveryModes[repository.id] ?? "push_branch";
@@ -213,29 +206,6 @@ export function CreateWorkspaceDialog({
                   value={repository.id}
                 />
                 <FieldGroup className="gap-3">
-                  <Field>
-                    <FieldLabel htmlFor={`base-branch-${repository.id}`}>{t("workspaceUi.baseBranch")}</FieldLabel>
-                    <Select
-                      id={`base-branch-${repository.id}`}
-                      className="w-full"
-                      name={`base_branch:${repository.id}`}
-                      value={baseBranches[repository.id] || ""}
-                      onChange={(event) =>
-                        setBaseBranches((current) => ({
-                          ...current,
-                          [repository.id]: event.target.value,
-                        }))
-                      }
-                      disabled={!options}
-                      required
-                    >
-                      {options?.local.map((branch) => (
-                        <option key={branch} value={branch}>
-                          {branch}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
                   <Field>
                     <FieldLabel htmlFor={`delivery-mode-${repository.id}`}>{t("workspaceUi.defaultWorkspaceFinishStrategy")}</FieldLabel>
                     <Select

@@ -276,6 +276,9 @@ export function FinishWorkspaceDialog({
                                     branch: check.target_branch,
                                   })}
                                 </p>
+                                {(draft.code_action === "local_merge" || draft.code_action === "squash_merge") && item.base_branch && item.base_branch !== check.target_branch && (
+                                  <p role="status" className="text-warning">{t("deliveryUi.differentCreationBase", { base: item.base_branch, target: check.target_branch })}</p>
+                                )}
                                 <p>
                                   {t("deliveryUi.preflightSummary", {
                                     ahead: check.ahead,

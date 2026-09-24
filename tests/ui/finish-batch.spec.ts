@@ -61,7 +61,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
             id: `preflight-${id}-${action}`,
             workspace_repository_id: id,
             code_action: action,
-            target_branch: "main",
+            target_branch: "release",
             ahead: 2,
             behind: 0,
             changed_files: [],
@@ -136,6 +136,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
     const second = dialog.getByRole("tab", { name: new RegExp(names[1]) });
     const firstPanel = dialog.getByRole("tabpanel", { name: new RegExp(names[0]) });
     const secondPanel = dialog.getByRole("tabpanel", { name: new RegExp(names[1]) });
+    await expect(firstPanel.getByRole("status")).toContainText("Created from main; this delivery will merge into release.");
     await expect(firstPanel.getByRole("checkbox", { name: "Delete local branch" })).not.toBeChecked();
     await expect(second).toContainText(/blocked/i);
     await expect(dialog.getByTestId("finish-confirm-action")).toBeDisabled();
@@ -171,6 +172,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
     blocked = false;
     await dialog.getByRole("button", { name: "Recheck", exact: true }).click();
     await expect(dialog.getByTestId("finish-confirm-action")).toBeEnabled();
+    await first.click();
     await page.screenshot({
       path: "/tmp/treefold-finish-batch-configure.png",
       animations: "disabled",

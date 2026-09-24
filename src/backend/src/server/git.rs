@@ -668,9 +668,7 @@ pub(super) async fn pull_project_repository(
         .clone()
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
     git::with_repository_lock(Path::new(&common), || async {
-        Ok(Json(
-            sync_project_repository(&location, &project, "pull").await?,
-        ))
+        Ok(Json(sync_project_repository(&location, "pull").await?))
     })
     .await
 }
@@ -687,9 +685,7 @@ pub(super) async fn push_project_repository(
         .clone()
         .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
     git::with_repository_lock(Path::new(&common), || async {
-        Ok(Json(
-            sync_project_repository(&location, &project, "push").await?,
-        ))
+        Ok(Json(sync_project_repository(&location, "push").await?))
     })
     .await
 }
@@ -761,18 +757,7 @@ pub(super) async fn sync_all_project_repositories(
             });
             continue;
         }
-        if location.preferred_remote_name.is_none() {
-            results.push(GitSyncItemResult {
-                project_repository_id: location.id,
-                workspace_repository_id: None,
-                repository_name: location.name,
-                status: "skipped".into(),
-                result: None,
-                error: Some("remote is not configured".into()),
-            });
-            continue;
-        }
-        match sync_project_repository(&location, &project, action).await {
+        match sync_project_repository(&location, action).await {
             Ok(result) => results.push(GitSyncItemResult {
                 project_repository_id: location.id,
                 workspace_repository_id: None,
@@ -870,26 +855,60 @@ pub(super) fn ensure_location_ready(location: &Directory) -> Result<()> {
     Ok(())
 }
 
+/// Resolve a checked-out, committed branch from live Git state, never Project settings.
+pub(super) fn current_project_branch(path: &str) -> Result<String> {
+    let branch = command_output(
+        Path::new(path),
+        "git",
+        &["symbolic-ref", "--quiet", "--short", "HEAD"],
+    )
+    .map_err(|_| {
+        AppError::BadRequest(
+            "Project repository has a detached HEAD; switch to a branch first".into(),
+        )
+    })?;
+    git_head(path).map_err(|_| {
+        AppError::BadRequest("Project branch has no commits; create a commit first".into())
+    })?;
+    Ok(branch)
+}
+
 pub(super) async fn sync_project_repository(
     location: &Directory,
-    project: &Project,
     action: &str,
 ) -> Result<GitSyncResult> {
     ensure_location_ready(location)?;
-    let branch = location
-        .base_branch
-        .clone()
-        .unwrap_or_else(|| project.default_base_branch.clone());
-    let remote = location
-        .preferred_remote_name
-        .clone()
-        .ok_or_else(|| AppError::BadRequest("location has no preferred remote".into()))?;
+    let branch = current_project_branch(&location.path)?;
+    let upstream = command_output(
+        Path::new(&location.path),
+        "git",
+        &[
+            "for-each-ref",
+            "--format=%(upstream:remotename)%09%(upstream:remoteref)",
+            &format!("refs/heads/{branch}"),
+        ],
+    )
+    .map_err(AppError::BadRequest)?;
+    let (remote, remote_ref) = upstream.split_once('\t').ok_or_else(|| {
+        AppError::BadRequest(format!(
+            "Branch '{branch}' has no upstream; configure its upstream before {action}"
+        ))
+    })?;
+    let remote_branch = remote_ref
+        .strip_prefix("refs/heads/")
+        .filter(|v| !v.is_empty())
+        .ok_or_else(|| {
+            AppError::BadRequest(format!(
+                "Branch '{branch}' has no upstream; configure its upstream before {action}"
+            ))
+        })?;
     let before_head = command_output(Path::new(&location.path), "git", &["rev-parse", &branch])
         .map_err(AppError::BadRequest)?;
     if action == "pull" {
         ensure_clean_workspace(&location.path, "Project location")?;
         ensure_checked_out_branch(&location.path, &branch, "Project location")?;
-        fetch_remote_branch_async(&location.path, &remote, &branch).await?;
+        fetch_remote_branch_async(&location.path, remote, remote_branch).await?;
+        ensure_checked_out_branch(&location.path, &branch, "Project location")?;
         git::output_async(
             Path::new(&location.path),
             &["merge", "--ff-only", "FETCH_HEAD"],
@@ -899,7 +918,11 @@ pub(super) async fn sync_project_repository(
     } else {
         git::output_async(
             Path::new(&location.path),
-            &["push", &remote, &format!("{branch}:{branch}")],
+            &[
+                "push",
+                remote,
+                &format!("refs/heads/{branch}:refs/heads/{remote_branch}"),
+            ],
         )
         .await
         .map_err(AppError::BadRequest)?;
@@ -910,8 +933,8 @@ pub(super) async fn sync_project_repository(
         "project_repository",
         action,
         &branch,
-        &remote,
-        &branch,
+        remote,
+        remote_branch,
         before_head,
         after_head,
     ))
@@ -1319,11 +1342,6 @@ pub(super) fn refresh_location_observation(location: &mut Directory) -> Result<(
     location.checkout_path = Some(source_root);
     location.preferred_remote_name = remote;
     location.repository_url = repository_url.or_else(|| location.repository_url.clone());
-    location.base_branch = location.base_branch.clone().or_else(|| {
-        command_output(path, "git", &["branch", "--show-current"])
-            .ok()
-            .filter(|value| !value.is_empty())
-    });
     location.git_status = "ready".into();
     location.is_git = true;
     location.remote_url = location.repository_url.clone();

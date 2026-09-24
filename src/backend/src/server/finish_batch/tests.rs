@@ -65,8 +65,6 @@ async fn fixture() -> Fixture {
                     .collect(),
             ),
             preferred_remote: None,
-            default_base_branch: Some("main".into()),
-            default_target_branch: Some("main".into()),
             default_delivery_mode: Some("local_merge".into()),
             directory_description: None,
             directory_worktree_setup_command: None,
@@ -78,6 +76,7 @@ async fn fixture() -> Fixture {
         State(state.clone()),
         AxumPath(project.id),
         ApiJson(CreateWorkspace {
+            expected_base_branches: None,
             generated_branch: None,
             description: None,
             branch: Some("feature/batch".into()),
@@ -981,4 +980,221 @@ async fn squash_project_api_uses_root_boundary_even_with_project_session_records
     .await
     .unwrap();
     assert_eq!(git(path, &["rev-parse", "HEAD"]), head);
+}
+
+#[tokio::test]
+async fn delivery_uses_current_project_branch_and_preserves_creation_base() {
+    let f = fixture().await;
+    for root in &f.roots {
+        git(root, &["switch", "-c", "release"]);
+    }
+    let plan = plans(&f).await;
+    for item in &plan {
+        let check = f
+            .state
+            .store
+            .delivery_preflight(&item.preflight_id)
+            .await
+            .unwrap();
+        assert_eq!(check.target_branch, "release");
+        assert!(check.blockers.is_empty());
+    }
+    run_batch(
+        &f.state,
+        prepare_batch(&f.state, &f.workspace.id, plan)
+            .await
+            .unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved(&f).await.status, "completed");
+    for root in &f.roots {
+        assert_eq!(git(root, &["branch", "--show-current"]), "release");
+        assert_eq!(git(root, &["rev-list", "--count", "main"]), "1");
+        assert_eq!(
+            std::fs::read_to_string(root.join("shared.txt")).unwrap(),
+            "feature\n"
+        );
+    }
+    for repository in f
+        .state
+        .store
+        .workspace_repositories(&f.workspace.id)
+        .await
+        .unwrap()
+    {
+        assert_eq!(repository.base_branch.as_deref(), Some("main"));
+    }
+}
+
+#[tokio::test]
+async fn delivery_rejects_target_branch_switch_even_at_same_commit_and_on_retry() {
+    let f = fixture().await;
+    let plan = plans(&f).await;
+    git(&f.roots[0], &["switch", "-c", "release"]);
+    for retry in [false, true] {
+        let error = verify_plan(&f.state, &plan[0], retry).await.unwrap_err();
+        assert!(error.to_string().contains("confirmed Git state changed"));
+    }
+    let error = finish_workspace_repository_impl(
+        f.state.clone(),
+        plan[0].repository_id.clone(),
+        input(&plan[0], false),
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("preflight is stale"));
+    assert_eq!(git(&f.roots[0], &["rev-list", "--count", "HEAD"]), "1");
+}
+
+#[tokio::test]
+async fn workspace_creation_records_each_current_branch_and_rejects_stale_preview() {
+    let f = fixture().await;
+    git(&f.roots[0], &["switch", "-c", "release"]);
+    let project_id = f.workspace.project_id.clone();
+    let (_, Json(workspace)) = create_workspace(
+        State(f.state.clone()),
+        AxumPath(project_id.clone()),
+        ApiJson(CreateWorkspace {
+            expected_base_branches: None,
+            description: None,
+            branch: Some("feature/current".into()),
+            generated_branch: None,
+            remote_name: None,
+            remote_branch: None,
+        }),
+    )
+    .await
+    .unwrap();
+    let snapshots = f
+        .state
+        .store
+        .workspace_repositories(&workspace.id)
+        .await
+        .unwrap();
+    for snapshot in &snapshots {
+        assert_eq!(
+            snapshot.base_branch.as_deref(),
+            Some(if snapshot.repository_name == "backend" {
+                "release"
+            } else {
+                "main"
+            })
+        );
+        assert_eq!(
+            snapshot.start_commit.as_deref(),
+            Some(git(Path::new(&snapshot.source_root), &["rev-parse", "HEAD"]).as_str())
+        );
+    }
+    let expected = snapshots
+        .iter()
+        .map(|r| {
+            (
+                r.project_repository_id.clone(),
+                r.base_branch.clone().unwrap(),
+            )
+        })
+        .collect();
+    git(&f.roots[0], &["switch", "main"]);
+    let result = create_workspace(
+        State(f.state.clone()),
+        AxumPath(project_id),
+        ApiJson(CreateWorkspace {
+            expected_base_branches: Some(expected),
+            description: None,
+            branch: Some("feature/stale".into()),
+            generated_branch: None,
+            remote_name: None,
+            remote_branch: None,
+        }),
+    )
+    .await;
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("current branch changed")
+    );
+    assert_eq!(
+        f.state
+            .store
+            .workspace_repositories(&workspace.id)
+            .await
+            .unwrap()[0]
+            .base_branch,
+        snapshots[0].base_branch
+    );
+}
+
+#[tokio::test]
+async fn project_sync_uses_current_branch_upstream_instead_of_default_names() {
+    let f = fixture().await;
+    let root = &f.roots[0];
+    let remote = f._directory.path().join("remote.git");
+    std::fs::create_dir(&remote).unwrap();
+    git(&remote, &["init", "--bare"]);
+    git(root, &["remote", "add", "origin", remote.to_str().unwrap()]);
+    git(root, &["switch", "-c", "release"]);
+    git(root, &["push", "-u", "origin", "release:published"]);
+    commit(root, "push.txt", "current branch\n");
+    let location = f
+        .state
+        .store
+        .repository_as_directory(&f.repositories[0].project_repository_id)
+        .await
+        .unwrap();
+    let result = crate::server::sync_project_repository(&location, "push")
+        .await
+        .unwrap();
+    assert_eq!(result.branch, "release");
+    assert_eq!(result.remote_branch, "published");
+    assert_eq!(
+        git(&remote, &["rev-parse", "refs/heads/published"]),
+        git(root, &["rev-parse", "HEAD"])
+    );
+    let peer = f._directory.path().join("peer");
+    git(
+        f._directory.path(),
+        &[
+            "clone",
+            "--branch",
+            "published",
+            remote.to_str().unwrap(),
+            peer.to_str().unwrap(),
+        ],
+    );
+    git(&peer, &["config", "user.name", "Treefold Test"]);
+    git(&peer, &["config", "user.email", "treefold@example.test"]);
+    commit(
+        &peer,
+        "pull.txt",
+        "upstream
+",
+    );
+    git(&peer, &["push"]);
+    let pulled = crate::server::sync_project_repository(&location, "pull")
+        .await
+        .unwrap();
+    assert_eq!(pulled.remote_branch, "published");
+    assert_eq!(
+        git(root, &["rev-parse", "HEAD"]),
+        git(&peer, &["rev-parse", "HEAD"])
+    );
+    git(root, &["switch", "main"]);
+    assert!(
+        crate::server::sync_project_repository(&location, "push")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("no upstream")
+    );
+    git(root, &["checkout", "--detach"]);
+    assert!(
+        crate::server::sync_project_repository(&location, "push")
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("detached HEAD")
+    );
 }

@@ -58,7 +58,6 @@ async function startFixtureApi() {
   const logsRevealRequests: string[] = [];
   let nextLocationError: { status: number; code: string; message: string } | null = null;
   const repositoryUpdateRequests: (Partial<FixtureRepository> & { id: string })[] = [];
-  const repositoryBaseRequests: { id: string; branch: string; remote?: string }[] = [];
   const renameRequests: { kind: string; id: string; name?: string; description?: string }[] = [];
   const sessionOrderRequests: { workspaceId: string; session_ids: string[] }[] = [];
   const deleteRequests: { kind: string; id?: string; path?: string; cleanupManaged?: boolean }[] = [];
@@ -312,7 +311,6 @@ async function startFixtureApi() {
         name: input.name,
         description: input.description ?? "",
         status: "active",
-        default_base_branch: "main",
         default_delivery_mode: "push_branch",
         created_at: "2026-08-09T08:30:00.000Z",
         updated_at: "2026-08-09T08:30:00.000Z",
@@ -434,7 +432,6 @@ async function startFixtureApi() {
         relative_path: isGit ? "." : undefined,
         repository_url: isGit ? `https://example.test/${name}.git` : undefined,
         preferred_remote_name: isGit ? "origin" : undefined,
-        base_branch: isGit ? "main" : undefined,
       });
       return;
     }
@@ -479,7 +476,6 @@ async function startFixtureApi() {
         path: cleanPath,
         repository_url: isGit ? `https://example.test/${name}.git` : undefined,
         preferred_remote_name: isGit ? "origin" : undefined,
-        base_branch: undefined,
         delivery_mode: undefined,
         git_common_dir: isGit ? `${cleanPath}/.git` : undefined,
         git_status: isGit ? "ready" : "not_git",
@@ -497,7 +493,6 @@ async function startFixtureApi() {
           git_common_dir: `${cleanPath}/.git`,
           repository_url: `https://example.test/${name}.git`,
           preferred_remote_name: "origin",
-          base_branch: undefined,
           delivery_mode: undefined,
           setup_command: input.worktree_setup_command ?? "",
           setup_workdir: ".",
@@ -650,27 +645,10 @@ async function startFixtureApi() {
       Object.assign(repository, {
         setup_command: input.setup_command ?? repository.setup_command,
         setup_workdir: input.setup_workdir ?? repository.setup_workdir,
-        base_branch: input.base_branch ?? repository.base_branch,
+        preferred_remote_name: input.preferred_remote_name ?? repository.preferred_remote_name,
         delivery_mode: input.delivery_mode ?? repository.delivery_mode,
       });
       repositoryUpdateRequests.push({ id: repository.id, ...input });
-      sendJson(response, 200, repository);
-      return;
-    }
-
-    const repositoryBaseBranchMatch = pathname.match(
-      /^\/api\/project-repositories\/([^/]+)\/base-branch$/,
-    );
-    if (request.method === "POST" && repositoryBaseBranchMatch) {
-      const input = await readJson<{ branch: string; remote?: string }>(request);
-      const repository = Object.values(fixture.projectDetails)
-        .flatMap((detail) => detail.repositories)
-        .find((item) => item.id === repositoryBaseBranchMatch[1]);
-      if (!repository)
-        return sendJson(response, 404, { error: "Repository not found" });
-      repository.base_branch = input.branch;
-      repository.preferred_remote_name = input.remote;
-      repositoryBaseRequests.push({ id: repository.id, ...input });
       sendJson(response, 200, repository);
       return;
     }
@@ -876,7 +854,6 @@ async function startFixtureApi() {
       if (input.name) directory.name = input.name;
       directory.description = input.description ?? "";
       directory.worktree_setup_command = input.worktree_setup_command ?? "";
-      if (input.base_branch) directory.base_branch = input.base_branch;
       if (input.delivery_mode) directory.delivery_mode = input.delivery_mode;
       if (directory.repository_id) {
         Object.values(fixture.projectDetails)
@@ -884,7 +861,6 @@ async function startFixtureApi() {
           .filter((repository) => repository.id === directory.repository_id)
           .forEach((repository) => {
             repository.setup_command = directory.worktree_setup_command;
-            if (input.base_branch) repository.base_branch = input.base_branch;
             if (input.delivery_mode)
               repository.delivery_mode = input.delivery_mode;
           });
@@ -1248,7 +1224,6 @@ async function startFixtureApi() {
       nextLocationError = error;
     },
     repositoryUpdateRequests,
-    repositoryBaseRequests,
     workspaceLocationUpdates,
     renameRequests,
     sessionOrderRequests,
@@ -1386,7 +1361,6 @@ export async function startUiHarness(): Promise<UiHarness> {
     logsRevealRequests: fixtureApi.logsRevealRequests,
     setNextLocationError: fixtureApi.setNextLocationError,
     repositoryUpdateRequests: fixtureApi.repositoryUpdateRequests,
-    repositoryBaseRequests: fixtureApi.repositoryBaseRequests,
     workspaceLocationUpdates: fixtureApi.workspaceLocationUpdates,
     renameRequests: fixtureApi.renameRequests,
     sessionOrderRequests: fixtureApi.sessionOrderRequests,

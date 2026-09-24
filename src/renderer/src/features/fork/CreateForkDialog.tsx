@@ -29,6 +29,10 @@ export function CreateForkDialog({ workspace, busy, onOpenChange, onSubmit }: {
               <FieldLabel className="sr-only" htmlFor="fork-description">{t("forkUi.forkDescription")}</FieldLabel>
               <Textarea id="fork-description" name="description" placeholder={t("forkUi.independentFeatureOrExperiment")} />
             </Field>
+            <Field>
+              <FieldLabel>{t("workspaceUi.baseBranch")}</FieldLabel>
+              <FieldDescription>{workspace?.branch}</FieldDescription>
+            </Field>
             <BranchNameField />
           </FieldGroup>
           <FieldDescription className="rounded-lg bg-muted/50 px-3 py-2">{t("forkUi.parentRequirement")}</FieldDescription>

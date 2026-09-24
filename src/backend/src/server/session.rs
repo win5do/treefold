@@ -120,7 +120,7 @@ pub(super) fn project_session_location(
                 .unwrap_or_else(|| location.path.clone())
         }),
         branch: location.branch.clone(),
-        base_branch: location.base_branch.clone(),
+        base_branch: location.branch.clone(),
         start_commit: location.head_commit.clone(),
         forked_from_commit: None,
         remote_name: location.preferred_remote_name.clone(),

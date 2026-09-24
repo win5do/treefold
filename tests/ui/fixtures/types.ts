@@ -5,8 +5,8 @@ import type {
 } from "../../../src/renderer/src/domain/types.ts";
 
 // Fixtures retain legacy response fields and intentionally model partially created resources.
-export type FixtureProject = Omit<Project, "primary_directory_id" | "git_common_dir" | "default_target_branch"> &
-  Partial<Pick<Project, "primary_directory_id" | "git_common_dir" | "default_target_branch">> & { created_at: string };
+export type FixtureProject = Omit<Project, "primary_directory_id" | "git_common_dir"> &
+  Partial<Pick<Project, "primary_directory_id" | "git_common_dir">> & { created_at: string };
 export type FixtureDirectory = Directory & { created_at?: string; updated_at?: string };
 export type FixtureRepository = Omit<ProjectRepository, "source_ownership"> & { source_ownership?: ProjectRepository["source_ownership"] };
 export type FixtureSession = Session & { additional_directories?: string[] };

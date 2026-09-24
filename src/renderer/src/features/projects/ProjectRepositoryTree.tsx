@@ -101,9 +101,6 @@ export function DirectoryTreeRow({
       <MetadataListItem label={t("labels.current")}>
         <code>{currentBranch}</code>
       </MetadataListItem>
-      <MetadataListItem label={t("labels.base")}>
-        <code>{directory.base_branch || "—"}</code>
-      </MetadataListItem>
       <MetadataListItem label={t("labels.repository")}>
         {repositoryLabel(directory.repository_url)}
       </MetadataListItem>
@@ -516,9 +513,6 @@ export function ProjectRepositoryTreeRow({
                 </span>
               </div>
               <MetadataList size="compact" className="mt-2">
-                <MetadataListItem label={t("labels.base")}>
-                  <code>{repository.base_branch || t("labels.notConfigured")}</code>
-                </MetadataListItem>
                 <MetadataListItem label={t("labels.current")}>
                   <code>{currentBranch}</code>
                 </MetadataListItem>

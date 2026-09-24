@@ -28,7 +28,6 @@ export function normalizeProject(value: ProjectDetail): ProjectDetail {
       repository_url: repository?.repository_url,
       repository_name: repository?.name,
       preferred_remote_name: repository?.preferred_remote_name,
-      base_branch: repository?.base_branch,
       delivery_mode: repository?.delivery_mode,
       git_common_dir: repository?.git_common_dir,
       git_status:
@@ -55,10 +54,6 @@ export function normalizeProject(value: ProjectDetail): ProjectDetail {
     ...value,
     default_directory_id: defaultDirectoryId,
     default_location_id: defaultDirectoryId,
-    default_base_branch:
-      primaryRepository?.base_branch ?? value.default_base_branch ?? "main",
-    default_target_branch:
-      primaryRepository?.base_branch ?? value.default_target_branch ?? "main",
     default_delivery_mode:
       primaryRepository?.delivery_mode ??
       value.default_delivery_mode ??

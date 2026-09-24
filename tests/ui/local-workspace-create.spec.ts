@@ -13,9 +13,8 @@ for (const scenario of ["local", "mixed", "keep"] as const) {
         const response = await route.fetch();
         const data = await response.json();
         for (const repository of data.repositories) {
-          repository.base_branch = null;
           repository.preferred_remote_name = null;
-          repository.delivery_mode = scenario === "keep" ? "keep" : "push_branch";
+          repository.delivery_mode = null;
         }
         await route.fulfill({ response, json: data });
       });
@@ -33,16 +32,19 @@ for (const scenario of ["local", "mixed", "keep"] as const) {
       await page.getByTestId("project-workspaces-section").getByRole("button", { name: "New Workspace", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "New Workspace", exact: true });
       const mode = (id: string) => dialog.locator(`select[name="delivery_mode:${id}"]`);
-      await expect(mode(FIXTURE_IDS.primaryRepository)).toHaveValue(scenario === "keep" ? "keep" : "local_merge");
+      await expect(mode(FIXTURE_IDS.primaryRepository)).toHaveValue("local_merge");
+      if (scenario === "keep") {
+        await mode(FIXTURE_IDS.primaryRepository).selectOption("keep");
+        await mode(FIXTURE_IDS.secondaryRepository).selectOption("keep");
+      }
       await expect(mode(FIXTURE_IDS.secondaryRepository)).toHaveValue(scenario === "mixed" ? "push_branch" : scenario === "keep" ? "keep" : "local_merge");
       await expect(dialog.getByRole("button", { name: "Create Workspace", exact: true })).toBeEnabled();
       await dialog.getByRole("button", { name: "Create Workspace", exact: true }).click();
       await expect(page).toHaveURL(new RegExp(`/workspaces/${FIXTURE_IDS.workspace}$`));
-      expect(workspaceRequest).toMatchObject({ remote_name: null, remote_branch: null });
+      expect(workspaceRequest).toMatchObject({ remote_name: null, remote_branch: null, expected_base_branches: { [FIXTURE_IDS.primaryRepository]: "main", [FIXTURE_IDS.secondaryRepository]: "main" } });
       for (const id of [FIXTURE_IDS.primaryRepository, FIXTURE_IDS.secondaryRepository]) {
         const remote = scenario === "mixed" && id === FIXTURE_IDS.secondaryRepository;
-        expect(harness.repositoryBaseRequests).toContainEqual({ id, branch: "main", remote: remote ? "origin" : null });
-        expect(harness.repositoryUpdateRequests).toContainEqual({ id, base_branch: "main", delivery_mode: remote ? "push_branch" : scenario === "keep" ? "keep" : "local_merge" });
+        expect(harness.repositoryUpdateRequests).toContainEqual({ id, preferred_remote_name: remote ? "origin" : "", delivery_mode: remote ? "push_branch" : scenario === "keep" ? "keep" : "local_merge" });
       }
       harness.assertNoUnexpectedRequests();
     } finally {

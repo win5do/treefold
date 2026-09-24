@@ -335,10 +335,6 @@ fn app(state: AppState) -> Router {
                 .delete(delete_project_repository),
         )
         .route(
-            "/api/project-repositories/{id}/base-branch",
-            post(set_project_repository_base_branch),
-        )
-        .route(
             "/api/project-repositories/{id}/refresh",
             post(refresh_project_repository),
         )

@@ -87,11 +87,6 @@ export const projectsApi = {
       method: "PATCH",
       json,
     }),
-  setBaseBranch: (id: string, json: unknown) =>
-    request<ProjectRepository>(`/api/project-repositories/${id}/base-branch`, {
-      method: "POST",
-      json,
-    }),
   repositoryBranches: (id: string, signal?: AbortSignal) =>
     request<GitBranches>(`/api/project-repositories/${id}/branches`, { signal }),
   deleteRepositoryBranch: (id: string, json: unknown) =>

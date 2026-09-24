@@ -20,14 +20,21 @@ Project
 ## Project Repository and Directory
 
 A `ProjectRepository` owns canonical Git identity and policy: source root, Git
-common directory, remote, base branch, delivery mode, status, and one setup
+common directory, preferred delivery remote, delivery mode, status, and one setup
 command with a repository-relative setup workdir. A Project cannot register the
 same Git common directory through another linked worktree.
 
-Adding or cloning a Repository records its Git identity before choosing branch
-policy. Base branch and delivery mode are configured from local branches and
-available remotes when the first Workspace needs them, then persist as Project
-Repository defaults for later Workspaces.
+Project has no configured base branch. Switch branches in the Project source
+checkout. Push/Pull use that checkout's current branch and its Git upstream;
+a missing upstream, detached HEAD, or unborn branch requires setup first.
+Delivery mode and preferred delivery remote remain Repository defaults.
+
+Workspace creation displays each Repository's current branch without a branch
+selector and records its base branch and starting commit on the Workspace
+Repository. New worktrees start from the captured commit. An existing feature
+branch can still be reused under the existing ownership rules. If the displayed
+Project branch changes before submission, creation requires a refreshed preview.
+Later Project branch switches do not rewrite existing Workspace/Fork bases.
 
 A `ProjectDirectory` is only a working scope. A Git Directory stores a
 Repository id and a normalized relative path; a Non-Git Directory stores an
@@ -68,8 +75,19 @@ run concurrently.
 
 A Fork is one level of parallel work beneath a Workspace. It creates one
 worktree per parent Workspace Repository from the parent's current HEAD and
-snapshots all Directory scopes onto those worktrees. Forks cannot nest. Finish
+records its parent branch and commit as its base, and snapshots all Directory
+scopes onto those worktrees. Forks cannot nest. Finish
 and delivery operate per Repository, not per Directory.
+
+## Local delivery targets
+
+Local merge and squash delivery preview the Project repository's current branch
+(or the parent Workspace branch for a Fork). A target different from the recorded
+creation base is a warning, and the user can confirm normal delivery. It never
+means overwriting work or bypassing conflicts. Execution and batch retries reject
+a changed target branch even if its commit is unchanged; refresh and confirm the
+new target before proceeding. Dirty targets and unresolved conflicts remain
+blocked. Creation and delivery dialogs do not switch Project branches.
 
 ## Session access
 

@@ -90,7 +90,7 @@ pub(super) async fn finish_workspace_repository_impl(
                 &["rev-parse", &target_branch],
             )
             .map_err(AppError::BadRequest)?;
-            if target_head != preflight.target_head {
+            if target_branch != preflight.target_branch || target_head != preflight.target_head {
                 return Err(AppError::BadRequest(
                     "delivery preflight is stale; merge target moved".into(),
                 ));
@@ -357,12 +357,8 @@ pub(super) async fn workspace_repository_delivery_target(
         .repository_as_directory(&location.project_repository_id)
         .await?;
     ensure_location_ready(&project_repository)?;
-    Ok((
-        project_repository.path,
-        location.base_branch.clone().ok_or_else(|| {
-            AppError::BadRequest("Workspace Repository has no base branch".into())
-        })?,
-    ))
+    let branch = current_project_branch(&project_repository.path)?;
+    Ok((project_repository.path, branch))
 }
 
 pub(super) fn rebase_in_progress(workspace: &str) -> Result<bool> {
@@ -471,7 +467,8 @@ pub(super) async fn workspace_delivery_target(
     }
     let repository_root =
         repository_root_for_directory(state, &workspace.project_directory_id).await?;
-    Ok((repository_root, workspace.target_branch.clone()))
+    let branch = current_project_branch(&repository_root)?;
+    Ok((repository_root, branch))
 }
 
 #[derive(Clone, Deserialize)]

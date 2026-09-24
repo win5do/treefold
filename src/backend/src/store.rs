@@ -180,6 +180,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn project_base_removal_preserves_workspace_and_fork_snapshots() {
+        let directory = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        for entry in
+            std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g1")).unwrap()
+        {
+            let entry = entry.unwrap();
+            if entry.file_name().to_string_lossy().as_ref() < "20260924060000" {
+                std::fs::copy(entry.path(), source.path().join(entry.file_name())).unwrap();
+            }
+        }
+        let options = SqliteConnectOptions::new()
+            .filename(directory.path().join(CURRENT_DATABASE_FILENAME))
+            .create_if_missing(true);
+        let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
+        sqlx::migrate::Migrator::new(source.path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        connection.execute("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','t','t');
+            INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,base_branch,created_at,updated_at) VALUES('r','p','R','/repo','/repo/.git','obsolete','t','t');
+            INSERT INTO workspaces(id,project_id,name,kind,status,created_at,updated_at) VALUES('w','p','W','workspace','active','t','t');
+            INSERT INTO workspaces(id,project_id,name,kind,parent_workspace_id,status,created_at,updated_at) VALUES('f','p','F','fork','w','active','t','t');
+            INSERT INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,base_branch,start_commit,created_at,updated_at) VALUES('wr','w','r','R','/repo','ready','main','base-w','t','t'),('fr','f','r','R','/repo','ready','feature/w','base-f','t','t');").await.unwrap();
+        connection.close().await.unwrap();
+        let store = Store::open(directory.path()).await.unwrap();
+        let workspace = store.workspace_repository("wr").await.unwrap();
+        let fork = store.workspace_repository("fr").await.unwrap();
+        assert_eq!(
+            (
+                workspace.base_branch.as_deref(),
+                workspace.start_commit.as_deref()
+            ),
+            (Some("main"), Some("base-w"))
+        );
+        assert_eq!(
+            (fork.base_branch.as_deref(), fork.start_commit.as_deref()),
+            (Some("feature/w"), Some("base-f"))
+        );
+        assert_eq!(store.repository("r").await.unwrap().source_root, "/repo");
+        store.pool.close().await;
+    }
+
+    #[tokio::test]
     async fn legacy_database_files_are_ignored_and_untouched() {
         let directory = tempfile::tempdir().unwrap();
         let data = directory.path().join("data");
@@ -303,14 +349,12 @@ mod tests {
                 description: String::new(),
                 status: "active".into(),
                 default_location_id: None,
-                default_base_branch: "main".into(),
                 default_delivery_mode: "push_branch".into(),
                 created_at: timestamp.clone(),
                 updated_at: timestamp.clone(),
                 primary_directory_id: String::new(),
                 git_common_dir: String::new(),
                 preferred_remote: None,
-                default_target_branch: "main".into(),
             })
             .await
             .unwrap();
@@ -323,7 +367,6 @@ mod tests {
             path: "/tmp/treefold-soft-delete-context".into(),
             repository_url: None,
             preferred_remote_name: None,
-            base_branch: None,
             delivery_mode: None,
             git_common_dir: None,
             git_status: "not_git".into(),
@@ -344,7 +387,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .update_directory("original", "Renamed", "Purpose", "", None, None)
+            .update_directory("original", "Renamed", "Purpose", "", None)
             .await
             .unwrap();
         assert_eq!(store.directory("original").await.unwrap().name, "Renamed");
@@ -427,13 +470,12 @@ mod tests {
         .execute(&store.pool)
         .await
         .unwrap();
-        let nullable: (Option<String>, Option<String>) = sqlx::query_as(
-            "SELECT base_branch,delivery_mode FROM project_repositories WHERE id='r'",
-        )
-        .fetch_one(&store.pool)
-        .await
-        .unwrap();
-        assert_eq!(nullable, (None, None));
+        let nullable: (Option<String>,) =
+            sqlx::query_as("SELECT delivery_mode FROM project_repositories WHERE id='r'")
+                .fetch_one(&store.pool)
+                .await
+                .unwrap();
+        assert_eq!(nullable, (None,));
         assert!(
             sqlx::query("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','Duplicate','t','t')")
                 .execute(&store.pool)

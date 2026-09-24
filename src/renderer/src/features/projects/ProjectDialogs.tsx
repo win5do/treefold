@@ -408,21 +408,18 @@ export function EditRepositoryDialog({
   const { t } = useTranslation();
   const [branches, setBranches] = useState<RepositoryBranches | null>(null);
   const [branchesError, setBranchesError] = useState("");
-  const [baseBranch, setBaseBranch] = useState("");
   const [baseRemote, setBaseRemote] = useState("");
 
   useEffect(() => {
     if (!repository) {
       setBranches(null);
       setBranchesError("");
-      setBaseBranch("");
       setBaseRemote("");
       return;
     }
     const controller = new AbortController();
     setBranches(null);
     setBranchesError("");
-    setBaseBranch(repository.base_branch || "");
     setBaseRemote(repository.preferred_remote_name || "");
     projectsApi
       .repositoryBranches(repository.id, controller.signal)
@@ -451,7 +448,6 @@ export function EditRepositoryDialog({
               repository.id,
               repository.setup_command,
               repository.setup_workdir,
-              repository.base_branch,
               repository.preferred_remote_name,
               repository.delivery_mode,
             ])}
@@ -474,35 +470,6 @@ export function EditRepositoryDialog({
                 <FieldDescription>{t("projectsUi.relativeToTheRepositoryRoot")}</FieldDescription>
               </Field>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field>
-                  <FieldLabel htmlFor="repository-base-branch">{t("projectsUi.baseBranch")}</FieldLabel>
-                  <Select
-                    id="repository-base-branch"
-                    className="w-full"
-                    name="base_branch"
-                    value={baseBranch}
-                    onChange={(event) => setBaseBranch(event.target.value)}
-                    disabled={busy || !branches}
-                    required
-                  >
-                    {!branches ? (
-                      <option value={repository.base_branch || ""}>{t("projectsUi.loading")}</option>
-                    ) : (
-                      <>
-                        {repository.base_branch &&
-                          !branches.local.includes(repository.base_branch) && (
-                          <option value={repository.base_branch} disabled>
-                            {repository.base_branch}{t("projectsUi.notFound")}</option>
-                        )}
-                        {branches.local.map((branch) => (
-                          <option key={branch} value={branch}>
-                            {branch}
-                          </option>
-                        ))}
-                      </>
-                    )}
-                  </Select>
-                </Field>
                 <Field>
                   <FieldLabel htmlFor="repository-base-remote">{t("projectsUi.remote")}<span className="text-muted-foreground">{t("projectsUi.optional")}</span>
                   </FieldLabel>

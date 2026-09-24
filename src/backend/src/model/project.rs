@@ -13,8 +13,6 @@ pub struct Project {
     )]
     pub default_location_id: Option<String>,
     #[serde(skip)]
-    pub default_base_branch: String,
-    #[serde(skip)]
     pub default_delivery_mode: String,
     pub created_at: String,
     pub updated_at: String,
@@ -24,8 +22,6 @@ pub struct Project {
     pub git_common_dir: String,
     #[serde(skip)]
     pub preferred_remote: Option<String>,
-    #[serde(skip)]
-    pub default_target_branch: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,8 +36,6 @@ pub struct Directory {
     pub repository_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preferred_remote_name: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base_branch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -81,7 +75,6 @@ pub struct ProjectRepository {
     pub repository_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preferred_remote_name: Option<String>,
-    pub base_branch: Option<String>,
     pub delivery_mode: Option<String>,
     pub setup_command: String,
     pub setup_workdir: String,

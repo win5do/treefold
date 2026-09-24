@@ -270,6 +270,7 @@ async fn verify_plan(state: &AppState, plan: &FinishPlanItem, retry: bool) -> Re
     .await?;
     if old.source_head != fresh.source_head
         || old.source_status != fresh.source_status
+        || old.target_branch != fresh.target_branch
         || (!retry && old.target_head != fresh.target_head)
     {
         return Err(AppError::BadRequest("confirmed Git state changed; restore the confirmed source or review the plan before executing".into()));

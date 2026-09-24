@@ -1591,16 +1591,10 @@ function Workspace() {
           if (!editRepository) return;
           const form = new FormData(event.currentTarget);
           const ok = await act(async () => {
-            const baseBranch = String(form.get("base_branch") || "").trim();
-            const baseRemote = String(form.get("base_remote") || "").trim();
-            await projectsApi.setBaseBranch(editRepository.id, {
-              branch: baseBranch,
-              remote: baseRemote || null,
-            });
             await projectsApi.updateRepository(editRepository.id, {
               setup_command: form.get("setup_command"),
               setup_workdir: form.get("setup_workdir"),
-              base_branch: baseBranch,
+              preferred_remote_name: String(form.get("base_remote") || ""),
               delivery_mode: form.get("delivery_mode"),
             });
           });
@@ -1647,9 +1641,6 @@ function Workspace() {
               .getAll("setup_repository_id")
               .map(String);
             for (const repositoryId of setupRepositoryIds) {
-              const baseBranch = String(
-                form.get(`base_branch:${repositoryId}`) || "",
-              );
               const deliveryMode = String(
                 form.get(`delivery_mode:${repositoryId}`) || "",
               );
@@ -1657,12 +1648,8 @@ function Workspace() {
                 deliveryMode === "push_branch"
                   ? String(form.get(`base_remote:${repositoryId}`) || "")
                   : "";
-              await projectsApi.setBaseBranch(repositoryId, {
-                branch: baseBranch,
-                remote: remote || null,
-              });
               await projectsApi.updateRepository(repositoryId, {
-                base_branch: baseBranch,
+                preferred_remote_name: remote,
                 delivery_mode: deliveryMode,
               });
             }
@@ -1692,6 +1679,7 @@ function Workspace() {
             created = await projectsApi.createWorkspace(
               createWorkspaceProject.id,
               {
+                expected_base_branches: Object.fromEntries(createWorkspaceProject.repositories.map(repository => [repository.id, String(form.get(`expected_base:${repository.id}`) || "")])),
                 description: form.get("description"),
                 branch: form.get("branch"),
                 generated_branch: form.get("generated_branch"),

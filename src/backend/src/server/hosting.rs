@@ -34,7 +34,6 @@ pub(super) async fn treefold_runtime_snapshot(
             "id": project.id,
             "name": project.name,
             "default_location_id": project.default_location_id,
-            "default_base_branch": project.default_base_branch,
         },
         "workspace": {
             "id": workspace.id,

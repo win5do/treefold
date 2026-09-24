@@ -239,7 +239,10 @@ pub(super) async fn create_fork_impl(
             snapshots.push(snapshot);
             continue;
         };
-        if let Err(error) = ensure_clean_workspace(parent_path, "parent Workspace Repository") {
+        if let Err(error) =
+            ensure_checked_out_branch(parent_path, &base_branch, "parent Workspace Repository")
+                .and_then(|_| ensure_clean_workspace(parent_path, "parent Workspace Repository"))
+        {
             snapshot.git_status = "failed".into();
             snapshot.checkout_path = None;
             snapshot.delivery_status = "discarded".into();
