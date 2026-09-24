@@ -2,7 +2,7 @@ import { compactPath } from "@/lib/compactPath";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, GitMerge, GitPullRequestArrow, Sparkles } from "lucide-react";
+import { AlertTriangle, GitPullRequestArrow, Sparkles } from "lucide-react";
 import { workspacesApi } from "@/api/workspaces";
 import { sessionsApi } from "@/api/sessions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -22,7 +22,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type {
   ParentOperation,
-  ParentOperationDirection,
   ParentOperationPreview,
   ParentOperationStrategy,
   Session,
@@ -38,7 +37,7 @@ export function ParentOperationDialog({
   onOpenSession,
 }: {
   workspace: WorkspaceDetail | null;
-  direction: ParentOperationDirection | null;
+  direction: "update" | null;
   onOpenChange: (open: boolean) => void;
   onOpenSession: (operation: ParentOperation, session: Session) => void;
 }) {
@@ -60,7 +59,7 @@ export function ParentOperationDialog({
 
   useEffect(() => {
     setRepositoryId(repositories[0]?.id ?? "");
-    setStrategy(direction === "integrate" ? "merge" : "rebase");
+    setStrategy("rebase");
     setPreview(null);
     setOperation(null);
     setResolverSession(null);
@@ -99,13 +98,13 @@ export function ParentOperationDialog({
   }, [operation?.id, operation?.status]);
 
   if (!workspace || !direction) return null;
-  const title = direction === "update" ? t("workspaceUi.updateFromParent") : t("workspaceUi.integrateIntoParent");
+  const title = t("workspaceUi.updateFromParent");
   const currentOperation = operation ?? preview?.operation ?? null;
   const blocked = !preview || preview.blockers.length > 0;
   const canStart =
     !currentOperation ||
     ["aborted", "undone", "failed"].includes(currentOperation.status) ||
-    (currentOperation.status === "completed" && !currentOperation.undo_available);
+    currentOperation.status === "completed";
 
   const run = async (action: () => Promise<ParentOperation>) => {
     setBusy(true);
@@ -140,9 +139,7 @@ export function ParentOperationDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
-            {direction === "update"
-              ? t("workspaceUi.updateFromParentDescription")
-              : t("workspaceUi.integrateIntoParentDescription")}
+            {t("workspaceUi.updateFromParentDescription")}
           </DialogDescription>
         </DialogHeader>
 
@@ -164,7 +161,7 @@ export function ParentOperationDialog({
             </NativeSelect>
           </Field>
 
-          {direction === "update" && canStart && (
+          {canStart && (
             <Field>
               <FieldLabel>{t("workspaceUi.strategy")}</FieldLabel>
               <ToggleGroup
@@ -191,7 +188,7 @@ export function ParentOperationDialog({
 
         {preview && (
           <Alert>
-            {direction === "update" ? <GitPullRequestArrow /> : <GitMerge />}
+            <GitPullRequestArrow />
             <AlertTitle className="flex min-w-0 flex-wrap items-center gap-2">
               <span className="min-w-0 truncate" title={preview.repository_name}>{preview.repository_name}</span>
               <Badge variant="secondary">{outcomeLabel(preview.outcome)}</Badge>
@@ -228,7 +225,6 @@ export function ParentOperationDialog({
               }
             }}
             onAbort={() => void run(() => workspacesApi.abortParentOperation(currentOperation.id))}
-            onUndo={() => void run(() => workspacesApi.undoParentOperation(currentOperation.id))}
           />
         )}
 
@@ -251,12 +247,12 @@ export function ParentOperationDialog({
                   workspacesApi.startParentOperation(
                     repositoryId,
                     direction,
-                    direction === "integrate" ? "merge" : strategy,
+                    strategy,
                   ),
                 )
               }
             >
-              {busy ? <Spinner data-icon="inline-start" /> : direction === "update" ? <GitPullRequestArrow data-icon="inline-start" /> : <GitMerge data-icon="inline-start" />}
+              {busy ? <Spinner data-icon="inline-start" /> : <GitPullRequestArrow data-icon="inline-start" />}
               {title}
             </Button>
           )}
@@ -273,7 +269,6 @@ export function ParentOperationPanel({
   onResolve,
   onOpenSession,
   onAbort,
-  onUndo,
 }: {
   operation: ParentOperation;
   busy: boolean;
@@ -281,7 +276,6 @@ export function ParentOperationPanel({
   onResolve: () => void;
   onOpenSession: () => void;
   onAbort: () => void;
-  onUndo?: () => void;
 }) {
   const { t } = useTranslation();
   const conflicted = operation.status === "conflicted" || operation.status === "resolving";
@@ -305,11 +299,6 @@ export function ParentOperationPanel({
           )}
           {(conflicted || operation.status === "recovery_required") && (
             <Button size="sm" variant="destructive" disabled={busy} onClick={onAbort}>{t("workspaceUi.stopAIAbort")}</Button>
-          )}
-          {operation.status === "completed" && operation.undo_available && onUndo && operation.origin !== "finish" && (
-            <Button size="sm" variant="outline" disabled={busy} onClick={onUndo}>
-              {operation.direction === "update" ? t("workspaceUi.undoUpdate") : t("workspaceUi.undoIntegration")}
-            </Button>
           )}
         </div>
       </AlertDescription>

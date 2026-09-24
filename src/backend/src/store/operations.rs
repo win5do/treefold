@@ -12,7 +12,6 @@ pub(crate) struct ParentOperationUpdate<'a> {
     pub result_head: Option<&'a str>,
     pub error: &'a str,
     pub terminal: bool,
-    pub undo_available: bool,
 }
 
 #[derive(sqlx::FromRow)]
@@ -81,7 +80,6 @@ struct ParentOperationRow {
     phase: String,
     resolver_session_id: Option<String>,
     delivery_operation_id: Option<String>,
-    undo_available: bool,
     error: String,
     started_at: String,
     updated_at: String,
@@ -112,7 +110,6 @@ impl From<ParentOperationRow> for ParentOperation {
             phase: r.phase,
             resolver_session_id: r.resolver_session_id,
             delivery_operation_id: r.delivery_operation_id,
-            undo_available: r.undo_available,
             error: r.error,
             started_at: r.started_at,
             updated_at: r.updated_at,
@@ -166,7 +163,7 @@ impl TryFrom<PreflightRow> for DeliveryPreflight {
     }
 }
 const DELIVERY: &str = "workspace_repository_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
-const PARENT: &str = "id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,undo_available,error,started_at,updated_at,completed_at";
+const PARENT: &str = "id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,error,started_at,updated_at,completed_at";
 impl Store {
     pub async fn set_delivery_status(&self, id: &str, status: &str) -> Result<()> {
         let id = self.resolve_workspace_repository_id(id).await?;
@@ -277,29 +274,16 @@ impl Store {
     }
 
     pub async fn create_parent_operation(&self, o: &ParentOperation) -> Result<()> {
-        sqlx::query("INSERT INTO parent_operations(id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,undo_available,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&o.id).bind(&o.workspace_repository_id).bind(&o.workspace_id).bind(&o.direction).bind(&o.strategy).bind(&o.origin).bind(&o.source_repository_id).bind(&o.source_path).bind(&o.source_branch).bind(&o.target_scope).bind(&o.target_workspace_id).bind(&o.target_path).bind(&o.target_branch).bind(&o.source_head).bind(&o.parent_head).bind(&o.before_head).bind(&o.result_head).bind(&o.recovery_ref).bind(&o.status).bind(&o.phase).bind(&o.resolver_session_id).bind(&o.delivery_operation_id).bind(o.undo_available).bind(&o.error).bind(&o.started_at).bind(&o.updated_at).bind(&o.completed_at).execute(&self.pool).await?;
+        sqlx::query("INSERT INTO parent_operations(id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&o.id).bind(&o.workspace_repository_id).bind(&o.workspace_id).bind(&o.direction).bind(&o.strategy).bind(&o.origin).bind(&o.source_repository_id).bind(&o.source_path).bind(&o.source_branch).bind(&o.target_scope).bind(&o.target_workspace_id).bind(&o.target_path).bind(&o.target_branch).bind(&o.source_head).bind(&o.parent_head).bind(&o.before_head).bind(&o.result_head).bind(&o.recovery_ref).bind(&o.status).bind(&o.phase).bind(&o.resolver_session_id).bind(&o.delivery_operation_id).bind(&o.error).bind(&o.started_at).bind(&o.updated_at).bind(&o.completed_at).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn update_parent_operation(&self, u: ParentOperationUpdate<'_>) -> Result<()> {
         let t = now();
-        sqlx::query("UPDATE parent_operations SET status=?,phase=?,result_head=COALESCE(?,result_head),error=?,undo_available=?,updated_at=?,completed_at=CASE WHEN ? THEN COALESCE(completed_at,?) ELSE completed_at END WHERE id=?").bind(u.status).bind(u.phase).bind(u.result_head).bind(u.error).bind(u.undo_available).bind(&t).bind(u.terminal).bind(&t).bind(u.id).execute(&self.pool).await?;
+        sqlx::query("UPDATE parent_operations SET status=?,phase=?,result_head=COALESCE(?,result_head),error=?,updated_at=?,completed_at=CASE WHEN ? THEN COALESCE(completed_at,?) ELSE completed_at END WHERE id=?").bind(u.status).bind(u.phase).bind(u.result_head).bind(u.error).bind(&t).bind(u.terminal).bind(&t).bind(u.id).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn set_parent_operation_resolver(&self, id: &str, session: &str) -> Result<()> {
         sqlx::query("UPDATE parent_operations SET resolver_session_id=?,status='resolving',phase='resolving',error='',updated_at=? WHERE id=?").bind(session).bind(now()).bind(id).execute(&self.pool).await?;
-        Ok(())
-    }
-    pub async fn supersede_parent_operation_undo(
-        &self,
-        source: &str,
-        path: &str,
-        except: &str,
-    ) -> Result<()> {
-        sqlx::query("UPDATE parent_operations SET undo_available=0,phase=CASE WHEN status='completed' THEN 'superseded' ELSE phase END,updated_at=? WHERE source_repository_id=? AND target_path=? AND id!=? AND undo_available=1").bind(now()).bind(source).bind(path).bind(except).execute(&self.pool).await?;
-        Ok(())
-    }
-    pub async fn consume_parent_operation_undo(&self, id: &str) -> Result<()> {
-        sqlx::query("UPDATE parent_operations SET undo_available=0,phase=CASE WHEN status='completed' THEN 'consumed' ELSE phase END,updated_at=? WHERE id=?").bind(now()).bind(id).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn create_delivery_preflight(&self, p: &DeliveryPreflight) -> Result<()> {

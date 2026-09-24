@@ -242,6 +242,8 @@ export const enUS = {
     "noActionsFound": "No actions found."
   },
   "deliveryUi": {
+    "preserveCheckoutDescription": "Archive the Fork and stop its Sessions after delivery. Keep its working directories and branches so you can reopen it later.",
+    "preserveCheckout": "Keep working directories and branches",
     "recovery": {
       "forceExecute": "Force execute",
       "forceTitle": "Skip damaged repositories?",
@@ -669,6 +671,9 @@ export const enUS = {
     "sessionState": "Session is {{status}}"
   },
   "workspaceUi": {
+    "reopenUnavailable": "Reopening requires retained working directories and branches, an active parent Workspace and Project, and no pending Finish operation.",
+    "reopenFailed": "Could not reopen Fork",
+    "reopenFork": "Reopen Fork",
     "noRemoteDeliveryHint": "This repository has no remote. Choose local merge or preserve without delivery.",
     "featureDescription": "Develop one feature in this Workspace. Split it into Forks when you need separate subtasks.",
     "subtaskDescription": "Complete this subtask as part of the parent Workspace’s feature.",
@@ -680,7 +685,6 @@ export const enUS = {
     "startSubtaskDescription": "Create a Session to work on the subtask assigned to this Fork.",
 
     "updateFromParent": "Update from Parent",
-    "integrateIntoParent": "Integrate into Parent",
     "repository": "Repository",
     "strategy": "Strategy",
     "rebaseRecommended": "Rebase (Recommended)",
@@ -693,8 +697,6 @@ export const enUS = {
     "resolveWithAI": "Resolve with AI",
     "openSession": "Open Session",
     "stopAIAbort": "Stop AI & Abort",
-    "undoUpdate": "Undo Update",
-    "undoIntegration": "Undo Integration",
     "recoveryRequired": "Recovery required",
     "couldNotLoadRepositoryBranches": "Could not load repository branches",
     "newWorkspace": "New Workspace",
@@ -755,7 +757,6 @@ export const enUS = {
     "setUpstream": "Set upstream",
     "clearUpstream": "Clear upstream",
     "updateFromParent2": "Update from Parent…",
-    "integrateIntoParent2": "Integrate into Parent…",
     "shellLocations": "Shell locations",
     "agentLocations": "Agent locations",
     "removeFromSidebar": "Remove from sidebar",
@@ -767,7 +768,6 @@ export const enUS = {
     "executionBlockedReason": "Execution blocked: {{reason}}",
     "repositoryDefaults": "{{name}} repository defaults",
     "updateFromParentDescription": "Bring the selected Workspace or Fork Repository up to its parent without fetching remotes.",
-    "integrateIntoParentDescription": "Merge the selected Repository into its parent checkout. Git fast-forwards when possible.",
     "strategyDescription": "Rebase keeps a linear branch; Merge preserves existing commit topology.",
     "generatedRemoteBranchDescription": "Leave empty when the local branch is generated; Treefold will use the same generated name remotely.",
     "upstreamDescription": "Pull and Push for this repository use this upstream. Treefold never force pushes.",

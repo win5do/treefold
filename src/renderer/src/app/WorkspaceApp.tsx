@@ -42,7 +42,6 @@ import type {
   ProjectDetail,
   ProjectRepository,
   ProjectSummary,
-  ParentOperationDirection,
   ParentOperation,
   RenameTarget,
   Session,
@@ -269,7 +268,7 @@ function Workspace() {
     useState<WorkspaceDetail | null>(null);
   const [parentOperationDialog, setParentOperationDialog] = useState<{
     workspace: WorkspaceDetail;
-    direction: ParentOperationDirection;
+    direction: "update";
   } | null>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<
@@ -573,7 +572,7 @@ function Workspace() {
 
   async function openParentOperation(
     stream: Workspace,
-    direction: ParentOperationDirection,
+    direction: "update",
   ) {
     setBusy(true);
     try {

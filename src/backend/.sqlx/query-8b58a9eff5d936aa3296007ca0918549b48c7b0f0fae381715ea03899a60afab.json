@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE workspace_repositories SET delivery_status='active', close_outcome=NULL, integrated_commit=NULL, closed_at=NULL, updated_at=? WHERE workspace_id=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "8b58a9eff5d936aa3296007ca0918549b48c7b0f0fae381715ea03899a60afab"
+}

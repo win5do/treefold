@@ -105,8 +105,10 @@ pub(super) async fn reconcile(
             result_head: if completed { Some(&head) } else { None },
             error,
             terminal: completed,
-            undo_available: completed && operation.origin != "finish",
         })
         .await?;
+    if completed {
+        super::parent_operation::release_parent_operation_recovery(state, operation).await?;
+    }
     state.store.parent_operation(&operation.id).await
 }

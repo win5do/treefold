@@ -244,6 +244,8 @@ export const zhCN = {
     "noActionsFound": "未找到匹配的操作。"
   },
   "deliveryUi": {
+    "preserveCheckoutDescription": "交付后归档 Fork 并停止 Session，保留工作目录和分支，以便之后重新打开。",
+    "preserveCheckout": "保留工作目录和分支",
     "recovery": {
       "forceExecute": "强制执行",
       "forceTitle": "确认跳过损坏的仓库？",
@@ -671,6 +673,9 @@ export const zhCN = {
     "sessionState": "Session {{status}}"
   },
   "workspaceUi": {
+    "reopenUnavailable": "重新打开需要保留的工作目录和分支完整，父级 Workspace 和 Project 仍活跃，且没有待处理的完成操作。",
+    "reopenFailed": "无法重新打开 Fork",
+    "reopenFork": "重新打开 Fork",
     "noRemoteDeliveryHint": "这个仓库没有远程仓库，可选择合并到本地基线或仅保留、不交付。",
     "featureDescription": "在这个 Workspace 中开发一项 feature，需要拆分工作时再创建 Fork。",
     "subtaskDescription": "在这个 Fork 中完成上层 Workspace 所属 feature 的一项子任务。",
@@ -682,7 +687,6 @@ export const zhCN = {
     "startSubtaskDescription": "新建 Session，完成当前 Fork 承担的子任务。",
 
     "updateFromParent": "从父级更新",
-    "integrateIntoParent": "合并到父级",
     "repository": "仓库",
     "strategy": "策略",
     "rebaseRecommended": "变基（推荐）",
@@ -695,8 +699,6 @@ export const zhCN = {
     "resolveWithAI": "使用 AI 解决",
     "openSession": "打开 Session",
     "stopAIAbort": "停止 AI 并中止操作",
-    "undoUpdate": "撤销更新",
-    "undoIntegration": "撤销合并",
     "recoveryRequired": "需要恢复",
     "couldNotLoadRepositoryBranches": "无法加载仓库分支",
     "newWorkspace": "新建 Workspace",
@@ -757,7 +759,6 @@ export const zhCN = {
     "setUpstream": "设置上游",
     "clearUpstream": "清除上游",
     "updateFromParent2": "从父级更新…",
-    "integrateIntoParent2": "合并到父级…",
     "shellLocations": "Shell 位置",
     "agentLocations": "Agent 位置",
     "removeFromSidebar": "从侧边栏移除",
@@ -769,7 +770,6 @@ export const zhCN = {
     "executionBlockedReason": "执行受阻：{{reason}}",
     "repositoryDefaults": "{{name}} 仓库默认配置",
     "updateFromParentDescription": "将所选 Workspace 或 Fork 的仓库更新到父级版本，不拉取远程仓库。",
-    "integrateIntoParentDescription": "将所选仓库合并到父级检出目录；条件允许时，Git 会使用快进合并。",
     "strategyDescription": "变基保持线性提交历史；合并保留已有的提交拓扑。",
     "generatedRemoteBranchDescription": "使用自动生成的本地分支时请留空，Treefold 会为远程分支使用相同名称。",
     "upstreamDescription": "此仓库的拉取和推送操作使用该上游。Treefold 不会强制推送。",

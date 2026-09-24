@@ -497,10 +497,6 @@ fn app(state: AppState) -> Router {
             post(abort_parent_operation),
         )
         .route(
-            "/api/parent-operations/{id}/undo",
-            post(undo_parent_operation),
-        )
-        .route(
             "/api/workspaces/{id}/finish-batch",
             get(finish_batch::get_finish_batch).post(finish_batch::start_finish_batch),
         )
@@ -513,6 +509,7 @@ fn app(state: AppState) -> Router {
             post(finish_batch::force_resume_finish_batch),
         )
         .route("/api/workspaces/{id}/archive", post(archive_workspace))
+        .route("/api/workspaces/{id}/reopen", post(reopen::reopen_fork))
         .route("/api/workspaces/{id}/reveal", post(reveal_workspace))
         .route(
             "/api/workspaces/{id}/sessions",
@@ -623,6 +620,7 @@ mod git_routes;
 mod hosting;
 mod keymap;
 mod parent_operation;
+mod reopen;
 mod session;
 mod squash;
 mod squash_delivery;

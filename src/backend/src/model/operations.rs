@@ -73,7 +73,6 @@ pub struct ParentOperation {
     pub resolver_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delivery_operation_id: Option<String>,
-    pub undo_available: bool,
     pub error: String,
     pub started_at: String,
     pub updated_at: String,

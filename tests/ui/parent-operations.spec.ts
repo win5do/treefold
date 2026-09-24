@@ -27,7 +27,6 @@ test("parent-operations", async () => {
 
     let menu = await ownerMenu('[data-testid="sidebar-project-node"]');
     assert.equal(await (menu.locator('[data-testid="update-from-parent-action"]')).count().then(count => count > 0), false);
-    assert.equal(await (menu.locator('[data-testid="integrate-into-parent-action"]')).count().then(count => count > 0), false);
     await pressUiEscape(page);
 
     const projectNode = page.locator('[data-testid="sidebar-project-node"]');
@@ -45,7 +44,6 @@ test("parent-operations", async () => {
 
     menu = await ownerMenu('[data-testid="sidebar-workspace-node"]');
     assert.equal(await (menu.locator('[data-testid="update-from-parent-action"]')).isVisible(), true);
-    assert.equal(await (menu.locator('[data-testid="integrate-into-parent-action"]')).isVisible(), true);
     await (menu.locator('[data-testid="update-from-parent-action"]')).click();
 
     let dialog = page.locator('[data-testid="parent-operation-dialog"]');
@@ -73,22 +71,9 @@ test("parent-operations", async () => {
     await expect.poll(async () => (await dialog.innerText()).includes("Aborted"), { timeout: 3_000 }).toBeTruthy();
     await (dialog.locator("button:text-is(\"Close\")")).click();
 
-    menu = await ownerMenu('[data-testid="sidebar-workspace-node"]');
-    await (menu.locator('[data-testid="integrate-into-parent-action"]')).click();
-    dialog = page.locator('[data-testid="parent-operation-dialog"]');
-    await dialog.waitFor({ timeout: 3_000, state: 'visible' });
-    assert.match(await dialog.innerText(), /merge commit/i);
-    assert.equal(await (dialog.locator("button:text-is(\"Rebase (Recommended)\")")).count().then(count => count > 0), false, "Integrate must use fixed Merge strategy");
-    await (dialog.locator('[data-testid="start-parent-operation"]')).click();
-    await expect.poll(async () => (await dialog.innerText()).includes("Undo Integration"), { timeout: 3_000 }).toBeTruthy();
-    await (dialog.locator("button:text-is(\"Undo Integration\")")).click();
-    await expect.poll(async () => (await dialog.innerText()).includes("Undone"), { timeout: 3_000 }).toBeTruthy();
-
     assert.ok(harness.parentOperationRequests.includes(`POST ${FIXTURE_IDS.workspacePrimaryLocation}:update:merge`));
     assert.ok(harness.parentOperationRequests.some((item) => item.endsWith(":resolve-with-codex")));
     assert.ok(harness.parentOperationRequests.some((item) => item.endsWith(":abort")));
-    assert.ok(harness.parentOperationRequests.includes(`POST ${FIXTURE_IDS.workspacePrimaryLocation}:integrate:merge`));
-    assert.ok(harness.parentOperationRequests.some((item) => item.endsWith(":undo")));
     harness.assertNoUnexpectedRequests();
   } finally {
     try { await closeUiSession(page); } finally { await harness.close(); }

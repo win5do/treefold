@@ -38,3 +38,16 @@ and continue. Retries skip completed steps and refuse cleanup if the source
 branch gained new commits. Finish has no Undo action or automatic rollback;
 reverting a delivered change is a separate Git operation on the parent.
 Pull request creation and merge remain hosting/user workflows.
+
+Fork Finish offers **Keep working directories and branches**. Delivery still
+archives the Fork and stops its Sessions; the option disables cleanup for every
+repository. An archived Fork can be reopened from its detail page when all
+checkouts remain on their recorded branches, its Project and parent Workspace
+are active, and neither it nor its parent has unfinished Finish work. Reopening
+does not launch Sessions or recreate missing worktrees. It reactivates the linked
+Todo and starts a fresh delivery round while retaining parent-operation history.
+
+Delivery uses Finish rather than a separate Integrate into Parent menu action.
+Update from Parent retains conflict resolution and Abort, but completed parent
+operations have no Undo API. Their recovery refs are released after completion;
+the recorded before/result heads remain part of the operation history.

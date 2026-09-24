@@ -25,8 +25,8 @@ mod current_workspace_tests {
         normalized_path, parse_git_history, parse_git_worktrees, pull_workspace, push_workspace,
         reconcile_parent_operation, reconcile_process, refresh_project_directory,
         repository_name_from_url, repository_slug, reveal_in_file_manager, slug,
-        start_parent_operation_impl, stop_amux, stop_session, undo_parent_operation_impl,
-        update_project, update_workspace_repository,
+        start_parent_operation_impl, stop_amux, stop_session, update_project,
+        update_workspace_repository,
     };
     use crate::{
         model::{Session, Todo},
@@ -1582,7 +1582,7 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
-    async fn parent_operations_update_integrate_undo_restart_and_abort() {
+    async fn parent_operations_update_integrate_restart_and_abort() {
         let root = std::env::temp_dir().join(format!(
             "treefold-parent-operations-test-{}",
             uuid::Uuid::new_v4().simple()
@@ -1662,7 +1662,6 @@ mod current_workspace_tests {
         .await
         .expect("rebase Fork from parent");
         assert_eq!(update.status, "completed");
-        assert!(update.undo_available);
         assert!(
             git_is_ancestor(
                 &fork.checkout_path,
@@ -1671,11 +1670,13 @@ mod current_workspace_tests {
             )
             .expect("parent is ancestor")
         );
-        let undone_update = undo_parent_operation_impl(&state, &update)
-            .await
-            .expect("undo update");
-        assert_eq!(undone_update.status, "undone");
-        assert_eq!(git_head(&fork.checkout_path).unwrap(), fork_before);
+        // Restore the fixture to exercise a divergent integration independently.
+        command_output(
+            Path::new(&fork.checkout_path),
+            "git",
+            &["reset", "--hard", &fork_before],
+        )
+        .unwrap();
 
         let integration = start_parent_operation_impl(
             &state,
@@ -1701,10 +1702,12 @@ mod current_workspace_tests {
         )
         .expect("read merge parents");
         assert_eq!(parents.split_whitespace().count(), 2);
-        undo_parent_operation_impl(&state, &integration)
-            .await
-            .expect("undo integration");
-        assert_eq!(git_head(&workspace.checkout_path).unwrap(), parent_head);
+        command_output(
+            Path::new(&workspace.checkout_path),
+            "git",
+            &["reset", "--hard", &parent_head],
+        )
+        .unwrap();
 
         commit(
             &fork.checkout_path,
@@ -1757,7 +1760,6 @@ mod current_workspace_tests {
             .default_workspace_repository(&workspace.id)
             .await
             .expect("root Workspace Repository");
-        let project_before = git_head(repository.to_str().unwrap()).unwrap();
         let root_integration = start_parent_operation_impl(
             &state,
             &workspace_repository.id,
@@ -1772,14 +1774,6 @@ mod current_workspace_tests {
         assert_eq!(
             git_head(repository.to_str().unwrap()).unwrap(),
             root_integration.result_head.clone().unwrap()
-        );
-        let root_undone = undo_parent_operation_impl(&state, &root_integration)
-            .await
-            .expect("undo root integration");
-        assert_eq!(root_undone.status, "undone");
-        assert_eq!(
-            git_head(repository.to_str().unwrap()).unwrap(),
-            project_before
         );
 
         drop(restarted);
@@ -1900,7 +1894,6 @@ mod current_workspace_tests {
             .await
             .unwrap();
         assert_eq!(completed.status, "completed");
-        assert!(!completed.undo_available);
 
         let Json(finished) =
             finish_workspace_repository_impl(state.clone(), fork_location.id, input)
@@ -1908,14 +1901,6 @@ mod current_workspace_tests {
                 .expect("continue Finish after conflict resolution");
         assert_eq!(finished.status, "finished");
         assert_eq!(finished.repository.delivery_status, "delivered");
-        assert!(
-            !state
-                .store
-                .parent_operation(&completed.id)
-                .await
-                .unwrap()
-                .undo_available
-        );
 
         drop(state);
         std::fs::remove_dir_all(root).expect("remove Finish conflict fixture");

@@ -85,7 +85,6 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }: Rou
             recovery_ref: `refs/treefold/recovery/${direction}-${locationId}`,
             status: direction === "update" ? "conflicted" : "completed",
             phase: direction === "update" ? "conflicted" : "completed",
-            undo_available: direction === "integrate",
             error:
               direction === "update" ? "Git has unresolved conflicts" : "",
             started_at: operationTimestamp,
@@ -116,7 +115,7 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }: Rou
       }
 
       const actionMatch = pathname.match(
-        /^\/api\/parent-operations\/([^/]+)\/(resolve-with-codex|abort|undo)$/,
+        /^\/api\/parent-operations\/([^/]+)\/(resolve-with-codex|abort)$/,
       );
       if (request.method !== "POST" || !actionMatch) return false;
 
@@ -157,9 +156,8 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }: Rou
         sendJson(response, 201, session);
         return true;
       }
-      operation.status = action === "abort" ? "aborted" : "undone";
+      operation.status = "aborted";
       operation.phase = operation.status;
-      operation.undo_available = false;
       sendJson(response, 200, operation);
       return true;
     },

@@ -13,7 +13,6 @@ import {
   Folder,
   FolderGit2,
   GitBranch,
-  GitMerge,
   GitPullRequestArrow,
   PanelsTopLeft,
   Pencil,
@@ -43,7 +42,6 @@ import type {
   Directory,
   ProjectDetail,
   ProjectRepository,
-  ParentOperationDirection,
   Session,
   SessionMenuState,
   Workspace,
@@ -130,7 +128,7 @@ export function WorkspaceSidebar({
   onFinishWorkspace: (stream: Workspace) => void;
   onParentOperation: (
     stream: Workspace,
-    direction: ParentOperationDirection,
+    direction: "update",
   ) => void;
   onRenameProject: (project: ProjectDetail) => void;
   onRenameWorkspace: (stream: Workspace) => void;
@@ -606,7 +604,7 @@ function SidebarOwnerContextMenu({
   onSync: (targetId: string | null, action: "pull" | "push") => void;
   onRename: () => void;
   onFinish: () => void;
-  onParentOperation: (direction: ParentOperationDirection) => void;
+  onParentOperation: (direction: "update") => void;
 }) {
   const { t } = useTranslation();
   const directories = stream?.directories ?? project.directories;
@@ -695,12 +693,6 @@ function SidebarOwnerContextMenu({
                 onClick={() => onParentOperation("update")}
               >
                 <GitPullRequestArrow />{t("workspaceUi.updateFromParent2")}</ContextMenuItem>
-              <ContextMenuItem
-                data-testid="integrate-into-parent-action"
-                disabled={busy}
-                onClick={() => onParentOperation("integrate")}
-              >
-                <GitMerge />{t("workspaceUi.integrateIntoParent2")}</ContextMenuItem>
             </ContextMenuGroup>
           </>
         )}

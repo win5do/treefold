@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE parent_operations SET phase='reopened' WHERE workspace_id=? AND status='completed'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "e33060d15005f72fdd9efe6f78a7201b2e5b6ded045fd1d2b24482f03bb15097"
+}

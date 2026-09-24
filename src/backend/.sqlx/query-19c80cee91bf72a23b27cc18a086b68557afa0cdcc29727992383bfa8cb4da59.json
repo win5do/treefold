@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM delivery_operations WHERE workspace_repository_id IN (SELECT id FROM workspace_repositories WHERE workspace_id=?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "19c80cee91bf72a23b27cc18a086b68557afa0cdcc29727992383bfa8cb4da59"
+}

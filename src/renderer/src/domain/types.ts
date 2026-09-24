@@ -377,7 +377,6 @@ export type ParentOperation = {
   phase: string;
   resolver_session_id?: string;
   delivery_operation_id?: string;
-  undo_available: boolean;
   error: string;
   started_at: string;
   updated_at: string;

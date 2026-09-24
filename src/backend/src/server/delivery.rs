@@ -78,10 +78,9 @@ pub(super) async fn finish_workspace_repository_impl(
             .store
             .latest_parent_operation(&location.id, "integrate")
             .await?;
-        if !previous
-            .as_ref()
-            .is_some_and(|operation| operation.status == "completed")
-        {
+        if !previous.as_ref().is_some_and(|operation| {
+            operation.status == "completed" && operation.phase != "reopened"
+        }) {
             let (target_path, target_branch) =
                 workspace_repository_delivery_target(&state, &workspace, &location).await?;
             let target_head = command_output(
@@ -188,7 +187,7 @@ pub(super) async fn finish_workspace_repository_impl(
         _ => unreachable!(),
     };
     if let Some(operation) = linked_operation.as_ref() {
-        consume_parent_operation(&state, operation).await?;
+        release_parent_operation_recovery(&state, operation).await?;
     }
     cleanup_finished_repository(
         &state,

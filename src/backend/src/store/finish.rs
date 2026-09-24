@@ -2,6 +2,38 @@ use super::*;
 use crate::model::FinishBatch;
 
 impl Store {
+    pub async fn reopen_fork(&self, id: &str) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let timestamp = now();
+        let changed = sqlx::query!("UPDATE workspaces SET status='active', updated_at=? WHERE id=? AND kind='fork' AND status='archived' AND EXISTS (SELECT 1 FROM workspaces parent WHERE parent.id=workspaces.parent_workspace_id AND parent.status='active') AND EXISTS (SELECT 1 FROM projects WHERE projects.id=workspaces.project_id AND projects.status='active')", timestamp, id)
+            .execute(&mut *tx).await?;
+        if changed.rows_affected() != 1 {
+            return Err(AppError::BadRequest(
+                "Fork is no longer available to reopen".into(),
+            ));
+        }
+        sqlx::query!("UPDATE workspace_repositories SET delivery_status='active', close_outcome=NULL, integrated_commit=NULL, closed_at=NULL, updated_at=? WHERE workspace_id=?", timestamp, id).execute(&mut *tx).await?;
+        // Keep historical operations, but never reuse a prior delivery as this round's result.
+        sqlx::query!("UPDATE parent_operations SET phase='reopened' WHERE workspace_id=? AND status='completed'", id).execute(&mut *tx).await?;
+        sqlx::query!(
+            "DELETE FROM workspace_finish_batches WHERE workspace_id=?",
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query!("DELETE FROM delivery_operations WHERE workspace_repository_id IN (SELECT id FROM workspace_repositories WHERE workspace_id=?)", id).execute(&mut *tx).await?;
+        sqlx::query!("DELETE FROM delivery_preflights WHERE workspace_repository_id IN (SELECT id FROM workspace_repositories WHERE workspace_id=?)", id).execute(&mut *tx).await?;
+        sqlx::query!(
+            "UPDATE todos SET status='in_progress', blocked_reason=NULL, updated_at=? WHERE fork_id=?",
+            timestamp,
+            id
+        )
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn finish_batch(&self, id: &str) -> Result<Option<FinishBatch>> {
         let row = sqlx::query!(
             "SELECT state FROM workspace_finish_batches WHERE workspace_id = ?",

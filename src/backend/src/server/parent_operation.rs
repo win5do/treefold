@@ -220,24 +220,6 @@ pub(super) async fn abort_parent_operation(
     .await
 }
 
-pub(super) async fn undo_parent_operation(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> Result<Json<ParentOperation>> {
-    let operation = state.store.parent_operation(&id).await?;
-    let common = state
-        .store
-        .repository(&operation.source_repository_id)
-        .await?
-        .git_common_dir;
-    blocking_git_operation_for(common, move || async move {
-        undo_parent_operation_impl(&state, &operation)
-            .await
-            .map(Json)
-    })
-    .await
-}
-
 pub(super) fn validate_parent_direction(direction: &str) -> Result<()> {
     if matches!(direction, "update" | "integrate") {
         Ok(())
@@ -425,7 +407,11 @@ pub(super) async fn start_parent_operation_impl(
             }
             return Ok(current);
         }
-        if origin == "finish" && current.origin == "finish" && current.status == "completed" {
+        if origin == "finish"
+            && current.origin == "finish"
+            && current.status == "completed"
+            && current.phase != "reopened"
+        {
             if current.strategy != strategy
                 || git_head(&current.source_path)? != current.source_head
             {
@@ -510,7 +496,6 @@ pub(super) async fn start_parent_operation_impl(
         phase: "prepared".into(),
         resolver_session_id: None,
         delivery_operation_id: delivery_operation_id.map(str::to_owned),
-        undo_available: false,
         error: String::new(),
         started_at: timestamp.clone(),
         updated_at: timestamp,
@@ -520,14 +505,6 @@ pub(super) async fn start_parent_operation_impl(
         let _ = delete_recovery_ref(&context.repository.path, &operation.recovery_ref);
         return Err(error);
     }
-    state
-        .store
-        .supersede_parent_operation_undo(
-            &operation.source_repository_id,
-            &operation.target_path,
-            &operation.id,
-        )
-        .await?;
     execute_parent_operation(state, &operation).await
 }
 
@@ -577,7 +554,6 @@ pub(super) async fn execute_parent_operation(
                     result_head: None,
                     error: &error,
                     terminal: false,
-                    undo_available: false,
                 })
                 .await?;
             state.store.parent_operation(&operation.id).await
@@ -601,7 +577,6 @@ pub(super) async fn execute_parent_operation(
                         result_head: None,
                         error: &error,
                         terminal: true,
-                        undo_available: false,
                     })
                     .await?;
                 Err(AppError::BadRequest(error))
@@ -615,7 +590,6 @@ pub(super) async fn execute_parent_operation(
                         result_head: None,
                         error: &error,
                         terminal: false,
-                        undo_available: false,
                     })
                     .await?;
                 state.store.parent_operation(&operation.id).await
@@ -632,6 +606,9 @@ pub(super) async fn reconcile_parent_operation(
         operation.status.as_str(),
         "completed" | "aborted" | "undone" | "failed"
     ) {
+        if operation.status == "completed" {
+            release_parent_operation_recovery(state, operation).await?;
+        }
         return Ok(operation.clone());
     }
     if operation.strategy == "squash" {
@@ -666,7 +643,6 @@ pub(super) async fn reconcile_parent_operation(
                     ""
                 },
                 terminal: false,
-                undo_available: false,
             })
             .await?;
         return state.store.parent_operation(&operation.id).await;
@@ -691,7 +667,6 @@ pub(super) async fn reconcile_parent_operation(
                     operation.target_branch, current_branch
                 ),
                 terminal: false,
-                undo_available: false,
             })
             .await?;
         return state.store.parent_operation(&operation.id).await;
@@ -734,7 +709,6 @@ pub(super) async fn reconcile_parent_operation(
                 result_head: Some(&current_head),
                 error: "",
                 terminal: true,
-                undo_available: operation.origin != "finish",
             })
             .await?;
     } else if current_head == operation.before_head
@@ -749,7 +723,6 @@ pub(super) async fn reconcile_parent_operation(
                 result_head: None,
                 error: "",
                 terminal: true,
-                undo_available: false,
             })
             .await?;
     } else {
@@ -762,11 +735,14 @@ pub(super) async fn reconcile_parent_operation(
                 result_head: Some(&current_head),
                 error: "Git operation ended but the fixed heads or merge parents do not match",
                 terminal: false,
-                undo_available: false,
             })
             .await?;
     }
-    state.store.parent_operation(&operation.id).await
+    let current = state.store.parent_operation(&operation.id).await?;
+    if current.status == "completed" {
+        release_parent_operation_recovery(state, &current).await?;
+    }
+    Ok(current)
 }
 
 pub(super) async fn abort_parent_operation_impl(
@@ -779,7 +755,7 @@ pub(super) async fn abort_parent_operation_impl(
     }
     if operation.status == "completed" {
         return Err(AppError::BadRequest(
-            "completed operation must be undone, not aborted".into(),
+            "completed operations cannot be aborted".into(),
         ));
     }
     ensure_checked_out_branch(
@@ -830,71 +806,12 @@ pub(super) async fn abort_parent_operation_impl(
             result_head: None,
             error: "",
             terminal: true,
-            undo_available: false,
         })
         .await?;
     state.store.parent_operation(&operation.id).await
 }
 
-pub(super) async fn undo_parent_operation_impl(
-    state: &AppState,
-    operation: &ParentOperation,
-) -> Result<ParentOperation> {
-    let operation = reconcile_parent_operation(state, operation).await?;
-    if operation.status == "undone" {
-        return Ok(operation);
-    }
-    if operation.origin == "finish" || operation.status != "completed" || !operation.undo_available
-    {
-        return Err(AppError::BadRequest(
-            "this operation is no longer safe to undo".into(),
-        ));
-    }
-    ensure_clean_workspace(&operation.target_path, "operation target")?;
-    ensure_checked_out_branch(
-        &operation.target_path,
-        &operation.target_branch,
-        "operation target",
-    )?;
-    let result_head = operation
-        .result_head
-        .as_deref()
-        .ok_or_else(|| AppError::BadRequest("completed operation has no result HEAD".into()))?;
-    if git_head(&operation.target_path)? != result_head {
-        return Err(AppError::BadRequest(
-            "target HEAD moved after the operation".into(),
-        ));
-    }
-    command_output(
-        Path::new(&operation.target_path),
-        "git",
-        &["reset", "--hard", &operation.recovery_ref],
-    )
-    .map_err(|error| AppError::BadRequest(format!("undo parent operation: {error}")))?;
-    delete_recovery_ref(
-        &state
-            .store
-            .repository_as_directory(&operation.source_repository_id)
-            .await?
-            .path,
-        &operation.recovery_ref,
-    )?;
-    state
-        .store
-        .update_parent_operation(ParentOperationUpdate {
-            id: &operation.id,
-            status: "undone",
-            phase: "undone",
-            result_head: Some(&operation.before_head),
-            error: "",
-            terminal: true,
-            undo_available: false,
-        })
-        .await?;
-    state.store.parent_operation(&operation.id).await
-}
-
-pub(super) async fn consume_parent_operation(
+pub(super) async fn release_parent_operation_recovery(
     state: &AppState,
     operation: &ParentOperation,
 ) -> Result<()> {
@@ -906,10 +823,7 @@ pub(super) async fn consume_parent_operation(
             .path,
         &operation.recovery_ref,
     )?;
-    state
-        .store
-        .consume_parent_operation_undo(&operation.id)
-        .await
+    Ok(())
 }
 
 pub(super) async fn parent_operation_outcome(

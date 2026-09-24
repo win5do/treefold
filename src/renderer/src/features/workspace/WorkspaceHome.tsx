@@ -1,3 +1,4 @@
+import { ReopenForkButton } from "./ReopenForkButton";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { NewSessionDialog } from "@/features/terminal/NewSessionDialog";
 import { useTranslation } from "react-i18next";
@@ -157,6 +158,9 @@ export function WorkspaceHome({
             </p>
           </div>
         </div>
+        {detail.kind === "fork" && detail.status === "archived" && (
+          <div className="mt-4"><ReopenForkButton id={detail.id} /></div>
+        )}
         {detail.finish_batch && detail.finish_batch.status !== "completed" && (
           <Alert className="mt-6">
             <CircleAlert />

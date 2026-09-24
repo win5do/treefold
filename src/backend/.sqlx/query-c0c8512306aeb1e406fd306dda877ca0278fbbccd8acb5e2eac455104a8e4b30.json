@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM workspace_finish_batches WHERE workspace_id=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "c0c8512306aeb1e406fd306dda877ca0278fbbccd8acb5e2eac455104a8e4b30"
+}

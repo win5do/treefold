@@ -14,6 +14,7 @@ import {
 import {
   Field,
   FieldGroup,
+  FieldDescription,
   FieldLabel,
   FieldLegend,
   FieldSet,
@@ -86,6 +87,16 @@ export function FinishWorkspaceDialog({
             )}
           </DialogDescription>
         </DialogHeader>
+        {workspace?.kind === "fork" && !flow.batch && (
+          <Field>
+            <Field orientation="horizontal">
+              <Checkbox id="finish-preserve-checkout" checked={flow.preserveCheckout}
+                disabled={flow.busy} onCheckedChange={flow.setPreserveCheckout} />
+              <FieldLabel htmlFor="finish-preserve-checkout">{t("deliveryUi.preserveCheckout")}</FieldLabel>
+            </Field>
+            <FieldDescription>{t("deliveryUi.preserveCheckoutDescription")}</FieldDescription>
+          </Field>
+        )}
         {!flow.loaded ? (
           <p>{t("states.checking")}</p>
         ) : !repositories.length && !flow.batch ? (
@@ -343,7 +354,8 @@ export function FinishWorkspaceDialog({
                               <Field orientation="horizontal">
                                 <Checkbox
                                   id={`finish-worktree-${item.id}`}
-                                  checked={draft.delete_worktree}
+                                  checked={!flow.preserveCheckout && draft.delete_worktree}
+                                  disabled={flow.preserveCheckout}
                                   onCheckedChange={(value) =>
                                     flow.update(item.id, {
                                       delete_worktree: value,
@@ -361,8 +373,8 @@ export function FinishWorkspaceDialog({
                               <Field orientation="horizontal">
                                 <Checkbox
                                   id={`finish-branch-${item.id}`}
-                                  checked={draft.delete_branch}
-                                  disabled={!draft.delete_worktree}
+                                  checked={!flow.preserveCheckout && draft.delete_branch}
+                                  disabled={flow.preserveCheckout || !draft.delete_worktree}
                                   onCheckedChange={(value) =>
                                     flow.update(item.id, {
                                       delete_branch: value,

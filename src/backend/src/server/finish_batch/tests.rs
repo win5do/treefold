@@ -4,7 +4,7 @@ use crate::{
     model::{Workspace, WorkspaceRepository},
     server::{
         CreateProject, CreateWorkspace, RuntimeHub, command_output, create_project,
-        create_workspace, git_head, reconcile_parent_operation, undo_parent_operation_impl,
+        create_workspace, git_head, reconcile_parent_operation,
     },
     settings::SettingsStore,
     store::Store,
@@ -212,12 +212,6 @@ async fn finish_batch_conflict_preserves_all_worktrees_and_resumes_after_restart
         .await
         .unwrap()
         .unwrap();
-    assert!(!first_operation.undo_available);
-    assert!(
-        undo_parent_operation_impl(&f.state, &first_operation)
-            .await
-            .is_err()
-    );
     // Simulate a fresh server and reconcile a manually resolved parent conflict.
     let restarted = state(&f._directory.path().join("home")).await;
     std::fs::write(f.roots[1].join("shared.txt"), "resolved\n").unwrap();
@@ -234,7 +228,7 @@ async fn finish_batch_conflict_preserves_all_worktrees_and_resumes_after_restart
     let completed = reconcile_parent_operation(&restarted, &operation)
         .await
         .unwrap();
-    assert!(!completed.undo_available);
+    assert_eq!(completed.status, "completed");
     run_batch(&restarted, paused, true).await.unwrap();
     let finished = saved(&f).await;
     assert_eq!(finished.status, "completed");
@@ -904,8 +898,9 @@ async fn squash_migration_preserves_existing_delivery_records_and_indexes() {
         .next()
         .unwrap();
     let (columns, indexes) = schema.split_once("CREATE INDEX").unwrap();
+    let retained_columns = "id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,error,started_at,updated_at,completed_at";
     let old_schema = format!(
-        "CREATE TABLE parent_operations_old ({columns}INSERT INTO parent_operations_old SELECT * FROM parent_operations; DROP TABLE parent_operations; ALTER TABLE parent_operations_old RENAME TO parent_operations; CREATE INDEX{indexes}"
+        "CREATE TABLE parent_operations_old ({columns}INSERT INTO parent_operations_old ({retained_columns}) SELECT {retained_columns} FROM parent_operations; DROP TABLE parent_operations; ALTER TABLE parent_operations_old RENAME TO parent_operations; CREATE INDEX{indexes}"
     );
     sqlx::raw_sql(sqlx::AssertSqlSafe(old_schema))
         .execute(&mut connection)
@@ -913,6 +908,12 @@ async fn squash_migration_preserves_existing_delivery_records_and_indexes() {
         .unwrap();
     sqlx::raw_sql(include_str!(
         "../../../migrations/g1/20260923090000_parent_operation_squash.sql"
+    ))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    sqlx::raw_sql(include_str!(
+        "../../../migrations/g1/20260924060807_remove_parent_operation_undo.sql"
     ))
     .execute(&mut connection)
     .await
@@ -1197,4 +1198,219 @@ async fn project_sync_uses_current_branch_upstream_instead_of_default_names() {
             .to_string()
             .contains("detached HEAD")
     );
+}
+
+#[tokio::test]
+async fn finish_retained_fork_reopens_and_delivers_new_work_without_reusing_old_result() {
+    for strategy in ["local_merge", "squash_merge"] {
+        let mut f = fixture().await;
+        let parent_id = f.workspace.id.clone();
+        let created = crate::server::fork::create_fork_impl(
+            f.state.clone(),
+            parent_id.clone(),
+            crate::server::fork::CreateFork {
+                description: Some("Retained task".into()),
+                branch: Some("task/retained".into()),
+                generated_branch: None,
+            },
+        )
+        .await
+        .unwrap();
+        f.workspace = created.workspace;
+        f.repositories = f
+            .state
+            .store
+            .workspace_repositories(&f.workspace.id)
+            .await
+            .unwrap();
+        let todo = crate::model::Todo {
+            id: crate::ids::new_id(),
+            workspace_id: parent_id.clone(),
+            content: "Retained subtask".into(),
+            status: "in_progress".into(),
+            fork_id: Some(f.workspace.id.clone()),
+            blocked_reason: None,
+            created_at: crate::store::now(),
+            updated_at: crate::store::now(),
+        };
+        f.state.store.create_todo(&todo).await.unwrap();
+        let source = f.repositories[0].checkout_path.clone().unwrap();
+        commit(Path::new(&source), "first.txt", "first delivery\n");
+        let mut plan = plans(&f).await;
+        for item in &mut plan {
+            item.code_action = strategy.into();
+            item.delete_worktree = false;
+            item.delete_branch = false;
+            let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
+                f.state.clone(),
+                item.repository_id.clone(),
+                CreateDeliveryPreflight {
+                    code_action: strategy.into(),
+                },
+            )
+            .await
+            .unwrap();
+            item.preflight_id = preflight.id;
+        }
+        let first = prepare_batch(&f.state, &f.workspace.id, plan)
+            .await
+            .unwrap();
+        run_batch(&f.state, first, false).await.unwrap();
+        assert_eq!(saved(&f).await.status, "completed");
+        assert_eq!(
+            f.state
+                .store
+                .workspace(&f.workspace.id)
+                .await
+                .unwrap()
+                .status,
+            "archived"
+        );
+        assert!(Path::new(&source).is_dir());
+        let old = f
+            .state
+            .store
+            .latest_parent_operation(&f.repositories[0].id, "integrate")
+            .await
+            .unwrap()
+            .unwrap();
+        // Reopening must validate every retained checkout before changing any state.
+        let missing = f.repositories[1].checkout_path.as_ref().unwrap();
+        let moved = format!("{missing}-temporarily-moved");
+        std::fs::rename(missing, &moved).unwrap();
+        assert!(
+            crate::server::reopen::reopen_fork_impl(&f.state, &f.workspace.id)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            f.state
+                .store
+                .workspace(&f.workspace.id)
+                .await
+                .unwrap()
+                .status,
+            "archived"
+        );
+        assert!(
+            f.state
+                .store
+                .workspace_repositories(&f.workspace.id)
+                .await
+                .unwrap()
+                .iter()
+                .all(|r| r.delivery_status == "delivered")
+        );
+        std::fs::rename(&moved, missing).unwrap();
+        // A saved parent Finish blocks reactivation, even when no worker is running.
+        f.state
+            .store
+            .save_finish_batch(&FinishBatch {
+                workspace_id: parent_id.clone(),
+                status: "paused".into(),
+                items: vec![],
+                error: None,
+            })
+            .await
+            .unwrap();
+        assert!(
+            crate::server::reopen::reopen_fork_impl(&f.state, &f.workspace.id)
+                .await
+                .is_err()
+        );
+        sqlx::query("DELETE FROM workspace_finish_batches WHERE workspace_id=?")
+            .bind(&parent_id)
+            .execute(&f.state.store.pool)
+            .await
+            .unwrap();
+        use tower::ServiceExt;
+        let response = crate::server::app(f.state.clone())
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/workspaces/{}/reopen", f.workspace.id))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let reopened: Workspace = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(reopened.status, "active");
+        assert_eq!(
+            f.state.store.todo(&todo.id).await.unwrap().status,
+            "in_progress"
+        );
+        assert!(
+            f.state
+                .store
+                .finish_batch(&f.workspace.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            f.state
+                .store
+                .workspace_repositories(&f.workspace.id)
+                .await
+                .unwrap()
+                .iter()
+                .all(|r| r.delivery_status == "active" && r.closed_at.is_none())
+        );
+        assert_eq!(
+            f.state.store.parent_operation(&old.id).await.unwrap().phase,
+            "reopened"
+        );
+        commit(Path::new(&source), "second.txt", "second delivery\n");
+        // A new preflight and operation must be created even after a previous Squash.
+        let next = batch(&f).await;
+        run_batch(&f.state, next, false).await.unwrap();
+        assert_eq!(saved(&f).await.status, "completed");
+        let new = f
+            .state
+            .store
+            .latest_parent_operation(&f.repositories[0].id, "integrate")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_ne!(new.id, old.id);
+        let parent = f
+            .state
+            .store
+            .workspace_repositories(&parent_id)
+            .await
+            .unwrap();
+        let target = parent
+            .iter()
+            .find(|r| r.project_repository_id == f.repositories[0].project_repository_id)
+            .unwrap()
+            .checkout_path
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(Path::new(target).join("second.txt")).unwrap(),
+            "second delivery\n"
+        );
+        // This Finish cleaned up: reopening must fail without mutating archived state.
+        assert!(
+            crate::server::reopen::reopen_fork_impl(&f.state, &f.workspace.id)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            f.state
+                .store
+                .workspace(&f.workspace.id)
+                .await
+                .unwrap()
+                .status,
+            "archived"
+        );
+    }
 }

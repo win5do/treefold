@@ -24,6 +24,8 @@ export const workspacesApi = {
     request<WorkspaceDetail>(`/api/workspaces/${id}`, { signal }),
   update: (id: string, json: unknown) =>
     request<Workspace>(`/api/workspaces/${id}`, { method: "PATCH", json }),
+  reopen: (id: string) =>
+    request<Workspace>(`/api/workspaces/${id}/reopen`, { method: "POST" }),
   delete: (id: string) =>
     request(`/api/workspaces/${id}`, { method: "DELETE" }),
   createFork: (id: string, json: unknown) =>
@@ -91,10 +93,6 @@ export const workspacesApi = {
     }),
   abortParentOperation: (id: string) =>
     request<ParentOperation>(`/api/parent-operations/${id}/abort`, {
-      method: "POST",
-    }),
-  undoParentOperation: (id: string) =>
-    request<ParentOperation>(`/api/parent-operations/${id}/undo`, {
       method: "POST",
     }),
   preflight: (id: string, codeAction: string, signal?: AbortSignal) =>
