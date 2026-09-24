@@ -20,13 +20,13 @@ mod current_workspace_tests {
         command_output, create_delivery_preflight_impl, create_directory, create_fork,
         create_project, create_project_session, create_session, create_workspace,
         create_workspace_repository_preflight_impl, delete_project, delete_project_directory,
-        finish_workspace_impl, finish_workspace_repository_impl, get_project, git_head,
-        git_is_ancestor, git_worktrees, inspect_project_path_value, managed_repository_source_path,
-        normalized_path, parse_git_history, parse_git_worktrees, pull_workspace, push_workspace,
-        reconcile_parent_operation, reconcile_process, refresh_project_directory,
-        repository_name_from_url, repository_slug, reveal_in_file_manager, slug,
-        start_parent_operation_impl, stop_amux, stop_session, update_project,
-        update_workspace_repository,
+        ensure_checked_out_branch, finish_workspace_impl, finish_workspace_repository_impl,
+        get_project, git_head, git_is_ancestor, git_worktrees, inspect_project_path_value,
+        managed_repository_source_path, normalized_path, parse_git_history, parse_git_worktrees,
+        pull_workspace, push_workspace, rebase_in_progress, reconcile_parent_operation,
+        reconcile_process, refresh_project_directory, repository_name_from_url, repository_slug,
+        reveal_in_file_manager, slug, start_parent_operation_impl, stop_amux, stop_session,
+        update_project, update_workspace_repository,
     };
     use crate::{
         model::{Session, Todo},
@@ -1811,6 +1811,60 @@ mod current_workspace_tests {
             git_head(&fork.checkout_path).unwrap(),
             conflicted.before_head
         );
+
+        let rebasing = start_parent_operation_impl(
+            &restarted,
+            &fork_location.id,
+            "update",
+            "rebase",
+            "standalone",
+            None,
+        )
+        .await
+        .expect("start conflicting rebase");
+        assert_eq!(rebasing.status, "conflicted");
+        assert!(
+            command_output(
+                Path::new(&fork.checkout_path),
+                "git",
+                &["branch", "--show-current"]
+            )
+            .unwrap()
+            .is_empty()
+        );
+        let rebase_path = PathBuf::from(
+            command_output(
+                Path::new(&fork.checkout_path),
+                "git",
+                &["rev-parse", "--git-path", "rebase-merge"],
+            )
+            .unwrap(),
+        );
+        let head_name = rebase_path.join("head-name");
+        let original_name = std::fs::read_to_string(&head_name).unwrap();
+        std::fs::write(&head_name, "refs/heads/another-branch\n").unwrap();
+        let error = abort_parent_operation_impl(&restarted, &rebasing)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("does not match the recorded operation")
+        );
+        assert!(rebase_in_progress(&fork.checkout_path).unwrap());
+        std::fs::write(&head_name, original_name).unwrap();
+        let aborted = abort_parent_operation_impl(&restarted, &rebasing)
+            .await
+            .expect("abort detached rebase");
+        assert_eq!(aborted.status, "aborted");
+        assert!(!rebase_in_progress(&fork.checkout_path).unwrap());
+        assert_eq!(git_head(&fork.checkout_path).unwrap(), rebasing.before_head);
+        ensure_checked_out_branch(
+            &fork.checkout_path,
+            &rebasing.target_branch,
+            "restored Fork",
+        )
+        .unwrap();
 
         let workspace_repository = state
             .store

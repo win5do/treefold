@@ -751,6 +751,47 @@ pub(super) async fn reconcile_parent_operation(
     Ok(current)
 }
 
+fn ensure_rebase_matches_operation(operation: &ParentOperation) -> Result<()> {
+    for directory in ["rebase-merge", "rebase-apply"] {
+        let path = command_output(
+            Path::new(&operation.target_path),
+            "git",
+            &["rev-parse", "--git-path", directory],
+        )
+        .map_err(AppError::BadRequest)?;
+        let path = PathBuf::from(path);
+        let path = if path.is_absolute() {
+            path
+        } else {
+            Path::new(&operation.target_path).join(path)
+        };
+        if !path.is_dir() {
+            continue;
+        }
+        for (file, expected) in [
+            (
+                "head-name",
+                format!("refs/heads/{}", operation.target_branch),
+            ),
+            ("orig-head", operation.before_head.clone()),
+            ("onto", operation.parent_head.clone()),
+        ] {
+            let actual = std::fs::read_to_string(path.join(file)).map_err(|error| {
+                AppError::BadRequest(format!("Cannot verify active rebase {file}: {error}"))
+            })?;
+            if actual.trim() != expected {
+                return Err(AppError::BadRequest(format!(
+                    "Active rebase {file} does not match the recorded operation"
+                )));
+            }
+        }
+        return Ok(());
+    }
+    Err(AppError::BadRequest(
+        "No matching active rebase was found".into(),
+    ))
+}
+
 pub(super) async fn abort_parent_operation_impl(
     state: &AppState,
     operation: &ParentOperation,
@@ -764,11 +805,15 @@ pub(super) async fn abort_parent_operation_impl(
             "completed operations cannot be aborted".into(),
         ));
     }
-    ensure_checked_out_branch(
-        &operation.target_path,
-        &operation.target_branch,
-        "operation target",
-    )?;
+    if operation.strategy == "rebase" && rebase_in_progress(&operation.target_path)? {
+        ensure_rebase_matches_operation(&operation)?;
+    } else {
+        ensure_checked_out_branch(
+            &operation.target_path,
+            &operation.target_branch,
+            "operation target",
+        )?;
+    }
     if operation.strategy == "squash" && git_head(&operation.target_path)? != operation.before_head
     {
         return Err(AppError::BadRequest(
@@ -784,6 +829,11 @@ pub(super) async fn abort_parent_operation_impl(
         command_output(Path::new(&operation.target_path), "git", &args)
             .map_err(|error| AppError::BadRequest(format!("abort Git operation: {error}")))?;
     }
+    ensure_checked_out_branch(
+        &operation.target_path,
+        &operation.target_branch,
+        "operation target",
+    )?;
     command_output(
         Path::new(&operation.target_path),
         "git",
