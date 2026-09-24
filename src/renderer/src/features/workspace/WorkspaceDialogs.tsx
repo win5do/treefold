@@ -339,10 +339,10 @@ export function ConfigureWorkspaceRepositoryDialog({
   return (
     <Dialog open={Boolean(location)} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle className="text-lg font-semibold">
+        <DialogTitle>
           {t(location?.remote_branch ? "workspaceUi.changeUpstream" : "workspaceUi.setUpstream")}
         </DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">
+        <DialogDescription className="mt-1">
           {t("workspaceUi.configureUpstream", { name: location?.repository_name })}
         </DialogDescription>
         {location && (
@@ -355,25 +355,29 @@ export function ConfigureWorkspaceRepositoryDialog({
             className="mt-6 flex flex-col gap-3"
             onSubmit={onSubmit}
           >
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block text-[11px] text-muted-foreground">{t("workspaceUi.remote")}<Input
-                  className="mt-1 font-mono text-xs"
+            <FieldGroup className="grid grid-cols-2 gap-3">
+              <Field>
+                <FieldLabel htmlFor="workspace-upstream-remote">{t("workspaceUi.remote")}</FieldLabel>
+                <Input
+                  id="workspace-upstream-remote"
                   name="remote_name"
                   defaultValue={location.remote_name ?? ""}
                   placeholder="origin"
                   required
                 />
-              </label>
-              <label className="block text-[11px] text-muted-foreground">{t("workspaceUi.remoteFeatureBranch")}<Input
-                  className="mt-1 font-mono text-xs"
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="workspace-upstream-branch">{t("workspaceUi.remoteFeatureBranch")}</FieldLabel>
+                <Input
+                  id="workspace-upstream-branch"
                   name="remote_branch"
                   defaultValue={location.remote_branch ?? ""}
                   placeholder={location.branch || "feature/my-change"}
                   required
                 />
-              </label>
-            </div>
-            <p className="rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground">{t("workspaceUi.upstreamDescription")}</p>
+              </Field>
+            </FieldGroup>
+            <FieldDescription className="rounded-lg bg-muted/50 px-3 py-2">{t("workspaceUi.upstreamDescription")}</FieldDescription>
             <div className="flex justify-end">
               <Button type="submit" disabled={busy}>{t("workspaceUi.saveUpstream")}</Button>
             </div>

@@ -163,7 +163,7 @@ export function CreateProjectDialog({
             <Field>
               <FieldLabel htmlFor="project-path">{t("projectsUi.projectPath")}</FieldLabel>
               <div className="flex gap-2">
-                <Input id="project-path" className="min-w-0 flex-1 font-mono text-xs" value={path} title={path}
+                <Input id="project-path" className="min-w-0 flex-1" value={path} title={path}
                   onChange={(event) => { setPath(event.target.value); setChecking(Boolean(event.target.value.trim())); }}
                   placeholder="/absolute/path/to/project" />
                 <Button type="button" variant="secondary" disabled={busy || picking} onClick={() => void choosePath()}>
@@ -176,14 +176,14 @@ export function CreateProjectDialog({
           </FieldGroup>
           {candidates.length > 0 && <div className="min-w-0 max-h-[40vh] overflow-y-auto rounded-lg border p-2">
             <p className="px-2 py-1 text-xs text-muted-foreground">{t("projectsUi.confirmLocations")}</p>
-            {candidates.map((candidate) => <div key={candidate.path} className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm">
+            {candidates.map((candidate) => <div key={candidate.path} className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2">
               <input type="checkbox" aria-label={t("projectsUi.includeLocation", { name: candidate.path })}
                 checked={selected.includes(candidate.path)} onChange={(event) => {
                   const next = event.target.checked ? [...selected, candidate.path] : selected.filter((value) => value !== candidate.path);
                   setSelected(next);
                   if (!next.includes(primary)) setPrimary(candidates.find((item) => item.is_git && next.includes(item.path))?.path ?? "");
                 }} />
-              <span className="min-w-0 flex-1 truncate font-mono text-xs" title={candidate.path}>
+              <span className="min-w-0 flex-1 truncate" title={candidate.path}>
                 {compactPath(candidate.path)}
                 {candidate.repository_root && candidate.repository_root !== candidate.path &&
                   <span className="block truncate text-muted-foreground" title={candidate.repository_root}>{t("projectsUi.repositoryRoot", { path: compactPath(candidate.repository_root) })}</span>}
@@ -300,7 +300,7 @@ export function AddDirectoryDialog({
           <Field className="min-w-0">
             <FieldLabel htmlFor="project-location-path">{t("projectsUi.projectPath")}</FieldLabel>
             <div className="flex min-w-0 gap-2">
-              <Input id="project-location-path" className="min-w-0 flex-1 font-mono text-xs"
+              <Input id="project-location-path" className="min-w-0 flex-1"
                 value={path} title={path} disabled={busy} onChange={(event) => setPath(event.target.value)} placeholder="/absolute/path/to/location" />
               <Button type="button" variant="secondary" disabled={busy || picking} onClick={() => void choosePath()}>
                 <FolderOpen data-icon="inline-start" />{t("projectsUi.choose")}
@@ -315,11 +315,11 @@ export function AddDirectoryDialog({
               const isGit = location.source === "url" || location.inspection?.git_status === "ready";
               const exists = project?.directories.some((directory) => directory.path === location.path);
               const root = location.inspection?.source_root;
-              return <label key={location.key} data-testid="location-draft-row" className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm">
+              return <label key={location.key} data-testid="location-draft-row" className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2">
                 <input type="checkbox" aria-label={t("projectsUi.includeLocation", { name: location.path })}
                   disabled={busy || checking || exists} checked={selected.includes(location.key)}
                   onChange={(event) => setSelected((current) => event.target.checked ? [...current, location.key] : current.filter((key) => key !== location.key))} />
-                <span className="min-w-0 flex-1 truncate font-mono text-xs" title={location.path}>
+                <span className="min-w-0 flex-1 truncate" title={location.path}>
                   {location.source === "url" ? location.path : compactPath(location.path)}
                   {root && root !== location.path && <span className="block truncate text-muted-foreground" title={root}>{t("projectsUi.repositoryRoot", { path: compactPath(root) })}</span>}
                 </span>
@@ -352,10 +352,10 @@ export function EditDirectoryDialog({
   return (
     <Dialog open={Boolean(directory)} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle className="text-lg font-semibold">
+        <DialogTitle>
           {directory?.name}
         </DialogTitle>
-        <DialogDescription className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+        <DialogDescription className="mt-1 truncate">
           {directory?.path}
         </DialogDescription>
         {directory && (
@@ -439,10 +439,10 @@ export function EditRepositoryDialog({
   return (
     <Dialog open={Boolean(repository)} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle className="text-lg font-semibold">
+        <DialogTitle>
           {repository?.name}
         </DialogTitle>
-        <DialogDescription className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+        <DialogDescription className="mt-1 truncate">
           {t("projectsUi.repositorySettings", { name: repository?.source_root })}
         </DialogDescription>
         {repository && (
@@ -467,7 +467,6 @@ export function EditRepositoryDialog({
                 <FieldLabel htmlFor="repository-setup-workdir">{t("projectsUi.setupWorkingDirectory")}</FieldLabel>
                 <Input
                   id="repository-setup-workdir"
-                  className="font-mono text-xs"
                   name="setup_workdir"
                   defaultValue={repository.setup_workdir || "."}
                   required
@@ -479,7 +478,7 @@ export function EditRepositoryDialog({
                   <FieldLabel htmlFor="repository-base-branch">{t("projectsUi.baseBranch")}</FieldLabel>
                   <Select
                     id="repository-base-branch"
-                    className="w-full font-mono"
+                    className="w-full"
                     name="base_branch"
                     value={baseBranch}
                     onChange={(event) => setBaseBranch(event.target.value)}
@@ -509,7 +508,7 @@ export function EditRepositoryDialog({
                   </FieldLabel>
                   <Select
                     id="repository-base-remote"
-                    className="w-full font-mono"
+                    className="w-full"
                     name="base_remote"
                     value={baseRemote}
                     onChange={(event) => setBaseRemote(event.target.value)}

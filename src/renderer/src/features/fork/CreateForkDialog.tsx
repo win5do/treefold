@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { BranchNameField } from "@/features/git/BranchNameField";
 import type { Workspace } from "@/domain/types";
@@ -18,9 +18,9 @@ export function CreateForkDialog({ workspace, busy, onOpenChange, onSubmit }: {
   return (
     <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle className="flex items-center gap-2 text-lg font-semibold">
-          <GitBranch className="size-5" />{t("forkUi.forkWork")}</DialogTitle>
-        <DialogDescription className="mt-1 text-sm text-muted-foreground">
+        <DialogTitle className="flex items-center gap-2">
+          <GitBranch className="size-4" />{t("forkUi.forkWork")}</DialogTitle>
+        <DialogDescription className="mt-1">
           {t("forkUi.createDescription", { name: workspace?.name })}
         </DialogDescription>
         <form key={workspace?.id ?? "closed"} className="mt-6 flex flex-col gap-3" onSubmit={onSubmit}>
@@ -31,7 +31,7 @@ export function CreateForkDialog({ workspace, busy, onOpenChange, onSubmit }: {
             </Field>
             <BranchNameField />
           </FieldGroup>
-          <div className="rounded-lg bg-muted/50 px-3 py-2 text-[11px] text-muted-foreground">{t("forkUi.parentRequirement")}</div>
+          <FieldDescription className="rounded-lg bg-muted/50 px-3 py-2">{t("forkUi.parentRequirement")}</FieldDescription>
           <div className="flex justify-end"><Button type="submit" disabled={busy}>{t("forkUi.createFork")}</Button></div>
         </form>
       </DialogContent>
