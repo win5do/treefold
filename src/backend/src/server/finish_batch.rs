@@ -141,15 +141,17 @@ pub(super) async fn prepare_batch_with_mode(
         ));
     }
     if continue_work
-        && (workspace.kind != "fork"
-            || plans.is_empty()
-            || plans
-                .iter()
-                .any(|p| p.code_action != "local_merge" || p.delete_worktree || p.delete_branch))
+        && (plans.is_empty()
+            || plans.iter().any(|p| {
+                !matches!(p.code_action.as_str(), "local_merge" | "push_branch")
+                    || (workspace.kind == "fork" && p.code_action == "push_branch")
+                    || p.delete_worktree
+                    || p.delete_branch
+            }))
     {
-        return Err(AppError::BadRequest("Intermediate delivery only supports ordinary merge for a Fork, retaining all checkouts and branches".into()));
+        return Err(AppError::BadRequest("Intermediate delivery supports ordinary merge or Workspace feature push, retaining all checkouts and branches".into()));
     }
-    if workspace.kind == "fork" {
+    {
         let mut actions = plans
             .iter()
             .filter(|p| p.code_action != "skip")
@@ -157,7 +159,7 @@ pub(super) async fn prepare_batch_with_mode(
         if let Some(first) = actions.next() {
             if actions.any(|action| action != first) {
                 return Err(AppError::BadRequest(
-                    "Use one delivery strategy for the entire Fork".into(),
+                    "Use one delivery strategy for the entire Workspace or Fork".into(),
                 ));
             }
         }

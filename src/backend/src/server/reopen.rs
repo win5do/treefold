@@ -8,7 +8,7 @@ fn unavailable() -> AppError {
     AppError::api(
         StatusCode::CONFLICT,
         "FORK_REOPEN_UNAVAILABLE",
-        "Only archived Forks with retained checkouts and active parents can be reopened",
+        "Only archived Workspaces or Forks with retained checkouts and active parents can be reopened",
     )
 }
 
@@ -26,11 +26,12 @@ pub(super) async fn reopen_fork(
     // A parent Finish must not pass its active-Fork check while this Fork reopens.
     let workers = super::finish_batch::workers().lock().await;
     let workspace = state.store.workspace(&id).await?;
-    let parent_id = workspace
-        .parent_workspace_id
-        .as_deref()
-        .ok_or_else(unavailable)?;
-    if workers.contains(&id) || workers.contains(parent_id) {
+    if workers.contains(&id)
+        || workspace
+            .parent_workspace_id
+            .as_ref()
+            .is_some_and(|parent| workers.contains(parent))
+    {
         return Err(unavailable());
     }
     if !options.confirm_squash && state.store.has_squash_delivery(&id).await? {
@@ -46,23 +47,28 @@ pub(super) async fn reopen_fork(
 
 pub(super) async fn reopen_fork_impl(state: &AppState, id: &str) -> Result<Workspace> {
     let workspace = state.store.workspace(id).await?;
-    if workspace.kind != "fork"
+    if !matches!(workspace.kind.as_str(), "workspace" | "fork")
         || workspace.status != "archived"
         || state.store.project(&workspace.project_id).await?.status != "active"
     {
         return Err(unavailable());
     }
-    let parent_id = workspace
-        .parent_workspace_id
-        .as_deref()
-        .ok_or_else(unavailable)?;
-    if state.store.workspace(parent_id).await?.status != "active"
-        || state.store.finish_batch(parent_id).await?.is_some()
-        || state
-            .store
-            .finish_batch(id)
-            .await?
-            .is_some_and(|batch| batch.status != "completed")
+    if let Some(parent_id) = workspace.parent_workspace_id.as_deref() {
+        if state.store.workspace(parent_id).await?.status != "active"
+            || state
+                .store
+                .finish_batch(parent_id)
+                .await?
+                .is_some_and(|b| !b.continue_work || b.status != "completed")
+        {
+            return Err(unavailable());
+        }
+    }
+    if state
+        .store
+        .finish_batch(id)
+        .await?
+        .is_some_and(|batch| batch.status != "completed")
     {
         return Err(unavailable());
     }

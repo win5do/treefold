@@ -311,7 +311,6 @@ async function startFixtureApi() {
         name: input.name,
         description: input.description ?? "",
         status: "active",
-        default_delivery_mode: "push_branch",
         created_at: "2026-08-09T08:30:00.000Z",
         updated_at: "2026-08-09T08:30:00.000Z",
       };
@@ -476,7 +475,6 @@ async function startFixtureApi() {
         path: cleanPath,
         repository_url: isGit ? `https://example.test/${name}.git` : undefined,
         preferred_remote_name: isGit ? "origin" : undefined,
-        delivery_mode: undefined,
         git_common_dir: isGit ? `${cleanPath}/.git` : undefined,
         git_status: isGit ? "ready" : "not_git",
         role: !detail.default_location_id && isGit ? "primary" : "attached",
@@ -493,7 +491,6 @@ async function startFixtureApi() {
           git_common_dir: `${cleanPath}/.git`,
           repository_url: `https://example.test/${name}.git`,
           preferred_remote_name: "origin",
-          delivery_mode: undefined,
           setup_command: input.worktree_setup_command ?? "",
           setup_workdir: ".",
           git_status: "ready",
@@ -646,7 +643,6 @@ async function startFixtureApi() {
         setup_command: input.setup_command ?? repository.setup_command,
         setup_workdir: input.setup_workdir ?? repository.setup_workdir,
         preferred_remote_name: input.preferred_remote_name ?? repository.preferred_remote_name,
-        delivery_mode: input.delivery_mode ?? repository.delivery_mode,
       });
       repositoryUpdateRequests.push({ id: repository.id, ...input });
       sendJson(response, 200, repository);
@@ -854,15 +850,12 @@ async function startFixtureApi() {
       if (input.name) directory.name = input.name;
       directory.description = input.description ?? "";
       directory.worktree_setup_command = input.worktree_setup_command ?? "";
-      if (input.delivery_mode) directory.delivery_mode = input.delivery_mode;
       if (directory.repository_id) {
         Object.values(fixture.projectDetails)
           .flatMap((detail) => detail.repositories ?? [])
           .filter((repository) => repository.id === directory.repository_id)
           .forEach((repository) => {
             repository.setup_command = directory.worktree_setup_command;
-            if (input.delivery_mode)
-              repository.delivery_mode = input.delivery_mode;
           });
       }
       Object.values(fixture.workspaceDetails).forEach((detail) => {

@@ -41,12 +41,14 @@ for (const mode of ["continue", "abandon"] as const) {
       await squash.check();
       await expect(dialog.getByRole("alert")).toContainText("original commits");
       if (mode === "continue") {
-        await dialog.getByRole("combobox", { name: "Operation", exact: true }).selectOption("continue");
-        await expect(dialog.getByRole("combobox", { name: "Delivery method", exact: true })).toBeDisabled();
+        await dialog.getByRole("radio", { name: "Finish and archive", exact: true }).focus();
+        await page.keyboard.press("ArrowDown");
+        await expect(dialog.getByRole("radio", { name: "Intermediate delivery", exact: true })).toBeChecked();
+        await expect(dialog.getByRole("radio", { name: "Merge into parent", exact: true })).toBeChecked();
         // Intermediate delivery cannot retain a previously chosen Squash option.
         await expect(squash).toHaveCount(0);
       } else {
-        await dialog.getByRole("combobox", { name: "Delivery method", exact: true }).selectOption("keep");
+        await dialog.getByRole("radio", { name: "Abandon delivery", exact: true }).check();
       }
       await dialog.getByTestId("finish-confirm-action").click();
       await expect.poll(() => submissions.length).toBe(1);
@@ -57,7 +59,7 @@ for (const mode of ["continue", "abandon"] as const) {
       if (mode === "continue") {
         await expect(page).toHaveURL(new RegExp(`/#/workspaces/${FIXTURE_IDS.fork}$`));
         await open();
-        await expect(dialog.getByRole("combobox", { name: "Operation", exact: true })).toHaveValue("finish");
+        await expect(dialog.getByRole("radio", { name: "Finish and archive", exact: true })).toBeChecked();
         await dialog.getByTestId("finish-confirm-action").click();
         await expect.poll(() => submissions.length).toBe(2);
         expect(submissions[1].continue_work).toBe(false);

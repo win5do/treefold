@@ -1022,7 +1022,12 @@ pub(super) async fn sync_workspace_repository(
     } else {
         git::output_async(
             Path::new(path),
-            &["push", remote, &format!("{branch}:{remote_branch}")],
+            &[
+                "push",
+                "--set-upstream",
+                remote,
+                &format!("{branch}:{remote_branch}"),
+            ],
         )
         .await
         .map_err(AppError::BadRequest)?;
@@ -1510,7 +1515,15 @@ pub(super) fn directory_branches(repository: &str) -> Result<GitBranches> {
         });
     }
     remotes.sort_by(|left, right| left.name.cmp(&right.name));
+    let current_remote = command_output(
+        Path::new(repository),
+        "git",
+        &["config", "--get", &format!("branch.{current}.remote")],
+    )
+    .ok()
+    .filter(|remote| remotes.iter().any(|r| &r.name == remote));
     Ok(GitBranches {
+        current_remote,
         current,
         local,
         remotes,
@@ -1944,7 +1957,6 @@ pub(super) fn git_workspace_repository(
     forked_from_commit: Option<String>,
     remote_name: Option<String>,
     remote_branch: Option<String>,
-    delivery_mode: String,
 ) -> WorkspaceRepository {
     WorkspaceRepository {
         id: new_id(),
@@ -1964,7 +1976,6 @@ pub(super) fn git_workspace_repository(
         remote_name,
         remote_branch,
         branch_ownership: "managed".into(),
-        delivery_mode,
         delivery_status: "active".into(),
         close_outcome: None,
         integrated_commit: None,

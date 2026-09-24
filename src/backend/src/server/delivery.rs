@@ -172,7 +172,12 @@ pub(super) async fn finish_workspace_repository_impl(
             command_output(
                 Path::new(&source_path),
                 "git",
-                &["push", remote, &format!("{branch}:{remote_branch}")],
+                &[
+                    "push",
+                    "--set-upstream",
+                    remote,
+                    &format!("{branch}:{remote_branch}"),
+                ],
             )
             .map_err(AppError::BadRequest)?;
             fetch_remote_branch(&source_path, remote, remote_branch)?;

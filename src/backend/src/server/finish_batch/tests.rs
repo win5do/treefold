@@ -65,7 +65,6 @@ async fn fixture() -> Fixture {
                     .collect(),
             ),
             preferred_remote: None,
-            default_delivery_mode: Some("local_merge".into()),
             directory_description: None,
             directory_worktree_setup_command: None,
         }),
@@ -76,6 +75,7 @@ async fn fixture() -> Fixture {
         State(state.clone()),
         AxumPath(project.id),
         ApiJson(CreateWorkspace {
+            repository_remotes: None,
             expected_base_branches: None,
             generated_branch: None,
             description: None,
@@ -1060,6 +1060,7 @@ async fn workspace_creation_records_each_current_branch_and_rejects_stale_previe
         State(f.state.clone()),
         AxumPath(project_id.clone()),
         ApiJson(CreateWorkspace {
+            repository_remotes: None,
             expected_base_branches: None,
             description: None,
             branch: Some("feature/current".into()),
@@ -1104,6 +1105,7 @@ async fn workspace_creation_records_each_current_branch_and_rejects_stale_previe
         State(f.state.clone()),
         AxumPath(project_id),
         ApiJson(CreateWorkspace {
+            repository_remotes: None,
             expected_base_branches: Some(expected),
             description: None,
             branch: Some("feature/stale".into()),

@@ -436,7 +436,6 @@ export function EditRepositoryDialog({
               repository.setup_command,
               repository.setup_workdir,
               repository.preferred_remote_name,
-              repository.delivery_mode,
             ])}
             className="mt-6 flex flex-col gap-4"
             onSubmit={onSubmit}
@@ -489,18 +488,6 @@ export function EditRepositoryDialog({
                         {remote.name}
                       </option>
                     ))}
-                  </Select>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="repository-delivery-mode">{t("projectsUi.defaultWorkspaceFinishStrategy")}</FieldLabel>
-                  <Select
-                    id="repository-delivery-mode"
-                    name="delivery_mode"
-                    defaultValue={repository.delivery_mode}
-                  >
-                    <option value="push_branch">{t("projectsUi.pushFeatureBranch")}</option>
-                    <option value="local_merge">{t("projectsUi.mergeIntoLocalBase")}</option>
-                    <option value="keep">{t("projectsUi.preserveWithoutDelivery")}</option>
                   </Select>
                 </Field>
               </div>

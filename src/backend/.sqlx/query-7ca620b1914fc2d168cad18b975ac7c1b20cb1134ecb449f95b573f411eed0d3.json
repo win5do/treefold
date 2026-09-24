@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE project_repositories SET setup_command=?,setup_workdir=?,preferred_remote_name=CASE WHEN ? THEN ? ELSE preferred_remote_name END,updated_at=? WHERE id=? AND deleted_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "7ca620b1914fc2d168cad18b975ac7c1b20cb1134ecb449f95b573f411eed0d3"
+}

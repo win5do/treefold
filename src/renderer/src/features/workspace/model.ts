@@ -28,7 +28,7 @@ export function normalizeProject(value: ProjectDetail): ProjectDetail {
       repository_url: repository?.repository_url,
       repository_name: repository?.name,
       preferred_remote_name: repository?.preferred_remote_name,
-      delivery_mode: repository?.delivery_mode,
+
       git_common_dir: repository?.git_common_dir,
       git_status:
         repository?.git_status ??
@@ -54,10 +54,6 @@ export function normalizeProject(value: ProjectDetail): ProjectDetail {
     ...value,
     default_directory_id: defaultDirectoryId,
     default_location_id: defaultDirectoryId,
-    default_delivery_mode:
-      primaryRepository?.delivery_mode ??
-      value.default_delivery_mode ??
-      "push_branch",
     primary_directory_id: defaultDirectoryId ?? "",
     git_common_dir: primaryRepository?.git_common_dir ?? "",
     preferred_remote: primaryRepository?.preferred_remote_name,
@@ -128,8 +124,6 @@ export function normalizeWorkspace(value: WorkspaceDetail): WorkspaceDetail {
     remote_name: primary?.remote_name,
     remote_branch: primary?.remote_branch,
     branch_ownership: primary?.branch_ownership ?? "managed",
-    delivery_mode:
-      (primary?.delivery_mode as Workspace["delivery_mode"]) ?? "push_branch",
     delivery_status: primary?.delivery_status ?? "active",
     repositories,
     workspace_directories: rawDirectories,

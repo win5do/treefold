@@ -42,12 +42,6 @@ function repositoryLabel(remote?: string) {
     .replace(/\.git$/, "");
 }
 
-function deliveryStrategyLabel(mode?: ProjectRepository["delivery_mode"]) {
-  if (mode === "local_merge") return i18n.t("states.local_merge");
-  if (mode === "keep") return i18n.t("states.keep");
-  if (mode === "push_branch") return i18n.t("states.push_branch");
-  return i18n.t("projectsUi.deliveryNotConfigured");
-}
 
 export function DirectoryTreeRow({
   directory,
@@ -103,9 +97,6 @@ export function DirectoryTreeRow({
       </MetadataListItem>
       <MetadataListItem label={t("labels.repository")}>
         {repositoryLabel(directory.repository_url)}
-      </MetadataListItem>
-      <MetadataListItem label={t("labels.delivery")}>
-        {deliveryStrategyLabel(directory.delivery_mode)}
       </MetadataListItem>
     </MetadataList>
   );
@@ -518,9 +509,6 @@ export function ProjectRepositoryTreeRow({
                 </MetadataListItem>
                 <MetadataListItem label={t("labels.repository")}>
                   {repositoryLabel(repository.repository_url)}
-                </MetadataListItem>
-                <MetadataListItem label={t("labels.delivery")}>
-                  {deliveryStrategyLabel(repository.delivery_mode)}
                 </MetadataListItem>
               </MetadataList>
               <code

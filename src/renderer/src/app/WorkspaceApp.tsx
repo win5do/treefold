@@ -1380,6 +1380,7 @@ function Workspace() {
                     session: (kind, directory) => void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory)),
                     fork: () => setCreateForkWorkspace(workspace),
                     forkFromParent: setCreateForkWorkspace,
+                    workspaceFromProject: setCreateWorkspaceProject,
                     finish: () => void openFinishWorkspace(workspace),
                   }}
                   busy={busy}
@@ -1596,7 +1597,6 @@ function Workspace() {
               setup_command: form.get("setup_command"),
               setup_workdir: form.get("setup_workdir"),
               preferred_remote_name: String(form.get("base_remote") || ""),
-              delivery_mode: form.get("delivery_mode"),
             });
           });
           if (ok) setEditRepository(null);
@@ -1638,45 +1638,6 @@ function Workspace() {
           const form = new FormData(event.currentTarget);
           let created: Workspace | null = null;
           const ok = await act(async () => {
-            const setupRepositoryIds = form
-              .getAll("setup_repository_id")
-              .map(String);
-            for (const repositoryId of setupRepositoryIds) {
-              const deliveryMode = String(
-                form.get(`delivery_mode:${repositoryId}`) || "",
-              );
-              const remote =
-                deliveryMode === "push_branch"
-                  ? String(form.get(`base_remote:${repositoryId}`) || "")
-                  : "";
-              await projectsApi.updateRepository(repositoryId, {
-                preferred_remote_name: remote,
-                delivery_mode: deliveryMode,
-              });
-            }
-
-            const defaultDirectory = createWorkspaceProject.directories.find(
-              (directory) =>
-                directory.id === createWorkspaceProject.default_directory_id,
-            );
-            const defaultRepository = createWorkspaceProject.repositories.find(
-              (repository) =>
-                repository.id === defaultDirectory?.repository_id,
-            );
-            const configuredDefaultDelivery = defaultRepository
-              ? String(
-                  form.get(`delivery_mode:${defaultRepository.id}`) ||
-                    defaultRepository.delivery_mode ||
-                    "",
-                )
-              : "";
-            const configuredDefaultRemote = defaultRepository
-              ? String(
-                  form.get(`base_remote:${defaultRepository.id}`) ||
-                    defaultRepository.preferred_remote_name ||
-                    "",
-                )
-              : "";
             created = await projectsApi.createWorkspace(
               createWorkspaceProject.id,
               {
@@ -1684,14 +1645,7 @@ function Workspace() {
                 description: form.get("description"),
                 branch: form.get("branch"),
                 generated_branch: form.get("generated_branch"),
-                remote_name:
-                  configuredDefaultDelivery === "push_branch"
-                    ? configuredDefaultRemote
-                    : null,
-                remote_branch:
-                  configuredDefaultDelivery === "push_branch"
-                    ? form.get("remote_branch")
-                    : null,
+                repository_remotes: Object.fromEntries(createWorkspaceProject.repositories.map(repository => [repository.id, String(form.get(`remote:${repository.id}`) || "")])),
               },
             );
           });

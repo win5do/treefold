@@ -62,8 +62,6 @@ pub struct Workspace {
     #[serde(skip)]
     pub branch_ownership: String,
     #[serde(skip)]
-    pub delivery_mode: String,
-    #[serde(skip)]
     pub delivery_status: String,
     #[serde(skip)]
     pub close_outcome: Option<String>,
@@ -101,7 +99,6 @@ pub struct WorkspaceRepository {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_branch: Option<String>,
     pub branch_ownership: String,
-    pub delivery_mode: String,
     pub delivery_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub close_outcome: Option<String>,

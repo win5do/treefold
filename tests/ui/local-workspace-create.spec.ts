@@ -3,7 +3,7 @@ import { startUiHarness } from "./ui-harness.ts";
 import { createUiSession, closeUiSession } from "./harness/session.ts";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 
-for (const scenario of ["local", "mixed", "keep"] as const) {
+for (const scenario of ["local", "mixed", "override"] as const) {
   test(`Workspace setup supports ${scenario} repositories`, async () => {
     const harness = await startUiHarness();
     let page: Page | undefined;
@@ -14,13 +14,12 @@ for (const scenario of ["local", "mixed", "keep"] as const) {
         const data = await response.json();
         for (const repository of data.repositories) {
           repository.preferred_remote_name = null;
-          repository.delivery_mode = null;
         }
         await route.fulfill({ response, json: data });
       });
       await page.route("**/api/project-repositories/*/branches", async route => {
-        const remote = scenario === "mixed" && route.request().url().includes(FIXTURE_IDS.secondaryRepository);
-        await route.fulfill({ json: { current: "main", local: ["main"], remotes: remote ? [{ name: "origin", branches: ["main"] }] : [] } });
+        const remote = scenario !== "local" && route.request().url().includes(FIXTURE_IDS.secondaryRepository);
+        await route.fulfill({ json: { current_remote: scenario === "mixed" && remote ? "origin" : null, current: "main", local: ["main"], remotes: remote ? [{ name: "origin", branches: ["main"] }] : [] } });
       });
       let workspaceRequest: Record<string, unknown> | undefined;
       await page.route(`**/api/projects/${FIXTURE_IDS.project}/workspaces`, async route => {
@@ -31,21 +30,15 @@ for (const scenario of ["local", "mixed", "keep"] as const) {
       await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
       await page.getByTestId("project-workspaces-section").getByRole("button", { name: "New Workspace", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "New Workspace", exact: true });
-      const mode = (id: string) => dialog.locator(`select[name="delivery_mode:${id}"]`);
-      await expect(mode(FIXTURE_IDS.primaryRepository)).toHaveValue("local_merge");
-      if (scenario === "keep") {
-        await mode(FIXTURE_IDS.primaryRepository).selectOption("keep");
-        await mode(FIXTURE_IDS.secondaryRepository).selectOption("keep");
-      }
-      await expect(mode(FIXTURE_IDS.secondaryRepository)).toHaveValue(scenario === "mixed" ? "push_branch" : scenario === "keep" ? "keep" : "local_merge");
-      await expect(dialog.getByRole("button", { name: "Create Workspace", exact: true })).toBeEnabled();
+      const remote = (id: string) => dialog.locator(`select[name="remote:${id}"]`);
+      await expect(remote(FIXTURE_IDS.primaryRepository)).toHaveValue("");
+      await expect(remote(FIXTURE_IDS.secondaryRepository)).toHaveValue(scenario === "mixed" ? "origin" : "");
+      if (scenario === "override") await remote(FIXTURE_IDS.secondaryRepository).selectOption("origin");
       await dialog.getByRole("button", { name: "Create Workspace", exact: true }).click();
       await expect(page).toHaveURL(new RegExp(`/workspaces/${FIXTURE_IDS.workspace}$`));
-      expect(workspaceRequest).toMatchObject({ remote_name: null, remote_branch: null, expected_base_branches: { [FIXTURE_IDS.primaryRepository]: "main", [FIXTURE_IDS.secondaryRepository]: "main" } });
-      for (const id of [FIXTURE_IDS.primaryRepository, FIXTURE_IDS.secondaryRepository]) {
-        const remote = scenario === "mixed" && id === FIXTURE_IDS.secondaryRepository;
-        expect(harness.repositoryUpdateRequests).toContainEqual({ id, preferred_remote_name: remote ? "origin" : "", delivery_mode: remote ? "push_branch" : scenario === "keep" ? "keep" : "local_merge" });
-      }
+      expect(workspaceRequest).toMatchObject({ repository_remotes: { [FIXTURE_IDS.primaryRepository]: "", [FIXTURE_IDS.secondaryRepository]: scenario === "local" ? "" : "origin" }, expected_base_branches: { [FIXTURE_IDS.primaryRepository]: "main", [FIXTURE_IDS.secondaryRepository]: "main" } });
+      // Creating a Workspace must not overwrite Project repository settings.
+      expect(harness.repositoryUpdateRequests).toEqual([]);
       harness.assertNoUnexpectedRequests();
     } finally {
       try { await closeUiSession(page); } finally { await harness.close(); }

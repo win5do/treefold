@@ -165,7 +165,12 @@ pub(super) async fn create_fork_impl(
                 .into(),
         ));
     }
-    if state.store.finish_batch(&parent_id).await?.is_some() {
+    if state
+        .store
+        .finish_batch(&parent_id)
+        .await?
+        .is_some_and(|b| !b.continue_work || b.status != "completed")
+    {
         return Err(AppError::BadRequest(
             "cannot create a Fork after its parent Workspace has started Finish".into(),
         ));
@@ -218,7 +223,6 @@ pub(super) async fn create_fork_impl(
             parent_location.start_commit.clone(),
             None,
             None,
-            "local_merge".into(),
         );
         snapshot.git_status = "creating".into();
         snapshot.start_commit = None;
@@ -308,7 +312,6 @@ pub(super) async fn create_fork_impl(
         remote_name: None,
         remote_branch: None,
         branch_ownership: "managed".into(),
-        delivery_mode: "local_merge".into(),
         delivery_status: "active".into(),
         close_outcome: None,
         integrated_commit: None,

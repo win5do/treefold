@@ -82,7 +82,7 @@ const project: FixtureProject = {
   primary_directory_id: FIXTURE_IDS.primaryDirectory,
   git_common_dir: `${primaryPath}/.git`,
   preferred_remote: "origin",
-  default_delivery_mode: "push_branch",
+
   created_at: timestamp,
   updated_at: timestamp,
 };
@@ -99,7 +99,6 @@ const directories: FixtureDirectory[] = [
     path: primaryPath,
     repository_url: "https://example.test/treefold/ui-fixture.git",
     preferred_remote_name: "origin",
-    delivery_mode: "push_branch",
     git_common_dir: `${primaryPath}/.git`,
     git_status: "ready",
     role: "primary",
@@ -151,7 +150,6 @@ const directories: FixtureDirectory[] = [
     path: secondaryPath,
     repository_url: "https://example.test/treefold/ui-fixture-api.git",
     preferred_remote_name: "origin",
-    delivery_mode: "local_merge",
     git_common_dir: `${secondaryPath}/.git`,
     git_status: "ready",
     role: "attached",
@@ -174,7 +172,6 @@ const repositories: FixtureRepository[] = [
     git_common_dir: `${primaryPath}/.git`,
     repository_url: "https://example.test/treefold/ui-fixture.git",
     preferred_remote_name: "origin",
-    delivery_mode: "push_branch",
     setup_command: "",
     setup_workdir: ".",
     git_status: "ready",
@@ -189,7 +186,6 @@ const repositories: FixtureRepository[] = [
     git_common_dir: `${secondaryPath}/.git`,
     repository_url: "https://example.test/treefold/ui-fixture-api.git",
     preferred_remote_name: "origin",
-    delivery_mode: "local_merge",
     setup_command: "",
     setup_workdir: ".",
     git_status: "ready",
@@ -272,7 +268,7 @@ const workspace: FixtureWorkspace = {
   remote_name: "origin",
   remote_branch: "feature/ui-fixture",
   branch_ownership: "managed",
-  delivery_mode: "push_branch",
+
   delivery_status: "published",
   close_outcome: null,
   integrated_commit: null,
@@ -296,7 +292,7 @@ const fork: FixtureWorkspace = {
   forked_from_commit: "0123456789abcdef",
   remote_name: undefined,
   remote_branch: undefined,
-  delivery_mode: "local_merge",
+
   delivery_status: "active",
   runtime_id: FIXTURE_IDS.fork,
   runtime_name: "treefold-fork-ui-fixture",
@@ -420,7 +416,7 @@ const workspaceRepositories: WorkspaceRepository[] = [
     start_commit: workspace.start_commit,
     remote_name: "origin",
     remote_branch: "feature/ui-fixture",
-    delivery_mode: "push_branch",
+
     delivery_status: "active",
   },
   {
@@ -438,7 +434,7 @@ const workspaceRepositories: WorkspaceRepository[] = [
     base_branch: "develop",
     remote_name: "origin",
     remote_branch: "feature/ui-fixture",
-    delivery_mode: "local_merge",
+
     delivery_status: "discarded",
   },
 ];
@@ -542,7 +538,7 @@ const forkDetail: FixtureWorkspaceDetail = {
       branch_ownership: "managed",
       base_branch: workspace.branch,
       start_commit: fork.start_commit,
-      delivery_mode: "local_merge",
+
       delivery_status: "active",
     },
     {
@@ -558,7 +554,7 @@ const forkDetail: FixtureWorkspaceDetail = {
       branch_ownership: "managed",
       base_branch: workspace.branch,
       start_commit: fork.start_commit,
-      delivery_mode: "local_merge",
+
       delivery_status: "active",
     },
   ],

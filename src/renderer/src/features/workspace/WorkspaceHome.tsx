@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/tooltip";
 import type {
   Directory,
+  ProjectDetail,
   Session,
   Workspace,
   WorkspaceDetail,
@@ -72,6 +73,7 @@ export function WorkspaceHome({
     available: boolean;
     session: (kind: "shell" | "codex", directory: Directory) => void;
     fork: () => void;
+    workspaceFromProject: (project: ProjectDetail) => void;
     forkFromParent: (parent: Workspace) => void;
     finish: () => void;
   };
@@ -159,8 +161,8 @@ export function WorkspaceHome({
             </p>
           </div>
         </div>
-        {detail.kind === "fork" && detail.status === "archived" && (
-          <div className="mt-4"><ReopenForkButton key={detail.id} id={detail.id} parentId={detail.parent_workspace_id} onNewFork={creation.forkFromParent} /></div>
+        {detail.status === "archived" && (
+          <div className="mt-4"><ReopenForkButton key={detail.id} projectId={detail.project.id} onNewWorkspace={creation.workspaceFromProject} id={detail.id} parentId={detail.parent_workspace_id} onNewFork={creation.forkFromParent} /></div>
         )}
         {detail.finish_batch && detail.finish_batch.status !== "completed" && (
           <Alert className="mt-6">
@@ -775,9 +777,6 @@ function WorkspaceRepositoryRow({
               </MetadataListItem>
               <MetadataListItem label={t("labels.upstream")}>
                 <code>{upstream || "—"}</code>
-              </MetadataListItem>
-              <MetadataListItem label={t("labels.delivery")}>
-                {t(`states.${location.delivery_mode}`, { defaultValue: location.delivery_mode })}
               </MetadataListItem>
             </MetadataList>
           )}

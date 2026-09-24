@@ -349,7 +349,6 @@ mod tests {
                 description: String::new(),
                 status: "active".into(),
                 default_location_id: None,
-                default_delivery_mode: "push_branch".into(),
                 created_at: timestamp.clone(),
                 updated_at: timestamp.clone(),
                 primary_directory_id: String::new(),
@@ -367,7 +366,6 @@ mod tests {
             path: "/tmp/treefold-soft-delete-context".into(),
             repository_url: None,
             preferred_remote_name: None,
-            delivery_mode: None,
             git_common_dir: None,
             git_status: "not_git".into(),
             last_checked_at: None,
@@ -387,7 +385,7 @@ mod tests {
             .await
             .unwrap();
         store
-            .update_directory("original", "Renamed", "Purpose", "", None)
+            .update_directory("original", "Renamed", "Purpose", "")
             .await
             .unwrap();
         assert_eq!(store.directory("original").await.unwrap().name, "Renamed");
@@ -470,12 +468,6 @@ mod tests {
         .execute(&store.pool)
         .await
         .unwrap();
-        let nullable: (Option<String>,) =
-            sqlx::query_as("SELECT delivery_mode FROM project_repositories WHERE id='r'")
-                .fetch_one(&store.pool)
-                .await
-                .unwrap();
-        assert_eq!(nullable, (None,));
         assert!(
             sqlx::query("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','Duplicate','t','t')")
                 .execute(&store.pool)

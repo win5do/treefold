@@ -10,7 +10,6 @@ export type Project = {
   primary_directory_id: string;
   git_common_dir: string;
   preferred_remote?: string;
-  default_delivery_mode: "push_branch" | "local_merge" | "keep";
   updated_at: string;
 };
 
@@ -38,7 +37,6 @@ export type Directory = {
   path: string;
   repository_url?: string;
   preferred_remote_name?: string;
-  delivery_mode?: "push_branch" | "local_merge" | "keep";
   git_common_dir?: string;
   git_status:
     | "creating"
@@ -68,7 +66,6 @@ export type ProjectRepository = {
   source_ownership: "managed" | "external";
   repository_url?: string;
   preferred_remote_name?: string;
-  delivery_mode?: "push_branch" | "local_merge" | "keep";
   setup_command: string;
   setup_workdir: string;
   git_status: Directory["git_status"];
@@ -141,7 +138,6 @@ export type Workspace = {
   remote_name?: string;
   remote_branch?: string;
   branch_ownership: string;
-  delivery_mode: "push_branch" | "local_merge" | "keep";
   delivery_status: string;
   close_outcome?: string;
   integrated_commit?: string;
@@ -174,7 +170,6 @@ export type WorkspaceRepository = {
   start_commit?: string;
   remote_name?: string;
   remote_branch?: string;
-  delivery_mode: string;
   delivery_status: string;
   close_outcome?: string;
 };
@@ -445,6 +440,7 @@ export type LocationDraft = {
 };
 
 export type GitBranches = {
+  current_remote?: string | null;
   current: string;
   local: string[];
   remotes: { name: string; branches: string[] }[];

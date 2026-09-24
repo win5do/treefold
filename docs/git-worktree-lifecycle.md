@@ -35,8 +35,13 @@ batch progress and allows a fresh delivery after completion. It cannot skip dama
 repositories or delete checkouts. Squash's inline explanation describes the different
 parent and Fork histories and recommends a new Fork for subsequent work.
 
-Root Workspace Finish retains repository-specific strategies. One confirmation submits
-the whole plan. The backend rechecks every repository before starting, delivers
+Workspace delivery uses the same operation-wide choices and vertical radio options.
+It supports ordinary merge into the Project checkout's current branch, feature-branch
+push, or (when finishing) abandoning delivery. Squash is available only for Finish
+with merge. Every writable repository uses the same strategy; missing push targets
+block the entire plan rather than selecting another strategy per repository.
+Project and Workspace repositories no longer store a default delivery mode.
+One confirmation submits the whole plan. The backend rechecks every repository before starting, delivers
 them sequentially. Finish then archives the Workspace or Fork and stops its Sessions.
 New Finish plans keep all worktrees and branches without a checkbox.
 Feature-branch delivery pushes without forcing and proves that the remote
@@ -50,15 +55,16 @@ branch gained new commits. Finish has no Undo action or automatic rollback;
 reverting a delivered change is a separate Git operation on the parent.
 Pull request creation and merge remain hosting/user workflows.
 
-An archived Fork can be reopened from its detail page when all
-checkouts remain on their recorded branches, its Project and parent Workspace
-are active, and neither it nor its parent has unfinished Finish work. Reopening
+An archived Workspace or Fork can be reopened from its detail page when all
+checkouts remain on their recorded branches, its Project (and parent Workspace for a Fork)
+is active, and neither it nor its parent has unfinished Finish work. Reopening
 does not launch Sessions or recreate missing worktrees. It reactivates the linked
 Todo and starts a fresh delivery round while retaining parent-operation history.
 A previous completed Squash delivery requires explicit confirmation to reopen:
-the dialog recommends **New Fork from parent**, with **Reopen anyway** and **Cancel**.
-Reopening never rebases or resets the branch. The new-Fork action opens the standard
-creation dialog using the parent Workspace; the archived Fork remains unchanged.
+the dialog recommends **New Fork from parent** or **New Workspace from Project**,
+with **Reopen anyway** and **Cancel**.
+Reopening never rebases or resets the branch. The new-item action opens the standard
+creation dialog using the parent Workspace or Project; the archived item remains unchanged.
 
 Delivery uses one Fork delivery dialog rather than a separate Integrate into Parent menu action.
 Update from Parent retains conflict resolution and Abort, but completed parent
@@ -75,3 +81,10 @@ and undelivered commits block destructive cleanup. Keeping branches permits
 removing clean worktrees while preserving committed work. Files retained after
 record deletion are managed outside Treefold and cannot reopen the deleted item.
 Older saved Finish plans retain their previously confirmed cleanup choices.
+
+New Workspace repositories inherit the remote from the corresponding Project
+checkout's current branch, never the Project's stored preferred remote. The remote
+branch defaults to the new local branch name. Creation can override each remote
+without modifying Project settings; a checkout without an upstream remote starts
+unconfigured. Local development is still available, and push requires configuring
+the Repository target first. A successful push establishes the Git upstream.

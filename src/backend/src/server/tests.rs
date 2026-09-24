@@ -118,7 +118,6 @@ mod current_workspace_tests {
                 path: Some(first.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -140,7 +139,7 @@ mod current_workspace_tests {
         for repository in state.store.repositories(&project.id).await.unwrap() {
             state
                 .store
-                .update_repository(&repository.id, "", ".", "local_merge", None)
+                .update_repository(&repository.id, "", ".", None)
                 .await
                 .unwrap();
             locations.push(
@@ -160,6 +159,7 @@ mod current_workspace_tests {
             super::choose_shared_branch(&locations, Some("feature/existing"), None, false).is_err()
         );
         let input = || CreateWorkspace {
+            repository_remotes: None,
             expected_base_branches: None,
             branch: Some("feature/existing".into()),
             generated_branch: None,
@@ -360,7 +360,6 @@ mod current_workspace_tests {
                     frontend.to_string_lossy().into_owned(),
                 ]),
                 preferred_remote: None,
-                default_delivery_mode: None,
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -433,7 +432,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -634,7 +632,6 @@ mod current_workspace_tests {
                 path: Some(web.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -671,6 +668,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -719,7 +717,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: None,
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -730,6 +727,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -909,7 +907,6 @@ mod current_workspace_tests {
                 path: Some(context.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: None,
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -937,7 +934,6 @@ mod current_workspace_tests {
                 path: None,
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: None,
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -981,11 +977,12 @@ mod current_workspace_tests {
                 .default_location_id,
             Some(primary.id.clone())
         );
-        assert!(primary.delivery_mode.is_none());
-        let error = create_workspace(
+
+        let _created = create_workspace(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -995,11 +992,7 @@ mod current_workspace_tests {
             }),
         )
         .await
-        .expect_err("Workspace creation must wait for Project Repository configuration");
-        assert_eq!(
-            error.to_string(),
-            "default Repository delivery mode is not configured"
-        );
+        .expect("Workspace creation does not require a delivery strategy");
         state
             .store
             .update_directory(
@@ -1007,7 +1000,6 @@ mod current_workspace_tests {
                 "Backend source",
                 &primary.description,
                 &primary.worktree_setup_command,
-                primary.delivery_mode.as_deref(),
             )
             .await
             .unwrap();
@@ -1049,7 +1041,6 @@ mod current_workspace_tests {
                 description: None,
                 status: None,
                 default_location_id: Some(context_location.id),
-                default_delivery_mode: None,
             }),
         )
         .await
@@ -1086,7 +1077,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -1342,7 +1332,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -1353,6 +1342,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: Some("feature/current-fork-test".into()),
                 description: None,
@@ -1598,7 +1588,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -1609,6 +1598,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -1798,7 +1788,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -1809,6 +1798,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -1923,7 +1913,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("push_branch".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -1934,6 +1923,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -2022,7 +2012,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: Some("origin".into()),
-                default_delivery_mode: Some("push_branch".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -2033,6 +2022,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -2117,7 +2107,6 @@ mod current_workspace_tests {
                 path: None,
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -2140,7 +2129,7 @@ mod current_workspace_tests {
             if location.git_common_dir.is_some() {
                 state
                     .store
-                    .update_directory(&location.id, &location.name, "", "", Some("local_merge"))
+                    .update_directory(&location.id, &location.name, "", "")
                     .await
                     .expect("configure Project Repository");
             }
@@ -2160,7 +2149,7 @@ mod current_workspace_tests {
         );
         state
             .store
-            .update_project_defaults(&project.id, Some(&ids[1]), "local_merge")
+            .update_project_defaults(&project.id, Some(&ids[1]))
             .await
             .expect("switch primary location");
         assert_eq!(
@@ -2179,6 +2168,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: Some("main".into()),
                 description: None,
@@ -2220,11 +2210,7 @@ mod current_workspace_tests {
             .await
             .expect("list Workspace repositories");
         assert_eq!(repositories.len(), 2);
-        assert!(
-            repositories
-                .iter()
-                .all(|item| item.delivery_mode == "local_merge")
-        );
+
         assert_eq!(
             repositories[0].branch, repositories[1].branch,
             "all repositories share one branch name"
@@ -2255,7 +2241,6 @@ mod current_workspace_tests {
                 "Renamed reference",
                 &project_directory.description,
                 &project_directory.worktree_setup_command,
-                None,
             )
             .await
             .unwrap();
@@ -2303,7 +2288,6 @@ mod current_workspace_tests {
         )
         .await
         .expect("clear Workspace Repository upstream");
-        assert_eq!(updated_location.delivery_mode, "local_merge");
         assert!(updated_location.remote_name.is_none());
         assert!(updated_location.remote_branch.is_none());
         command_output(&context, "git", &["init", "-b", "main"]).expect("turn context into Git");
@@ -2357,7 +2341,6 @@ mod current_workspace_tests {
                 path: Some(first.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -2377,19 +2360,14 @@ mod current_workspace_tests {
         .unwrap();
         state
             .store
-            .update_directory(
-                &second_location.id,
-                &second_location.name,
-                "",
-                "exit 7",
-                Some("local_merge"),
-            )
+            .update_directory(&second_location.id, &second_location.name, "", "exit 7")
             .await
             .expect("configure second Project Repository");
         let (_, Json(workspace)) = create_workspace(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -2502,7 +2480,6 @@ mod current_workspace_tests {
                 path: Some(first.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -2522,18 +2499,12 @@ mod current_workspace_tests {
         .unwrap();
         state
             .store
-            .update_directory(
-                &second_location.id,
-                &second_location.name,
-                "",
-                "",
-                Some("local_merge"),
-            )
+            .update_directory(&second_location.id, &second_location.name, "", "")
             .await
             .unwrap();
         state
             .store
-            .update_project_defaults(&project.id, Some(&second_location.id), "local_merge")
+            .update_project_defaults(&project.id, Some(&second_location.id))
             .await
             .unwrap();
 
@@ -2541,6 +2512,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: Some("main".into()),
                 description: None,
@@ -2744,7 +2716,6 @@ mod current_workspace_tests {
                 path: None,
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: None,
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -2783,13 +2754,14 @@ mod current_workspace_tests {
         assert_eq!(repository.source_ownership, "managed");
         state
             .store
-            .update_repository(&repository_id, "", ".", "keep", None)
+            .update_repository(&repository_id, "", ".", None)
             .await
             .expect("configure cloned Repository");
         let (_, Json(workspace)) = create_workspace(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,
@@ -2904,7 +2876,6 @@ mod current_workspace_tests {
                 path: Some(repository.to_string_lossy().into_owned()),
                 locations: None,
                 preferred_remote: None,
-                default_delivery_mode: Some("local_merge".into()),
                 directory_description: None,
                 directory_worktree_setup_command: None,
             }),
@@ -2915,6 +2886,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
                 description: None,

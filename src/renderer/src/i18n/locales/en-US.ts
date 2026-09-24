@@ -67,7 +67,7 @@ export const enUS = {
     syncSkippedCount: "{{count}} repositories skipped",
     syncSkippedCount_one: "{{count}} repository skipped",
     syncSkippedCount_other: "{{count}} repositories skipped",
-    finishWorkspace: "Finish Workspace…",
+    finishWorkspace: "Deliver Workspace…",
     finishFork: "Deliver Fork…",
     archiveProject: "Archive Project",
     settings: "Settings",
@@ -246,23 +246,24 @@ export const enUS = {
     "noActionsFound": "No actions found."
   },
   "deliveryUi": {
+    mergeProject: "Merge into Project",
     "forkDelivery": {
-      "continuedShort": "Delivery complete; Fork remains active.",
+      "continuedShort": "Delivery complete; {{type}} remains active.",
       "delivering": "Delivering…",
       "notice": "An intermediate delivery is in progress or needs attention.",
 
       "purpose": "Operation",
-      "title": "Deliver Fork",
+      "title": "Deliver {{type}}",
       "finish": "Finish and archive",
       "intermediate": "Intermediate delivery",
       "method": "Delivery method",
       "merge": "Merge into parent",
       "abandon": "Abandon delivery",
       "squash": "Squash into one commit",
-      "squashHint": "The parent receives one summary commit; this Fork keeps its original commits. To continue after archiving, create a new Fork from the parent. Reopening and merging this Fork again may bring back old commit history or cause conflicts.",
-      "continueHint": "Merge every repository into the parent and continue working. This Fork stays active, Sessions keep running, and its Todo is not marked done.",
+      "squashHint": "The parent receives one summary commit; this {{type}} keeps its original commits. To continue after archiving, create a new {{type}} from the parent. Reopening and merging this {{type}} again may bring back old commit history or cause conflicts.",
+      "continueHint": "Deliver every repository using the selected method and continue working. This {{type}} stays active, Sessions keep running, and its Todo is not marked done.",
       "finishHint": "Apply one delivery method to every repository, then archive and stop Sessions. Working directories and branches are kept.",
-      "continued": "Delivery is complete. This Fork remains active and its Sessions can continue."
+      "continued": "Delivery is complete. This {{type}} remains active and its Sessions can continue."
     },
     "recovery": {
       "forceExecute": "Force execute",
@@ -691,13 +692,19 @@ export const enUS = {
     "sessionState": "Session is {{status}}"
   },
   "workspaceUi": {
-    squashReopenTitle: "Reopen this Fork?",
-    squashReopenHint: "This Fork was delivered with Squash. The parent and Fork have different commit histories. Reopening does not adjust the branch; merging again may bring back old commit history or cause conflicts. We recommend creating a new Fork from the parent.",
+    "checkoutRemoteInheritance": "Each repository starts from its Project checkout’s current branch and inherits that branch’s upstream remote.",
+    "configureBeforePush": "Not configured — choose before pushing",
+    "sameNameRemoteBranch": "The remote branch defaults to the new local branch name. You can change its upstream after creation.",
+    "reopenWorkspace": "Reopen Workspace",
+    "newWorkspaceFromProject": "New Workspace from Project",
+
+    squashReopenTitle: "Reopen this {{type}}?",
+    squashReopenHint: "This {{type}} was delivered with Squash. The parent and {{type}} have different commit histories. Reopening does not adjust the branch; merging again may bring back old commit history or cause conflicts. We recommend creating a new {{type}} from the parent.",
     reopenAnyway: "Reopen anyway",
     newForkFromParent: "New Fork from parent",
 
-    "reopenUnavailable": "Reopening requires retained working directories and branches, an active parent Workspace and Project, and no pending Finish operation.",
-    "reopenFailed": "Could not reopen Fork",
+    "reopenUnavailable": "Reopening requires retained working directories and branches, an active Project (and an active parent Workspace for a Fork), and no pending delivery operation.",
+    "reopenFailed": "Could not reopen {{type}}",
     "reopenFork": "Reopen Fork",
     "noRemoteDeliveryHint": "This repository has no remote. Choose local merge or preserve without delivery.",
     "featureDescription": "Develop one feature in this Workspace. Split it into Forks when you need separate subtasks.",

@@ -180,10 +180,9 @@ impl Store {
         id: &str,
         remote_name: Option<&str>,
         remote_branch: Option<&str>,
-        delivery_mode: &str,
     ) -> Result<()> {
         let id = self.resolve_workspace_repository_id(id).await?;
-        let r=sqlx::query("UPDATE workspace_repositories SET remote_name=?,remote_branch=?,delivery_mode=?,updated_at=? WHERE id=?").bind(remote_name).bind(remote_branch).bind(delivery_mode).bind(now()).bind(id).execute(&self.pool).await?;
+        let r=sqlx::query("UPDATE workspace_repositories SET remote_name=?,remote_branch=?,updated_at=? WHERE id=?").bind(remote_name).bind(remote_branch).bind(now()).bind(id).execute(&self.pool).await?;
         if r.rows_affected() == 0 {
             return Err(AppError::NotFound);
         }

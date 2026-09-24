@@ -10,11 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Field,
-  FieldLabel,
-} from "@/components/ui/field";
-import { NativeSelect as Select } from "@/components/ui/native-select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { ParentOperation, Session, WorkspaceDetail } from "@/domain/types";
 import { useFinishBatch } from "./useFinishBatch";
@@ -64,7 +59,7 @@ export function FinishWorkspaceDialog({
       <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>
-            {t(workspace?.kind === "fork" ? "deliveryUi.forkDelivery.title" : "deliveryUi.batchTitle", {
+            {t("deliveryUi.forkDelivery.title", {
               type: workspace?.kind === "fork" ? "Fork" : "Workspace",
             })}
           </DialogTitle>
@@ -80,15 +75,13 @@ export function FinishWorkspaceDialog({
                   ? "deliveryUi.batchPausedDescription"
                   : flow.batch
                     ? "deliveryUi.batchRunningDescription"
-                    : workspace?.kind === "fork"
-                      ? flow.continueWork ? "deliveryUi.forkDelivery.continueHint" : "deliveryUi.forkDelivery.finishHint"
-                      : "deliveryUi.batchDescription",
-              { count: skippedCount },
+                    : flow.continueWork ? "deliveryUi.forkDelivery.continueHint" : "deliveryUi.forkDelivery.finishHint",
+              { count: skippedCount, type: workspace?.kind === "fork" ? "Fork" : "Workspace" },
             )}
           </DialogDescription>
         </DialogHeader>
-        {workspace?.kind === "fork" && !flow.batch && flow.loaded && (
-          <ForkDeliveryOptions continueWork={flow.continueWork} onContinueWork={flow.setContinueWork} action={flow.forkAction} onAction={flow.setForkAction} disabled={flow.busy} />
+        {workspace && !flow.batch && flow.loaded && (
+          <ForkDeliveryOptions kind={workspace.kind} continueWork={flow.continueWork} onContinueWork={flow.setContinueWork} action={flow.forkAction} onAction={flow.setForkAction} disabled={flow.busy} />
         )}
         {!flow.loaded ? (
           <p>{t("states.checking")}</p>
@@ -219,41 +212,6 @@ export function FinishWorkspaceDialog({
                     ) : (
                       draft && (
                         <>
-                          {workspace?.kind !== "fork" && <Field>
-                            <FieldLabel htmlFor={`finish-strategy-${item.id}`}>
-                              {t("deliveryUi.finishStrategy")}
-                            </FieldLabel>
-                            <Select
-                              id={`finish-strategy-${item.id}`}
-                              value={draft.code_action}
-                              onChange={(event) => {
-                                const code_action = event.target
-                                  .value as typeof draft.code_action;
-                                flow.update(item.id, {
-                                  code_action,
-                                  delete_worktree: false,
-                                  delete_branch: false,
-                                });
-                              }}
-                            >
-                              <option value="squash_merge">{t("squashUi.delivery")}</option>
-                              <option value="local_merge">
-                                {t("deliveryUi.mergeTarget", {
-                                  target:
-                                    t("deliveryUi.localBaseBranch"),
-                                })}
-                              </option>
-                              {item.remote_name && (
-                                  <option value="push_branch">
-                                    {t("deliveryUi.pushWorkspaceFeatureBranch")}
-                                  </option>
-                                )}
-                              <option value="keep">
-                                {t("deliveryUi.preserveWithoutDelivery")}
-                              </option>
-                            </Select>
-                            {draft.code_action === "squash_merge" && <p className="text-xs text-muted-foreground">{t("squashUi.deliveryHint")}</p>}
-                          </Field>}
                           <section
                             data-testid="delivery-preflight"
                             className="flex flex-col gap-2 rounded-lg border p-4"
@@ -367,6 +325,7 @@ export function FinishWorkspaceDialog({
                       : "deliveryUi.batchCompleted"
                     : "deliveryUi.batchProgress",
                   {
+                    type: workspace?.kind === "fork" ? "Fork" : "Workspace",
                     done: progress,
                     total: repositories.length,
                     count: skippedCount,

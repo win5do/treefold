@@ -22,14 +22,14 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
   const client = useQueryClient();
   const { t } = useTranslation();
   const [continueWork, setContinueWork] = useState(false);
-  const [forkAction, setForkAction] = useState<"local_merge" | "squash_merge" | "keep">("local_merge");
+  const [forkAction, setForkAction] = useState<"local_merge" | "squash_merge" | "push_branch" | "keep">("local_merge");
   const showResult = useRef(false);
   useEffect(() => { setContinueWork(false); setForkAction("local_merge"); showResult.current = false; }, [workspace?.id]);
   const [batch, setBatch] = useState<FinishBatch | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [storedDrafts, setDrafts] = useState<Record<string, Draft>>({});
-  const drafts = useMemo(() => workspace?.kind === "fork" && !batch
-    ? Object.fromEntries(Object.entries(storedDrafts).map(([id, draft]) => [id, { ...draft, code_action: continueWork ? "local_merge" as const : forkAction, delete_worktree: false, delete_branch: false }]))
+  const drafts = useMemo(() => workspace && !batch
+    ? Object.fromEntries(Object.entries(storedDrafts).map(([id, draft]) => [id, { ...draft, code_action: forkAction, delete_worktree: false, delete_branch: false }]))
     : storedDrafts, [storedDrafts, workspace?.kind, batch, continueWork, forkAction]);
   const [preflights, setPreflights] = useState<
     Record<string, DeliveryPreflight>
@@ -57,14 +57,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     setDrafts(
       Object.fromEntries(
         repositories.map((item) => {
-          const code_action: Draft["code_action"] =
-            workspace.kind === "fork"
-              ? "local_merge"
-              : item.delivery_mode === "keep"
-                ? "keep"
-                : item.delivery_mode === "push_branch" && item.remote_name
-                  ? "push_branch"
-                  : "local_merge";
+          const code_action = "local_merge" as const;
           return [
             item.id,
             {
@@ -209,7 +202,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
                 : {}),
               preflight_id: preflights[item.id]?.id ?? "",
             })),
-            workspace.kind === "fork" && continueWork,
+            continueWork,
           );
       setBatch(next);
       setRevision((value) => value + 1);

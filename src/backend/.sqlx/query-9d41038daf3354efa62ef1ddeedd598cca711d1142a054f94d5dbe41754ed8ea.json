@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE workspaces SET status='active', updated_at=? WHERE id=? AND kind IN ('workspace','fork') AND status='archived' AND (parent_workspace_id IS NULL OR EXISTS (SELECT 1 FROM workspaces parent WHERE parent.id=workspaces.parent_workspace_id AND parent.status='active')) AND EXISTS (SELECT 1 FROM projects WHERE projects.id=workspaces.project_id AND projects.status='active')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "9d41038daf3354efa62ef1ddeedd598cca711d1142a054f94d5dbe41754ed8ea"
+}

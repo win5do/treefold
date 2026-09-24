@@ -376,17 +376,6 @@ test("sidebar.core", async () => {
     ).click();
     const workspaceFinishDialog = page.locator('[role="dialog"]');
     await workspaceFinishDialog.waitFor({ timeout: 3_000, state: 'visible' });
-    const workspaceStrategy = workspaceFinishDialog.getByRole("combobox", { name: "Finish strategy" });
-    assert.deepEqual(
-      await workspaceStrategy.evaluate((select) => Array.from((select as HTMLSelectElement).options, (option) => option.value)),
-      ["local_merge", "push_branch", "keep"],
-      "Workspace Finish must expose local merge, feature push, and preserve strategies",
-    );
-    assert.equal(
-      await workspaceStrategy.inputValue(),
-      "push_branch",
-      "Workspace Finish must inherit the Repository default strategy",
-    );
     assert.equal(
       await (workspaceFinishDialog.locator('input[placeholder*="commit"]')).count().then(count => count > 0),
       false,
@@ -491,13 +480,7 @@ test("sidebar.core", async () => {
       false,
       "Workspace creation must inherit base branches from Git locations",
     );
-    assert.equal(
-      await (
-        createWorkspaceDialog.locator('select[name="delivery_mode"]')
-      ).count().then(count => count > 0),
-      false,
-      "Workspace creation must inherit delivery modes from Git locations",
-    );
+
     await pressUiEscape(page);
     await createWorkspaceDialog.waitFor({ timeout: 3_000, state: 'hidden' });
     await projectCreateButton.click();
@@ -691,11 +674,7 @@ test("sidebar.core", async () => {
     ).click();
     const upstreamDialog = page.locator('[role="dialog"]');
     await upstreamDialog.waitFor({ timeout: 3_000, state: 'visible' });
-    assert.equal(
-      await (upstreamDialog.locator('select[name="delivery_mode"]')).count().then(count => count > 0),
-      false,
-      "Workspace upstream settings must not override Project delivery policy",
-    );
+
     await (
       upstreamDialog.locator('input[name="remote_branch"]')
     ).fill("feature/updated-fixture");
@@ -1500,8 +1479,8 @@ test("sidebar.core", async () => {
     );
     assert.match(
       await primaryLocation.innerText(),
-      /base\s+main[\s\S]*current\s+main/,
-      "repository rows must show the base branch before the current branch",
+      /current\s+main/,
+      "repository rows must show the source checkout's current branch",
     );
     const primaryRefresh = primaryLocation.locator(`[data-testid="project-location-refresh-${FIXTURE_IDS.primaryRepository}"]`);
     assert.equal(
@@ -1619,7 +1598,7 @@ test("sidebar.core", async () => {
     );
     assert.match(
       await secondaryLocation.innerText(),
-      /base\s+develop[\s\S]*current\s+release\/api-fixture/,
+      /current\s+release\/api-fixture/,
       "each repository must show its own branch metadata",
     );
     assert.equal(
@@ -1707,11 +1686,7 @@ test("sidebar.core", async () => {
     ).click();
     const editDirectoryDialog = page.locator('[role="dialog"]');
     await editDirectoryDialog.waitFor({ timeout: 3_000, state: 'visible' });
-    assert.equal(
-      await editDirectoryDialog.locator('select[name="delivery_mode"]').count().then(count => count > 0),
-      false,
-      "directory editing must not expose repository delivery settings",
-    );
+
     const directoryNameInput = editDirectoryDialog.locator('input[name="name"]');
     assert.equal(
       await directoryNameInput.count().then(count => count > 0),
@@ -1779,34 +1754,6 @@ test("sidebar.core", async () => {
     ).click();
     const deferredSetupDialog = page.locator('[role="dialog"]');
     await deferredSetupDialog.waitFor({ timeout: 3_000, state: 'visible' });
-    assert.equal(
-      await (
-        deferredSetupDialog.locator('select[name^="delivery_mode:"]')
-      ).isVisible(),
-      true,
-      "Workspace creation must collect missing Project delivery settings",
-    );
-    assert.match(
-      await (
-        deferredSetupDialog.locator('select[name^="base_remote:"]')
-      ).innerText(),
-      /origin/,
-      "push delivery must select from repository remotes",
-    );
-    const sharedWorkspaceBranch = deferredSetupDialog.getByRole("textbox", { name: "Shared local branch", exact: true });
-    const remoteWorkspaceBranch = deferredSetupDialog.locator('input[name="remote_branch"]');
-    await sharedWorkspaceBranch.fill("feature/local-name");
-    assert.equal(
-      await remoteWorkspaceBranch.inputValue(),
-      "feature/local-name",
-      "remote branch must default to the local Workspace branch name",
-    );
-    await remoteWorkspaceBranch.fill("feature/custom-remote-name");
-    assert.equal(
-      await remoteWorkspaceBranch.inputValue(),
-      "feature/custom-remote-name",
-      "remote branch must remain editable",
-    );
     await pressUiEscape(page);
     await deferredSetupDialog.waitFor({ timeout: 3_000, state: 'hidden' });
     const blockedWorktreeDeletes = await page.locator('button[data-worktree-delete-state="blocked"]').all();
@@ -1919,11 +1866,7 @@ test("sidebar.core", async () => {
       /None[\s\S]*origin/,
       "remote options must list configured Git remotes",
     );
-    assert.equal(
-      await (page.locator('select[name="delivery_mode"]')).isVisible(),
-      true,
-      "delivery mode must be edited from repository settings",
-    );
+
     await setupCommand.fill("npm install && npm run prepare");
     await page.locator("button:text-is(\"Save repository\")").click();
     await expect.poll(async () => !(await setupCommand.count().then(count => count > 0)), {

@@ -22,7 +22,7 @@ impl Store {
     pub async fn reopen_fork(&self, id: &str) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         let timestamp = now();
-        let changed = sqlx::query!("UPDATE workspaces SET status='active', updated_at=? WHERE id=? AND kind='fork' AND status='archived' AND EXISTS (SELECT 1 FROM workspaces parent WHERE parent.id=workspaces.parent_workspace_id AND parent.status='active') AND EXISTS (SELECT 1 FROM projects WHERE projects.id=workspaces.project_id AND projects.status='active')", timestamp, id)
+        let changed = sqlx::query!("UPDATE workspaces SET status='active', updated_at=? WHERE id=? AND kind IN ('workspace','fork') AND status='archived' AND (parent_workspace_id IS NULL OR EXISTS (SELECT 1 FROM workspaces parent WHERE parent.id=workspaces.parent_workspace_id AND parent.status='active')) AND EXISTS (SELECT 1 FROM projects WHERE projects.id=workspaces.project_id AND projects.status='active')", timestamp, id)
             .execute(&mut *tx).await?;
         if changed.rows_affected() != 1 {
             return Err(AppError::BadRequest(

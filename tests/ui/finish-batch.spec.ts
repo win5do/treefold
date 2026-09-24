@@ -44,7 +44,6 @@ test("Finish confirms all repositories and resumes saved progress after closing"
           delivery_status: "active",
           branch_ownership: index === 0 ? "user" : "managed",
           remote_name: null,
-          delivery_mode: "local_merge",
           access_mode: "read_write",
         }));
         data.finish_batch = batch;
@@ -129,7 +128,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
     };
     await openFinish();
     const dialog = page.getByRole("dialog", {
-      name: "Finish Workspace",
+      name: "Deliver Workspace",
       exact: true,
     });
     const first = dialog.getByRole("tab", { name: new RegExp(names[0]) });
@@ -150,20 +149,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
         exact: true,
       }),
     ).toBeVisible();
-    await secondPanel
-      .getByRole("combobox", { name: "Finish strategy" })
-      .selectOption("keep");
-    await first.click();
-    await expect(
-      firstPanel.getByRole("combobox", { name: "Finish strategy" }),
-    ).toHaveValue("local_merge");
-    await second.click();
-    await expect(
-      secondPanel.getByRole("combobox", { name: "Finish strategy" }),
-    ).toHaveValue("keep");
-    await first.click();
-    await firstPanel.getByRole("combobox", { name: "Finish strategy" }).selectOption("squash_merge");
-    await second.click();
+    await dialog.getByRole("checkbox", { name: "Squash into one commit", exact: true }).check();
     blocked = false;
     await dialog.getByRole("button", { name: "Recheck", exact: true }).click();
     await expect(dialog.getByTestId("finish-confirm-action")).toBeEnabled();
@@ -187,10 +173,10 @@ test("Finish confirms all repositories and resumes saved progress after closing"
       },
       {
         repository_id: ids[1],
-        code_action: "keep",
+        code_action: "squash_merge",
         delete_worktree: false,
         delete_branch: false,
-        preflight_id: `preflight-${ids[1]}-keep`,
+        preflight_id: `preflight-${ids[1]}-squash_merge`,
       },
     ]);
     await dialog.getByRole("button", { name: "Close window" }).click();
@@ -283,7 +269,7 @@ test("Finish can archive repositories delivered by the earlier per-repository fl
     await openUiContextMenu(page, page.getByTestId("sidebar-workspace-node"));
     await page.getByTestId("finish-workspace-action").click();
     const dialog = page.getByRole("dialog", {
-      name: "Finish Workspace",
+      name: "Deliver Workspace",
       exact: true,
     });
     await expect(dialog.getByTestId("finish-confirm-action")).toBeEnabled();
@@ -346,7 +332,6 @@ for (const resume of [false, true]) {
             ...detail.repositories[0],
             id,
             repository_name: index ? "frontend" : "backend",
-            delivery_mode: "local_merge",
             remote_name: null,
           }));
           await route.fulfill({ json: detail });
@@ -431,7 +416,7 @@ for (const resume of [false, true]) {
       await openUiContextMenu(page, page.getByTestId("sidebar-workspace-node"));
       await page.getByTestId("finish-workspace-action").click();
       const dialog = page.getByRole("dialog", {
-        name: "Finish Workspace",
+        name: "Deliver Workspace",
         exact: true,
       });
       await expect(dialog.getByRole("alert")).toContainText(
