@@ -1,18 +1,23 @@
 ---
 import '../styles/global.css';
+import { defaultLocale, getAlternateLocale, getLocalizedPath, localeMeta, normalizeLocale, type SiteRoute } from '../i18n/config';
 
 interface Props {
   title: string;
   description: string;
-  locale?: 'zh' | 'en';
-  alternatePath?: string;
+  route: SiteRoute;
 }
 
-const { title, description, locale = 'zh', alternatePath } = Astro.props;
+const { title, description, route } = Astro.props;
+const locale = normalizeLocale(Astro.currentLocale);
+const alternateLocale = getAlternateLocale(locale);
+const currentPath = getLocalizedPath(locale, route);
+const alternatePath = getLocalizedPath(alternateLocale, route);
+const defaultPath = getLocalizedPath(defaultLocale, route);
 ---
 
 <!doctype html>
-<html lang={locale === 'zh' ? 'zh-CN' : 'en'}>
+<html lang={localeMeta[locale].htmlLang}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -22,7 +27,10 @@ const { title, description, locale = 'zh', alternatePath } = Astro.props;
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    {alternatePath && <link rel="alternate" hreflang={locale === 'zh' ? 'en' : 'zh-CN'} href={alternatePath} />}
+    <link rel="canonical" href={currentPath} />
+    <link rel="alternate" hreflang={localeMeta[locale].hreflang} href={currentPath} />
+    <link rel="alternate" hreflang={localeMeta[alternateLocale].hreflang} href={alternatePath} />
+    <link rel="alternate" hreflang="x-default" href={defaultPath} />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <title>{title}</title>
   </head>

@@ -1,10 +1,12 @@
 ---
-interface Props { locale?: 'zh' | 'en'; }
-const { locale = 'zh' } = Astro.props;
-const isEnglish = locale === 'en';
-const home = isEnglish ? '/en/' : '/';
-const download = isEnglish ? '/en/download/' : '/download/';
-const github = 'https://github.com/win5do/treefold';
+import { siteLinks } from '../config/site';
+import { commonCopy } from '../i18n/common';
+import { getLocalizedPath, normalizeLocale } from '../i18n/config';
+
+const locale = normalizeLocale(Astro.currentLocale);
+const copy = commonCopy[locale].footer;
+const home = getLocalizedPath(locale, 'home');
+const download = getLocalizedPath(locale, 'download');
 ---
 
 <footer class="site-footer">
@@ -14,14 +16,14 @@ const github = 'https://github.com/win5do/treefold';
         <img src="/favicon.png" width="28" height="28" alt="" />
         <span>Treefold</span>
       </a>
-      <p>{isEnglish ? 'Run agents in parallel. Fold the work back cleanly.' : '并行展开，干净收敛。'}</p>
-      <small>{isEnglish ? 'Free and open source · AGPL-3.0-only' : '免费开源 · AGPL-3.0-only'}</small>
+      <p>{copy.tagline}</p>
+      <small>{copy.licenseSummary}</small>
     </div>
-    <nav aria-label={isEnglish ? 'Footer navigation' : '页脚导航'}>
-      <a href={home}>{isEnglish ? 'Home' : '首页'}</a>
-      <a href={download}>{isEnglish ? 'Download' : '下载'}</a>
-      <a href={github} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-      <a href={`${github}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">{isEnglish ? 'License' : '许可证'} ↗</a>
+    <nav aria-label={copy.navigationLabel}>
+      <a href={home}>{copy.home}</a>
+      <a href={download}>{copy.download}</a>
+      <a href={siteLinks.github} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      <a href={siteLinks.license} target="_blank" rel="noopener noreferrer">{copy.license} ↗</a>
     </nav>
   </div>
 </footer>

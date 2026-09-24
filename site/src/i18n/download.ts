@@ -1,0 +1,120 @@
+import type { Locale } from './config';
+
+type Requirement = readonly [title: string, detail: string];
+
+interface DownloadCopy {
+  title: string;
+  description: string;
+  back: string;
+  eyebrow: string;
+  heading: readonly [string, string];
+  intro: string;
+  badges: readonly string[];
+  noticeTitle: string;
+  notice: string;
+  option1: string;
+  recommended: string;
+  brewTitle: string;
+  brewBody: string;
+  terminal: string;
+  copyCommand: string;
+  copied: string;
+  copyFailed: string;
+  brewNote: string;
+  tap: string;
+  option2: string;
+  dmgTitle: string;
+  dmgBody: string;
+  expected: string;
+  releaseNote: string;
+  openReleases: string;
+  before: string;
+  beforeTitle: string;
+  beforeBody: string;
+  requirements: readonly Requirement[];
+  sourceKicker: string;
+  sourceTitle: string;
+  sourceBody: string;
+  sourceLink: string;
+}
+
+export const downloadCopy = {
+  'zh-cn': {
+    title: '下载 Treefold for macOS',
+    description: 'Treefold 面向 Apple Silicon Mac 的私有预发布下载入口，支持 Homebrew Cask 与 GitHub Releases。',
+    back: '返回首页',
+    eyebrow: 'TREEFOLD FOR MACOS',
+    heading: ['并行开发。', '清楚完成。'],
+    intro: 'Treefold 当前面向 Apple Silicon Mac。Release 发布后，可以通过私有 Homebrew tap 安装，或从 GitHub 下载 DMG。',
+    badges: ['macOS Sonoma 或更新版本', 'Apple Silicon · arm64', 'AGPL-3.0-only'],
+    noticeTitle: '私有预发布',
+    notice: 'Treefold 仓库与 Homebrew tap 目前需要 GitHub 访问权限。Release 尚未发布，因此以下安装入口已经保留，但暂时无法完成下载。',
+    option1: 'OPTION 01 / HOMEBREW',
+    recommended: '推荐',
+    brewTitle: '用 Homebrew Cask 安装',
+    brewBody: '适合已经使用 Homebrew 管理 macOS App 的开发者。命令来自 Treefold 的私有 tap。',
+    terminal: 'TERMINAL',
+    copyCommand: '复制命令',
+    copied: '已复制',
+    copyFailed: '复制失败 · 请手动选择',
+    brewNote: '私有 tap 和已发布的 Release 缺一不可。首个 Release 创建前，该命令无法下载 Treefold。',
+    tap: '查看 Homebrew tap',
+    option2: 'OPTION 02 / GITHUB RELEASE',
+    dmgTitle: '下载 DMG 安装包',
+    dmgBody: '选择 Apple Silicon 的 aarch64.dmg，打开后将 Treefold 拖入“应用程序”。',
+    expected: 'EXPECTED RELEASE ASSET',
+    releaseNote: '当前 Release 页面仍为空，发布安装包后，这里会出现可下载版本。',
+    openReleases: '打开 GitHub Releases',
+    before: 'BEFORE YOU START',
+    beforeTitle: '开始之前',
+    beforeBody: 'Treefold 在本机管理 Project、Workspace、Session 和 Git worktree。Codex Session 需要已经配置 Codex CLI；Shell Session 可以独立使用。',
+    requirements: [
+      ['系统要求', 'Apple Silicon Mac、macOS Sonoma 或更新版本，以及 Git。'],
+      ['首次打开', '私有预发布构建使用 ad-hoc 签名，macOS 可能要求你在“隐私与安全性”中批准 Treefold。'],
+      ['本地项目数据', 'Project 状态与编排数据保存在 Mac 上；Agent 的网络访问取决于你自己的配置。'],
+    ],
+    sourceKicker: 'SOURCE AVAILABLE TO COLLABORATORS',
+    sourceTitle: '免费开源。',
+    sourceBody: '预发布期间源码仓库保持 private；公开后继续使用同一个 GitHub 地址。',
+    sourceLink: '查看源码',
+  },
+  en: {
+    title: 'Download Treefold for macOS',
+    description: 'Private preview downloads for Treefold on Apple Silicon Macs through Homebrew Cask or GitHub Releases.',
+    back: 'Back to home',
+    eyebrow: 'TREEFOLD FOR MACOS',
+    heading: ['Build in parallel.', 'Finish with clarity.'],
+    intro: 'Treefold currently targets Apple Silicon Macs. Once a Release is available, install it from the private Homebrew tap or download the DMG from GitHub.',
+    badges: ['macOS Sonoma or newer', 'Apple Silicon · arm64', 'AGPL-3.0-only'],
+    noticeTitle: 'Private preview',
+    notice: 'The Treefold repository and Homebrew tap currently require GitHub access. No Release has been published yet, so these installation entry points are present but cannot complete a download.',
+    option1: 'OPTION 01 / HOMEBREW',
+    recommended: 'RECOMMENDED',
+    brewTitle: 'Install with Homebrew Cask',
+    brewBody: 'For developers who already manage macOS applications with Homebrew. The command uses Treefold’s private tap.',
+    terminal: 'TERMINAL',
+    copyCommand: 'Copy command',
+    copied: 'Copied',
+    copyFailed: 'Copy failed · select manually',
+    brewNote: 'The private tap and a published Release are both required. The command cannot download Treefold until the first Release exists.',
+    tap: 'View Homebrew tap',
+    option2: 'OPTION 02 / GITHUB RELEASE',
+    dmgTitle: 'Download the DMG',
+    dmgBody: 'Choose the Apple Silicon aarch64.dmg asset, open it, and drag Treefold into Applications.',
+    expected: 'EXPECTED RELEASE ASSET',
+    releaseNote: 'The Release page is currently empty. Downloadable versions will appear here after publishing.',
+    openReleases: 'Open GitHub Releases',
+    before: 'BEFORE YOU START',
+    beforeTitle: 'What you need',
+    beforeBody: 'Treefold manages Projects, Workspaces, Sessions, and Git worktrees on your Mac. Codex Sessions require a configured Codex CLI; Shell Sessions work independently.',
+    requirements: [
+      ['System requirements', 'Apple Silicon Mac, macOS Sonoma or newer, and Git.'],
+      ['First launch', 'Private preview builds use ad-hoc signing. macOS may ask you to approve Treefold in Privacy & Security.'],
+      ['Local project data', 'Project state and orchestration data remain on your Mac. Agent network access follows your own configuration.'],
+    ],
+    sourceKicker: 'SOURCE AVAILABLE TO COLLABORATORS',
+    sourceTitle: 'Free and open source.',
+    sourceBody: 'The repository is private during preview and will keep the same GitHub address when it becomes public.',
+    sourceLink: 'View source',
+  },
+} satisfies Record<Locale, DownloadCopy>;
