@@ -56,7 +56,10 @@ export function FinishConflict({
           operation={operation}
           busy={busy}
           onResolve={() =>
-            void run(() => workspacesApi.resolveParentOperation(id))
+            void run(async () => {
+              const session = await workspacesApi.resolveParentOperation(id);
+              onOpenSession(operation, session);
+            })
           }
           onOpenSession={() =>
             void run(async () => {

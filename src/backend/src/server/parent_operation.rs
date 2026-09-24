@@ -119,6 +119,19 @@ pub(super) async fn resolve_parent_operation_with_codex(
     }
 
     let source_workspace = state.store.workspace(&operation.workspace_id).await?;
+    let review_handoff = if operation.origin == "finish" {
+        format!(
+            "\n\nAfter resolving the conflicts and completing the Git operation, summarize the resolutions, resulting commit, and verification results. Ask the user to review the resolved diff and merge result before continuing. Tell them to return to the originating {} (ID: {}) in Treefold and reopen Deliver to recheck Git state and continue the saved delivery. Do not resume or execute the remaining Treefold delivery yourself. Do not navigate the UI automatically.",
+            if source_workspace.kind == "fork" {
+                "Fork"
+            } else {
+                "Workspace"
+            },
+            source_workspace.id,
+        )
+    } else {
+        String::new()
+    };
     let resolver_workspace = if operation.direction == "update" {
         source_workspace
     } else if let Some(parent_id) = operation.target_workspace_id.as_deref() {
@@ -158,7 +171,7 @@ pub(super) async fn resolve_parent_operation_with_codex(
     } else {
         "git merge --continue"
     };
-    let prompt = format!(
+    let mut prompt = format!(
         "Resolve Treefold parent operation {id}.\n\nPurpose: {direction} using {strategy}.\nFixed source HEAD: {source_head}\nFixed parent HEAD: {parent_head}\nModified checkout: {target_path}\nExpected branch: {target_branch}\nConflicted paths: {conflicts}\n\nYou are authorized to inspect and edit only this conflicted checkout, resolve every conflict, stage the resolutions, run relevant verification, and finish with `{continue_command}`. Do not push, reset, checkout another branch, abort, or perform unrelated history operations. Confirm the final Git operation has ended and verification passes.",
         id = operation.id,
         direction = operation.direction,
@@ -173,6 +186,7 @@ pub(super) async fn resolve_parent_operation_with_codex(
             conflicts.join(", ")
         },
     );
+    prompt.push_str(&review_handoff);
     let (_, Json(session)) = create_session_for_workspace(
         &state,
         resolver_workspace,
