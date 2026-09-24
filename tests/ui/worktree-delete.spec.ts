@@ -1,4 +1,4 @@
-import { test, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import assert from "node:assert/strict";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 import { startUiHarness } from "./ui-harness.ts";
@@ -18,6 +18,12 @@ test("worktree-delete", async () => {
       await worktreesToggle.click();
     const unmanaged = repository.locator('[data-testid="project-worktree-row"]:has(button[data-worktree-delete-state="available"])');
     const deleteButton = unmanaged.locator('button[data-worktree-delete-state="available"]');
+
+    const blocked = repository.locator('button[data-worktree-delete-state="blocked"]').first();
+    await expect(blocked).toHaveAttribute("aria-disabled", "true");
+    await blocked.click({ force: true });
+    await expect(page.getByRole("status")).toContainText("belongs to active Workspace");
+    expect(harness.deleteRequests).toEqual([]);
 
     harness.setWorktreeDeletePrecheck({
       status: "blocked",

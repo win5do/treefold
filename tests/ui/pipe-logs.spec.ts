@@ -1,29 +1,16 @@
 import { test, expect, type Page } from "@playwright/test";
 import { startUiHarness } from "./ui-harness.ts";
 import { closeUiSession, createUiSession } from "./harness/session.ts";
+import { withSession } from "./fixtures/sessions.ts";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 
 test("TTY Command Session opens from the sidebar and forwards Ctrl+C", async () => {
-  const harness = await startUiHarness();
+  const harness = await startUiHarness(withSession(FIXTURE_IDS.sessionDevServer, { io_mode: "tty" }));
   let page: Page | undefined;
   const inputs: string[] = [];
   let terminalReady = false;
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "command-terminal" });
-    await page.route("**/api/**", async route => {
-      if (route.request().method() !== "GET" || new URL(route.request().url()).pathname === "/api/events") return route.continue();
-      const response = await route.fetch();
-      if (!response.headers()["content-type"]?.includes("application/json")) return route.fulfill({ response });
-      const body = await response.json();
-      const visit = (value: unknown): void => {
-        if (!value || typeof value !== "object") return;
-        const item = value as Record<string, unknown>;
-        if (item.id === FIXTURE_IDS.sessionDevServer) item.io_mode = "tty";
-        Object.values(item).forEach(visit);
-      };
-      visit(body);
-      await route.fulfill({ response, json: body });
-    });
     await page.routeWebSocket(`**/api/sessions/${FIXTURE_IDS.sessionDevServer}/terminal?*`, socket => {
       socket.onMessage(data => {
         const message = JSON.parse(String(data));
@@ -46,9 +33,10 @@ test("TTY Command Session opens from the sidebar and forwards Ctrl+C", async () 
 });
 
 test("pipe Command Session replays logs, follows new output, and keeps logs after exit", async () => {
-  const harness = await startUiHarness();
+  const harness = await startUiHarness(withSession(FIXTURE_IDS.workspaceShell, {
+    kind: "command", io_mode: "pipe", argv: ["cargo", "run"],
+  }));
   let page: Page | undefined;
-  let status = "running";
   let restartRequests = 0;
   const cursors: string[] = [];
   const record = (sequence: number, text: string) => JSON.stringify({
@@ -64,37 +52,18 @@ test("pipe Command Session replays logs, follows new output, and keeps logs afte
         return null;
       }) as typeof window.open;
     });
-    await page.route("**/api/**", async (route) => {
+    await page.route(`**/api/sessions/${FIXTURE_IDS.workspaceShell}/logs?*`, async (route) => {
       const url = new URL(route.request().url());
-      if (url.pathname === `/api/sessions/${FIXTURE_IDS.workspaceShell}/logs`) {
-        const after = url.searchParams.get("after") ?? "0";
-        cursors.push(after);
-        const body = after === "0"
-          ? record(1, "\u001b[32mbackend listening\u001b[0m\nhttp://127.0.0.1:3001/api/status\n") + record(2, "GET /api/status\n")
-          : after === "2" ? record(3, "POST /api/visits\n") : "";
-        await route.fulfill({ status: 200, contentType: "application/x-ndjson", body });
-        return;
-      }
-      if (url.pathname === `/api/sessions/${FIXTURE_IDS.workspaceShell}/restart` && route.request().method() === "POST") {
-        restartRequests += 1;
-      }
-      if (route.request().method() !== "GET" || url.pathname === "/api/events") return route.continue();
-      const response = await route.fetch();
-      if (!response.headers()["content-type"]?.includes("application/json")) return route.fulfill({ response });
-      const body = await response.json();
-      const visit = (value: unknown): void => {
-        if (!value || typeof value !== "object") return;
-        const item = value as Record<string, unknown>;
-        if (item.id === FIXTURE_IDS.workspaceShell) {
-          item.kind = "command";
-          item.io_mode = "pipe";
-          item.status = status;
-          item.argv = ["cargo", "run"];
-        }
-        Object.values(item).forEach(visit);
-      };
-      visit(body);
-      await route.fulfill({ response, json: body });
+      const after = url.searchParams.get("after") ?? "0";
+      cursors.push(after);
+      const body = after === "0"
+        ? record(1, "\u001b[32mbackend listening\u001b[0m\nhttp://127.0.0.1:3001/api/status\n") + record(2, "GET /api/status\n")
+        : after === "2" ? record(3, "POST /api/visits\n") : "";
+      await route.fulfill({ status: 200, contentType: "application/x-ndjson", body });
+    });
+    await page.route(`**/api/sessions/${FIXTURE_IDS.workspaceShell}/restart`, async route => {
+      if (route.request().method() === "POST") restartRequests += 1;
+      await route.continue();
     });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}/sessions/${FIXTURE_IDS.workspaceShell}`);
     const logs = page.getByRole("log", { name: "Process output" });
@@ -111,7 +80,7 @@ test("pipe Command Session replays logs, follows new output, and keeps logs afte
       "http://127.0.0.1:3001/api/status", "http://127.0.0.1:3001/api/status",
     ]);
 
-    status = "exited";
+    harness.setProcessState(FIXTURE_IDS.workspaceShell, "exited");
     await page.reload();
     await expect(logs).toContainText("backend listening\nhttp://127.0.0.1:3001/api/status\nGET /api/status");
     await page.getByTestId("session-pipe-logs").getByRole("button", { name: /Resume/i }).click();

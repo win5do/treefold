@@ -14,7 +14,8 @@ test("agent-integration", async () => {
     await (page.locator('[data-testid="workspace-sidebar"]')).waitFor({ timeout: 10_000, state: 'visible' });
 
     const trigger = page.locator('[data-testid="open-agent-integration"]');
-    assert.equal(await trigger.getAttribute("aria-label"), "Agent Integration");
+    // Settings apply the fixture language after the initial system-language render.
+    await expect(trigger).toHaveAccessibleName("Agent Integration");
     await (page.locator('[data-testid="agent-integration-indicator"]')).waitFor({ timeout: 3_000, state: 'attached' });
     await trigger.click();
 

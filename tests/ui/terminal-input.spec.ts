@@ -2,10 +2,11 @@ import { test, expect, type Page } from "@playwright/test";
 import assert from "node:assert/strict";
 import { startUiHarness } from "./ui-harness.ts";
 import { closeUiSession, createUiSession } from "./harness/session.ts";
+import { withSession } from "./fixtures/sessions.ts";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 
 test("terminal-input", async () => {
-  const harness = await startUiHarness();
+  const harness = await startUiHarness(withSession(FIXTURE_IDS.sessionDevServer, { io_mode: "tty" }));
   let page!: Page;
 
   try {

@@ -165,8 +165,9 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await expect(page).toHaveURL(
       new RegExp(FIXTURE_IDS.sessionDevServer + "$"),
     );
-    await expect(terminal(FIXTURE_IDS.sessionDevServer)).toBeAttached();
-    await terminal(FIXTURE_IDS.sessionDevServer).press("Control+Shift+Tab");
+    const logs = page.getByRole("log", { name: "Process output" });
+    await expect(logs).toContainText("web-dev-server ready");
+    await page.keyboard.press("Control+Shift+Tab");
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await expect(terminal(FIXTURE_IDS.workspaceShell)).toBeAttached();
     await terminal(FIXTURE_IDS.workspaceShell).press("Meta+t");

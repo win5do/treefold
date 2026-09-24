@@ -1,9 +1,10 @@
+import { createSessionLogRoutes } from "./routes/session-logs.ts";
 import { createFinishRoutes } from "./routes/finish.ts";
 import { createKeymapRoutes } from "./routes/keymap.ts";
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AppSettings, BackgroundProcess, GitBranches, GitSyncItemResult, Session, WorktreeDeleteOperation, WorktreeDeletePrecheck, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
-import type { FixtureDirectory, FixtureProject, FixtureRepository, FixtureSession, FixtureWorkspace } from "../fixtures/types.ts";
+import type { FixtureDirectory, FixtureProject, FixtureRepository, FixtureSession, FixtureWorkspace, SidebarFixture } from "../fixtures/types.ts";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,8 +39,9 @@ async function readJson<T>(request: IncomingMessage): Promise<T> {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
-async function startFixtureApi() {
+async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
   const fixture = createSidebarCoreFixture();
+  configure?.(fixture);
   const eventStreams = new Set<ServerResponse>();
   let runtimeInstanceId = "runtime-ui-fixture-1";
   let runtimeRevision = 0;
@@ -73,6 +75,7 @@ async function startFixtureApi() {
   let worktreeDeletePolls = 0;
   const amuxStopRequests: string[] = [];
   const repositoryBranches = new Map<string, GitBranches>();
+  const sessionLogRoutes = createSessionLogRoutes({ fixture });
   const finishRoutes = createFinishRoutes({ fixture, readJson, sendJson });
   const gitDiffRoutes = createGitDiffRoutes({ fixture, readJson, sendJson });
   const parentOperationRoutes = createParentOperationRoutes({
@@ -92,6 +95,7 @@ async function startFixtureApi() {
 
     const requestUrl = new URL(request.url ?? "/", "http://fixture.test");
     const pathname = requestUrl.pathname;
+    if (await sessionLogRoutes.handle(request, response, pathname)) return;
     if (await finishRoutes.handle(request, response, pathname)) return;
     if (await gitDiffRoutes.handle(request, response, pathname)) return;
     if (await parentOperationRoutes.handle(request, response, pathname)) return;
@@ -1313,8 +1317,8 @@ async function startFixtureApi() {
 
 type UiHarness = Omit<Awaited<ReturnType<typeof startFixtureApi>>, "unexpectedRequests"> & { apiUrl: string; assertNoUnexpectedRequests(): void };
 
-export async function startUiHarness(): Promise<UiHarness> {
-  const fixtureApi = await startFixtureApi();
+export async function startUiHarness(configure?: (fixture: SidebarFixture) => void): Promise<UiHarness> {
+  const fixtureApi = await startFixtureApi(configure);
   let vite;
   try {
     vite = await createViteServer({

@@ -48,3 +48,26 @@ for (const choice of ["cleanup", "keep-branches", "keep-all"] as const) {
     }
   });
 }
+
+for (const kind of ["workspace", "fork"] as const) {
+  test(`active ${kind} explains its deletion blocker without sending a delete`, async () => {
+    const harness = await startUiHarness();
+    let page: Page | undefined;
+    const id = kind === "fork" ? FIXTURE_IDS.fork : FIXTURE_IDS.workspace;
+    const parent = kind === "fork" ? `workspaces/${FIXTURE_IDS.workspace}` : `projects/${FIXTURE_IDS.project}`;
+    try {
+      page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "active-delete" });
+      await page.goto(`${harness.baseUrl}/#/${parent}`);
+      await clickUiElement(page, page.getByTestId(`${kind}-list-row-${id}`).getByTestId(`${kind}-actions-trigger`));
+      const action = page.getByTestId(`delete-${kind}-action`);
+      await expect(action).toHaveAttribute("data-blocked", "true");
+      await action.click();
+      await expect(page.getByRole("status")).toContainText(kind === "fork" ? "Finish Fork" : "Finish Workspace");
+      await expect(page.getByTestId("delete-record-dialog")).toHaveCount(0);
+      expect(harness.deleteRequests).toEqual([]);
+      harness.assertNoUnexpectedRequests();
+    } finally {
+      try { await closeUiSession(page); } finally { await harness.close(); }
+    }
+  });
+}

@@ -22,11 +22,11 @@ test("language changes persist and localized actions remain searchable and keybo
     await expect(palette.getByRole("option")).toHaveCount(1);
     await palette.getByRole("combobox").press("Enter");
     const sessionDialog = page.getByRole("dialog", { name: "新建 Session", exact: true });
-    await expect(sessionDialog.getByRole("button", { name: "Agent", exact: true })).toBeFocused();
+    await expect(sessionDialog.getByRole("button", { name: "Shell", exact: true })).toBeFocused();
     await page.keyboard.press("Meta+f");
     await expect(sessionDialog.getByRole("textbox", { name: "目录", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
-    await expect(sessionDialog.getByRole("button", { name: "Agent", exact: true })).toBeFocused();
+    await expect(sessionDialog.getByRole("button", { name: "Shell", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await page.reload();
     await expect(page.getByTestId("open-settings")).toHaveAccessibleName("设置");

@@ -27,11 +27,6 @@ for (const owner of [
       await expect(
         palette.getByRole("option", { name: /New Session/ }),
       ).toContainText("⌘ T");
-      if (owner.name === "Workspace")
-        await page.screenshot({
-          path: "/tmp/treefold-command-palette.png",
-          animations: "disabled",
-        });
       // A background route transition must not retarget the captured invocation.
       await page.evaluate(() => {
         window.location.hash = "#/projects";
@@ -40,7 +35,6 @@ for (const owner of [
       await palette.getByRole("combobox").fill("session.create.new");
       await palette.getByRole("combobox").press("Enter");
       const dialog = page.getByRole("dialog", { name: "New Session" });
-      await expect(dialog.getByRole("button", { name: "Agent", exact: true })).toBeFocused();
       await dialog.getByRole("button", { name: "Shell", exact: true }).click();
       const creation = page.waitForRequest(
         (request) =>
