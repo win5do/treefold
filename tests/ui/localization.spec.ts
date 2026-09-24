@@ -16,6 +16,7 @@ test("language changes persist and localized actions remain searchable and keybo
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     await expect(page.getByRole("dialog", { name: "设置", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(page.getByTestId("open-settings")).toBeFocused();
     await page.keyboard.press("Meta+Shift+p");
     const palette = page.getByRole("dialog", { name: "命令面板", exact: true });
     await palette.getByRole("combobox").fill("新建 Session");
@@ -40,6 +41,7 @@ test("language changes persist and localized actions remain searchable and keybo
     await page.getByTestId("settings-save").click();
     await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
+    await expect(page.getByTestId("open-settings")).toBeFocused();
     await page.keyboard.press("Meta+Shift+p");
     await expect(page.getByRole("dialog", { name: "Command Palette", exact: true })).toBeVisible();
     harness.assertNoUnexpectedRequests();

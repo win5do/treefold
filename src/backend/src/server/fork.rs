@@ -96,7 +96,6 @@ pub(super) async fn create_todo_fork(
             "Todo was started concurrently",
         ));
     }
-    project_worktrees_cache().invalidate(&fork.project_id).await;
     spawn_workspace_setup_shells(state.clone(), fork.clone(), created.setup_shells).await;
     let session_result = create_session_for_workspace(
         &state,
@@ -133,9 +132,6 @@ pub(super) async fn create_fork(
         create_fork_impl(operation_state, parent_id, input).await
     })
     .await?;
-    project_worktrees_cache()
-        .invalidate(&created.workspace.project_id)
-        .await;
     spawn_workspace_setup_shells(
         state.clone(),
         created.workspace.clone(),

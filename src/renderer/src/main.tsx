@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { desktop } from "@/lib/desktop";
 import { HashRouter } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import "./index.css";
 import "./i18n";
@@ -12,18 +12,7 @@ import { applyThemePreference } from "@/lib/theme";
 import { setApiBase } from "@/api/client";
 import { RuntimeSync } from "@/features/app/RuntimeSync";
 import { frontendLogger, installGlobalErrorLogging } from "@/lib/logger";
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: Infinity,
-      gcTime: 30 * 60 * 1000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-    },
-  },
-});
+import { queryClient } from "@/features/app/queryClient";
 
 applyThemePreference("system");
 installGlobalErrorLogging();

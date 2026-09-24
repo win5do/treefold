@@ -173,27 +173,6 @@ impl RuntimeHub {
     }
 }
 
-static PROJECT_WORKTREES: OnceLock<Cache<String, Vec<GitWorktree>>> = OnceLock::new();
-static LOCATION_OBSERVATIONS: OnceLock<Cache<String, Directory>> = OnceLock::new();
-
-fn project_worktrees_cache() -> &'static Cache<String, Vec<GitWorktree>> {
-    PROJECT_WORKTREES.get_or_init(|| {
-        Cache::builder()
-            .max_capacity(256)
-            .time_to_live(std::time::Duration::from_secs(10))
-            .build()
-    })
-}
-
-fn location_observations_cache() -> &'static Cache<String, Directory> {
-    LOCATION_OBSERVATIONS.get_or_init(|| {
-        Cache::builder()
-            .max_capacity(256)
-            .time_to_live(std::time::Duration::from_secs(10))
-            .build()
-    })
-}
-
 pub async fn bind() -> anyhow::Result<tokio::net::TcpListener> {
     let bind_addr = env::var("TREEFOLD_API_ADDR").unwrap_or_else(|_| "127.0.0.1:0".into());
     Ok(tokio::net::TcpListener::bind(&bind_addr).await?)

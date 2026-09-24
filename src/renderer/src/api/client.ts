@@ -63,7 +63,7 @@ export async function request<T = void>(path: string, options: RequestOptions = 
     let response: Response;
     try {
       response = await fetch(`${API_BASE}${path}`, {
-        ...init, headers, body: json === undefined ? undefined : JSON.stringify(json),
+        cache: "no-store", ...init, headers, body: json === undefined ? undefined : JSON.stringify(json),
       });
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") throw cause;

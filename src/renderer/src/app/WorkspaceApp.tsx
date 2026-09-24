@@ -1,4 +1,5 @@
-import { gitHistoryKeys } from "@/features/review/queries";
+import { useWorkspaceRefresh } from "@/features/app/useWorkspaceRefresh";
+import { refreshGitQueries } from "@/features/git/queries";
 import { invalidateHierarchyQueries } from "@/features/app/runtimeInvalidation";
 import { useSettingsSave } from "@/features/settings/useSettingsSave";
 import { useAppActions } from "@/features/actions/useAppActions";
@@ -353,16 +354,7 @@ function Workspace() {
     };
   }, [deletingWorktrees, params.projectId, queryClient]);
 
-  const refresh = async () => {
-    if (params.workspaceId)
-      await Promise.all([
-        workspaceDetail.refetch(),
-        workspaceSessions.refetch(),
-      ]);
-    else if (params.projectId)
-      await Promise.all([projectDetail.refetch(), projectSessions.refetch()]);
-    else await summaries.refetch();
-  };
+  const { refresh, refreshing } = useWorkspaceRefresh();
 
   useEffect(() => {
     if (!workspace) return;
@@ -453,20 +445,24 @@ function Workspace() {
   ) {
     setBusy(true);
     try {
-      await action();
-      await Promise.all([
-        invalidateHierarchyQueries(queryClient),
-        params.projectId
-          ? queryClient.invalidateQueries({
-              queryKey: projectKeys.sessions(params.projectId),
-            })
-          : Promise.resolve(),
-        params.workspaceId
-          ? queryClient.invalidateQueries({
-              queryKey: workspaceKeys.sessions(params.workspaceId),
-            })
-          : Promise.resolve(),
-      ]);
+      try {
+        await action();
+      } finally {
+        await Promise.all([
+          invalidateHierarchyQueries(queryClient),
+          refreshGitQueries(queryClient),
+          params.projectId
+            ? queryClient.invalidateQueries({
+                queryKey: projectKeys.sessions(params.projectId),
+              })
+            : Promise.resolve(),
+          params.workspaceId
+            ? queryClient.invalidateQueries({
+                queryKey: workspaceKeys.sessions(params.workspaceId),
+              })
+            : Promise.resolve(),
+        ]);
+      }
       if (feedback?.success) toast.success(feedback.success);
       return true;
     } catch (cause) {
@@ -1188,7 +1184,7 @@ function Workspace() {
           <Button
             size="icon"
             variant="ghost"
-            disabled={busy}
+            disabled={busy || refreshing}
             aria-label={t("workspace.refresh")}
             onClick={() => void refresh()}
           >
@@ -1614,9 +1610,6 @@ function Workspace() {
           await act(async () => {
             await projectsApi.checkoutRepository(repositoryId, payload);
             setBranchRepository(null);
-            await queryClient.invalidateQueries({
-              queryKey: gitHistoryKeys.repository("project", repositoryId),
-            });
           });
         }}
         onDelete={async (payload) => {

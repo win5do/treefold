@@ -3,7 +3,6 @@ use super::{
     FinishPlanItem, FinishWorkspace, Json, Result, State, StatusCode, blocking_git_operation,
     blocking_git_operation_for, cleanup_finished_repository,
     create_workspace_repository_preflight_impl, finish_workspace_repository_impl,
-    project_worktrees_cache,
 };
 use serde::Deserialize;
 use std::{collections::HashSet, sync::OnceLock};
@@ -548,7 +547,6 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
             item.status = "completed".into();
         }
         state.store.complete_intermediate_batch(&batch).await?;
-        project_worktrees_cache().invalidate_all();
         state.runtime.publish_sessions();
         return Ok(());
     }
@@ -560,10 +558,6 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
     batch.status = "completed".into();
     batch.error = None;
     state.store.save_finish_batch(&batch).await?;
-    let workspace = state.store.workspace(&batch.workspace_id).await?;
-    project_worktrees_cache()
-        .invalidate(&workspace.project_id)
-        .await;
     state.runtime.publish_sessions();
     Ok(())
 }

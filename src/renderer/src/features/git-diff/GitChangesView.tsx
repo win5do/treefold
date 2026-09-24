@@ -1,3 +1,5 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { gitStatusQuery, gitDiffQuery, refreshGitQueries } from "@/features/git/queries";
 import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
@@ -7,7 +9,7 @@ import { workspacesApi } from "@/api/workspaces";
 import { ApiError } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { GitChangeFile, GitDiffComparison, GitDiffRequest, GitStatus } from "@/domain/types";
+import type { GitChangeFile, GitStatus } from "@/domain/types";
 import { cn } from "@/lib/utils";
 import { CommitDiffView } from "./CommitDiffView";
 import { GitChangesTree } from "./GitChangesTree";
@@ -35,14 +37,15 @@ export function GitChangesView(props: GitChangesViewProps) {
 
 function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, scope = "working-tree", initialPath, onStatusChange, onClose }: GitChangesViewProps) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<GitStatus | null>(null);
-  const [comparison, setComparison] = useState<GitDiffComparison | null>(null);
+  const queryClient = useQueryClient();
+  const statusOptions = gitStatusQuery(repositoryKind, repositoryId);
+  const statusQuery = useQuery(statusOptions);
+  const status = statusQuery.data ?? null;
+  const loading = statusQuery.isPending;
   const [selectedPath, setSelectedPath] = useState(initialPath ?? "");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [operationError, setError] = useState("");
   const [mutatingPath, setMutatingPath] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [diffRevision, setDiffRevision] = useState(0);
   const [treeWidth, setTreeWidth] = useState(() => {
     const stored = Number(window.localStorage.getItem("treefold.git-changes.tree-width"));
     return Number.isFinite(stored) ? Math.min(520, Math.max(220, stored)) : 320;
@@ -51,13 +54,22 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
   const api = repositoryKind === "project" ? projectsApi : workspacesApi;
   const files = useMemo(() => sortByTreePath((status?.files ?? []).filter((file) => scope === "staged" ? file.has_staged_changes : true)), [scope, status]);
   const selected = files.find((file) => file.path === selectedPath) ?? files[0];
+  const diffQuery = useQuery({
+    ...gitDiffQuery(repositoryKind, repositoryId, {
+      scope: scope === "staged" || (selected?.has_staged_changes && !selected.has_unstaged_changes) ? "staged" : "unstaged",
+      path: selected?.path ?? "",
+    }),
+    enabled: Boolean(selected),
+  });
+  const comparison = selected ? diffQuery.data ?? null : null;
+  const diffError = selected ? diffQuery.error : null;
+  const error = operationError || statusQuery.error?.message || (diffError instanceof ApiError && diffError.code === "DIFF_TOO_LARGE" ? t("gitDiffUi.diffIsTooLargeToDisplaySafely") : diffError?.message) || "";
   const parsed = useMemo(() => parseDiffComparison(comparison), [comparison, t]);
   const current = parsed.files.find((file) => file.path === selectedPath) ?? parsed.files[0];
 
-  const publishStatus = (next: GitStatus) => {
-    setStatus(next);
-    onStatusChange?.(next);
-    window.dispatchEvent(new CustomEvent("treefold:git-status-changed", { detail: { repositoryId, status: next } }));
+  const publishStatus = async (next: GitStatus) => {
+    queryClient.setQueryData(statusOptions.queryKey, next);
+    await refreshGitQueries(queryClient, repositoryKind, repositoryId);
   };
 
   useEffect(() => {
@@ -65,67 +77,29 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
   }, [treeWidth]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
+    setSelectedPath(initialPath ?? "");
     setError("");
-    void api.gitStatus(repositoryId, controller.signal).then((next) => {
-      if (controller.signal.aborted) return;
-      setStatus(next);
-      onStatusChange?.(next);
-      const first = initialPath ?? next.files.find((file) => scope === "staged" ? file.has_staged_changes : file.has_unstaged_changes)?.path;
-      setSelectedPath(first ?? "");
-    }).catch((cause) => {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : t("gitDiffUi.gitStatusCouldNotBeLoaded"));
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false);
-    });
-    return () => controller.abort();
-  }, [repositoryId, repositoryKind, scope]);
+  }, [repositoryId, repositoryKind, scope, initialPath]);
 
   useEffect(() => {
-    const refresh = (event: Event) => {
-      const detail = (event as CustomEvent<{ repositoryId: string; status: GitStatus }>).detail;
-      if (detail?.repositoryId !== repositoryId) return;
-      setStatus(detail.status);
-      onStatusChange?.(detail.status);
-    };
-    window.addEventListener("treefold:git-status-changed", refresh);
-    return () => window.removeEventListener("treefold:git-status-changed", refresh);
-  }, [repositoryId, onStatusChange]);
+    if (status) onStatusChange?.(status);
+  }, [status, onStatusChange]);
 
   useEffect(() => {
-    if (!selectedPath && files[0]) setSelectedPath(files[0].path);
-    if (!files.some((file) => file.path === selectedPath)) setSelectedPath(files[0]?.path ?? "");
-  }, [files, selectedPath]);
-
-  useEffect(() => {
-    if (!selected) {
-      setComparison(null);
-      return;
+    if (!selectedPath) {
+      const preferred = initialPath ?? status?.files.find((file) => scope === "staged" ? file.has_staged_changes : file.has_unstaged_changes)?.path;
+      setSelectedPath(preferred ?? files[0]?.path ?? "");
+    } else if (!files.some((file) => file.path === selectedPath)) {
+      setSelectedPath(files[0]?.path ?? "");
     }
-    const controller = new AbortController();
-    const request: GitDiffRequest = {
-      scope: scope === "staged" || (selected.has_staged_changes && !selected.has_unstaged_changes) ? "staged" : "unstaged",
-      path: selected.path,
-    };
-    setError("");
-    setComparison(null);
-    void api.gitDiff(repositoryId, request, controller.signal).then((next) => {
-      if (!controller.signal.aborted) setComparison(next);
-    }).catch((cause) => {
-      if (!controller.signal.aborted) setError(cause instanceof ApiError && cause.code === "DIFF_TOO_LARGE" ? t("gitDiffUi.diffIsTooLargeToDisplaySafely") : cause instanceof Error ? cause.message : t("gitDiffUi.diffCouldNotBeLoaded"));
-    });
-    return () => controller.abort();
-  }, [repositoryId, repositoryKind, selected?.path, scope, diffRevision]);
+  }, [files, selectedPath, initialPath, status, scope]);
 
   const refreshChanges = async () => {
     if (loading || refreshing || mutatingPath) return;
     setRefreshing(true);
     setError("");
     try {
-      const next = await api.gitStatus(repositoryId);
-      publishStatus(next);
-      setDiffRevision((value) => value + 1);
+      await refreshGitQueries(queryClient, repositoryKind, repositoryId);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("gitDiffUi.gitStatusCouldNotBeRefreshed"));
     } finally {
@@ -139,8 +113,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
     setError("");
     try {
       const next = stage ? await api.stage(repositoryId, [file.path]) : await api.unstage(repositoryId, [file.path]);
-      publishStatus(next);
-      setDiffRevision((value) => value + 1);
+      await publishStatus(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("gitDiffUi.gitStageOperationFailed"));
     } finally {
@@ -156,8 +129,7 @@ function WorkingTreeChangesView({ repositoryKind, repositoryId, repositoryName, 
     setError("");
     try {
       const next = stage ? await api.stage(repositoryId, paths) : await api.unstage(repositoryId, paths);
-      publishStatus(next);
-      setDiffRevision((value) => value + 1);
+      await publishStatus(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("gitDiffUi.gitStageOperationFailed"));
     } finally {

@@ -356,24 +356,18 @@ pub(super) async fn get_project(
         tracked_workspace_repositories
             .extend(state.store.workspace_repositories(&workspace.id).await?);
     }
-    let cache_key = id.clone();
     let mut locations = Vec::new();
     for repository in state.store.repositories(&id).await? {
         locations.push(state.store.repository_as_directory(&repository.id).await?);
     }
-    detail.worktrees = project_worktrees_cache()
-        .get_with(cache_key, async move {
-            blocking_git_operation(move || async move {
-                Ok(project_worktrees(
-                    &locations,
-                    &tracked_workspaces,
-                    &tracked_workspace_repositories,
-                ))
-            })
-            .await
-            .unwrap_or_default()
-        })
-        .await;
+    detail.worktrees = blocking_git_operation(move || async move {
+        Ok(project_worktrees(
+            &locations,
+            &tracked_workspaces,
+            &tracked_workspace_repositories,
+        ))
+    })
+    .await?;
     detail.sessions = refresh_session_records(&state, detail.sessions).await?;
     Ok(Json(detail))
 }
@@ -512,8 +506,7 @@ pub(super) async fn delete_worktree(
         })
         .await;
         match result {
-            Ok(project_id) => {
-                project_worktrees_cache().invalidate(&project_id).await;
+            Ok(_project_id) => {
                 worktree_delete_operations()
                     .insert(
                         key,
@@ -1082,9 +1075,6 @@ pub(super) async fn clone_project_repository(
         clone_project_repository_impl(state, project_id, input).await
     })
     .await?;
-    project_worktrees_cache()
-        .invalidate(&result.1.project_id)
-        .await;
     Ok(result)
 }
 
@@ -1246,12 +1236,6 @@ pub(super) async fn create_directory(
     }
     let directory_id = state.store.create_directory(&directory).await?;
     let directory = state.store.directory(&directory_id).await?;
-    location_observations_cache()
-        .insert(directory.id.clone(), directory.clone())
-        .await;
-    project_worktrees_cache()
-        .invalidate(&directory.project_id)
-        .await;
     Ok((StatusCode::CREATED, Json(directory)))
 }
 
@@ -1259,7 +1243,6 @@ pub(super) async fn refresh_project_directory(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Directory>> {
-    location_observations_cache().invalidate(&id).await;
     let mut location = state.store.directory(&id).await?;
     ensure_active_project(&state.store.project(&location.project_id).await?)?;
     let was_git = location.git_common_dir.is_some();
@@ -1271,12 +1254,6 @@ pub(super) async fn refresh_project_directory(
     }
     location.updated_at = now();
     state.store.refresh_project_directory(&location).await?;
-    location_observations_cache()
-        .insert(id, location.clone())
-        .await;
-    project_worktrees_cache()
-        .invalidate(&location.project_id)
-        .await;
     Ok(Json(location))
 }
 
@@ -1302,9 +1279,6 @@ pub(super) async fn refresh_project_repository(
         updated.git_common_dir = common;
     }
     state.store.refresh_repository(&updated).await?;
-    project_worktrees_cache()
-        .invalidate(&updated.project_id)
-        .await;
     Ok(Json(state.store.repository(&id).await?))
 }
 
@@ -1601,9 +1575,6 @@ pub(super) async fn delete_project_repository(
     let repository = state.store.repository(&id).await?;
     ensure_active_project(&state.store.project(&repository.project_id).await?)?;
     state.store.delete_repository(&id).await?;
-    project_worktrees_cache()
-        .invalidate(&repository.project_id)
-        .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1615,8 +1586,6 @@ pub(super) async fn delete_project_directory(
     let project = state.store.project(&location.project_id).await?;
     ensure_active_project(&project)?;
     state.store.delete_project_directory(&id).await?;
-    location_observations_cache().invalidate(&id).await;
-    project_worktrees_cache().invalidate(&project.id).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1831,12 +1800,10 @@ pub(super) async fn checkout_directory_branch(
     ApiJson(input): ApiJson<CheckoutDirectoryBranch>,
 ) -> Result<Json<Directory>> {
     let repository = state.store.repository(&id).await?;
-    let project_id = repository.project_id.clone();
     let result = blocking_git_operation_for(repository.git_common_dir, move || async move {
         checkout_directory_branch_impl(state, id, input).await
     })
     .await?;
-    project_worktrees_cache().invalidate(&project_id).await;
     Ok(result)
 }
 
@@ -1946,12 +1913,10 @@ pub(super) async fn create_workspace(
     ApiJson(input): ApiJson<CreateWorkspace>,
 ) -> Result<(StatusCode, Json<Workspace>)> {
     let operation_state = state.clone();
-    let cache_key = project_id.clone();
     let created = blocking_git_operation(move || async move {
         create_workspace_impl(operation_state, project_id, input).await
     })
     .await?;
-    project_worktrees_cache().invalidate(&cache_key).await;
     spawn_workspace_setup_shells(
         state.clone(),
         created.workspace.clone(),

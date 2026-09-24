@@ -101,7 +101,6 @@ pub(super) async fn delete_workspace(
         .await?;
     }
     state.store.delete_workspace(&id).await?;
-    super::project_worktrees_cache().invalidate_all();
     state.runtime.publish_sessions();
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,3 +1,4 @@
+import { gitStatusQuery, refreshGitQueries } from "@/features/git/queries";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { gitHistoryQuery } from "./queries";
 import { useTranslation } from "react-i18next";
@@ -67,7 +68,10 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
   const historyQuery = useQuery({ ...historyOptions, enabled: open && tab === "history" && Boolean(activeHistoryRepositoryId) });
   const history = historyQuery.data ?? null;
   const historyError = historyQuery.error?.message ?? "";
-  const setHistory = (value: GitHistory) => queryClient.setQueryData(historyOptions.queryKey, value);
+  const setHistory = (value: GitHistory) => {
+    queryClient.setQueryData(historyOptions.queryKey, value);
+    void refreshGitQueries(queryClient, workspace ? "workspace" : "project", activeHistoryRepositoryId, false).catch((cause) => toast.errorFrom(cause));
+  };
 
   return <aside data-testid="right-sidebar" aria-hidden={!open} inert={!open} className={cn("absolute inset-y-0 right-0 z-20 flex w-[min(88vw,340px)] shrink-0 flex-col border-l border-border bg-background shadow-2xl transition-transform duration-200 ease-out lg:shadow-none", open ? "translate-x-0" : "translate-x-full pointer-events-none")}>
     <div className="shrink-0 border-b border-border p-2">
@@ -102,36 +106,22 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
 
 function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChanges }: { repositoryKind: "project" | "workspace"; repositories: InspectorRepository[]; repositoryId: string; onOpenChanges: (repository: InspectorRepository) => void }) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<GitStatus | null>(null);
+  const queryClient = useQueryClient();
+  const statusOptions = gitStatusQuery(repositoryKind, repositoryId);
+  const statusQuery = useQuery({ ...statusOptions, enabled: Boolean(repositoryId) });
+  const status = statusQuery.data ?? null;
+  const setStatus = (next: GitStatus) => queryClient.setQueryData(statusOptions.queryKey, next);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const api = repositoryKind === "project" ? projectsApi : workspacesApi;
-  const load = async (signal?: AbortSignal) => {
-    if (!repositoryId) return;
-    const next = await api.gitStatus(repositoryId, signal);
-    setStatus(next);
-  };
-  useEffect(() => {
-    const controller = new AbortController();
-    setStatus(null); setError("");
-    void load(controller.signal).catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : t("reviewUi.gitChangesCouldNotBeLoaded")); });
-    return () => controller.abort();
-  }, [repositoryId, repositoryKind]);
-  useEffect(() => {
-    const refresh = (event: Event) => {
-      const detail = (event as CustomEvent<{ repositoryId: string; status: GitStatus }>).detail;
-      if (detail?.repositoryId === repositoryId) setStatus(detail.status);
-    };
-    window.addEventListener("treefold:git-status-changed", refresh);
-    return () => window.removeEventListener("treefold:git-status-changed", refresh);
-  }, [repositoryId]);
+  useEffect(() => setError(""), [repositoryKind, repositoryId]);
   const commit = async () => {
     if (!status || !message.trim() || status.staged_count === 0 || loading) return;
     setLoading(true); setError("");
     try {
       const result = await api.commit(repositoryId, message.trim(), status.snapshot);
-      setStatus(result.status); setMessage(""); window.dispatchEvent(new CustomEvent("treefold:git-status-changed", { detail: { repositoryId, status: result.status } })); toast.success(t("reviewUi.committed", { commit: result.hash.slice(0, 10) }));
+      setStatus(result.status); setMessage(""); await refreshGitQueries(queryClient, repositoryKind, repositoryId); toast.success(t("reviewUi.committed", { commit: result.hash.slice(0, 10) }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("reviewUi.commitFailed")); }
     finally { setLoading(false); }
   };
@@ -139,7 +129,7 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
   const additions = status?.files.reduce((total, file) => total + file.additions, 0) ?? 0;
   const deletions = status?.files.reduce((total, file) => total + file.deletions, 0) ?? 0;
   return <div className="flex min-h-full flex-col gap-3 p-3">
-    {error && <p className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error}</p>}
+    {(error || statusQuery.error) && <p className="rounded-md bg-destructive/10 p-2 text-xs text-destructive">{error || statusQuery.error?.message}</p>}
     {!status ? <p className="py-8 text-center text-xs text-muted-foreground">{t("reviewUi.loadingChanges")}</p> : status.files.length === 0 ? <p className="py-8 text-center text-xs text-muted-foreground">{t("reviewUi.noChanges")}</p> : <>
       <div className="flex items-center gap-2 text-[10px] text-muted-foreground"><GitBranch className="size-3.5" /><span className="min-w-0 flex-1 truncate font-mono">{status.branch}</span></div>
       <div className="flex flex-col gap-2">

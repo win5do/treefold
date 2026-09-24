@@ -93,6 +93,73 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
+    async fn project_refresh_observes_external_worktree_changes_immediately() {
+        let temp = tempfile::tempdir().unwrap();
+        let repository = temp.path().join("repository");
+        initialize_repository(&repository);
+        let state = test_state(temp.path()).await;
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Fresh worktrees".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
+                preferred_remote: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let read = || {
+            get_project(
+                State(state.clone()),
+                axum::extract::Path(project.id.clone()),
+            )
+        };
+        let Json(before) = read().await.unwrap();
+        assert_eq!(before.worktrees.len(), 1);
+        let external = temp.path().join("external");
+        command_output(
+            &repository,
+            "git",
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "external",
+                external.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        let Json(added) = read().await.unwrap();
+        assert_eq!(added.worktrees.len(), 2);
+        command_output(
+            &external,
+            "git",
+            &["commit", "--allow-empty", "-m", "external commit"],
+        )
+        .unwrap();
+        let head = git_head(external.to_str().unwrap()).unwrap();
+        let Json(committed) = read().await.unwrap();
+        assert!(
+            committed
+                .worktrees
+                .iter()
+                .any(|item| item.head_commit == head[..10])
+        );
+        command_output(
+            &repository,
+            "git",
+            &["worktree", "remove", external.to_str().unwrap()],
+        )
+        .unwrap();
+        let Json(removed) = read().await.unwrap();
+        assert_eq!(removed.worktrees.len(), 1);
+    }
+
+    #[tokio::test]
     async fn workspace_reuses_existing_branch_and_preserves_it_after_cleanup() {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path();
