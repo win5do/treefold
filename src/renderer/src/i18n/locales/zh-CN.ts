@@ -730,7 +730,7 @@ export const zhCN = {
     "close": "关闭",
     "resolveWithAI": "使用 AI 解决",
     "openSession": "打开 Session",
-    "stopAIAbort": "停止 AI 并中止操作",
+    "stopAIAbort": "中止 Git 操作",
     "recoveryRequired": "需要恢复",
     "couldNotLoadRepositoryBranches": "无法加载仓库分支",
     "newWorkspace": "新建 Workspace",

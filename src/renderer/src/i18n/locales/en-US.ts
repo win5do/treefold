@@ -728,7 +728,7 @@ export const enUS = {
     "close": "Close",
     "resolveWithAI": "Resolve with AI",
     "openSession": "Open Session",
-    "stopAIAbort": "Stop AI & Abort",
+    "stopAIAbort": "Abort Git operation",
     "recoveryRequired": "Recovery required",
     "couldNotLoadRepositoryBranches": "Could not load repository branches",
     "newWorkspace": "New Workspace",

@@ -213,14 +213,6 @@ pub(super) async fn abort_parent_operation(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<ParentOperation>> {
     let operation = state.store.parent_operation(&id).await?;
-    if let Some(session_id) = operation.resolver_session_id.as_deref()
-        && let Ok(session) = state.store.session(session_id).await
-    {
-        let _ = state
-            .terminals
-            .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
-            .await;
-    }
     let common = state
         .store
         .repository(&operation.source_repository_id)

@@ -67,7 +67,7 @@ test("parent-operations", async () => {
     dialog = page.locator('[data-testid="parent-operation-dialog"]');
     await dialog.waitFor({ timeout: 3_000, state: 'visible' });
     assert.match(await dialog.innerText(), /Resolving/);
-    await (dialog.locator("button:text-is(\"Stop AI & Abort\")")).click();
+    await (dialog.locator("button:text-is(\"Abort Git operation\")")).click();
     await expect.poll(async () => (await dialog.innerText()).includes("Aborted"), { timeout: 3_000 }).toBeTruthy();
     await (dialog.locator("button:text-is(\"Close\")")).click();
 
