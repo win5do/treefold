@@ -56,14 +56,14 @@ export function FinishWorkspaceDialog({
   const hasDamagedRepositories = flow.skippedRepositories.length > 0;
   return (
     <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-4xl">
-        <DialogHeader>
+      <DialogContent className="flex h-[min(44rem,86vh)] flex-col overflow-hidden sm:max-w-4xl">
+        <DialogHeader className="shrink-0">
           <DialogTitle>
             {t("deliveryUi.forkDelivery.title", {
               type: workspace?.kind === "fork" ? "Fork" : "Workspace",
             })}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="min-h-[2lh]">
             {t(
               completed
                 ? flow.batch?.continue_work
