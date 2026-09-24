@@ -328,6 +328,7 @@ export type GitDiffLaunchPayload = {
 };
 
 export type DeliveryPreflight = {
+  code_action: FinishPlanItem["code_action"];
   id: string;
   source_head: string;
   target_head: string;
@@ -406,6 +407,7 @@ export type FinishPlanItem = {
   preflight_id: string;
 };
 export type FinishBatch = {
+  continue_work?: boolean;
   workspace_id: string;
   status: "running" | "paused" | "completed";
   error?: string | null;

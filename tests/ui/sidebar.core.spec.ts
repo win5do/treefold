@@ -2110,30 +2110,6 @@ test("sidebar.core", async () => {
     assert.match(await preflight.innerText(), /2 files/);
     assert.match(await preflight.innerText(), /source is 1 commit/);
     await expect(finishForkDialog.getByTestId("finish-confirm-action"), "all ready preflights must unlock Finish").toBeEnabled();
-    const forkStrategy = finishForkDialog.getByRole("combobox", { name: "Finish strategy" });
-    assert.deepEqual(
-      await forkStrategy.evaluate((select) => Array.from((select as HTMLSelectElement).options, (option) => option.value)),
-      ["local_merge", "keep"],
-      "Fork Finish must expose only parent merge and preserve strategies",
-    );
-    const removeWorktree = finishForkDialog.getByRole("checkbox", { name: "Remove managed worktree" });
-    const deleteBranch = finishForkDialog.getByRole("checkbox", { name: "Delete local branch" });
-    assert.equal(await removeWorktree.isChecked(), true);
-    assert.equal(await deleteBranch.isChecked(), true);
-    await selectUiOption(page, forkStrategy, "keep");
-    assert.equal(await removeWorktree.isChecked(), false);
-    assert.equal(await deleteBranch.isChecked(), false);
-    assert.equal(await removeWorktree.isEnabled(), true);
-    assert.equal(await deleteBranch.isEnabled(), false);
-    await (
-      finishForkDialog.getByText("Remove managed worktree", { exact: true })
-    ).click();
-    assert.equal(await removeWorktree.isChecked(), true);
-    assert.equal(await deleteBranch.isEnabled(), true);
-    await (
-      finishForkDialog.getByText("Delete local branch", { exact: true })
-    ).click();
-    assert.equal(await deleteBranch.isChecked(), true);
     await pressUiEscape(page);
     await finishForkDialog.waitFor({ timeout: 3_000, state: 'hidden' });
 

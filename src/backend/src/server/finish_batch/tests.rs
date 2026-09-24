@@ -322,6 +322,7 @@ async fn finish_batch_runs_in_background_and_duplicate_start_cannot_execute_twic
         State(f.state.clone()),
         AxumPath(f.workspace.id.clone()),
         ApiJson(FinishBatchRequest {
+            continue_work: false,
             repositories: plans.clone(),
         }),
     )
@@ -334,6 +335,7 @@ async fn finish_batch_runs_in_background_and_duplicate_start_cannot_execute_twic
             State(f.state.clone()),
             AxumPath(f.workspace.id.clone()),
             ApiJson(FinishBatchRequest {
+                continue_work: false,
                 repositories: plans
             })
         )
@@ -1306,6 +1308,7 @@ async fn finish_retained_fork_reopens_and_delivers_new_work_without_reusing_old_
         f.state
             .store
             .save_finish_batch(&FinishBatch {
+                continue_work: false,
                 workspace_id: parent_id.clone(),
                 status: "paused".into(),
                 items: vec![],
@@ -1324,11 +1327,42 @@ async fn finish_retained_fork_reopens_and_delivers_new_work_without_reusing_old_
             .await
             .unwrap();
         use tower::ServiceExt;
+        if strategy == "squash_merge" {
+            let response = crate::server::app(f.state.clone())
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method("POST")
+                        .uri(format!("/api/workspaces/{}/reopen", f.workspace.id))
+                        .body(axum::body::Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            assert!(
+                String::from_utf8_lossy(&body).contains("FORK_REOPEN_SQUASH_CONFIRMATION_REQUIRED")
+            );
+            assert_eq!(
+                f.state
+                    .store
+                    .workspace(&f.workspace.id)
+                    .await
+                    .unwrap()
+                    .status,
+                "archived"
+            );
+        }
         let response = crate::server::app(f.state.clone())
             .oneshot(
                 axum::http::Request::builder()
                     .method("POST")
-                    .uri(format!("/api/workspaces/{}/reopen", f.workspace.id))
+                    .uri(format!(
+                        "/api/workspaces/{}/reopen?confirm_squash=true",
+                        f.workspace.id
+                    ))
                     .body(axum::body::Body::empty())
                     .unwrap(),
             )
@@ -1416,3 +1450,5 @@ async fn finish_retained_fork_reopens_and_delivers_new_work_without_reusing_old_
 }
 
 mod deletion;
+
+mod intermediate;

@@ -72,6 +72,7 @@ export function WorkspaceHome({
     available: boolean;
     session: (kind: "shell" | "codex", directory: Directory) => void;
     fork: () => void;
+    forkFromParent: (parent: Workspace) => void;
     finish: () => void;
   };
   busy: boolean;
@@ -159,13 +160,13 @@ export function WorkspaceHome({
           </div>
         </div>
         {detail.kind === "fork" && detail.status === "archived" && (
-          <div className="mt-4"><ReopenForkButton id={detail.id} /></div>
+          <div className="mt-4"><ReopenForkButton key={detail.id} id={detail.id} parentId={detail.parent_workspace_id} onNewFork={creation.forkFromParent} /></div>
         )}
         {detail.finish_batch && detail.finish_batch.status !== "completed" && (
           <Alert className="mt-6">
             <CircleAlert />
             <AlertDescription className="flex items-center justify-between gap-3">
-              <span>{t("deliveryUi.batchNotice")}</span>
+              <span>{t(detail.finish_batch.continue_work ? "deliveryUi.forkDelivery.notice" : "deliveryUi.batchNotice")}</span>
               <Button size="sm" onClick={creation.finish}>{t("deliveryUi.batchView")}</Button>
             </AlertDescription>
           </Alert>

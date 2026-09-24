@@ -1379,6 +1379,7 @@ function Workspace() {
                     available: selectedProject?.status === "active" && workspace.status === "active",
                     session: (kind, directory) => void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory)),
                     fork: () => setCreateForkWorkspace(workspace),
+                    forkFromParent: setCreateForkWorkspace,
                     finish: () => void openFinishWorkspace(workspace),
                   }}
                   busy={busy}

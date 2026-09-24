@@ -70,7 +70,7 @@ export const zhCN = {
     syncSkippedCount_one: "已跳过 {{count}} 个仓库",
     syncSkippedCount_other: "已跳过 {{count}} 个仓库",
     finishWorkspace: "完成 Workspace…",
-    finishFork: "完成 Fork…",
+    finishFork: "交付 Fork…",
     archiveProject: "归档 Project",
     settings: "设置",
     resources: "资源",
@@ -248,6 +248,24 @@ export const zhCN = {
     "noActionsFound": "未找到匹配的操作。"
   },
   "deliveryUi": {
+    "forkDelivery": {
+      "continuedShort": "交付已完成，Fork 保持活跃。",
+      "delivering": "正在交付…",
+      "notice": "有一项中间交付正在执行或需要处理。",
+
+      "purpose": "操作",
+      "title": "交付 Fork",
+      "finish": "完成并归档",
+      "intermediate": "中间交付",
+      "method": "交付方式",
+      "merge": "合并父级",
+      "abandon": "放弃交付",
+      "squash": "压缩为一个提交（Squash）",
+      "squashHint": "父级将生成一个汇总提交，Fork 保留原始提交历史。归档后如需继续开发，建议从父级新建 Fork；重新打开原 Fork 后再次合并，可能带入旧提交历史或产生冲突。",
+      "continueHint": "将所有仓库合并到父级后继续工作。Fork 保持活跃，Session 继续运行，Todo 不标记为完成。",
+      "finishHint": "所有仓库采用同一交付方式，随后归档并停止 Session。保留工作目录和分支。",
+      "continued": "交付已完成，Fork 保持活跃，Session 可以继续工作。"
+    },
     "recovery": {
       "forceExecute": "强制执行",
       "forceTitle": "确认跳过损坏的仓库？",
@@ -675,6 +693,11 @@ export const zhCN = {
     "sessionState": "Session {{status}}"
   },
   "workspaceUi": {
+    squashReopenTitle: "重新打开此 Fork？",
+    squashReopenHint: "此 Fork 已通过 Squash 交付，父级与 Fork 的提交历史不同。重新打开不会调整分支；再次合并可能带入旧提交历史或产生冲突。建议从父级新建 Fork 继续开发。",
+    reopenAnyway: "仍然重新打开",
+    newForkFromParent: "从父级新建 Fork",
+
     "reopenUnavailable": "重新打开需要保留的工作目录和分支完整，父级 Workspace 和 Project 仍活跃，且没有待处理的完成操作。",
     "reopenFailed": "无法重新打开 Fork",
     "reopenFork": "重新打开 Fork",

@@ -16,6 +16,8 @@ pub(super) fn workers() -> &'static Mutex<HashSet<String>> {
 
 #[derive(Deserialize)]
 pub(super) struct FinishBatchRequest {
+    #[serde(default)]
+    pub continue_work: bool,
     pub repositories: Vec<FinishPlanItem>,
 }
 
@@ -53,7 +55,13 @@ pub(super) async fn start_finish_batch(
     ApiJson(request): ApiJson<FinishBatchRequest>,
 ) -> Result<(StatusCode, Json<FinishBatch>)> {
     let mut active = workers().lock().await;
-    if active.contains(&id) || state.store.finish_batch(&id).await?.is_some() {
+    if active.contains(&id)
+        || state
+            .store
+            .finish_batch(&id)
+            .await?
+            .is_some_and(|b| !b.continue_work || b.status != "completed")
+    {
         return Err(AppError::BadRequest(
             "a Finish operation already exists; reopen it to continue".into(),
         ));
@@ -61,7 +69,13 @@ pub(super) async fn start_finish_batch(
     let check_state = state.clone();
     let check_id = id.clone();
     let batch = blocking_git_operation(move || async move {
-        prepare_batch(&check_state, &check_id, request.repositories).await
+        prepare_batch_with_mode(
+            &check_state,
+            &check_id,
+            request.repositories,
+            request.continue_work,
+        )
+        .await
     })
     .await?;
     state.store.save_finish_batch(&batch).await?;
@@ -91,10 +105,20 @@ pub(super) async fn resume_finish_batch(
     Ok(Json(batch))
 }
 
+#[cfg(test)]
 pub(super) async fn prepare_batch(
     state: &AppState,
     id: &str,
     plans: Vec<FinishPlanItem>,
+) -> Result<FinishBatch> {
+    prepare_batch_with_mode(state, id, plans, false).await
+}
+
+pub(super) async fn prepare_batch_with_mode(
+    state: &AppState,
+    id: &str,
+    plans: Vec<FinishPlanItem>,
+    continue_work: bool,
 ) -> Result<FinishBatch> {
     let workspace = state.store.workspace(id).await?;
     if !matches!(workspace.kind.as_str(), "workspace" | "fork")
@@ -115,6 +139,28 @@ pub(super) async fn prepare_batch(
         return Err(AppError::BadRequest(
             "finish active Forks before their parent Workspace".into(),
         ));
+    }
+    if continue_work
+        && (workspace.kind != "fork"
+            || plans.is_empty()
+            || plans
+                .iter()
+                .any(|p| p.code_action != "local_merge" || p.delete_worktree || p.delete_branch))
+    {
+        return Err(AppError::BadRequest("Intermediate delivery only supports ordinary merge for a Fork, retaining all checkouts and branches".into()));
+    }
+    if workspace.kind == "fork" {
+        let mut actions = plans
+            .iter()
+            .filter(|p| p.code_action != "skip")
+            .map(|p| p.code_action.as_str());
+        if let Some(first) = actions.next() {
+            if actions.any(|action| action != first) {
+                return Err(AppError::BadRequest(
+                    "Use one delivery strategy for the entire Fork".into(),
+                ));
+            }
+        }
     }
     let repositories = state.store.workspace_repositories(id).await?;
     let required: HashSet<_> = repositories
@@ -163,6 +209,7 @@ pub(super) async fn prepare_batch(
         });
     }
     Ok(FinishBatch {
+        continue_work,
         workspace_id: id.into(),
         status: "running".into(),
         items,
@@ -210,7 +257,7 @@ pub(super) async fn force_resume_finish_batch(
         .finish_batch(&id)
         .await?
         .ok_or(AppError::NotFound)?;
-    if batch.status == "completed" || request.repository_ids.is_empty() {
+    if batch.continue_work || batch.status == "completed" || request.repository_ids.is_empty() {
         return Err(AppError::BadRequest(
             "No paused repositories to skip".into(),
         ));
@@ -300,6 +347,9 @@ fn launch(state: AppState, batch: FinishBatch, retry: bool) {
 
 pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: bool) -> Result<()> {
     for cleanup in [false, true] {
+        if cleanup && batch.continue_work {
+            break;
+        }
         if cleanup
             && state
                 .store
@@ -386,6 +436,7 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
             state.runtime.publish_sessions();
             let plan = batch.items[index].plan.clone();
             let task_state = state.clone();
+            let continue_work = batch.continue_work;
             let common = state
                 .store
                 .workspace_repository(&plan.repository_id)
@@ -417,6 +468,9 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
                     )
                     .await?;
                     return Ok(None);
+                }
+                if continue_work {
+                    return intermediate::deliver(&task_state, &plan, retry).await;
                 }
                 let mut execution = input(&plan, false);
                 if matches!(
@@ -484,6 +538,18 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
             state.store.save_finish_batch(&batch).await?;
         }
     }
+    if batch.continue_work {
+        batch.status = "completed".into();
+        batch.error = None;
+        for item in &mut batch.items {
+            item.cleaned = true;
+            item.status = "completed".into();
+        }
+        state.store.complete_intermediate_batch(&batch).await?;
+        project_worktrees_cache().invalidate_all();
+        state.runtime.publish_sessions();
+        return Ok(());
+    }
     let _ = super::git_routes::archive_workspace(
         State(state.clone()),
         AxumPath(batch.workspace_id.clone()),
@@ -499,6 +565,8 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
     state.runtime.publish_sessions();
     Ok(())
 }
+
+mod intermediate;
 
 #[cfg(test)]
 mod tests;

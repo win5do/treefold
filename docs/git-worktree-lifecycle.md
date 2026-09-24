@@ -1,7 +1,7 @@
 # Git Worktree Lifecycle
 
 ```text
-Create → Work → Sync → Rebase/Recover → Finish → Cleanup
+Create → Work ↔ Intermediate delivery → Finish → Archive → Delete / Cleanup
 ```
 
 | Phase | Safety boundary |
@@ -21,12 +21,23 @@ different safety preconditions.
 Forks have neither Pull nor Push. They follow their parent Workspace locally and
 finish by merging into that parent's checkout. A root Workspace cannot finish
 while it still has active Forks. When every repository in a Fork is merged into
-its parent, the assigned Todo becomes done.
+its parent during Finish, the assigned Todo becomes done. Intermediate delivery
+does not complete the Todo.
 
-Finish configures all unfinished repositories in one dialog, with vertical tabs
-for repository-specific strategies. One confirmation submits
+Fork delivery first selects **Finish and archive** or **Intermediate delivery**.
+Finish then offers **Merge into parent** or **Abandon delivery**. Only Finish with
+merge offers **Squash into one commit**, unchecked by default. Abandoning delivery
+archives retained work without merging or deleting it. The strategy applies to
+every writable repository; repository tabs display preflight and execution results.
+Intermediate delivery only supports ordinary merge, leaves the Fork and repositories
+active, and neither stops Sessions nor completes Todos. It persists recoverable
+batch progress and allows a fresh delivery after completion. It cannot skip damaged
+repositories or delete checkouts. Squash's inline explanation describes the different
+parent and Fork histories and recommends a new Fork for subsequent work.
+
+Root Workspace Finish retains repository-specific strategies. One confirmation submits
 the whole plan. The backend rechecks every repository before starting, delivers
-them sequentially, then archives the Workspace or Fork and stops its Sessions.
+them sequentially. Finish then archives the Workspace or Fork and stops its Sessions.
 New Finish plans keep all worktrees and branches without a checkbox.
 Feature-branch delivery pushes without forcing and proves that the remote
 feature ref contains the confirmed source commit before cleanup.
@@ -44,8 +55,12 @@ checkouts remain on their recorded branches, its Project and parent Workspace
 are active, and neither it nor its parent has unfinished Finish work. Reopening
 does not launch Sessions or recreate missing worktrees. It reactivates the linked
 Todo and starts a fresh delivery round while retaining parent-operation history.
+A previous completed Squash delivery requires explicit confirmation to reopen:
+the dialog recommends **New Fork from parent**, with **Reopen anyway** and **Cancel**.
+Reopening never rebases or resets the branch. The new-Fork action opens the standard
+creation dialog using the parent Workspace; the archived Fork remains unchanged.
 
-Delivery uses Finish rather than a separate Integrate into Parent menu action.
+Delivery uses one Fork delivery dialog rather than a separate Integrate into Parent menu action.
 Update from Parent retains conflict resolution and Abort, but completed parent
 operations have no Undo API. Their recovery refs are released after completion;
 the recorded before/result heads remain part of the operation history.

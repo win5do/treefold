@@ -2,6 +2,23 @@ use super::*;
 use crate::model::FinishBatch;
 
 impl Store {
+    pub async fn has_squash_delivery(&self, id: &str) -> Result<bool> {
+        let row = sqlx::query!("SELECT COUNT(*) AS count FROM parent_operations WHERE workspace_id=? AND direction='integrate' AND strategy='squash' AND status='completed'", id).fetch_one(&self.pool).await?;
+        Ok(row.count > 0)
+    }
+
+    pub async fn complete_intermediate_batch(&self, batch: &FinishBatch) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let id = &batch.workspace_id;
+        let state =
+            serde_json::to_string(batch).map_err(|error| AppError::Internal(error.into()))?;
+        // Keep the journal, but the next delivery must use a fresh operation.
+        sqlx::query!("UPDATE parent_operations SET phase='reopened' WHERE workspace_id=? AND direction='integrate' AND status='completed'", id).execute(&mut *tx).await?;
+        sqlx::query!("INSERT INTO workspace_finish_batches (workspace_id, state) VALUES (?, ?) ON CONFLICT(workspace_id) DO UPDATE SET state = excluded.state", id, state).execute(&mut *tx).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
     pub async fn reopen_fork(&self, id: &str) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         let timestamp = now();

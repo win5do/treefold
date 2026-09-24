@@ -68,7 +68,7 @@ export const enUS = {
     syncSkippedCount_one: "{{count}} repository skipped",
     syncSkippedCount_other: "{{count}} repositories skipped",
     finishWorkspace: "Finish Workspace…",
-    finishFork: "Finish Fork…",
+    finishFork: "Deliver Fork…",
     archiveProject: "Archive Project",
     settings: "Settings",
     resources: "Resources",
@@ -246,6 +246,24 @@ export const enUS = {
     "noActionsFound": "No actions found."
   },
   "deliveryUi": {
+    "forkDelivery": {
+      "continuedShort": "Delivery complete; Fork remains active.",
+      "delivering": "Delivering…",
+      "notice": "An intermediate delivery is in progress or needs attention.",
+
+      "purpose": "Operation",
+      "title": "Deliver Fork",
+      "finish": "Finish and archive",
+      "intermediate": "Intermediate delivery",
+      "method": "Delivery method",
+      "merge": "Merge into parent",
+      "abandon": "Abandon delivery",
+      "squash": "Squash into one commit",
+      "squashHint": "The parent receives one summary commit; this Fork keeps its original commits. To continue after archiving, create a new Fork from the parent. Reopening and merging this Fork again may bring back old commit history or cause conflicts.",
+      "continueHint": "Merge every repository into the parent and continue working. This Fork stays active, Sessions keep running, and its Todo is not marked done.",
+      "finishHint": "Apply one delivery method to every repository, then archive and stop Sessions. Working directories and branches are kept.",
+      "continued": "Delivery is complete. This Fork remains active and its Sessions can continue."
+    },
     "recovery": {
       "forceExecute": "Force execute",
       "forceTitle": "Skip damaged repositories?",
@@ -673,6 +691,11 @@ export const enUS = {
     "sessionState": "Session is {{status}}"
   },
   "workspaceUi": {
+    squashReopenTitle: "Reopen this Fork?",
+    squashReopenHint: "This Fork was delivered with Squash. The parent and Fork have different commit histories. Reopening does not adjust the branch; merging again may bring back old commit history or cause conflicts. We recommend creating a new Fork from the parent.",
+    reopenAnyway: "Reopen anyway",
+    newForkFromParent: "New Fork from parent",
+
     "reopenUnavailable": "Reopening requires retained working directories and branches, an active parent Workspace and Project, and no pending Finish operation.",
     "reopenFailed": "Could not reopen Fork",
     "reopenFork": "Reopen Fork",

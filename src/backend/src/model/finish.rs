@@ -25,6 +25,8 @@ pub struct FinishBatchItem {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinishBatch {
+    #[serde(default)]
+    pub continue_work: bool,
     pub workspace_id: String,
     pub status: String,
     pub items: Vec<FinishBatchItem>,

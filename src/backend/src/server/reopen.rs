@@ -1,5 +1,5 @@
 use super::{
-    AppError, AppState, AxumPath, Json, Result, State, StatusCode, Workspace,
+    AppError, AppState, AxumPath, Json, Query, Result, State, StatusCode, Workspace,
     blocking_git_operation, command_output, ensure_checked_out_branch, git_operation_in_progress,
 };
 use std::path::Path;
@@ -12,9 +12,16 @@ fn unavailable() -> AppError {
     )
 }
 
+#[derive(Default, serde::Deserialize)]
+pub(super) struct ReopenOptions {
+    #[serde(default)]
+    pub confirm_squash: bool,
+}
+
 pub(super) async fn reopen_fork(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
+    Query(options): Query<ReopenOptions>,
 ) -> Result<Json<Workspace>> {
     // A parent Finish must not pass its active-Fork check while this Fork reopens.
     let workers = super::finish_batch::workers().lock().await;
@@ -25,6 +32,13 @@ pub(super) async fn reopen_fork(
         .ok_or_else(unavailable)?;
     if workers.contains(&id) || workers.contains(parent_id) {
         return Err(unavailable());
+    }
+    if !options.confirm_squash && state.store.has_squash_delivery(&id).await? {
+        return Err(AppError::api(
+            StatusCode::CONFLICT,
+            "FORK_REOPEN_SQUASH_CONFIRMATION_REQUIRED",
+            "This Fork was squash-delivered. Confirm reopening with different parent and Fork histories, or create a new Fork from its parent.",
+        ));
     }
     blocking_git_operation(move || async move { reopen_fork_impl(&state, &id).await.map(Json) })
         .await

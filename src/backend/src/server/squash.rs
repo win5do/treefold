@@ -128,7 +128,7 @@ async fn run(
             let workspace = state.store.workspace(&location.workspace_id).await?;
             if location.access_mode != "read_write" || workspace.status != "active"
                 || !matches!(location.delivery_status.as_str(), "active" | "published")
-                || state.store.finish_batch(&workspace.id).await?.is_some() {
+                || state.store.finish_batch(&workspace.id).await?.is_some_and(|b| !b.continue_work || b.status != "completed") {
                 return Err(denied("SQUASH_OWNERSHIP", "Only an active writable Repository without a Finish operation can be squashed"));
             }
             if state.store.has_completed_integration(&location.id).await? {

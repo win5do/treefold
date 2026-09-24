@@ -25,8 +25,8 @@ export const workspacesApi = {
     request<WorkspaceDetail>(`/api/workspaces/${id}`, { signal }),
   update: (id: string, json: unknown) =>
     request<Workspace>(`/api/workspaces/${id}`, { method: "PATCH", json }),
-  reopen: (id: string) =>
-    request<Workspace>(`/api/workspaces/${id}/reopen`, { method: "POST" }),
+  reopen: (id: string, confirmSquash = false) =>
+    request<Workspace>(`/api/workspaces/${id}/reopen?confirm_squash=${confirmSquash}`, { method: "POST" }),
   delete: (id: string, options: WorkspaceDeleteOptions) =>
     request(`/api/workspaces/${id}?${new URLSearchParams({
       delete_worktrees: String(options.delete_worktrees),
@@ -63,9 +63,9 @@ export const workspacesApi = {
     }),
   finishBatch: (id: string) =>
     request<FinishBatch | null>(`/api/workspaces/${id}/finish-batch`),
-  startFinishBatch: (id: string, repositories: FinishPlanItem[]) =>
+  startFinishBatch: (id: string, repositories: FinishPlanItem[], continueWork = false) =>
     request<FinishBatch>(`/api/workspaces/${id}/finish-batch`, {
-      method: "POST", json: { repositories },
+      method: "POST", json: { repositories, continue_work: continueWork },
     }),
   forceResumeFinishBatch: (id: string, repositoryIds: string[]) =>
     request<FinishBatch>(`/api/workspaces/${id}/finish-batch/force-resume`, { method: "POST", json: { repository_ids: repositoryIds } }),

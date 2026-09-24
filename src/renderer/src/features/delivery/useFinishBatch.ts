@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { workspacesApi } from "@/api/workspaces";
 import type {
@@ -21,9 +21,16 @@ type Draft = Omit<FinishPlanItem, "repository_id" | "preflight_id">;
 export function useFinishBatch(workspace: WorkspaceDetail | null) {
   const client = useQueryClient();
   const { t } = useTranslation();
+  const [continueWork, setContinueWork] = useState(false);
+  const [forkAction, setForkAction] = useState<"local_merge" | "squash_merge" | "keep">("local_merge");
+  const showResult = useRef(false);
+  useEffect(() => { setContinueWork(false); setForkAction("local_merge"); showResult.current = false; }, [workspace?.id]);
   const [batch, setBatch] = useState<FinishBatch | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [storedDrafts, setDrafts] = useState<Record<string, Draft>>({});
+  const drafts = useMemo(() => workspace?.kind === "fork" && !batch
+    ? Object.fromEntries(Object.entries(storedDrafts).map(([id, draft]) => [id, { ...draft, code_action: continueWork ? "local_merge" as const : forkAction, delete_worktree: false, delete_branch: false }]))
+    : storedDrafts, [storedDrafts, workspace?.kind, batch, continueWork, forkAction]);
   const [preflights, setPreflights] = useState<
     Record<string, DeliveryPreflight>
   >({});
@@ -76,7 +83,11 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
       try {
         const next = await workspacesApi.finishBatch(workspace.id);
         if (stopped) return;
-        setBatch(next);
+        setBatch(next?.continue_work && next.status === "completed" && !showResult.current ? null : next);
+        if (next && next.status !== "completed") {
+          setContinueWork(Boolean(next.continue_work));
+          setDrafts(Object.fromEntries(next.items.map(item => [item.repository_id, { code_action: item.code_action, delete_worktree: item.delete_worktree, delete_branch: item.delete_branch }])));
+        }
         setLoaded(true);
         setError("");
         const fingerprint = JSON.stringify(next);
@@ -135,6 +146,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     repositories.every(
       (item) =>
         preflights[item.id] &&
+        preflights[item.id].code_action === drafts[item.id]?.code_action &&
         !preflights[item.id].blockers.length &&
         !checks[item.id],
     );
@@ -150,6 +162,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
   );
   const skipIds = new Set(skippedRepositories.map((item) => item.id));
   const forceReady =
+    !continueWork &&
     loaded &&
     !busy &&
     (!batch || batch.status === "paused") &&
@@ -173,6 +186,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     )
       return false;
     setBusy(true);
+    showResult.current = true;
     setError("");
     try {
       const next = batch
@@ -195,6 +209,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
                 : {}),
               preflight_id: preflights[item.id]?.id ?? "",
             })),
+            workspace.kind === "fork" && continueWork,
           );
       setBatch(next);
       setRevision((value) => value + 1);
@@ -219,6 +234,10 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
   };
   return {
     batch,
+    continueWork,
+    setContinueWork: (value: boolean) => { setContinueWork(value); setForkAction("local_merge"); },
+    forkAction,
+    setForkAction,
     loaded,
     drafts,
     preflights,

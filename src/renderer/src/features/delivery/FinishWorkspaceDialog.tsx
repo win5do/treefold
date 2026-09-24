@@ -18,6 +18,7 @@ import { NativeSelect as Select } from "@/components/ui/native-select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { ParentOperation, Session, WorkspaceDetail } from "@/domain/types";
 import { useFinishBatch } from "./useFinishBatch";
+import { ForkDeliveryOptions } from "./ForkDeliveryOptions";
 import { ForceFinishWorkspace } from "./ForceFinishWorkspace";
 import { finishErrorText, isWorktreeError } from "./finishErrors";
 import { FinishConflict } from "./FinishConflict";
@@ -56,32 +57,39 @@ export function FinishWorkspaceDialog({
   const skippedCount =
     flow.batch?.items.filter((item) => item.status === "skipped").length ?? 0;
   const completed = flow.batch?.status === "completed";
-  const progress = flow.batch?.items.filter((item) => item.cleaned).length ?? 0;
+  const progress = flow.batch?.items.filter((item) => flow.batch?.continue_work ? item.delivered : item.cleaned).length ?? 0;
   const hasDamagedRepositories = flow.skippedRepositories.length > 0;
   return (
     <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>
-            {t("deliveryUi.batchTitle", {
+            {t(workspace?.kind === "fork" ? "deliveryUi.forkDelivery.title" : "deliveryUi.batchTitle", {
               type: workspace?.kind === "fork" ? "Fork" : "Workspace",
             })}
           </DialogTitle>
           <DialogDescription>
             {t(
               completed
-                ? skippedCount
+                ? flow.batch?.continue_work
+                  ? "deliveryUi.forkDelivery.continued"
+                  : skippedCount
                   ? "deliveryUi.recovery.completedWithSkips"
                   : "deliveryUi.batchCompletedDescription"
                 : flow.batch?.status === "paused"
                   ? "deliveryUi.batchPausedDescription"
                   : flow.batch
                     ? "deliveryUi.batchRunningDescription"
-                    : "deliveryUi.batchDescription",
+                    : workspace?.kind === "fork"
+                      ? flow.continueWork ? "deliveryUi.forkDelivery.continueHint" : "deliveryUi.forkDelivery.finishHint"
+                      : "deliveryUi.batchDescription",
               { count: skippedCount },
             )}
           </DialogDescription>
         </DialogHeader>
+        {workspace?.kind === "fork" && !flow.batch && flow.loaded && (
+          <ForkDeliveryOptions continueWork={flow.continueWork} onContinueWork={flow.setContinueWork} action={flow.forkAction} onAction={flow.setForkAction} disabled={flow.busy} />
+        )}
         {!flow.loaded ? (
           <p>{t("states.checking")}</p>
         ) : !repositories.length && !flow.batch ? (
@@ -211,7 +219,7 @@ export function FinishWorkspaceDialog({
                     ) : (
                       draft && (
                         <>
-                          <Field>
+                          {workspace?.kind !== "fork" && <Field>
                             <FieldLabel htmlFor={`finish-strategy-${item.id}`}>
                               {t("deliveryUi.finishStrategy")}
                             </FieldLabel>
@@ -232,13 +240,10 @@ export function FinishWorkspaceDialog({
                               <option value="local_merge">
                                 {t("deliveryUi.mergeTarget", {
                                   target:
-                                    workspace?.kind === "fork"
-                                      ? t("deliveryUi.parentWorkspace")
-                                      : t("deliveryUi.localBaseBranch"),
+                                    t("deliveryUi.localBaseBranch"),
                                 })}
                               </option>
-                              {workspace?.kind !== "fork" &&
-                                item.remote_name && (
+                              {item.remote_name && (
                                   <option value="push_branch">
                                     {t("deliveryUi.pushWorkspaceFeatureBranch")}
                                   </option>
@@ -248,7 +253,7 @@ export function FinishWorkspaceDialog({
                               </option>
                             </Select>
                             {draft.code_action === "squash_merge" && <p className="text-xs text-muted-foreground">{t("squashUi.deliveryHint")}</p>}
-                          </Field>
+                          </Field>}
                           <section
                             data-testid="delivery-preflight"
                             className="flex flex-col gap-2 rounded-lg border p-4"
@@ -355,7 +360,9 @@ export function FinishWorkspaceDialog({
             {flow.batch
               ? t(
                   completed
-                    ? skippedCount
+                    ? flow.batch.continue_work
+                      ? "deliveryUi.forkDelivery.continuedShort"
+                      : skippedCount
                       ? "deliveryUi.recovery.completedWithSkips"
                       : "deliveryUi.batchCompleted"
                     : "deliveryUi.batchProgress",
@@ -382,7 +389,7 @@ export function FinishWorkspaceDialog({
               )}
             <Button
               variant="secondary"
-              onClick={() => (completed ? onCompleted() : onOpenChange(false))}
+              onClick={() => (completed && !flow.batch?.continue_work ? onCompleted() : onOpenChange(false))}
             >
               {t(
                 flow.batch
@@ -406,7 +413,7 @@ export function FinishWorkspaceDialog({
                 {t(
                   flow.batch
                     ? flow.batch.status === "running"
-                      ? "deliveryUi.finishing"
+                      ? flow.batch.continue_work ? "deliveryUi.forkDelivery.delivering" : "deliveryUi.finishing"
                       : "deliveryUi.batchResume"
                     : "deliveryUi.batchExecute",
                 )}
@@ -414,6 +421,7 @@ export function FinishWorkspaceDialog({
             )}
             {!completed &&
               hasDamagedRepositories &&
+              !flow.continueWork &&
               flow.batch?.status !== "running" && (
                 <ForceFinishWorkspace
                   repositories={flow.skippedRepositories}
