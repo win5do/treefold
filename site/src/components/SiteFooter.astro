@@ -1,21 +1,27 @@
 ---
+interface Props { locale?: 'zh' | 'en'; }
+const { locale = 'zh' } = Astro.props;
+const isEnglish = locale === 'en';
+const home = isEnglish ? '/en/' : '/';
+const download = isEnglish ? '/en/download/' : '/download/';
 const github = 'https://github.com/win5do/treefold';
 ---
 
-<footer class="border-t border-white/10 bg-ink text-white">
-  <div class="site-container grid gap-10 py-12 md:grid-cols-[1fr_auto] md:items-end">
+<footer class="site-footer">
+  <div class="site-container footer-inner">
     <div>
-      <a href="/" class="inline-flex items-center gap-2.5 text-lg font-semibold tracking-[-0.05em]">
-        <img src="/favicon.png" width="30" height="30" alt="" class="rounded-[7px]" /> Treefold
+      <a href={home} class="brand">
+        <img src="/favicon.png" width="28" height="28" alt="" />
+        <span>Treefold</span>
       </a>
-      <p class="mt-4 max-w-sm text-sm leading-7 text-white/50">并行展开，干净收敛。<br />为 Git worktree 与 Agent 协作而造的 macOS App。</p>
-      <p class="mt-7 text-xs text-white/35">免费开源 · AGPL-3.0-only</p>
+      <p>{isEnglish ? 'Run agents in parallel. Fold the work back cleanly.' : '并行展开，干净收敛。'}</p>
+      <small>{isEnglish ? 'Free and open source · AGPL-3.0-only' : '免费开源 · AGPL-3.0-only'}</small>
     </div>
-    <nav class="flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/60" aria-label="页脚导航">
-      <a class="nav-link" href="/">首页</a>
-      <a class="nav-link" href="/download">下载</a>
-      <a class="nav-link" href={github} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-      <a class="nav-link" href={`${github}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">许可证 ↗</a>
+    <nav aria-label={isEnglish ? 'Footer navigation' : '页脚导航'}>
+      <a href={home}>{isEnglish ? 'Home' : '首页'}</a>
+      <a href={download}>{isEnglish ? 'Download' : '下载'}</a>
+      <a href={github} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      <a href={`${github}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">{isEnglish ? 'License' : '许可证'} ↗</a>
     </nav>
   </div>
 </footer>

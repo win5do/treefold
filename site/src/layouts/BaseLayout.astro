@@ -4,25 +4,29 @@ import '../styles/global.css';
 interface Props {
   title: string;
   description: string;
+  locale?: 'zh' | 'en';
+  alternatePath?: string;
 }
 
-const { title, description } = Astro.props;
+const { title, description, locale = 'zh', alternatePath } = Astro.props;
 ---
 
 <!doctype html>
-<html lang="zh-CN">
+<html lang={locale === 'zh' ? 'zh-CN' : 'en'}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#101715" />
+    <meta name="theme-color" content="#08090a" />
+    <meta name="color-scheme" content="dark" />
     <meta name="description" content={description} />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
+    {alternatePath && <link rel="alternate" hreflang={locale === 'zh' ? 'en' : 'zh-CN'} href={alternatePath} />}
     <link rel="icon" href="/favicon.png" type="image/png" />
     <title>{title}</title>
   </head>
-  <body class="bg-paper text-ink antialiased">
+  <body>
     <slot />
   </body>
 </html>

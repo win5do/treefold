@@ -1,47 +1,72 @@
 ---
 interface Props {
   current?: 'home' | 'download';
+  locale?: 'zh' | 'en';
 }
 
-const { current = 'home' } = Astro.props;
+const { current = 'home', locale = 'zh' } = Astro.props;
+const isEnglish = locale === 'en';
+const home = isEnglish ? '/en/' : '/';
+const download = isEnglish ? '/en/download/' : '/download/';
+const languageTarget = current === 'download'
+  ? (isEnglish ? '/download/' : '/en/download/')
+  : (isEnglish ? '/' : '/en/');
 const github = 'https://github.com/win5do/treefold';
+const copy = isEnglish ? {
+  home: 'Treefold home',
+  model: 'Model',
+  git: 'Git visibility',
+  workflow: 'Workflow',
+  agents: 'Agents',
+  download: 'Download',
+  menu: 'Open navigation',
+  source: 'Source',
+  language: '中文',
+} : {
+  home: 'Treefold 首页',
+  model: '产品模型',
+  git: 'Git 可视化',
+  workflow: '工作方式',
+  agents: 'Agent 集成',
+  download: '下载',
+  menu: '打开导航菜单',
+  source: '源码',
+  language: 'EN',
+};
 ---
 
-<header class="relative z-30 border-b border-white/10 bg-ink text-white">
-  <div class="site-container flex h-[74px] items-center justify-between gap-4">
-    <a href="/" class="inline-flex shrink-0 items-center gap-2.5 text-lg font-semibold tracking-[-0.06em]" aria-label="Treefold 首页">
-      <img src="/favicon.png" width="32" height="32" alt="" class="rounded-[8px]" />
+<header class="site-header">
+  <div class="site-container header-inner">
+    <a href={home} class="brand" aria-label={copy.home}>
+      <img src="/favicon.png" width="28" height="28" alt="" />
       <span>Treefold</span>
     </a>
 
-    <nav class="hidden items-center gap-8 text-[13px] font-medium text-white/65 md:flex" aria-label="主导航">
-      <a class="nav-link" href="/#model">产品模型</a>
-      <a class="nav-link" href="/#git">Git 可视化</a>
-      <a class="nav-link" href="/#workflow">工作方式</a>
-      <a class="nav-link" href="/#agents">Agent 集成</a>
-      <a class="nav-link" href="/#scenarios">适用场景</a>
+    <nav class="desktop-nav" aria-label={isEnglish ? 'Primary navigation' : '主导航'}>
+      <a href={`${home}#model`}>{copy.model}</a>
+      <a href={`${home}#git`}>{copy.git}</a>
+      <a href={`${home}#workflow`}>{copy.workflow}</a>
+      <a href={`${home}#agents`}>{copy.agents}</a>
     </nav>
 
-    <div class="hidden items-center gap-3 md:flex">
-      <a class="header-github" href={github} target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 查看 Treefold 源码（新窗口）">
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" class="size-[19px]"><path d="M12 .8a11.2 11.2 0 0 0-3.54 21.83c.56.1.76-.24.76-.54v-2.08c-3.1.67-3.76-1.32-3.76-1.32-.5-1.27-1.23-1.6-1.23-1.6-1.01-.7.08-.68.08-.68 1.12.08 1.7 1.15 1.7 1.15 1 .1 1.68-.62 2.08-1.02-2.48-.28-5.1-1.24-5.1-5.53 0-1.22.43-2.22 1.14-3-.11-.28-.5-1.42.1-2.96 0 0 .93-.3 3.08 1.15a10.7 10.7 0 0 1 5.6 0c2.15-1.46 3.08-1.15 3.08-1.15.6 1.54.21 2.68.1 2.96.71.78 1.14 1.78 1.14 3 0 4.3-2.63 5.25-5.13 5.52.4.35.75 1.02.75 2.06v3.05c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg>
-        <span>GitHub</span>
-      </a>
-      <a href="/download" class="button-small" aria-current={current === 'download' ? 'page' : undefined}>下载 App <span aria-hidden="true">↗</span></a>
+    <div class="header-actions">
+      <a class="language-switch" href={languageTarget} lang={isEnglish ? 'zh-CN' : 'en'} aria-label={isEnglish ? '切换到中文' : 'Switch to English'}>{copy.language}</a>
+      <a class="github-link" href={github} target="_blank" rel="noopener noreferrer">{copy.source}</a>
+      <a href={download} class="button button-compact" aria-current={current === 'download' ? 'page' : undefined}>{copy.download}<span aria-hidden="true">↗</span></a>
     </div>
 
-    <details class="mobile-menu relative md:hidden">
-      <summary class="flex min-h-11 min-w-11 cursor-pointer list-none items-center justify-center rounded-lg border border-white/20 text-white marker:hidden" aria-label="打开导航菜单">
-        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-5"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    <details class="mobile-menu">
+      <summary aria-label={copy.menu}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
       </summary>
-      <nav class="absolute top-[52px] right-0 flex w-[min(82vw,280px)] flex-col gap-1 rounded-xl border border-white/15 bg-[#1b2722] p-2 text-sm shadow-2xl" aria-label="移动端导航">
-        <a href="/#model">产品模型</a>
-        <a href="/#git">Git 可视化</a>
-        <a href="/#workflow">工作方式</a>
-        <a href="/#agents">Agent 集成</a>
-        <a href="/#scenarios">适用场景</a>
-        <a href="/download">下载 App</a>
-        <a href={github} target="_blank" rel="noopener noreferrer">GitHub 源码 ↗</a>
+      <nav aria-label={isEnglish ? 'Mobile navigation' : '移动端导航'}>
+        <a href={`${home}#model`}>{copy.model}</a>
+        <a href={`${home}#git`}>{copy.git}</a>
+        <a href={`${home}#workflow`}>{copy.workflow}</a>
+        <a href={`${home}#agents`}>{copy.agents}</a>
+        <a href={download}>{copy.download}</a>
+        <a href={github} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+        <a href={languageTarget} lang={isEnglish ? 'zh-CN' : 'en'}>{isEnglish ? '切换到中文' : 'Switch to English'}</a>
       </nav>
     </details>
   </div>
