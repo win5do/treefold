@@ -13,6 +13,19 @@ test("git-diff", async () => {
   let page!: Page;
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "git-diff" });
+    await page.route("**/api/project-repositories/*/git-diff", async (route) => {
+      const response = await route.fetch();
+      const comparison = await response.json();
+      comparison.patch += `diff --git a/src/alpha_test.ts b/src/alpha_test.ts
+index 1111111..2222222 100644
+--- a/src/alpha_test.ts
++++ b/src/alpha_test.ts
+@@ -1 +1 @@
+-before
++after
+`;
+      await route.fulfill({ response, json: comparison });
+    });
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
     await (page.locator('[data-testid="workspace-sidebar"]')).waitFor({ timeout: 10_000, state: 'visible' });
     await page.locator('button[aria-label="Show right sidebar"]').click();
@@ -38,7 +51,18 @@ test("git-diff", async () => {
     const next = page.locator('button[aria-label="Next file"]');
     await expect(next).toBeEnabled({ timeout: 3_000 });
     await next.click();
-    await (page.locator('[title="src/alpha.ts"]')).waitFor({ timeout: 3_000, state: 'visible' });
+    await (page.locator('section [title="src/alpha.ts"]')).waitFor({ timeout: 3_000, state: 'visible' });
+    await next.click();
+    await expect(page.locator('section [title="src/alpha_test.ts"]')).toBeVisible();
+    await next.click();
+    await expect(page.locator('section [title="README.md"]')).toBeVisible();
+    await expect(next).toBeDisabled();
+    const previous = page.getByRole("button", { name: "Previous file", exact: true });
+    for (const path of ["src/alpha_test.ts", "src/alpha.ts", "assets/logo.png"]) {
+      await previous.click();
+      await expect(page.locator(`section [title="${path}"]`)).toBeVisible();
+    }
+    await expect(previous).toBeDisabled();
     harness.assertNoUnexpectedRequests();
     console.log("✓ Git History opens commit diff in the Workspace main view");
   } catch (error) {

@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileDiff, Virtualizer } from "@pierre/diffs/react";
 import { FileTree, useFileTree } from "@pierre/trees/react";
-import type { GitStatusEntry } from "@pierre/trees";
+import { prepareFileTreeInput, type GitStatusEntry } from "@pierre/trees";
 import { ChevronDown, ChevronUp, GitCompare, X } from "lucide-react";
 import { projectsApi } from "@/api/projects";
 import { workspacesApi } from "@/api/workspaces";
@@ -27,7 +27,13 @@ export function CommitDiffView({ repositoryKind, repositoryId, repositoryName, i
   });
   const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const api = repositoryKind === "project" ? projectsApi : workspacesApi;
-  const parsed = useMemo(() => parseDiffComparison(comparison), [comparison, t]);
+  const parsed = useMemo(() => {
+    const result = parseDiffComparison(comparison);
+    const byPath = new Map(result.files.map((file) => [file.path, file]));
+    // Match the FileTree default ordering, including punctuation in basenames.
+    const paths = prepareFileTreeInput([...byPath.keys()]).paths;
+    return { ...result, files: paths.map((path) => byPath.get(path)!) };
+  }, [comparison, t]);
   const selectedIndex = parsed.files.findIndex((file) => file.path === selectedPath);
   const current = selectedIndex >= 0 ? parsed.files[selectedIndex] : parsed.files[0];
 
