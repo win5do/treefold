@@ -621,6 +621,8 @@ mod hosting;
 mod keymap;
 mod parent_operation;
 mod reopen;
+mod workspace_delete;
+use workspace_delete::delete_workspace;
 mod session;
 mod squash;
 mod squash_delivery;

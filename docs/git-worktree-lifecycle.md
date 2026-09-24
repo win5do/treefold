@@ -24,24 +24,22 @@ while it still has active Forks. When every repository in a Fork is merged into
 its parent, the assigned Todo becomes done.
 
 Finish configures all unfinished repositories in one dialog, with vertical tabs
-for repository-specific strategies and cleanup options. One confirmation submits
+for repository-specific strategies. One confirmation submits
 the whole plan. The backend rechecks every repository before starting, delivers
-them sequentially, then performs cleanup and archives the Workspace or Fork.
+them sequentially, then archives the Workspace or Fork and stops its Sessions.
+New Finish plans keep all worktrees and branches without a checkbox.
 Feature-branch delivery pushes without forcing and proves that the remote
 feature ref contains the confirmed source commit before cleanup.
 
 Git repositories do not share a transaction. A failure pauses the batch and
-preserves successful deliveries; cleanup begins only after all deliveries
-succeed. Progress and the confirmed source commits are persisted. Closing the
+preserves successful deliveries. Progress and the confirmed source commits are persisted. Closing the
 dialog does not stop execution; after a backend restart, reopen the operation
 and continue. Retries skip completed steps and refuse cleanup if the source
 branch gained new commits. Finish has no Undo action or automatic rollback;
 reverting a delivered change is a separate Git operation on the parent.
 Pull request creation and merge remain hosting/user workflows.
 
-Fork Finish offers **Keep working directories and branches**. Delivery still
-archives the Fork and stops its Sessions; the option disables cleanup for every
-repository. An archived Fork can be reopened from its detail page when all
+An archived Fork can be reopened from its detail page when all
 checkouts remain on their recorded branches, its Project and parent Workspace
 are active, and neither it nor its parent has unfinished Finish work. Reopening
 does not launch Sessions or recreate missing worktrees. It reactivates the linked
@@ -51,3 +49,14 @@ Delivery uses Finish rather than a separate Integrate into Parent menu action.
 Update from Parent retains conflict resolution and Abort, but completed parent
 operations have no Undo API. Their recovery refs are released after completion;
 the recorded before/result heads remain part of the operation history.
+
+Permanent deletion from a parent list offers **Keep working directories** and
+**Keep local branches**, both off by default. Keeping a checkout also keeps its
+checked-out branch. Cleanup applies to the Workspace and its archived Forks;
+active records must be finished first. Only managed worktrees and generated
+branches are eligible. User branches and Project source directories are kept.
+All checkouts are checked before cleanup starts; dirty files, changed ownership,
+and undelivered commits block destructive cleanup. Keeping branches permits
+removing clean worktrees while preserving committed work. Files retained after
+record deletion are managed outside Treefold and cannot reopen the deleted item.
+Older saved Finish plans retain their previously confirmed cleanup choices.

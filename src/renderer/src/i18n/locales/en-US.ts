@@ -124,7 +124,11 @@ export const enUS = {
       fork: "Finish Fork “{{name}}” before permanently deleting it.",
     },
     deleteTitle: "Permanently delete {{type}} “{{name}}”?",
-    deleteRecordConfirmation: "This removes the {{type}}, its Forks, Sessions, Todos, and history from the app. Source directories, branches, and worktrees are not changed. This action cannot be undone.",
+    keepWorktrees: "Keep working directories",
+    keepBranches: "Keep local branches",
+    retainedFilesDescription: "Retained directories and branches must be managed outside Treefold. The deleted record cannot be reopened. Keeping a working directory also keeps its checked-out branch.",
+    cleanupFilesDescription: "Only Treefold-managed worktrees and generated branches are cleaned. Existing user branches and source directories are kept. Uncommitted or undelivered changes block cleanup.",
+    deleteRecordConfirmation: "This removes the {{type}}, its Forks, Sessions, Todos, and history from the app. By default, their managed working directories and generated branches are also deleted. This action cannot be undone.",
     deleteProjectConfirmation: "This removes the Project and its retained Treefold history. Choose whether Treefold-managed local files should also be cleaned. This action cannot be undone.",
     deleteStrategy: {
       label: "Local file cleanup strategy",
@@ -242,8 +246,6 @@ export const enUS = {
     "noActionsFound": "No actions found."
   },
   "deliveryUi": {
-    "preserveCheckoutDescription": "Archive the Fork and stop its Sessions after delivery. Keep its working directories and branches so you can reopen it later.",
-    "preserveCheckout": "Keep working directories and branches",
     "recovery": {
       "forceExecute": "Force execute",
       "forceTitle": "Skip damaged repositories?",
@@ -273,10 +275,10 @@ export const enUS = {
     "cancel": "Cancel",
     "finishing": "Finishing…",
     "batchTitle": "Finish {{type}}",
-    "batchDescription": "Configure every repository, then confirm once. After all deliveries succeed, the selected cleanup runs and this item is archived.",
+    "batchDescription": "Configure every repository, then confirm once. After delivery, this item is archived and Sessions are stopped. Working directories and branches are kept.",
     "batchRunningDescription": "Closing this dialog does not stop execution. Progress is saved so unfinished steps can be resumed.",
     "batchPausedDescription": "Progress is saved. Resolve the issue, then continue the remaining steps.",
-    "batchCompletedDescription": "Delivery and the selected cleanup are complete.",
+    "batchCompletedDescription": "Delivery is complete and this item is archived.",
     "batchReadyToArchive": "All repositories are already delivered. Confirm to archive this item without repeating delivery or cleanup.",
     "differentCreationBase": "Created from {{base}}; this delivery will merge into {{target}}. Confirm to continue.",
     "batchTarget": "Target branch: {{branch}}",

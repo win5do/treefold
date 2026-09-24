@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldGroup, FieldLabel, FieldDescription } from "@/components/ui/field";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +17,7 @@ import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
 import type {
   Project,
   Workspace,
+  WorkspaceDeleteOptions,
 } from "@/domain/types";
 
 export function RecordActionMenu({
@@ -76,9 +80,12 @@ export function DeleteRecordDialog({
     | null;
   busy: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: () => void;
+  onConfirm: (options: WorkspaceDeleteOptions) => void;
 }) {
   const { t } = useTranslation();
+  const [keepWorktrees, setKeepWorktrees] = useState(false);
+  const [keepBranches, setKeepBranches] = useState(false);
+  useEffect(() => { setKeepWorktrees(false); setKeepBranches(false); }, [target?.value.id]);
   return (
     <AlertDialog open={Boolean(target)} onOpenChange={onOpenChange}>
       <AlertDialogContent data-testid="delete-record-dialog">
@@ -96,6 +103,17 @@ export function DeleteRecordDialog({
             })}
           </AlertDialogDescription>
         </AlertDialogHeader>
+        <FieldGroup>
+          <Field orientation="horizontal">
+            <Checkbox id="delete-keep-worktrees" checked={keepWorktrees} disabled={busy} onCheckedChange={setKeepWorktrees} />
+            <FieldLabel htmlFor="delete-keep-worktrees">{t("overview.keepWorktrees")}</FieldLabel>
+          </Field>
+          <Field orientation="horizontal">
+            <Checkbox id="delete-keep-branches" checked={keepWorktrees || keepBranches} disabled={busy || keepWorktrees} onCheckedChange={setKeepBranches} />
+            <FieldLabel htmlFor="delete-keep-branches">{t("overview.keepBranches")}</FieldLabel>
+          </Field>
+          <FieldDescription>{t(keepWorktrees || keepBranches ? "overview.retainedFilesDescription" : "overview.cleanupFilesDescription")}</FieldDescription>
+        </FieldGroup>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>
             {t("common.cancel")}
@@ -103,7 +121,7 @@ export function DeleteRecordDialog({
           <AlertDialogAction
             variant="destructive"
             disabled={busy}
-            onClick={onConfirm}
+            onClick={() => onConfirm({ delete_worktrees: !keepWorktrees, delete_branches: !keepWorktrees && !keepBranches })}
           >
             {t("overview.permanentlyDelete")}
           </AlertDialogAction>

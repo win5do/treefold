@@ -752,7 +752,7 @@ function SidebarOwnerContextMenu({
             data-testid={
               stream ? "finish-workspace-action" : "archive-project-action"
             }
-            variant="destructive"
+            variant={stream ? "default" : "destructive"}
             onClick={onFinish}
           >
             {stream ? <X /> : <Archive />}

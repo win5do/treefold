@@ -52,9 +52,6 @@ test("Fork Finish preserves every checkout and archived Forks reopen without sta
     await openUiContextMenu(page, page.getByTestId("sidebar-fork-node"));
     await page.getByTestId("finish-workspace-action").click();
     const dialog = page.getByRole("dialog", { name: "Finish Fork", exact: true });
-    const preserve = dialog.getByRole("checkbox", { name: "Keep working directories and branches" });
-    await expect(preserve).not.toBeChecked();
-    await preserve.check();
     await dialog.getByRole("button", { name: "Confirm and execute", exact: true }).click();
     await expect.poll(() => plans.length).toBe(2);
     expect(plans.every(plan => !plan.delete_worktree && !plan.delete_branch)).toBe(true);

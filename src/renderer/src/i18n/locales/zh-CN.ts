@@ -126,7 +126,11 @@ export const zhCN = {
       fork: "请先完成 Fork“{{name}}”，然后再永久删除。",
     },
     deleteTitle: "永久删除 {{type}}“{{name}}”？",
-    deleteRecordConfirmation: "这会从应用中删除该 {{type}}、所属 Fork、Session、Todo 及历史记录，但不会修改源码目录、分支或工作树。此操作无法撤销。",
+    keepWorktrees: "保留工作目录",
+    keepBranches: "保留本地分支",
+    retainedFilesDescription: "保留的目录和分支需自行管理，删除的记录无法重新打开。保留工作目录时也会保留其正在使用的分支。",
+    cleanupFilesDescription: "仅清理 Treefold 管理的 worktree 和自动创建的分支，保留用户原有分支和源码目录。未提交或未交付的修改会阻止清理。",
+    deleteRecordConfirmation: "这会从应用中删除该 {{type}}、所属 Fork、Session、Todo 及历史记录，默认同时删除受管理的工作目录和自动创建的分支。此操作无法撤销。",
     deleteProjectConfirmation: "这会删除该 Project 及其在 Treefold 中保留的历史。请选择是否同时清理 Treefold 管理的本地文件。此操作无法撤销。",
     deleteStrategy: {
       label: "本地文件清理策略",
@@ -244,8 +248,6 @@ export const zhCN = {
     "noActionsFound": "未找到匹配的操作。"
   },
   "deliveryUi": {
-    "preserveCheckoutDescription": "交付后归档 Fork 并停止 Session，保留工作目录和分支，以便之后重新打开。",
-    "preserveCheckout": "保留工作目录和分支",
     "recovery": {
       "forceExecute": "强制执行",
       "forceTitle": "确认跳过损坏的仓库？",
@@ -275,10 +277,10 @@ export const zhCN = {
     "cancel": "取消",
     "finishing": "正在完成…",
     "batchTitle": "完成 {{type}}",
-    "batchDescription": "配置各仓库后统一确认执行。全部交付成功后，将按所选选项清理，并归档当前条目。",
+    "batchDescription": "配置各仓库后统一确认。交付后归档并停止 Session，保留工作目录和分支。",
     "batchRunningDescription": "关闭此对话框后仍会继续执行。进度会自动保存，可继续处理未完成的步骤。",
     "batchPausedDescription": "进度已保存。处理问题后，可以继续执行剩余步骤。",
-    "batchCompletedDescription": "交付和所选清理操作均已完成。",
+    "batchCompletedDescription": "交付已完成并归档。",
     "batchReadyToArchive": "所有仓库均已交付，确认后将归档当前条目，不会重复交付或清理。",
     "differentCreationBase": "创建基准为 {{base}}，本次将合并到 {{target}}。确认后继续交付。",
     "batchTarget": "目标分支：{{branch}}",

@@ -21,7 +21,6 @@ type Draft = Omit<FinishPlanItem, "repository_id" | "preflight_id">;
 export function useFinishBatch(workspace: WorkspaceDetail | null) {
   const client = useQueryClient();
   const { t } = useTranslation();
-  const [preserveCheckout, setPreserveCheckout] = useState(false);
   const [batch, setBatch] = useState<FinishBatch | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -42,7 +41,6 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     ) ?? [];
 
   useEffect(() => {
-    setPreserveCheckout(false);
     setBatch(null);
     setLoaded(false);
     setError("");
@@ -64,9 +62,8 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
             item.id,
             {
               code_action,
-              delete_worktree: code_action !== "keep",
-              delete_branch:
-                code_action !== "keep" && item.branch_ownership === "managed",
+              delete_worktree: false,
+              delete_branch: false,
             },
           ];
         }),
@@ -189,7 +186,6 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
             repositories.map((item) => ({
               repository_id: item.id,
               ...drafts[item.id],
-              ...(preserveCheckout ? { delete_worktree: false, delete_branch: false } : {}),
               ...(force && skipIds.has(item.id)
                 ? {
                     code_action: "skip" as const,
@@ -223,8 +219,6 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
   };
   return {
     batch,
-    preserveCheckout,
-    setPreserveCheckout,
     loaded,
     drafts,
     preflights,

@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { GitCompare, SquareTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -13,11 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Field,
-  FieldGroup,
-  FieldDescription,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@/components/ui/field";
 import { NativeSelect as Select } from "@/components/ui/native-select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -87,16 +82,6 @@ export function FinishWorkspaceDialog({
             )}
           </DialogDescription>
         </DialogHeader>
-        {workspace?.kind === "fork" && !flow.batch && (
-          <Field>
-            <Field orientation="horizontal">
-              <Checkbox id="finish-preserve-checkout" checked={flow.preserveCheckout}
-                disabled={flow.busy} onCheckedChange={flow.setPreserveCheckout} />
-              <FieldLabel htmlFor="finish-preserve-checkout">{t("deliveryUi.preserveCheckout")}</FieldLabel>
-            </Field>
-            <FieldDescription>{t("deliveryUi.preserveCheckoutDescription")}</FieldDescription>
-          </Field>
-        )}
         {!flow.loaded ? (
           <p>{t("states.checking")}</p>
         ) : !repositories.length && !flow.batch ? (
@@ -238,9 +223,8 @@ export function FinishWorkspaceDialog({
                                   .value as typeof draft.code_action;
                                 flow.update(item.id, {
                                   code_action,
-                                  delete_worktree: code_action !== "keep",
-                                  delete_branch:
-                                    code_action !== "keep" && item.branch_ownership === "managed",
+                                  delete_worktree: false,
+                                  delete_branch: false,
                                 });
                               }}
                             >
@@ -348,47 +332,7 @@ export function FinishWorkspaceDialog({
                               </div>
                             )}
                           </section>
-                          <FieldSet>
-                            <FieldLegend>{t("deliveryUi.cleanup")}</FieldLegend>
-                            <FieldGroup>
-                              <Field orientation="horizontal">
-                                <Checkbox
-                                  id={`finish-worktree-${item.id}`}
-                                  checked={!flow.preserveCheckout && draft.delete_worktree}
-                                  disabled={flow.preserveCheckout}
-                                  onCheckedChange={(value) =>
-                                    flow.update(item.id, {
-                                      delete_worktree: value,
-                                      delete_branch:
-                                        value && draft.delete_branch,
-                                    })
-                                  }
-                                />
-                                <FieldLabel
-                                  htmlFor={`finish-worktree-${item.id}`}
-                                >
-                                  {t("deliveryUi.removeManagedWorktree")}
-                                </FieldLabel>
-                              </Field>
-                              <Field orientation="horizontal">
-                                <Checkbox
-                                  id={`finish-branch-${item.id}`}
-                                  checked={!flow.preserveCheckout && draft.delete_branch}
-                                  disabled={flow.preserveCheckout || !draft.delete_worktree}
-                                  onCheckedChange={(value) =>
-                                    flow.update(item.id, {
-                                      delete_branch: value,
-                                    })
-                                  }
-                                />
-                                <FieldLabel
-                                  htmlFor={`finish-branch-${item.id}`}
-                                >
-                                  {t("deliveryUi.deleteLocalBranch")}
-                                </FieldLabel>
-                              </Field>
-                            </FieldGroup>
-                          </FieldSet>
+
                         </>
                       )
                     )}

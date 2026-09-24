@@ -2474,50 +2474,6 @@ pub(super) async fn update_workspace(
     Ok(Json(state.store.workspace(&id).await?))
 }
 
-pub(super) async fn delete_workspace(
-    State(state): State<AppState>,
-    AxumPath(id): AxumPath<String>,
-) -> Result<StatusCode> {
-    let workspace = state.store.workspace(&id).await?;
-    if workspace.kind == "base" || workspace.status != "archived" {
-        return Err(AppError::BadRequest(
-            "Finish the Workspace or Fork before permanently deleting it".into(),
-        ));
-    }
-    let mut targets = state.store.forks(&id).await?;
-    targets.push(workspace);
-    for target in targets {
-        if target.status != "archived" {
-            return Err(AppError::BadRequest(
-                "Finish all Forks before permanently deleting this Workspace".into(),
-            ));
-        }
-        for session in state.store.sessions(&target.id).await? {
-            if state
-                .terminals
-                .inspect_existing(&session.amux_workspace_name, &session.amux_process_name)
-                .await?
-                .is_some_and(|process| {
-                    matches!(
-                        process.state,
-                        amux::model::ProcessState::Created
-                            | amux::model::ProcessState::Starting
-                            | amux::model::ProcessState::Running
-                            | amux::model::ProcessState::Stopping
-                    )
-                })
-            {
-                return Err(AppError::BadRequest(
-                    "Close all running Sessions in this Workspace and its Forks before deleting it"
-                        .into(),
-                ));
-            }
-        }
-    }
-    state.store.delete_workspace(&id).await?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
 pub(super) fn ensure_active_project(project: &Project) -> Result<()> {
     if project.status != "active" {
         return Err(AppError::BadRequest(

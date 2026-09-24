@@ -16,6 +16,7 @@ import type {
   Session,
   Workspace,
   WorkspaceDetail,
+  WorkspaceDeleteOptions,
   WorkspaceRepository,
 } from "@/domain/types";
 
@@ -26,8 +27,11 @@ export const workspacesApi = {
     request<Workspace>(`/api/workspaces/${id}`, { method: "PATCH", json }),
   reopen: (id: string) =>
     request<Workspace>(`/api/workspaces/${id}/reopen`, { method: "POST" }),
-  delete: (id: string) =>
-    request(`/api/workspaces/${id}`, { method: "DELETE" }),
+  delete: (id: string, options: WorkspaceDeleteOptions) =>
+    request(`/api/workspaces/${id}?${new URLSearchParams({
+      delete_worktrees: String(options.delete_worktrees),
+      delete_branches: String(options.delete_branches),
+    })}`, { method: "DELETE" }),
   createFork: (id: string, json: unknown) =>
     request<Workspace>(`/api/workspaces/${id}/forks`, { method: "POST", json }),
   sessions: (id: string, signal?: AbortSignal) =>

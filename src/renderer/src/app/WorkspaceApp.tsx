@@ -48,6 +48,7 @@ import type {
   SessionMenuState,
   Workspace,
   WorkspaceDetail,
+  WorkspaceDeleteOptions,
   WorkspaceRepository,
   GitWorktree,
   GitSyncItemResult,
@@ -843,12 +844,12 @@ function Workspace() {
     setDeleteTarget({ kind: "project", value: project });
   }
 
-  async function permanentlyDeleteTarget(cleanupManaged = false) {
+  async function permanentlyDeleteTarget(cleanupManaged = false, options: WorkspaceDeleteOptions = { delete_worktrees: false, delete_branches: false }) {
     if (!deleteTarget) return;
     const ok = await act(() =>
       deleteTarget.kind === "project"
         ? projectsApi.delete(deleteTarget.value.id, cleanupManaged)
-        : workspacesApi.delete(deleteTarget.value.id),
+        : workspacesApi.delete(deleteTarget.value.id, options),
     );
     if (!ok) return;
     const deleted = deleteTarget;
@@ -1823,7 +1824,7 @@ function Workspace() {
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        onConfirm={() => void permanentlyDeleteTarget()}
+        onConfirm={(options) => void permanentlyDeleteTarget(false, options)}
       />
       <DeleteProjectDialog
         target={deleteTarget?.kind === "project" ? deleteTarget.value : null}
