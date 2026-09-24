@@ -1,3 +1,4 @@
+import { compactPath } from "@/lib/compactPath";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { useEffect, useMemo, useState } from "react";
@@ -135,7 +136,7 @@ export function ParentOperationDialog({
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent data-testid="parent-operation-dialog" className="sm:max-w-xl">
+      <DialogContent data-testid="parent-operation-dialog" className="grid-cols-1 sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
@@ -191,13 +192,13 @@ export function ParentOperationDialog({
         {preview && (
           <Alert>
             {direction === "update" ? <GitPullRequestArrow /> : <GitMerge />}
-            <AlertTitle className="flex items-center gap-2">
-              {preview.repository_name}
+            <AlertTitle className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="min-w-0 truncate" title={preview.repository_name}>{preview.repository_name}</span>
               <Badge variant="secondary">{outcomeLabel(preview.outcome)}</Badge>
             </AlertTitle>
-            <AlertDescription>
-              <p>{preview.source_branch} → {preview.target_branch}</p>
-              <p className="truncate" title={preview.target_path}>{t("workspaceUi.target")}{preview.target_path}</p>
+            <AlertDescription className="min-w-0">
+              <p className="[overflow-wrap:anywhere]">{preview.source_branch} → {preview.target_branch}</p>
+              <p className="truncate" title={preview.target_path}>{t("workspaceUi.target")}{compactPath(preview.target_path)}</p>
             </AlertDescription>
           </Alert>
         )}
