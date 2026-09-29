@@ -1,125 +1,119 @@
 # Treefold for macOS
 
-**Run agents in parallel. Fold the work back cleanly.**
+**简体中文** | [English](README.en.md)
 
-Treefold is a local-first macOS workspace for running Codex and Shell sessions
-in managed Git worktrees. It keeps parallel work isolated while providing one
-place to resume sessions, review progress, integrate changes, recover from
-conflicts, and clean up completed work.
+**并行展开，干净收敛。**
 
-## What Treefold provides
+Treefold 是一个本地优先的 macOS 应用，让你在独立的 Git worktree 中并行运行 Codex 和 Shell Session，集中查看改动、恢复工作，并完成合并与清理。
 
-- Isolated Workspaces and Forks backed by Git worktrees.
-- Parallel Codex and Shell sessions that survive UI navigation and reconnects.
-- Guided update, rebase, merge, delivery, recovery, and cleanup workflows.
-- Project-level context directories and repository-aware agent authorization.
-- Workspace Todos that agents can claim, update, block, and complete.
-- A local CLI and Agent Skills for sharing Treefold context with coding agents.
-- Local-first storage that remains on the user's Mac.
+适合已经使用 Codex CLI、希望同时推进多项开发任务的开发者：每项 feature 有自己的 Workspace，子任务可以拆成 Fork，代码、Session 和 Todo 始终归属于对应的工作。
 
-## Core model
+[安装与运行](#安装与运行) · [使用流程](#使用流程) · [GitHub Releases](https://github.com/win5do/treefold/releases) · [产品文档](#产品文档)
 
-A **Project** groups the repositories and context needed for a body of work. A
-**Workspace** creates an isolated branch and worktree set for one change. A
-**Fork** splits a Todo into parallel work that can later be folded back into its
-parent Workspace. Each Workspace or Fork can own multiple persistent **Sessions**
-and a shared Todo list.
+## 为什么使用 Treefold
 
-Treefold owns the lifecycle around those objects: worktree creation, delivery,
-rebase, recovery, and cleanup. Git remains visible and usable inside each
-Workspace, while Treefold coordinates the operations that affect its managed
-lifecycle.
+- **隔离开发**：为不同 Workspace 和 Fork 管理独立的分支与 worktree，减少并行任务之间的代码干扰。
+- **接着上次的工作继续**：集中管理 Codex 和 Shell Session，切换页面不会中断运行中的进程；Codex 历史支持恢复。
+- **完成后有序收尾**：查看改动、同步分支、处理 rebase 与冲突，再按交付方式合并或推送，并清理完成的工作。
 
-## CLI and agent collaboration
+还可以在同一个 Project 中组织多个仓库和上下文目录，通过 Todo、CLI 与 Skill 向 Agent 提供当前工作的信息。
 
-The desktop App includes a lightweight `treefold` CLI and Treefold Agent Skill.
-Managed sessions receive their current Project, Workspace, repository, and Todo
-context automatically. Agents can inspect that context and collaborate through
-the Todo lifecycle without storing conversational reports in Treefold.
+## 安装与运行
 
-Common entry points include:
+### 使用要求
 
-```text
-treefold open [path]
+- Apple Silicon Mac，macOS Sonoma 14 或更新版本，以及 Git。
+- 使用 Codex Session 前，需要安装并配置 Codex CLI；Shell Session 可以独立使用。
+
+### 安装包
+
+当前为私有预发布阶段，尚未发布 Release。仓库与 [Homebrew tap](https://github.com/win5do/homebrew-tap) 需要访问权限。现阶段请通过下方的源码开发流程运行。
+
+安装包发布后，可从 [GitHub Releases](https://github.com/win5do/treefold/releases) 下载 Apple Silicon 的 DMG，或在具备 tap 访问权限的环境中运行：
+
+```bash
+brew install --cask win5do/tap/treefold
+```
+
+此命令需要已发布的 Release，当前还不能完成安装。
+
+### 从源码运行
+
+准备 stable Rust、Node.js 24.12 或更新版本、Git 和 `just`。默认构建还需要同级目录 `../amux` 中的 amux 源码；自定义路径见 [开发环境说明](AGENTS.md#development-environment-and-commands)。
+
+在仓库根目录运行：
+
+```bash
+npm install
+just app-dev
+```
+
+开发数据默认存放在仓库的 `.treefold-dev/`，与日常使用的 `~/.treefold` 分开。
+
+## 使用流程
+
+以开发一项需要前后端配合的 feature 为例：
+
+1. **创建 Project**：添加本地 Git 仓库，以及需要提供给 Agent 的上下文目录。
+2. **创建 Workspace**：为这项 feature 创建独立的分支和 worktree，保留原有工作现场。
+3. **启动 Session**：运行 Codex 编写代码，使用 Shell 启动服务、执行测试或检查结果。
+4. **按需创建 Fork**：将可以并行完成的子任务拆出去，例如接口实现和页面开发，各自在独立的 worktree 中推进。
+5. **检查并交付**：检查改动，将 Fork 的成果合回父 Workspace。Workspace 可按仓库配置在本地合并，或推送分支供远端评审与 CI 使用。
+6. **完成与清理**：使用完成流程处理分支和 worktree 的清理，保留可供回顾的工作记录。
+
+远端代码评审和 PR 合并仍在你的 Git 托管平台完成。
+
+## 核心概念
+
+| 概念 | 用途 |
+| --- | --- |
+| **Project** | 组织相关仓库、目录和上下文。 |
+| **Workspace** | 承担一项独立的 feature，拥有自己的 worktree、分支、Session 和 Todo。 |
+| **Fork** | 承担 Workspace 下的并行子任务，成果合回父 Workspace；不支持嵌套 Fork。 |
+| **Session** | 在对应目录中运行 Codex 或 Shell；一个 Workspace 或 Fork 可以拥有多个 Session。 |
+
+## CLI 与 Agent 协作
+
+桌面 App 附带 `treefold` CLI 和 Treefold Skill。受管理的 Session 会获得当前 Project、Workspace、仓库和 Todo 的上下文；Agent 可以查看任务，领取、更新并完成 Todo。
+
+```bash
+treefold open /path/to/project
 treefold current --json
 treefold todo list --json
 treefold doctor
 ```
 
-Persistent processes and terminal sessions are managed by the companion `amux`
-runtime and Skill. Treefold only creates managed CLI and Skill links when they
-do not conflict with user-owned paths.
+持久进程与终端由配套的 `amux` 管理。Treefold 创建 CLI 与 Skill 链接时，会保留已有的用户自管路径。
 
-## Local-first architecture
+## 本地数据与偏好设置
 
-```text
-Treefold macOS App
-├── Electron desktop shell and React UI
-├── Rust HTTP/WebSocket API and persistent terminal runtime
-├── Local SQLite project and session metadata
-├── Managed Git worktrees
-└── CLI and Agent Skills
-```
+Treefold 的 Project 状态、Session 元数据、Todo 和配置保存在本机，核心管理流程无需托管控制服务。Codex 等 Agent 的网络访问取决于其服务和你的配置。
 
-Projects, Workspaces, Sessions, Todos, settings, and worktrees remain on the
-local machine. Treefold does not require a hosted control plane for its core
-workflow.
+在 Settings 中可以调整偏好和快捷键。配置位于 `$TREEFOLD_HOME`（默认 `~/.treefold`）：
 
-## Product documentation
+- `config/settings.toml`：语言、主题与 Agent 默认设置。
+- `config/keymap.toml`：快捷键覆盖；省略的绑定使用默认值，`false` 表示禁用。
 
-Current product and architecture:
+详见 [配置与快捷键](docs/keymap-configuration-plan.md)。
 
-- [Product direction](docs/product-strategy.md)
-- [Project and Workspace model](docs/project-workspace-model.md)
-- [Git worktree lifecycle](docs/git-worktree-lifecycle.md)
-- [Agent Skill, CLI, and App API architecture](docs/agent-skill-cli-api-architecture.md)
-- [Frontend and backend communication](docs/frontend-backend-communication.md)
-- [Positioning and messaging](docs/positioning-and-messaging.md)
-
-Deferred designs, which are not runtime contracts:
-
-- [Keymap configuration](docs/keymap-configuration-plan.md)
-- [Codex App Server integration](docs/codex-app-server-future-integration.md)
-- [Git History squash](docs/git-history-squash-design.md)
-
-
-## Development and builds
-
-On macOS, install stable Rust, Node.js 24.12+, Git, and just, then run
-`npm install` once.
+## 开发与构建
 
 ```bash
-just app-dev        # Run with renderer HMR and isolated .treefold-dev data
-just app-dev-watch  # Also watch and rebuild main/preload/Rust
-just build          # Build a signed App and DMG in release/
+just                  # 列出可用任务
+just app-dev-watch    # 同时监听 Electron 与 Rust 变更
+just build            # 在 release/ 生成 macOS App 与 DMG
 ```
 
-See [AGENTS.md](AGENTS.md#development-environment-and-commands) for development,
-testing, and local installation details.
+[开发指南](AGENTS.md#development-environment-and-commands) 包含环境配置、amux 路径、验证命令和本地安装说明。UI 测试默认在隐藏的 Electron 窗口中运行。
 
-Deterministic UI tests run in hidden Electron windows by default, without
-activating the macOS App or showing a Dock icon. Rendering remains active for
-automated input and screenshots. To show test windows when debugging:
+## 产品文档
 
-```bash
-just test-ui
-TREEFOLD_TEST_HEADED=1 npm run test:ui -- tests/ui/keymap.spec.ts
-```
+- [产品方向](docs/product-strategy.md)
+- [Project、Workspace 与 Fork 模型](docs/project-workspace-model.md)
+- [Git worktree 生命周期](docs/git-worktree-lifecycle.md)
+- [Agent Skill、CLI 与 App API](docs/agent-skill-cli-api-architecture.md)
+- [前后端通信](docs/frontend-backend-communication.md)
 
-`just test-electron` separately exercises the real App's native window and
-lifecycle behavior and can show windows and take focus.
+## 许可证
 
-## Preferences and shortcuts
-
-Settings has separate Preferences and Keymap pages. Record a shortcut by pressing
-a combination, disable it, or restore its default. Built-in Session shortcuts are
-Cmd+T (new), Cmd+W (close), Ctrl+Tab (next), and Ctrl+Shift+Tab (previous).
-
-`config/settings.toml` and `config/keymap.toml` under `$TREEFOLD_HOME` store only
-user overrides. Missing keys follow defaults; `false` disables a key binding.
-See [configuration details](docs/keymap-configuration-plan.md) for syntax and APIs.
-
-## License
-
-Treefold is licensed under the GNU Affero General Public License v3.0 only.
-See [LICENSE](LICENSE) for the full terms.
+Treefold 使用 [GNU Affero General Public License v3.0 only](LICENSE)（AGPL-3.0-only）。
