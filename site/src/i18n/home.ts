@@ -57,6 +57,7 @@ interface HomeCopy {
   processNote: string;
   terminalIllustrationLabel: string;
   agentSessionEnded: string;
+  sharedLogs: string;
   scenariosKicker: string;
   scenariosTitle: string;
   scenarios: readonly DetailItem[];
@@ -131,13 +132,14 @@ export const homeCopy = {
       ['Push feature branch', '推送 Workspace branch，接入团队已有的评审与 CI 流程。', ''],
       ['保留，不交付', '不集成代码而直接归档，并保留 checkout 以便稍后 reopen。', ''],
     ],
-    agentsKicker: 'AGENT RUNTIME',
-    agentsTitle: 'Agent 可以退出，进程继续工作。',
-    agentsBody: 'Agent 能读取当前 Treefold 上下文、创建或更新 Todo，并通过 amux 启动托管进程。Agent Session 结束后，日志与交互式 TTY 仍可在 App 中继续使用。',
-    agentPoints: ['Todo 可以流转到独立 Fork', '实时日志与交互式 TTY 输入', '在 App 内查看、重启或停止进程'],
+    agentsKicker: 'AMUX / MANAGED PROCESSES',
+    agentsTitle: '进程托管，跨 Session 接续。',
+    agentsBody: 'amux 托管开发服务与长时间运行的进程。你和 Agent 可以同时查看同一份日志；切换或结束 Session 后，仍能继续查看输出、接手排查。',
+    agentPoints: ['进程独立于 Agent Session 持续运行', '你与 Agent 同时查看实时日志', '跨 Session 查看日志、交互、重启或停止进程'],
     processNote: '退出 App 后是否保持进程运行，由 amux 设置决定。',
-    terminalIllustrationLabel: '托管终端示意',
+    terminalIllustrationLabel: 'amux 托管进程，人和 Agent 同时查看日志并跨 Session 接续',
     agentSessionEnded: 'Agent Session 已结束 · 进程继续运行',
+    sharedLogs: '你与 Agent · 同时查看日志',
     scenariosKicker: 'FITS THE REPOSITORY YOU HAVE',
     scenariosTitle: '不同代码结构，同一套工作流。',
     scenarios: [
@@ -215,13 +217,14 @@ export const homeCopy = {
       ['Push feature branch', 'Push a Workspace branch for the team’s existing review and CI flow.', ''],
       ['Preserve without delivery', 'Archive without integrating code; keep the checkout available to reopen.', ''],
     ],
-    agentsKicker: 'AGENT RUNTIME',
-    agentsTitle: 'Agents can leave. Their processes keep working.',
-    agentsBody: 'Agents read the current Treefold context, create and update Todos, and start processes managed through amux. Logs and interactive TTYs remain available in the App after an Agent Session exits.',
-    agentPoints: ['Todo ownership can flow into an isolated Fork', 'Live logs and interactive TTY input', 'Inspect, restart, or stop managed processes'],
+    agentsKicker: 'AMUX / MANAGED PROCESSES',
+    agentsTitle: 'Managed processes. Shared across sessions.',
+    agentsBody: 'amux manages development services and long-running processes. You and your agent can read the same logs at the same time, then keep inspecting output and debugging across sessions.',
+    agentPoints: ['Processes keep running independently of Agent Sessions', 'Humans and agents share live logs simultaneously', 'Read logs, interact, restart, or stop across sessions'],
     processNote: 'Whether processes survive App exit follows the amux preference.',
-    terminalIllustrationLabel: 'Managed terminal illustration',
+    terminalIllustrationLabel: 'An amux process with shared human and agent logs across sessions',
     agentSessionEnded: 'Agent Session ended · process remains active',
+    sharedLogs: 'HUMAN + AGENT · SHARED LIVE LOGS',
     scenariosKicker: 'FITS THE REPOSITORY YOU HAVE',
     scenariosTitle: 'One workflow across different codebases.',
     scenarios: [

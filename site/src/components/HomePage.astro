@@ -1,4 +1,5 @@
 ---
+import LinkIcon from './LinkIcon.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteHeader from './SiteHeader.astro';
 import SiteFooter from './SiteFooter.astro';
@@ -23,8 +24,8 @@ const download = getLocalizedPath(locale, 'download');
           <h1><span>{copy.heroTitle[0]}</span><span class="gradient-text">{copy.heroTitle[1]}</span></h1>
           <p>{copy.heroBody}</p>
           <div class="hero-actions">
-            <a class="button button-primary" href={download}>{copy.download}<span aria-hidden="true">↗</span></a>
-            <a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer">{copy.source}<span aria-hidden="true">↗</span></a>
+            <a class="button button-primary" href={download}>{copy.download}<LinkIcon name="download" /></a>
+            <a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer"><LinkIcon name="github" />{copy.source}<LinkIcon /></a>
           </div>
           <small class="private-note">{copy.privateNote}</small>
           <div class="proof-row">{copy.proof.map((item) => <span><i aria-hidden="true"></i>{item}</span>)}</div>
@@ -127,7 +128,7 @@ const download = getLocalizedPath(locale, 'download');
         <div class="terminal-window" role="img" aria-label={copy.terminalIllustrationLabel}>
           <div class="terminal-header"><div><i></i><strong>api · TTY</strong></div><span>RUNNING</span></div>
           <div class="terminal-body"><code><span>01</span><b>$</b> amux run --name api -- cargo run<br /><span>02</span><em>Compiling service...</em><br /><span>03</span><em>Listening on 127.0.0.1:3001</em><br /><span>04</span><strong>GET /api/health 200</strong><br /><span>05</span><em>{copy.agentSessionEnded}</em></code></div>
-          <div class="terminal-footer"><span>PROJECT / ATLAS / API</span><span>LOGS · INPUT · STOP</span></div>
+          <div class="terminal-footer"><span>{copy.sharedLogs}</span><span>LOGS · INPUT · STOP</span></div>
         </div>
         <div>
           <header class="section-heading compact"><div class="kicker">04 / {copy.agentsKicker}</div><h2>{copy.agentsTitle}</h2><p>{copy.agentsBody}</p></header>
@@ -144,7 +145,7 @@ const download = getLocalizedPath(locale, 'download');
       </div>
     </section>
 
-    <section class="cta-section section-grid"><div class="cta-orb"></div><div class="site-container"><div class="kicker">{copy.ctaKicker}</div><h2>{copy.ctaTitle}</h2><p>{copy.ctaBody}</p><div class="hero-actions"><a class="button button-primary" href={download}>{copy.ctaDownload}<span aria-hidden="true">↗</span></a><a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer">{copy.ctaSource}<span aria-hidden="true">↗</span></a></div></div></section>
+    <section class="cta-section section-grid"><div class="cta-orb"></div><div class="site-container"><div class="kicker">{copy.ctaKicker}</div><h2>{copy.ctaTitle}</h2><p>{copy.ctaBody}</p><div class="hero-actions"><a class="button button-primary" href={download}>{copy.ctaDownload}<LinkIcon name="download" /></a><a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer"><LinkIcon name="github" />{copy.ctaSource}<LinkIcon /></a></div></div></section>
   </main>
   <SiteFooter />
 </BaseLayout>

@@ -1,4 +1,5 @@
 ---
+import LinkIcon from './LinkIcon.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteHeader from './SiteHeader.astro';
 import SiteFooter from './SiteFooter.astro';
@@ -34,14 +35,14 @@ const home = getLocalizedPath(locale, 'home');
             <h2>{copy.brewTitle}</h2><p>{copy.brewBody}</p>
             <div class="command-box"><div><span>{copy.terminal}</span><button type="button" data-copy-command={installCommand} data-idle-label={copy.copyCommand} data-copied-label={copy.copied} data-error-label={copy.copyFailed}><span data-copy-label>{copy.copyCommand}</span></button></div><pre><code><span>$</span> {installCommand}</code></pre></div>
             <small>{copy.brewNote}</small>
-            <a href={siteLinks.homebrewTap} target="_blank" rel="noopener noreferrer">{copy.tap}<span aria-hidden="true">↗</span></a>
+            <a href={siteLinks.homebrewTap} target="_blank" rel="noopener noreferrer">{copy.tap}<LinkIcon /></a>
           </article>
           <article class="download-card">
             <div class="option-label"><span>{copy.option2}</span></div>
             <h2>{copy.dmgTitle}</h2><p>{copy.dmgBody}</p>
             <div class="release-asset"><span>{copy.expected}</span><code>Treefold_&lt;version&gt;_aarch64.dmg</code></div>
             <small>{copy.releaseNote}</small>
-            <a href={siteLinks.releases} target="_blank" rel="noopener noreferrer">{copy.openReleases}<span aria-hidden="true">↗</span></a>
+            <a href={siteLinks.releases} target="_blank" rel="noopener noreferrer">{copy.openReleases}<LinkIcon /></a>
           </article>
         </div>
       </div>
@@ -49,7 +50,7 @@ const home = getLocalizedPath(locale, 'home');
 
     <section class="content-section section-grid border-section"><div class="site-container split-layout requirements-layout"><header class="section-heading compact"><div class="kicker">{copy.before}</div><h2>{copy.beforeTitle}</h2><p>{copy.beforeBody}</p></header><div class="requirement-list">{copy.requirements.map(([title, detail], index) => <article><span>0{index + 1}</span><div><h3>{title}</h3><p>{detail}</p></div></article>)}</div></div></section>
 
-    <section class="source-cta section-grid"><div class="site-container"><div><div class="kicker">{copy.sourceKicker}</div><h2>{copy.sourceTitle}</h2><p>{copy.sourceBody}</p></div><a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer">{copy.sourceLink}<span aria-hidden="true">↗</span></a></div></section>
+    <section class="source-cta section-grid"><div class="site-container"><div><div class="kicker">{copy.sourceKicker}</div><h2>{copy.sourceTitle}</h2><p>{copy.sourceBody}</p></div><a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer"><LinkIcon name="github" />{copy.sourceLink}<LinkIcon /></a></div></section>
   </main>
   <SiteFooter />
 </BaseLayout>

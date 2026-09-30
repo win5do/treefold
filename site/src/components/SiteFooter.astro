@@ -1,4 +1,5 @@
 ---
+import LinkIcon from './LinkIcon.astro';
 import { siteLinks } from '../config/site';
 import { commonCopy } from '../i18n/common';
 import { getLocalizedPath, normalizeLocale } from '../i18n/config';
@@ -22,8 +23,8 @@ const download = getLocalizedPath(locale, 'download');
     <nav aria-label={copy.navigationLabel}>
       <a href={home}>{copy.home}</a>
       <a href={download}>{copy.download}</a>
-      <a href={siteLinks.github} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-      <a href={siteLinks.license} target="_blank" rel="noopener noreferrer">{copy.license} ↗</a>
+      <a href={siteLinks.github} target="_blank" class="external-link" rel="noopener noreferrer" aria-label="GitHub" title="GitHub"><LinkIcon name="github" /><LinkIcon /></a>
+      <a href={siteLinks.license} target="_blank" class="external-link" rel="noopener noreferrer">{copy.license}<LinkIcon /></a>
     </nav>
   </div>
 </footer>

@@ -1,4 +1,5 @@
 ---
+import LinkIcon from './LinkIcon.astro';
 interface Props {
   current?: 'home' | 'download';
 }
@@ -32,8 +33,8 @@ const copy = commonCopy[locale].header;
 
     <div class="header-actions">
       <a class="language-switch" href={languageTarget} lang={localeMeta[alternateLocale].htmlLang} aria-label={copy.switchLanguageLabel}>{copy.languageLabel}</a>
-      <a class="github-link" href={siteLinks.github} target="_blank" rel="noopener noreferrer">{copy.source}</a>
-      <a href={download} class="button button-compact" aria-current={current === 'download' ? 'page' : undefined}>{copy.download}<span aria-hidden="true">↗</span></a>
+      <a class="github-link" href={siteLinks.github} target="_blank" rel="noopener noreferrer" aria-label={copy.source} title={copy.source}><LinkIcon name="github" /></a>
+      <a href={download} class="button button-compact" aria-current={current === 'download' ? 'page' : undefined}>{copy.download}<LinkIcon name="download" /></a>
     </div>
 
     <details class="mobile-menu">
@@ -46,7 +47,7 @@ const copy = commonCopy[locale].header;
         <a href={`${home}#workflow`}>{copy.workflow}</a>
         <a href={`${home}#agents`}>{copy.agents}</a>
         <a href={download}>{copy.download}</a>
-        <a href={siteLinks.github} target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+        <a href={siteLinks.github} target="_blank" class="external-link" rel="noopener noreferrer" aria-label="GitHub" title="GitHub"><LinkIcon name="github" /><LinkIcon /></a>
         <a href={languageTarget} lang={localeMeta[alternateLocale].htmlLang}>{copy.switchLanguageLabel}</a>
       </nav>
     </details>
