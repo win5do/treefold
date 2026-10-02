@@ -356,6 +356,18 @@ pub(super) async fn get_project(
         tracked_workspace_repositories
             .extend(state.store.workspace_repositories(&workspace.id).await?);
     }
+    let mut squash_operations = Vec::new();
+    for repository in &tracked_workspace_repositories {
+        if let Some(operation) = state
+            .store
+            .latest_parent_operation(&repository.id, "integrate")
+            .await?
+            && operation.strategy == "squash"
+            && operation.status == "completed"
+        {
+            squash_operations.push(operation);
+        }
+    }
     let mut locations = Vec::new();
     for repository in state.store.repositories(&id).await? {
         locations.push(state.store.repository_as_directory(&repository.id).await?);
@@ -365,6 +377,7 @@ pub(super) async fn get_project(
             &locations,
             &tracked_workspaces,
             &tracked_workspace_repositories,
+            &squash_operations,
         ))
     })
     .await?;
@@ -485,25 +498,30 @@ pub(super) async fn delete_worktree(
     let operation_repository_id = operation.repository_id.clone();
     let operation_path = operation.path.clone();
     crate::request_context::spawn(async move {
-        let result = blocking_git_operation(move || async move {
-            let inspection = inspect_delete_worktree(&state, &repository_id, &input.path).await?;
-            if let Some(blocker) = inspection.precheck.blockers.first() {
-                return Err(AppError::BadRequest(blocker.clone()));
-            }
-            let DeleteWorktreeInspection {
-                project_id,
-                repository_path,
-                worktree_path,
-                ..
-            } = inspection;
-            command_output(
-                Path::new(&repository_path),
-                "git",
-                &["worktree", "remove", &worktree_path],
-            )
-            .map_err(AppError::BadRequest)?;
-            Ok(project_id)
-        })
+        let result = async {
+            let repository = state.store.repository(&repository_id).await?;
+            blocking_git_operation_for(repository.git_common_dir, move || async move {
+                let inspection =
+                    inspect_delete_worktree(&state, &repository_id, &input.path).await?;
+                if let Some(blocker) = inspection.precheck.blockers.first() {
+                    return Err(AppError::BadRequest(blocker.clone()));
+                }
+                let DeleteWorktreeInspection {
+                    project_id,
+                    repository_path,
+                    worktree_path,
+                    ..
+                } = inspection;
+                command_output(
+                    Path::new(&repository_path),
+                    "git",
+                    &["worktree", "remove", &worktree_path],
+                )
+                .map_err(AppError::BadRequest)?;
+                Ok(project_id)
+            })
+            .await
+        }
         .await;
         match result {
             Ok(_project_id) => {
@@ -828,11 +846,13 @@ async fn inspect_project_deletion(
             if !seen_worktrees.insert(checkout_path.to_owned()) {
                 continue;
             }
-            if !normalized_path(checkout_path).starts_with(normalized_path(
-                managed_worktree_root.to_string_lossy().as_ref(),
-            )) {
+            if snapshot.worktree_ownership != "managed"
+                || !normalized_path(checkout_path).starts_with(normalized_path(
+                    managed_worktree_root.to_string_lossy().as_ref(),
+                ))
+            {
                 warnings.push(format!(
-                    "checkout is outside Treefold's managed worktree root and will be preserved: {checkout_path}"
+                    "checkout is externally owned or outside Treefold's managed worktree root and will be preserved: {checkout_path}"
                 ));
                 continue;
             }
@@ -1934,6 +1954,21 @@ pub(super) async fn create_workspace_impl(
     project_id: String,
     input: CreateWorkspace,
 ) -> Result<CreatedWorkspace> {
+    create_workspace_with_existing_worktree(state, project_id, input, Vec::new()).await
+}
+
+pub(super) struct ExistingWorkspaceWorktree {
+    pub(super) project_repository_id: String,
+    pub(super) path: String,
+    pub(super) branch: String,
+}
+
+pub(super) async fn create_workspace_with_existing_worktree(
+    state: AppState,
+    project_id: String,
+    input: CreateWorkspace,
+    existing: Vec<ExistingWorkspaceWorktree>,
+) -> Result<CreatedWorkspace> {
     let project = state.store.project(&project_id).await?;
     if project.status != "active" {
         return Err(AppError::BadRequest(
@@ -1977,9 +2012,18 @@ pub(super) async fn create_workspace_impl(
     }
     let workspace_id = new_id();
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
+    let new_locations = locations
+        .iter()
+        .filter(|location| {
+            !existing
+                .iter()
+                .any(|worktree| worktree.project_repository_id == location.id)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
     let (branch, worktree_root) = super::worktree_names::reserve_shared_worktree(
         &state.settings,
-        &locations,
+        &new_locations,
         explicit_branch.as_deref(),
         trimmed(input.generated_branch)
             .filter(|value| !value.is_empty())
@@ -1998,6 +2042,39 @@ pub(super) async fn create_workspace_impl(
                     location.name
                 )));
             }
+        }
+        if let Some(worktree) = existing
+            .iter()
+            .find(|worktree| worktree.project_repository_id == location.id)
+        {
+            let options = directory_branches(&worktree.path)?;
+            let remote_branch = command_output(
+                Path::new(&worktree.path),
+                "git",
+                &[
+                    "for-each-ref",
+                    "--format=%(upstream:remoteref)",
+                    &format!("refs/heads/{}", worktree.branch),
+                ],
+            )
+            .ok()
+            .and_then(|value| value.strip_prefix("refs/heads/").map(str::to_owned));
+            let mut snapshot = git_workspace_repository(
+                &workspace_id,
+                location,
+                &timestamp,
+                worktree.path.clone(),
+                worktree.branch.clone(),
+                base_branch,
+                git_head(&worktree.path)?,
+                None,
+                options.current_remote,
+                remote_branch,
+            );
+            snapshot.branch_ownership = "user".into();
+            snapshot.worktree_ownership = "external".into();
+            snapshots.push(snapshot);
+            continue;
         }
         let checkout_path = worktree_root
             .path()

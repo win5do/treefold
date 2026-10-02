@@ -198,6 +198,11 @@ pub(super) async fn prepare_batch_with_mode(
             .iter()
             .find(|r| r.id == plan.repository_id)
             .unwrap();
+        super::delivery::ensure_worktree_cleanup_owned(
+            repository,
+            plan.delete_worktree,
+            plan.delete_branch,
+        )?;
         items.push(FinishBatchItem {
             plan,
             repository_name: repository.repository_name.clone(),

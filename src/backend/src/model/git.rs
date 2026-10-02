@@ -7,10 +7,39 @@ pub struct GitWorktree {
     pub branch: String,
     pub head_commit: String,
     pub is_main: bool,
+    pub status: GitWorktreeStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct GitWorktreeStatus {
+    pub prunable_reason: Option<String>,
+    pub locked_reason: Option<String>,
+    pub detached: bool,
+    pub available: bool,
+    pub dirty: bool,
+    pub conflicted: bool,
+    pub comparison: WorktreeComparison,
+    pub target_branch: Option<String>,
+    pub ahead: Option<u64>,
+    pub behind: Option<u64>,
+    pub has_ignored_files: bool,
+    pub operation_in_progress: bool,
+    pub cleanup_candidate: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorktreeComparison {
+    NotApplicable,
+    Unknown,
+    Same,
+    Contained,
+    Squashed,
+    Uncontained,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -146,4 +175,17 @@ pub struct GitSyncItemResult {
     pub result: Option<GitSyncResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorktreePrunePreview {
+    pub report: String,
+    pub entries: Vec<WorktreePruneEntry>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorktreePruneEntry {
+    pub path: String,
+    pub reason: String,
+    pub workspaces: Vec<String>,
 }

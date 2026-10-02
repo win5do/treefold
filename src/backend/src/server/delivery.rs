@@ -7,6 +7,7 @@ pub(super) async fn finish_workspace_repository_impl(
 ) -> Result<Json<FinishProgress>> {
     validate_delivery_input(&input)?;
     let location = state.store.workspace_repository(&id).await?;
+    ensure_worktree_cleanup_owned(&location, input.delete_worktree, input.delete_branch)?;
     let workspace = state.store.workspace(&location.workspace_id).await?;
     if location.access_mode != "read_write" {
         return Err(AppError::BadRequest(
@@ -234,6 +235,17 @@ pub(super) async fn finish_workspace_repository_impl(
     }))
 }
 
+pub(super) fn ensure_worktree_cleanup_owned(
+    location: &WorkspaceRepository,
+    delete_worktree: bool,
+    delete_branch: bool,
+) -> Result<()> {
+    if location.worktree_ownership != "managed" && (delete_worktree || delete_branch) {
+        return Err(AppError::BadRequest("This Workspace reuses an existing worktree; keep its working directory and branch when finishing".into()));
+    }
+    Ok(())
+}
+
 pub(super) async fn cleanup_finished_repository(
     state: &AppState,
     workspace: &Workspace,
@@ -243,6 +255,7 @@ pub(super) async fn cleanup_finished_repository(
     branch: &str,
     source_head: &str,
 ) -> Result<()> {
+    ensure_worktree_cleanup_owned(location, input.delete_worktree, input.delete_branch)?;
     if input.delete_worktree {
         let project_repository = state
             .store

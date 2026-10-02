@@ -1,8 +1,12 @@
+import { PruneWorktreesDialog } from "@/features/projects/PruneWorktreesDialog";
+import { WorktreeStatusBadges } from "@/features/projects/WorktreeStatusBadges";
+import { WorktreeWorkspaceButton } from "@/features/workspace/WorktreeWorkspaceButton";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
 import { useMemo, useState } from "react";
 import type * as React from "react";
 import {
+  BrushCleaning,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -294,22 +298,14 @@ export function DirectoryTreeRow({
                   key={`${item.project_repository_id}:${item.path}`}
                   data-testid="project-worktree-row"
                   data-project-location-id={directory.id}
-                  className="flex min-w-0 items-center gap-3 py-3 pl-5"
+                  className="flex min-w-0 items-start gap-3 py-3 pl-5"
                 >
-                  <GitBranch className="size-4 shrink-0 text-muted-foreground" />
+                  <GitBranch className="mt-1.5 size-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex min-h-7 flex-wrap items-center gap-2">
                       <span className="text-sm font-semibold">
                         {item.branch || t("projectsUi.detachedHead")}
                       </span>
-                      {item.is_main && <Badge>{t("projectsUi.mainCheckout")}</Badge>}
-                      {worktreeDeletions[item.path]?.status === "deleting" && (
-                        <Badge variant="secondary">
-                          <Spinner data-icon="inline-start" />{t("projectsUi.deleting")}</Badge>
-                      )}
-                      {worktreeDeletions[item.path]?.status === "failed" && (
-                        <Badge variant="destructive">{t("projectsUi.deleteFailed")}</Badge>
-                      )}
                     </div>
                     <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
                       {item.head_commit && (
@@ -324,26 +320,37 @@ export function DirectoryTreeRow({
                         {item.path}
                       </code>
                     </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 empty:hidden">
+                      {item.is_main && <Badge>{t("projectsUi.mainCheckout")}</Badge>}
+                      {item.workspace_id && (
+                        <Badge
+                          variant="outline"
+                          className="max-w-48"
+                          render={
+                            <button
+                              type="button"
+                              aria-label={t("projectsUi.openWorkspace", { name: item.workspace_name || item.workspace_id })}
+                              title={t("projectsUi.openWorkspace2", { name: item.workspace_name || item.workspace_id })}
+                              onClick={() => onOpen(item.workspace_id!)}
+                            />
+                          }
+                        >
+                          <Workflow data-icon="inline-start" />
+                          <span className="truncate">
+                            {item.workspace_name || "Workspace"}
+                          </span>
+                        </Badge>
+                      )}
+                      <WorktreeStatusBadges worktree={item} />
+                      {worktreeDeletions[item.path]?.status === "deleting" && (
+                        <Badge variant="secondary">
+                          <Spinner data-icon="inline-start" />{t("projectsUi.deleting")}</Badge>
+                      )}
+                      {worktreeDeletions[item.path]?.status === "failed" && (
+                        <Badge variant="destructive">{t("projectsUi.deleteFailed")}</Badge>
+                      )}
+                    </div>
                   </div>
-                  {item.workspace_id && (
-                    <Badge
-                      variant="outline"
-                      className="max-w-48"
-                      render={
-                        <button
-                          type="button"
-                          aria-label={t("projectsUi.openWorkspace", { name: item.workspace_name || item.workspace_id })}
-                          title={t("projectsUi.openWorkspace2", { name: item.workspace_name || item.workspace_id })}
-                          onClick={() => onOpen(item.workspace_id!)}
-                        />
-                      }
-                    >
-                      <Workflow data-icon="inline-start" />
-                      <span className="truncate">
-                        {item.workspace_name || "Workspace"}
-                      </span>
-                    </Badge>
-                  )}
                   {!readOnly && !item.is_main && (
                     <Button
                       size="icon"
@@ -440,6 +447,7 @@ export function ProjectRepositoryTreeRow({
   worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
   const { t } = useTranslation();
+  const [pruneOpen, setPruneOpen] = useState(false);
   const [expanded, setExpanded] = useState(
     directories.some((directory) => directory.role === "primary") ||
       repository.git_status !== "ready",
@@ -463,6 +471,7 @@ export function ProjectRepositoryTreeRow({
 
   return (
     <article data-testid={`project-location-${repository.id}`}>
+      {pruneOpen && <PruneWorktreesDialog repository={repository} onClose={() => setPruneOpen(false)} />}
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <div className="flex items-start gap-3 p-4">
           <button
@@ -551,6 +560,11 @@ export function ProjectRepositoryTreeRow({
                   onClick={onOpenBranches}
                 >{t("projectsUi.branch")}</ActionMenuItem>
                 <ActionMenuItem
+                  icon={<BrushCleaning className="size-3.5" />}
+                  disabled={repository.git_status !== "ready"}
+                  onClick={() => setPruneOpen(true)}
+                >{t("projectsUi.worktreePruneMenu")}</ActionMenuItem>
+                <ActionMenuItem
                   icon={<Pencil className="size-3.5" />}
                   testId={`project-repository-edit-${repository.id}`}
                   onClick={onEditRepository}
@@ -603,22 +617,14 @@ export function ProjectRepositoryTreeRow({
                     key={item.path}
                     data-testid="project-worktree-row"
                     data-project-location-id={repository.id}
-                    className="flex min-w-0 items-center gap-3 py-3 pl-5"
+                    className="flex min-w-0 items-start gap-3 py-3 pl-5"
                   >
-                    <GitBranch className="size-4 shrink-0 text-muted-foreground" />
+                    <GitBranch className="mt-1.5 size-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex min-h-7 flex-wrap items-center gap-2">
                         <span className="text-sm font-semibold">
                           {item.branch || t("projectsUi.detachedHead")}
                         </span>
-                        {item.is_main && <Badge>{t("projectsUi.mainCheckout")}</Badge>}
-                        {worktreeDeletions[item.path]?.status === "deleting" && (
-                          <Badge variant="secondary">
-                            <Spinner data-icon="inline-start" />{t("projectsUi.deleting")}</Badge>
-                        )}
-                        {worktreeDeletions[item.path]?.status === "failed" && (
-                          <Badge variant="destructive">{t("projectsUi.deleteFailed")}</Badge>
-                        )}
                       </div>
                       <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
                         {item.head_commit && (
@@ -633,26 +639,43 @@ export function ProjectRepositoryTreeRow({
                           {item.path}
                         </code>
                       </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2 empty:hidden">
+                        {item.is_main && <Badge>{t("projectsUi.mainCheckout")}</Badge>}
+                        {item.workspace_id && (
+                          <Badge
+                            variant="outline"
+                            className="max-w-48"
+                            render={
+                              <button
+                                type="button"
+                                aria-label={t("projectsUi.openWorkspace", { name: item.workspace_name || item.workspace_id })}
+                                title={t("projectsUi.openWorkspace2", { name: item.workspace_name || item.workspace_id })}
+                                onClick={() => onOpen(item.workspace_id!)}
+                              />
+                            }
+                          >
+                            <Workflow data-icon="inline-start" />
+                            <span className="truncate">
+                              {item.workspace_name || "Workspace"}
+                            </span>
+                          </Badge>
+                        )}
+                        <WorktreeStatusBadges worktree={item} />
+                        {worktreeDeletions[item.path]?.status === "deleting" && (
+                          <Badge variant="secondary">
+                            <Spinner data-icon="inline-start" />{t("projectsUi.deleting")}</Badge>
+                        )}
+                        {worktreeDeletions[item.path]?.status === "failed" && (
+                          <Badge variant="destructive">{t("projectsUi.deleteFailed")}</Badge>
+                        )}
+                      </div>
                     </div>
-                    {item.workspace_id && (
-                      <Badge
-                        variant="outline"
-                        className="max-w-48"
-                        render={
-                          <button
-                            type="button"
-                            aria-label={t("projectsUi.openWorkspace", { name: item.workspace_name || item.workspace_id })}
-                            title={t("projectsUi.openWorkspace2", { name: item.workspace_name || item.workspace_id })}
-                            onClick={() => onOpen(item.workspace_id!)}
-                          />
-                        }
-                      >
-                        <Workflow data-icon="inline-start" />
-                        <span className="truncate">
-                          {item.workspace_name || "Workspace"}
-                        </span>
-                      </Badge>
-                    )}
+                    <WorktreeWorkspaceButton
+                      worktree={item}
+                      readOnly={readOnly}
+                      disabled={busy || worktreeDeletions[item.path]?.status === "deleting"}
+                      onOpen={onOpen}
+                    />
                     {!readOnly && !item.is_main && (
                       <Button
                         size="icon"
@@ -748,9 +771,9 @@ function ProjectRepositoryChildGroup({
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">
           {label}
         </span>
-        <Badge variant="secondary" className="mr-3">
-          {count}
-        </Badge>
+        <span className="flex w-7 shrink-0 justify-center">
+          <Badge variant="secondary">{count}</Badge>
+        </span>
       </CollapsibleTrigger>
       <CollapsibleContent
         id={id}

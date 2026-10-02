@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
 import {
   Bot,
-  ChevronRight,
+  ArrowUpRight,
   PanelsTopLeft,
   Plus,
   TerminalSquare,
@@ -205,7 +205,7 @@ export function ProjectHome({
                       {stream.description || stream.checkout_path}
                     </p>
                   </div>
-                  <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" />
+                  <ArrowUpRight className="size-4 shrink-0 text-foreground" />
                 </button>
                 <div className="pr-2">
                   <RecordActionMenu

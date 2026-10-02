@@ -124,6 +124,7 @@ pub(super) fn project_session_location(
         forked_from_commit: None,
         remote_name: location.preferred_remote_name.clone(),
         remote_branch: None,
+        worktree_ownership: "external".into(),
         branch_ownership: if tracked_git { "user" } else { "none" }.into(),
         delivery_status: "not_applicable".into(),
         close_outcome: None,

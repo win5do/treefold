@@ -9,6 +9,7 @@ import type {
   GitCommitResult,
   GitStatus,
   GitWorktree,
+  WorktreePrunePreview,
   WorktreeDeletePrecheck,
   WorktreeDeleteOperation,
   Project,
@@ -114,6 +115,14 @@ export const projectsApi = {
       method: "POST",
       json: { path, preferred_remote_name: preferredRemoteName, confirm_unverified: true },
     }),
+  openWorktreeWorkspace: (repositoryId: string, path: string) =>
+    request<Workspace>(`/api/project-repositories/${repositoryId}/worktrees/workspace`, {
+      method: "POST", json: { path },
+    }),
+  previewWorktreePrune: (repositoryId: string, signal?: AbortSignal) =>
+    request<WorktreePrunePreview>(`/api/project-repositories/${repositoryId}/worktrees/prune`, { signal }),
+  pruneWorktrees: (repositoryId: string, preview: WorktreePrunePreview) =>
+    request<void>(`/api/project-repositories/${repositoryId}/worktrees/prune`, { method: "POST", json: preview }),
   removeWorktree: (repositoryId: string, worktree: GitWorktree) =>
     request<WorktreeDeleteOperation>(`/api/project-repositories/${repositoryId}/worktrees`, {
       method: "DELETE",

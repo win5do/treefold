@@ -54,6 +54,9 @@ pub(super) async fn delete_workspace(
         super::finish_recovery::ensure_stopped(&state, &target.id).await?;
         if options.delete_worktrees {
             for location in state.store.workspace_repositories(&target.id).await? {
+                if location.worktree_ownership != "managed" {
+                    continue;
+                }
                 let repository = state
                     .store
                     .repository(&location.project_repository_id)

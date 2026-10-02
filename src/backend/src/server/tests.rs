@@ -120,6 +120,10 @@ mod current_workspace_tests {
         };
         let Json(before) = read().await.unwrap();
         assert_eq!(before.worktrees.len(), 1);
+        assert_eq!(
+            before.worktrees[0].status.comparison,
+            crate::model::WorktreeComparison::NotApplicable
+        );
         let external = temp.path().join("external");
         command_output(
             &repository,
@@ -135,6 +139,12 @@ mod current_workspace_tests {
         .unwrap();
         let Json(added) = read().await.unwrap();
         assert_eq!(added.worktrees.len(), 2);
+        let added_worktree = added.worktrees.iter().find(|item| !item.is_main).unwrap();
+        assert_eq!(added_worktree.status.target_branch.as_deref(), Some("main"));
+        assert_eq!(
+            added_worktree.status.comparison,
+            crate::model::WorktreeComparison::Same
+        );
         command_output(
             &external,
             "git",
@@ -143,6 +153,16 @@ mod current_workspace_tests {
         .unwrap();
         let head = git_head(external.to_str().unwrap()).unwrap();
         let Json(committed) = read().await.unwrap();
+        assert_eq!(
+            committed
+                .worktrees
+                .iter()
+                .find(|item| !item.is_main)
+                .unwrap()
+                .status
+                .comparison,
+            crate::model::WorktreeComparison::Uncontained
+        );
         assert!(
             committed
                 .worktrees
@@ -157,6 +177,461 @@ mod current_workspace_tests {
         .unwrap();
         let Json(removed) = read().await.unwrap();
         assert_eq!(removed.worktrees.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn worktree_prune_previews_rechecks_and_preserves_live_locked_and_branches() {
+        let temp = tempfile::tempdir().unwrap();
+        let repository = temp.path().join("repository");
+        initialize_repository(&repository);
+        let state = test_state(temp.path()).await;
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Prune".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
+                preferred_remote: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let target = state
+            .store
+            .repositories(&project.id)
+            .await
+            .unwrap()
+            .remove(0);
+        let uri = format!("/api/project-repositories/{}/worktrees/prune", target.id);
+        let router = app(state.clone());
+        let read = || Request::builder().uri(&uri).body(Body::empty()).unwrap();
+        let write = |preview: &serde_json::Value| {
+            Request::builder()
+                .method("POST")
+                .uri(&uri)
+                .header("content-type", "application/json")
+                .body(Body::from(preview.to_string()))
+                .unwrap()
+        };
+        let response = router.clone().oneshot(read()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let empty: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(empty["report"], "");
+        for name in ["live", "stale", "locked"] {
+            let path = temp.path().join(name);
+            command_output(
+                &repository,
+                "git",
+                &["worktree", "add", "-b", name, path.to_str().unwrap()],
+            )
+            .unwrap();
+            if name == "locked" {
+                command_output(
+                    &repository,
+                    "git",
+                    &["worktree", "lock", path.to_str().unwrap()],
+                )
+                .unwrap();
+            }
+            if name != "live" {
+                std::fs::remove_dir_all(path).unwrap();
+            }
+        }
+        let response = router.clone().oneshot(read()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let preview: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(preview["entries"].as_array().unwrap().len(), 1);
+        assert!(preview["report"].as_str().unwrap().contains("stale"));
+        assert_eq!(
+            git_worktrees(repository.to_str().unwrap()).unwrap().len(),
+            4
+        );
+        let extra = temp.path().join("extra");
+        command_output(
+            &repository,
+            "git",
+            &["worktree", "add", "-b", "extra", extra.to_str().unwrap()],
+        )
+        .unwrap();
+        std::fs::remove_dir_all(extra).unwrap();
+        let response = router.clone().oneshot(write(&preview)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            git_worktrees(repository.to_str().unwrap()).unwrap().len(),
+            5
+        );
+        let response = router.clone().oneshot(read()).await.unwrap();
+        let preview: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        let response = router.clone().oneshot(write(&preview)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        let remaining = git_worktrees(repository.to_str().unwrap()).unwrap();
+        assert_eq!(remaining.len(), 3);
+        assert!(remaining.iter().any(|item| item.is_main));
+        assert!(remaining.iter().any(|item| item.branch == "live"));
+        assert!(remaining.iter().any(|item| item.branch == "locked"));
+        for branch in ["stale", "extra"] {
+            command_output(
+                &repository,
+                "git",
+                &["show-ref", "--verify", &format!("refs/heads/{branch}")],
+            )
+            .unwrap();
+        }
+        assert!(temp.path().join("live/README.md").is_file());
+    }
+
+    #[tokio::test]
+    async fn worktree_workspace_reuses_checkout_and_is_idempotent() {
+        check_worktree_workspace_reuse(false).await;
+    }
+
+    #[tokio::test]
+    async fn worktree_workspace_reuses_both_repositories() {
+        check_worktree_workspace_reuse(true).await;
+    }
+
+    async fn check_worktree_workspace_reuse(reuse_other: bool) {
+        let temp = tempfile::tempdir().unwrap();
+        let repository = temp.path().join("repository");
+        let second = temp.path().join("second");
+        let checkout = temp.path().join("external");
+        initialize_repository(&repository);
+        initialize_repository(&second);
+        command_output(
+            &repository,
+            "git",
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature/import",
+                checkout.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        let peer_checkout = temp.path().join("peer-external");
+        if reuse_other {
+            command_output(
+                &second,
+                "git",
+                &[
+                    "worktree",
+                    "add",
+                    "-b",
+                    "feature/import",
+                    peer_checkout.to_str().unwrap(),
+                ],
+            )
+            .unwrap();
+            std::fs::write(peer_checkout.join("untracked.txt"), "keep peer").unwrap();
+        }
+        std::fs::write(checkout.join("untracked.txt"), "keep me").unwrap();
+        let state = test_state(temp.path()).await;
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                name: Some("Import".into()),
+                description: None,
+                path: None,
+                locations: Some(vec![
+                    repository.to_string_lossy().into_owned(),
+                    second.to_string_lossy().into_owned(),
+                ]),
+                preferred_remote: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let repositories = state.store.repositories(&project.id).await.unwrap();
+        let target = repositories
+            .iter()
+            .find(|item| {
+                normalized_path(&item.source_root) == normalized_path(repository.to_str().unwrap())
+            })
+            .unwrap();
+        for item in &repositories {
+            state
+                .store
+                .update_repository(&item.id, "", ".", None)
+                .await
+                .unwrap();
+        }
+        let request = |path: &str| {
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/project-repositories/{}/worktrees/workspace",
+                    target.id
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::json!({ "path": path }).to_string()))
+                .unwrap()
+        };
+        let router = app(state.clone());
+        let main_checkout = router
+            .clone()
+            .oneshot(request(repository.to_str().unwrap()))
+            .await
+            .unwrap();
+        assert_eq!(main_checkout.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(main_checkout.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("main checkout"));
+        if !reuse_other {
+            command_output(&second, "git", &["checkout", "-b", "feature/import"]).unwrap();
+            let peer_main = router
+                .clone()
+                .oneshot(request(checkout.to_str().unwrap()))
+                .await
+                .unwrap();
+            assert_eq!(peer_main.status(), StatusCode::BAD_REQUEST);
+            let body = to_bytes(peer_main.into_body(), usize::MAX).await.unwrap();
+            assert!(String::from_utf8_lossy(&body).contains("main checkout"));
+            command_output(&second, "git", &["checkout", "main"]).unwrap();
+            command_output(&second, "git", &["branch", "-D", "feature/import"]).unwrap();
+        }
+        let invalid = router
+            .clone()
+            .oneshot(request(second.to_str().unwrap()))
+            .await
+            .unwrap();
+        assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+        assert!(
+            state
+                .store
+                .workspaces(&project.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let stale = temp.path().join("stale");
+        command_output(
+            &repository,
+            "git",
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature/stale",
+                stale.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        std::fs::remove_dir_all(&stale).unwrap();
+        let response = router
+            .clone()
+            .oneshot(request(stale.to_str().unwrap()))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let error = String::from_utf8(
+            to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(error.contains("worktree directory does not exist"));
+        assert!(
+            state
+                .store
+                .workspaces(&project.id)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        command_output(&repository, "git", &["worktree", "prune"]).unwrap();
+        let (first, second_response) = tokio::join!(
+            router.clone().oneshot(request(checkout.to_str().unwrap())),
+            router
+                .clone()
+                .oneshot(request(checkout.join(".").to_str().unwrap())),
+        );
+        let mut ids = Vec::new();
+        for response in [first.unwrap(), second_response.unwrap()] {
+            assert_eq!(response.status(), StatusCode::OK);
+            let body: serde_json::Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                    .unwrap();
+            ids.push(body["id"].as_str().unwrap().to_owned());
+        }
+        assert_eq!(ids[0], ids[1]);
+        assert_eq!(state.store.workspaces(&project.id).await.unwrap().len(), 1);
+        let snapshots = state.store.workspace_repositories(&ids[0]).await.unwrap();
+        assert_eq!(snapshots.len(), 2);
+        let imported = snapshots
+            .iter()
+            .find(|item| item.project_repository_id == target.id)
+            .unwrap();
+        assert_eq!(
+            normalized_path(imported.checkout_path.as_deref().unwrap()),
+            normalized_path(checkout.to_str().unwrap())
+        );
+        assert_eq!(imported.branch_ownership, "user");
+        assert_eq!(imported.worktree_ownership, "external");
+        assert!(
+            super::super::delivery::ensure_worktree_cleanup_owned(imported, true, false).is_err()
+        );
+        assert!(
+            super::super::delivery::ensure_worktree_cleanup_owned(imported, false, false).is_ok()
+        );
+        assert_eq!(imported.git_status, "ready");
+        let other = snapshots
+            .iter()
+            .find(|item| item.project_repository_id != target.id)
+            .unwrap();
+        assert_eq!(other.branch.as_deref(), Some("feature/import"));
+        assert_eq!(other.git_status, "ready");
+        // Reconstruct the previous schema with real snapshots, then apply the
+        // forward migration and verify conservative ownership backfilling.
+        let mut upgrade_connection = state.store.pool.acquire().await.unwrap();
+        sqlx::raw_sql("ALTER TABLE workspace_repositories DROP COLUMN worktree_ownership")
+            .execute(&mut *upgrade_connection)
+            .await
+            .unwrap();
+        sqlx::raw_sql(include_str!(
+            "../../migrations/g1/20261002000000_worktree_ownership.sql"
+        ))
+        .execute(&mut *upgrade_connection)
+        .await
+        .unwrap();
+        drop(upgrade_connection);
+        let upgraded = state.store.workspace_repositories(&ids[0]).await.unwrap();
+        assert_eq!(upgraded.len(), snapshots.len());
+        for snapshot in &snapshots {
+            let actual = upgraded.iter().find(|item| item.id == snapshot.id).unwrap();
+            assert_eq!(actual.worktree_ownership, snapshot.worktree_ownership);
+            assert_eq!(actual.checkout_path, snapshot.checkout_path);
+            assert_eq!(actual.branch, snapshot.branch);
+        }
+
+        assert_eq!(
+            other.worktree_ownership,
+            if reuse_other { "external" } else { "managed" }
+        );
+        if reuse_other {
+            assert_eq!(
+                normalized_path(other.checkout_path.as_deref().unwrap()),
+                normalized_path(peer_checkout.to_str().unwrap())
+            );
+            assert_eq!(
+                std::fs::read_to_string(peer_checkout.join("untracked.txt")).unwrap(),
+                "keep peer"
+            );
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(format!(
+                            "/api/project-repositories/{}/worktrees/workspace",
+                            other.project_repository_id
+                        ))
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            serde_json::json!({"path": peer_checkout}).to_string(),
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let value: serde_json::Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                    .unwrap();
+            assert_eq!(value["id"], ids[0]);
+        }
+        assert_eq!(
+            git_worktrees(repository.to_str().unwrap()).unwrap().len(),
+            2
+        );
+        assert_eq!(
+            std::fs::read_to_string(checkout.join("untracked.txt")).unwrap(),
+            "keep me"
+        );
+        let Json(detail) = get_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(
+            detail
+                .worktrees
+                .iter()
+                .any(|item| normalized_path(&item.path)
+                    == normalized_path(checkout.to_str().unwrap())
+                    && item.workspace_id.as_deref() == Some(ids[0].as_str()))
+        );
+        state
+            .store
+            .finish_workspace(&ids[0], "kept", "keep", None, &now())
+            .await
+            .unwrap();
+        let response = router
+            .clone()
+            .oneshot(request(checkout.to_str().unwrap()))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(body["id"], ids[0]);
+        assert_eq!(body["status"], "archived");
+        state
+            .store
+            .update_project_status(&project.id, "archived")
+            .await
+            .unwrap();
+        let response = router
+            .clone()
+            .oneshot(request(repository.to_str().unwrap()))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(state.store.workspaces(&project.id).await.unwrap().len(), 1);
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri(format!(
+                        "/api/workspaces/{}?delete_worktrees=true&delete_branches=true",
+                        ids[0]
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        assert_eq!(
+            std::fs::read_to_string(checkout.join("untracked.txt")).unwrap(),
+            "keep me"
+        );
+        assert_eq!(
+            git_head(checkout.to_str().unwrap()).unwrap(),
+            imported.start_commit.as_deref().unwrap()
+        );
+        if reuse_other {
+            assert_eq!(
+                std::fs::read_to_string(peer_checkout.join("untracked.txt")).unwrap(),
+                "keep peer"
+            );
+        }
     }
 
     #[tokio::test]
@@ -800,6 +1275,27 @@ mod current_workspace_tests {
             );
         }
 
+        let Json(detail) = get_project(
+            State(state.clone()),
+            axum::extract::Path(project.id.clone()),
+        )
+        .await
+        .unwrap();
+        for created in [&workspace, &fork] {
+            let worktree = detail
+                .worktrees
+                .iter()
+                .find(|item| item.workspace_id.as_deref() == Some(created.id.as_str()))
+                .unwrap();
+            assert_eq!(
+                (worktree.status.ahead, worktree.status.behind),
+                (Some(0), Some(0))
+            );
+            assert!(
+                !worktree.status.cleanup_candidate,
+                "active Workspace and Fork checkouts are in use"
+            );
+        }
         drop(state);
         std::fs::remove_dir_all(root).expect("remove monorepo fixture");
     }
@@ -3006,14 +3502,20 @@ mod current_workspace_tests {
                 ParsedGitWorktree {
                     path: "/repo".into(),
                     branch: "main".into(),
-                    head_commit: "1234567890".into(),
+                    head_commit: "1234567890abcdef".into(),
                     is_main: true,
+                    detached: false,
+                    prunable_reason: None,
+                    locked_reason: None,
                 },
                 ParsedGitWorktree {
                     path: "/repo-feature".into(),
                     branch: "detached HEAD".into(),
-                    head_commit: "abcdef1234".into(),
+                    head_commit: "abcdef1234567890".into(),
                     is_main: false,
+                    detached: true,
+                    prunable_reason: None,
+                    locked_reason: None,
                 },
             ]
         );

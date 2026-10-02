@@ -389,6 +389,14 @@ fn app(state: AppState) -> Router {
             "/api/project-repositories/{id}/worktrees/delete-status",
             get(delete_worktree_status),
         )
+        .route(
+            "/api/project-repositories/{id}/worktrees/workspace",
+            post(worktree_workspace::open_worktree_workspace),
+        )
+        .route(
+            "/api/project-repositories/{id}/worktrees/prune",
+            get(worktree_prune::preview).post(worktree_prune::prune),
+        )
         .route("/api/projects/{id}/workspaces", post(create_workspace))
         .route("/api/workspaces/{id}/forks", post(create_fork))
         .route(
@@ -610,6 +618,9 @@ mod tests;
 mod verification;
 mod workspace;
 mod worktree_names;
+mod worktree_prune;
+mod worktree_status;
+mod worktree_workspace;
 
 use agent::*;
 use codex_identity::*;

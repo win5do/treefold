@@ -7,7 +7,7 @@ use crate::{
 use sqlx::{Sqlite, Transaction};
 use std::path::Path;
 const W: &str = "id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at";
-const WR: &str = "id,workspace_id,project_repository_id,repository_name,source_root,'read_write' AS access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
+const WR: &str = "id,workspace_id,project_repository_id,repository_name,source_root,'read_write' AS access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,worktree_ownership,branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
 const WD: &str = "wd.id,wd.workspace_id,wd.project_directory_id,wd.workspace_repository_id,wd.name,wd.description,wd.relative_path,wd.external_path,wd.access_mode,wd.status,wd.created_at,wd.updated_at,wr.checkout_path,wr.source_root,(SELECT kind FROM workspaces WHERE id=wd.workspace_id) AS workspace_kind";
 #[derive(sqlx::FromRow)]
 struct WorkspaceRow {
@@ -218,7 +218,14 @@ impl Store {
             };
             let Some(repo) = repo else { continue };
             let(name,root):(String,String)=sqlx::query_as("SELECT name,source_root FROM project_repositories WHERE id=? AND deleted_at IS NULL").bind(&repo).fetch_one(&mut **tx).await?;
-            sqlx::query("INSERT OR IGNORE INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&v.id).bind(&w.id).bind(repo).bind(name).bind(root).bind(&v.git_status).bind(&v.creation_error).bind(&v.worktree_id).bind(&v.checkout_path).bind(&v.branch).bind(&v.base_branch).bind(&v.start_commit).bind(&v.forked_from_commit).bind(&v.remote_name).bind(&v.remote_branch).bind(&v.branch_ownership).bind(&v.delivery_status).bind(&v.close_outcome).bind(&v.integrated_commit).bind(&v.closed_at).bind(&v.created_at).bind(&v.updated_at).execute(&mut **tx).await?;
+            sqlx::query!(
+                "INSERT OR IGNORE INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,worktree_ownership,branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                v.id, w.id, repo, name, root, v.git_status, v.creation_error,
+                v.worktree_id, v.checkout_path, v.branch, v.base_branch,
+                v.start_commit, v.forked_from_commit, v.remote_name, v.remote_branch,
+                v.worktree_ownership, v.branch_ownership, v.delivery_status,
+                v.close_outcome, v.integrated_commit, v.closed_at, v.created_at, v.updated_at,
+            ).execute(&mut **tx).await?;
         }
         Ok(())
     }

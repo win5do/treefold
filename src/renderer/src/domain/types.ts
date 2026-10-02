@@ -165,6 +165,7 @@ export type WorkspaceRepository = {
   creation_error?: string;
   checkout_path?: string;
   branch?: string;
+  worktree_ownership?: "managed" | "external";
   branch_ownership: string;
   base_branch?: string;
   start_commit?: string;
@@ -239,6 +240,21 @@ export type GitWorktree = {
   branch: string;
   head_commit: string;
   is_main: boolean;
+  status?: {
+    prunable_reason: string | null;
+    locked_reason: string | null;
+    detached: boolean;
+    available: boolean;
+    dirty: boolean;
+    conflicted: boolean;
+    comparison: "not_applicable" | "unknown" | "same" | "contained" | "squashed" | "uncontained";
+    target_branch: string | null;
+    ahead: number | null;
+    behind: number | null;
+    has_ignored_files: boolean;
+    operation_in_progress: boolean;
+    cleanup_candidate: boolean;
+  };
   workspace_id?: string;
   workspace_name?: string;
 };
@@ -547,3 +563,8 @@ export interface WorkspaceDeleteOptions {
   delete_worktrees: boolean;
   delete_branches: boolean;
 }
+
+export type WorktreePrunePreview = {
+  report: string;
+  entries: { path: string; reason: string; workspaces: string[] }[];
+};

@@ -1419,6 +1419,9 @@ pub(super) struct ParsedGitWorktree {
     pub(super) branch: String,
     pub(super) head_commit: String,
     pub(super) is_main: bool,
+    pub(super) detached: bool,
+    pub(super) prunable_reason: Option<String>,
+    pub(super) locked_reason: Option<String>,
 }
 
 pub(super) fn normalized_path(value: &str) -> PathBuf {
@@ -1534,7 +1537,7 @@ pub(super) fn git_worktrees(repository: &str) -> Result<Vec<ParsedGitWorktree>> 
     let output = command_output(
         Path::new(repository),
         "git",
-        &["worktree", "list", "--porcelain"],
+        &["worktree", "list", "--porcelain", "-z"],
     )
     .map_err(AppError::BadRequest)?;
     Ok(parse_git_worktrees(&output))
@@ -1706,19 +1709,22 @@ pub(super) fn parse_git_history(output: &str) -> Vec<GitCommit> {
 }
 
 pub(super) fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
+    let separator = if output.contains('\0') { "\0" } else { "\n" };
     output
-        .split("\n\n")
+        .split(&separator.repeat(2))
         .enumerate()
         .filter_map(|(index, block)| {
             let mut path = None;
             let mut branch = None;
             let mut head_commit = None;
             let mut detached = false;
-            for line in block.lines() {
+            let mut prunable_reason = None;
+            let mut locked_reason = None;
+            for line in block.split(separator) {
                 if let Some(value) = line.strip_prefix("worktree ") {
                     path = Some(value.to_owned());
                 } else if let Some(value) = line.strip_prefix("HEAD ") {
-                    head_commit = Some(value.chars().take(10).collect());
+                    head_commit = Some(value.to_owned());
                 } else if let Some(value) = line.strip_prefix("branch ") {
                     branch = Some(
                         value
@@ -1728,6 +1734,10 @@ pub(super) fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
                     );
                 } else if line == "detached" {
                     detached = true;
+                } else if line == "prunable" || line.starts_with("prunable ") {
+                    prunable_reason = Some(line.strip_prefix("prunable ").unwrap_or("").to_owned());
+                } else if line == "locked" || line.starts_with("locked ") {
+                    locked_reason = Some(line.strip_prefix("locked ").unwrap_or("").to_owned());
                 }
             }
             Some(ParsedGitWorktree {
@@ -1741,6 +1751,9 @@ pub(super) fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
                 }),
                 head_commit: head_commit.unwrap_or_default(),
                 is_main: index == 0,
+                detached,
+                prunable_reason,
+                locked_reason,
             })
         })
         .collect()
@@ -1750,6 +1763,7 @@ pub(super) fn project_worktrees(
     directories: &[Directory],
     workspaces: &[Workspace],
     workspace_repositories: &[WorkspaceRepository],
+    squash_operations: &[ParentOperation],
 ) -> Vec<GitWorktree> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();
@@ -1757,6 +1771,7 @@ pub(super) fn project_worktrees(
         let Ok(items) = git_worktrees(&directory.path) else {
             continue;
         };
+        let target = super::worktree_status::comparison_target(&directory.path);
         for item in items {
             let path = normalized_path(&item.path);
             if !seen.insert(path.clone()) {
@@ -1774,12 +1789,23 @@ pub(super) fn project_worktrees(
                                 .is_some_and(|checkout_path| normalized_path(checkout_path) == path)
                     }) || normalized_path(&stream.checkout_path) == path)
             });
+            let mut status = super::worktree_status::inspect_worktree_status(
+                &directory.path,
+                &item,
+                target.as_ref(),
+                squash_operations,
+            );
+            status.cleanup_candidate &= workspace.is_none()
+                && !directories
+                    .iter()
+                    .any(|candidate| normalized_path(&candidate.path) == path);
             result.push(GitWorktree {
                 project_repository_id: directory.id.clone(),
                 repository_name: directory.name.clone(),
                 path: item.path,
                 branch: item.branch,
-                head_commit: item.head_commit,
+                head_commit: item.head_commit.chars().take(10).collect(),
+                status,
                 is_main: item.is_main
                     || directories
                         .iter()
@@ -1975,6 +2001,7 @@ pub(super) fn git_workspace_repository(
         forked_from_commit,
         remote_name,
         remote_branch,
+        worktree_ownership: "managed".into(),
         branch_ownership: "managed".into(),
         delivery_status: "active".into(),
         close_outcome: None,

@@ -6,7 +6,7 @@ import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
 import { useEffect, useState } from "react";
 import {
   Bot,
-  ChevronRight,
+  ArrowUpRight,
   CircleAlert,
   Folder,
   GitBranch,
@@ -548,7 +548,7 @@ export function WorkspaceHome({
                         {fork.branch}
                       </p>
                     </div>
-                    <ChevronRight className="size-4 text-muted-foreground/60" />
+                    <ArrowUpRight className="size-4 text-foreground" />
                   </button>
                   <div className="pr-2">
                     <RecordActionMenu
@@ -572,7 +572,7 @@ export function WorkspaceHome({
           </section>
         )}
         <section data-testid="workspace-repositories-section" className="mt-8">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start justify-between gap-4 pr-[calc(1rem+1px)]">
             <div>
               <h2 className="text-sm font-semibold">{t("workspaceUi.workspaceRepositories")}</h2>
               <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.repositoryLifecycleDescription")}</p>

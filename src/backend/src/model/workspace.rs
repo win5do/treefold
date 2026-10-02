@@ -98,6 +98,7 @@ pub struct WorkspaceRepository {
     pub remote_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remote_branch: Option<String>,
+    pub worktree_ownership: String,
     pub branch_ownership: String,
     pub delivery_status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
