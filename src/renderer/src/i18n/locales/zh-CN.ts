@@ -237,6 +237,9 @@ export const zhCN = {
   "controls": {
     "close": "关闭",
     "loading": "正在加载",
+    "copyError": "复制报错",
+    "errorCopied": "已复制报错",
+    "copyErrorFailed": "复制失败，点击重试",
     "closeToast": "关闭通知"
   },
   "actionsUi": {

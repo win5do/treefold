@@ -1,6 +1,7 @@
+import { useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import { Toast as ToastPrimitive } from "@base-ui/react/toast"
-import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon, XIcon } from "lucide-react"
+import { CheckIcon, CopyIcon, CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon, XIcon } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -58,16 +59,47 @@ function ToastIcon({ type }: { type: string | undefined }) {
   return <span data-slot="toast-icon" className={cn("shrink-0 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4", type === "error" && "text-destructive", type === "loading" && "animate-spin")}><Icon aria-hidden="true" /></span>
 }
 
-function ToastList() {
-  const { toasts } = ToastPrimitive.useToastManager()
-  return toasts.map((toastItem) => <Toast key={toastItem.id} toast={toastItem}>
+function ToastCopy({ contentRef }: { contentRef: RefObject<HTMLDivElement | null> }) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const label = t(status === "copied" ? "controls.errorCopied" : status === "failed" ? "controls.copyErrorFailed" : "controls.copyError");
+  async function copy() {
+    const content = contentRef.current;
+    if (!content) return;
+    const text = ["toast-title", "toast-description"]
+      .map(slot => content.querySelector(`[data-slot="${slot}"]`)?.textContent)
+      .filter(Boolean).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus("copied");
+    } catch {
+      setStatus("failed");
+    }
+  }
+  return <>
+    <Button variant="ghost" size="icon-sm" aria-label={label} title={label} onClick={() => void copy()}>
+      {status === "copied" ? <CheckIcon data-icon aria-hidden="true" /> : <CopyIcon data-icon aria-hidden="true" />}
+    </Button>
+    <span className="sr-only" role="status">{status !== "idle" ? label : ""}</span>
+  </>;
+}
+
+function ToastEntry({ toastItem }: { toastItem: ToastPrimitive.Root.Props["toast"] }) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  return <Toast toast={toastItem}>
     <ToastContent>
       <ToastIcon type={toastItem.type} />
-      <div className="flex min-w-0 flex-1 flex-col gap-1"><ToastTitle /><ToastDescription /></div>
+      <div ref={contentRef} className="flex min-w-0 flex-1 flex-col gap-1"><ToastTitle /><ToastDescription /></div>
       <ToastAction />
+      {toastItem.type === "error" && <ToastCopy contentRef={contentRef} />}
       <ToastClose />
     </ToastContent>
-  </Toast>)
+  </Toast>;
+}
+
+function ToastList() {
+  const { toasts } = ToastPrimitive.useToastManager();
+  return toasts.map(toastItem => <ToastEntry key={toastItem.id} toastItem={toastItem} />);
 }
 
 function Toaster({ children, toastManager: manager = toastManager, ...props }: ToastPrimitive.Provider.Props) {

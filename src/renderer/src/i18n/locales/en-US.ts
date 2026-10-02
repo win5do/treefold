@@ -235,6 +235,9 @@ export const enUS = {
   "controls": {
     "close": "Close",
     "loading": "Loading",
+    "copyError": "Copy error",
+    "errorCopied": "Error copied",
+    "copyErrorFailed": "Could not copy error. Click to retry.",
     "closeToast": "Close toast"
   },
   "actionsUi": {
