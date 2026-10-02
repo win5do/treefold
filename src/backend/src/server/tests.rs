@@ -763,6 +763,43 @@ mod current_workspace_tests {
         assert_eq!(scopes.len(), 2);
         assert!(scopes.iter().all(|scope| Path::new(&scope.path).is_dir()));
 
+        let (_, Json(fork)) = create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id.clone()),
+            ApiJson(CreateFork {
+                generated_branch: Some(workspace.branch.clone()),
+                description: None,
+                branch: None,
+            }),
+        )
+        .await
+        .expect("create Fork with a conflicting automatic branch");
+        assert_ne!(fork.branch, workspace.branch);
+        for created in [&workspace, &fork] {
+            let location = state
+                .store
+                .default_workspace_repository(&created.id)
+                .await
+                .unwrap();
+            let checkout = Path::new(location.checkout_path.as_deref().unwrap());
+            assert_eq!(
+                checkout
+                    .parent()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                created.branch.strip_prefix("treefold/").unwrap()
+            );
+            assert_eq!(
+                command_output(checkout, "git", &["branch", "--show-current"])
+                    .unwrap()
+                    .trim(),
+                created.branch
+            );
+        }
+
         drop(state);
         std::fs::remove_dir_all(root).expect("remove monorepo fixture");
     }
@@ -1430,7 +1467,14 @@ mod current_workspace_tests {
             Some("feature/current-fork-test")
         );
         assert_eq!(workspace.name, "feature/current-fork-test");
-        assert_short_worktree_path(workspace_location.checkout_path.as_deref().unwrap());
+        assert_eq!(
+            Path::new(workspace_location.checkout_path.as_deref().unwrap())
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap(),
+            "current-fork-test"
+        );
         for branch in ["feature/current-fork-test", "invalid branch"] {
             assert!(
                 create_fork(
@@ -2307,6 +2351,16 @@ mod current_workspace_tests {
             .unwrap();
         assert_short_worktree_path(location.checkout_path.as_deref().unwrap());
         assert_eq!(workspace.name, location.branch.as_deref().unwrap());
+        assert_eq!(
+            Path::new(location.checkout_path.as_deref().unwrap())
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            workspace.branch.strip_prefix("treefold/").unwrap()
+        );
         let branch = location
             .branch
             .as_deref()
@@ -2798,7 +2852,7 @@ mod current_workspace_tests {
         assert!(
             namespace[12..]
                 .bytes()
-                .all(|byte| byte.is_ascii_lowercase())
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
         );
     }
 

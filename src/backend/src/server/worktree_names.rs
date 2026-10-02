@@ -3,7 +3,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{error::Result, settings::SettingsStore};
+use crate::{error::Result, model::Directory, settings::SettingsStore};
+
+use super::git_routes::choose_shared_branch;
 
 /// An atomically reserved namespace shared by a Workspace's repository checkouts.
 pub(super) struct WorktreeRoot(PathBuf);
@@ -37,7 +39,43 @@ fn random_name() -> String {
     name
 }
 
-pub(super) fn reserve_worktree_root(settings: &SettingsStore) -> Result<WorktreeRoot> {
+pub(super) fn reserve_shared_worktree(
+    settings: &SettingsStore,
+    locations: &[Directory],
+    explicit: Option<&str>,
+    generated: Option<&str>,
+    reuse_existing: bool,
+) -> Result<(String, WorktreeRoot)> {
+    let root = settings.treefold_home().join("git/w");
+    std::fs::create_dir_all(&root).map_err(anyhow::Error::from)?;
+    for attempt in 0..32 {
+        let branch = choose_shared_branch(
+            locations,
+            explicit,
+            generated.filter(|_| attempt == 0),
+            reuse_existing,
+        )?;
+        if explicit.is_some() {
+            return Ok((branch, reserve_worktree_root(settings)?));
+        }
+        let name = branch.rsplit('/').next().unwrap_or_default();
+        if name.is_empty() || name == "." || name == ".." {
+            return Err(crate::error::AppError::BadRequest(
+                "invalid Workspace branch name".into(),
+            ));
+        }
+        let path = root.join(name);
+        match std::fs::create_dir(&path) {
+            Ok(()) => return Ok((branch, WorktreeRoot(path))),
+            // A directory conflict must regenerate the branch and directory together.
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(anyhow::Error::from(error).into()),
+        }
+    }
+    Err(anyhow::anyhow!("could not allocate a shared worktree directory and branch").into())
+}
+
+fn reserve_worktree_root(settings: &SettingsStore) -> Result<WorktreeRoot> {
     reserve_in(&settings.treefold_home().join("git/w"), || {
         format!(
             "{}-{}",
@@ -67,6 +105,37 @@ fn reserve_in(root: &Path, mut next_name: impl FnMut() -> String) -> io::Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn automatic_branches_share_the_reserved_directory_name() {
+        let root = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::open(root.path()).unwrap();
+        let preview = "treefold/261002-1234-abcd";
+        let (branch, reserved) =
+            reserve_shared_worktree(&settings, &[], None, Some(preview), false).unwrap();
+        assert_eq!(branch, preview);
+        assert_eq!(reserved.path().file_name().unwrap(), "261002-1234-abcd");
+        std::fs::write(reserved.path().join("keep"), "existing").unwrap();
+
+        // Even without a Git branch conflict, an occupied directory replaces both names.
+        let (retried_branch, retried_root) =
+            reserve_shared_worktree(&settings, &[], None, Some(preview), false).unwrap();
+        assert_ne!(retried_branch, preview);
+        assert_eq!(
+            retried_root.path().file_name().unwrap().to_str().unwrap(),
+            retried_branch.strip_prefix("treefold/").unwrap()
+        );
+        assert_eq!(
+            std::fs::read_to_string(reserved.path().join("keep")).unwrap(),
+            "existing"
+        );
+
+        let (branch, reserved) = reserve_shared_worktree(&settings, &[], None, None, true).unwrap();
+        assert_eq!(
+            reserved.path().file_name().unwrap().to_str().unwrap(),
+            branch.strip_prefix("treefold/").unwrap()
+        );
+    }
 
     #[test]
     fn worktree_names_are_four_lowercase_letters() {

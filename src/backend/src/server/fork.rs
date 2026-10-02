@@ -185,7 +185,8 @@ pub(super) async fn create_fork_impl(
         project_repositorys.push(state.store.repository_as_directory(&repository.id).await?);
     }
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
-    let branch = choose_shared_branch(
+    let (branch, worktree_root) = super::worktree_names::reserve_shared_worktree(
+        &state.settings,
         &project_repositorys,
         explicit_branch.as_deref(),
         trimmed(input.generated_branch)
@@ -193,7 +194,6 @@ pub(super) async fn create_fork_impl(
             .as_deref(),
         false,
     )?;
-    let worktree_root = super::worktree_names::reserve_worktree_root(&state.settings)?;
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();

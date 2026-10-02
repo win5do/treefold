@@ -1977,7 +1977,8 @@ pub(super) async fn create_workspace_impl(
     }
     let workspace_id = new_id();
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
-    let branch = choose_shared_branch(
+    let (branch, worktree_root) = super::worktree_names::reserve_shared_worktree(
+        &state.settings,
         &locations,
         explicit_branch.as_deref(),
         trimmed(input.generated_branch)
@@ -1985,7 +1986,6 @@ pub(super) async fn create_workspace_impl(
             .as_deref(),
         true,
     )?;
-    let worktree_root = super::worktree_names::reserve_worktree_root(&state.settings)?;
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
