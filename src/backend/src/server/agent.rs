@@ -44,14 +44,6 @@ pub(super) async fn sync_agent_integration(
 ) -> Result<Json<crate::integration::IntegrationStatus>> {
     match state.integration.sync() {
         Ok(status) => Ok(Json(status)),
-        Err(crate::integration::IntegrationError::Conflict(path)) => Err(AppError::api(
-            StatusCode::CONFLICT,
-            "AGENT_INTEGRATION_CONFLICT",
-            format!(
-                "Existing path is not managed by Treefold: {}",
-                path.display()
-            ),
-        )),
         Err(crate::integration::IntegrationError::Unavailable(path)) => Err(AppError::api(
             StatusCode::SERVICE_UNAVAILABLE,
             "AGENT_INTEGRATION_UNAVAILABLE",

@@ -60,8 +60,10 @@ App 启动时只读检查；缺失、过期、不完整或冲突时，在单次 
 ```
 
 三个路径都是指向当前 App bundle 的软链接。`amux` CLI 是 Session 私有资源，不创建
-`~/.local/bin/amux`。receipt 位于 `$TREEFOLD_HOME/data/agent-integration.json`；更新只
-替换 receipt 所有的旧链接，冲突路径不覆盖。卸载只移除仍匹配 receipt 的链接。
+`~/.local/bin/amux`。安装或同步会直接覆盖这三个路径上已有的文件、目录或软链接，
+无需旧安装记录；替换软链接不会删除其指向的资源。覆盖前先检查所有随包资源是否存在。
+receipt 位于 `$TREEFOLD_HOME/data/agent-integration.json`，记录本次安装的链接。
+卸载只移除仍匹配 receipt 的链接。
 
 退出码：
 

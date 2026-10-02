@@ -85,8 +85,6 @@ struct Receipt {
 
 #[derive(Debug, thiserror::Error)]
 pub enum IntegrationError {
-    #[error("Agent integration conflicts with an existing file or unmanaged link: {0}")]
-    Conflict(PathBuf),
     #[error("bundled Agent integration resource is unavailable: {0}")]
     Unavailable(PathBuf),
     #[error(transparent)]
@@ -281,13 +279,6 @@ impl IntegrationManager {
             if !component.source.exists() {
                 return Err(IntegrationError::Unavailable(component.source.clone()));
             }
-            let Some(target) = &component.install_path else {
-                continue;
-            };
-            match self.link_state(target, &component.source, receipt.as_ref()) {
-                LinkState::Ready | LinkState::Missing | LinkState::Owned => {}
-                LinkState::Conflict => return Err(IntegrationError::Conflict(target.clone())),
-            }
         }
         let mut links = BTreeMap::new();
         for component in &self.inner.components {
@@ -445,7 +436,21 @@ fn replace_symlink(source: &Path, target: &Path) -> std::io::Result<()> {
             std::fs::remove_file(&temporary)?;
         }
         symlink(source, &temporary)?;
-        std::fs::rename(temporary, target)
+        let result = (|| {
+            match std::fs::symlink_metadata(target) {
+                // Inspect the entry itself so directory symlinks are replaced
+                // without deleting the resources they point to.
+                Ok(metadata) if metadata.is_dir() => std::fs::remove_dir_all(target)?,
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+            std::fs::rename(&temporary, target)
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        result
     }
     #[cfg(not(unix))]
     {
@@ -529,13 +534,79 @@ mod tests {
     }
 
     #[test]
-    fn sync_does_not_overwrite_conflicts() {
+    fn sync_overwrites_existing_files_and_directories() {
         let root = tempfile::tempdir().unwrap();
         let manager = manager(root.path());
         let target = root.path().join("user/.local/bin/treefold");
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::write(&target, "mine").unwrap();
-        assert!(matches!(manager.sync(), Err(IntegrationError::Conflict(path)) if path == target));
+        for skill in ["treefold", "amux"] {
+            let directory = root.path().join("user/.agents/skills").join(skill);
+            std::fs::create_dir_all(directory.join("nested")).unwrap();
+            std::fs::write(directory.join("nested/custom.md"), "mine").unwrap();
+        }
+
+        assert_eq!(manager.sync().unwrap().state, IntegrationState::Ready);
+        for component in &manager.inner.components {
+            if let Some(target) = &component.install_path {
+                assert_eq!(std::fs::read_link(target).unwrap(), component.source);
+            }
+        }
+        assert_eq!(manager.sync().unwrap().state, IntegrationState::Ready);
+        assert_eq!(
+            manager.uninstall().unwrap().state,
+            IntegrationState::NotInstalled
+        );
+    }
+
+    #[test]
+    fn sync_replaces_unmanaged_links_without_touching_their_sources() {
+        let root = tempfile::tempdir().unwrap();
+        let manager = manager(root.path());
+        let old_file = root.path().join("old-cli");
+        let old_directory = root.path().join("old-skill");
+        let missing_source = root.path().join("missing-skill");
+        std::fs::write(&old_file, "old cli").unwrap();
+        std::fs::create_dir_all(&old_directory).unwrap();
+        std::fs::write(old_directory.join("SKILL.md"), "old skill").unwrap();
+        let targets = manager
+            .inner
+            .components
+            .iter()
+            .filter_map(|component| component.install_path.as_ref());
+        for (target, source) in targets.zip([&old_file, &old_directory, &missing_source]) {
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::os::unix::fs::symlink(source, target).unwrap();
+        }
+
+        assert_eq!(manager.sync().unwrap().state, IntegrationState::Ready);
+        assert_eq!(std::fs::read_to_string(&old_file).unwrap(), "old cli");
+        assert_eq!(
+            std::fs::read_to_string(old_directory.join("SKILL.md")).unwrap(),
+            "old skill"
+        );
+        assert!(!missing_source.exists());
+        assert_eq!(
+            manager.uninstall().unwrap().state,
+            IntegrationState::NotInstalled
+        );
+        assert!(old_file.exists());
+        assert!(old_directory.join("SKILL.md").exists());
+    }
+
+    #[test]
+    fn sync_checks_all_sources_before_overwriting_existing_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let manager = manager(root.path());
+        let target = root.path().join("user/.local/bin/treefold");
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::write(&target, "mine").unwrap();
+        let missing = root.path().join("bundle/skills/amux");
+        std::fs::remove_dir_all(&missing).unwrap();
+
+        assert!(
+            matches!(manager.sync(), Err(IntegrationError::Unavailable(path)) if path == missing)
+        );
         assert_eq!(std::fs::read_to_string(target).unwrap(), "mine");
     }
 
