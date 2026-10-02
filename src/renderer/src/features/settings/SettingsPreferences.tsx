@@ -1,6 +1,6 @@
 import type { SettingsFormPatch } from "./useSettingsSave";
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Copy, Plus, Trash2 } from "lucide-react";
+import { Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
@@ -8,12 +8,10 @@ import {
   Field,
   FieldContent,
   FieldDescription,
-  FieldError,
   FieldGroup,
   FieldLabel,
   FieldTitle,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { NativeSelect as Select } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
@@ -44,7 +42,6 @@ export function SettingsPreferences({
   onSave: (update: SettingsFormPatch) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const { t } = useTranslation();
-  const [extraArgs, setExtraArgs] = useState<string[]>([]);
   const [language, setLanguage] = useState<LanguagePreference>("system");
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [keepDaemonRunningOnExit, setKeepDaemonRunningOnExit] = useState(false);
@@ -60,11 +57,10 @@ export function SettingsPreferences({
     if (busy || resetting) return;
     setResetting(true);
     try {
-      const result = await onSave({ reset: ["language", "theme", "agents.codex.extra_args", "amux.keep_daemon_running_on_exit"] });
+      const result = await onSave({ reset: ["language", "theme", "amux.keep_daemon_running_on_exit"] });
       if (result.ok) {
         setLanguage("system");
         setTheme("system");
-        setExtraArgs([]);
         setKeepDaemonRunningOnExit(false);
         setResetOpen(false);
         toast.success(t("settings.saved"));
@@ -73,12 +69,8 @@ export function SettingsPreferences({
       setResetting(false);
     }
   };
-  const configuredArgsKey = JSON.stringify(
-    settings?.agents.codex.extra_args ?? [],
-  );
   useEffect(() => {
     if (!open) return;
-    setExtraArgs([...(settings?.agents.codex.extra_args ?? [])]);
     setLanguage(settings?.language ?? "system");
     setTheme(settings?.theme ?? "system");
     setKeepDaemonRunningOnExit(
@@ -86,7 +78,6 @@ export function SettingsPreferences({
     );
   }, [
     open,
-    configuredArgsKey,
     settings?.language,
     settings?.theme,
     settings?.amux.keep_daemon_running_on_exit,
@@ -95,38 +86,12 @@ export function SettingsPreferences({
     if (open) setSaveFeedback({ kind: "idle" });
   }, [open]);
   const clearSaveFeedback = () => setSaveFeedback({ kind: "idle" });
-  const updateArgument = (index: number, value: string) => {
-    clearSaveFeedback();
-    setExtraArgs((current) =>
-      current.map((argument, itemIndex) =>
-        itemIndex === index ? value : argument,
-      ),
-    );
-  };
-  const removeArgument = (index: number) => {
-    clearSaveFeedback();
-    setExtraArgs((current) =>
-      current.filter((_, itemIndex) => itemIndex !== index),
-    );
-  };
-  const moveArgument = (index: number, offset: number) => {
-    clearSaveFeedback();
-    setExtraArgs((current) => {
-      const target = index + offset;
-      if (target < 0 || target >= current.length) return current;
-      const next = [...current];
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
-  };
-  const hasEmptyArgument = extraArgs.some((argument) => argument.length === 0);
   const saving = saveFeedback.kind === "saving";
   const handleSave = async () => {
     setSaveFeedback({ kind: "saving" });
     const result = await onSave({
       ...(language !== settings?.language ? { language } : {}),
       ...(theme !== settings?.theme ? { theme } : {}),
-      ...(JSON.stringify(extraArgs) !== configuredArgsKey ? { extraArgs } : {}),
       ...(keepDaemonRunningOnExit !== settings?.amux.keep_daemon_running_on_exit ? { keepDaemonRunningOnExit } : {}),
     });
     setSaveFeedback({ kind: "idle" });
@@ -136,13 +101,6 @@ export function SettingsPreferences({
   const runtimeItems = [
     { key: "treefold-home", label: t("settingsUi.treefoldHome"), value: system?.treefold_home ?? "—" },
     { key: "platform", label: t("settingsUi.platform"), value: system?.platform ?? "—" },
-    {
-      key: "codex",
-      label: "Codex",
-      value: system?.codex_available
-        ? system.codex_version ?? "Codex"
-        : t("common.unavailable"),
-    },
   ];
   const copyRuntime = async () => {
     const text = runtimeItems.map(({ label, value }) => `${label}: ${value}`).join("\n");
@@ -230,101 +188,6 @@ export function SettingsPreferences({
               />
             </Field>
             <Separator />
-            <Field
-              orientation="responsive"
-              data-invalid={hasEmptyArgument || undefined}
-              className="px-6 py-5"
-            >
-              <FieldContent>
-                <FieldTitle>{t("settings.codexArguments.title")}</FieldTitle>
-                <FieldDescription>
-                  {t("settings.codexArguments.description")}
-                </FieldDescription>
-              </FieldContent>
-              <div className="flex w-full flex-col gap-3 @md/field-group:max-w-sm">
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => {
-                      clearSaveFeedback();
-                      setExtraArgs((current) => [...current, ""]);
-                    }}
-                  >
-                    <Plus data-icon="inline-start" />
-                    {t("settings.codexArguments.add")}
-                  </Button>
-                </div>
-                <div
-                  data-testid="codex-extra-args"
-                  className="flex flex-col gap-2"
-                >
-                  {extraArgs.length === 0 ? (
-                    <p className="rounded-md bg-muted px-3 py-4 text-center text-muted-foreground">
-                      {t("settings.codexArguments.empty")}
-                    </p>
-                  ) : (
-                    extraArgs.map((argument, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <span className="w-5 shrink-0 text-right font-mono text-muted-foreground">
-                          {index + 1}
-                        </span>
-                        <Input
-                          className="min-w-0 flex-1 font-mono"
-                          aria-invalid={argument.length === 0 || undefined}
-                          aria-label={t("settings.codexArguments.input", {
-                            index: index + 1,
-                          })}
-                          value={argument}
-                          placeholder="--argument"
-                          onChange={(event) =>
-                            updateArgument(index, event.target.value)
-                          }
-                        />
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={t("settings.codexArguments.moveUp", {
-                            index: index + 1,
-                          })}
-                          disabled={index === 0}
-                          onClick={() => moveArgument(index, -1)}
-                        >
-                          <ChevronUp data-icon="inline-start" />
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={t("settings.codexArguments.moveDown", {
-                            index: index + 1,
-                          })}
-                          disabled={index === extraArgs.length - 1}
-                          onClick={() => moveArgument(index, 1)}
-                        >
-                          <ChevronDown data-icon="inline-start" />
-                        </Button>
-                        <Button
-                          size="icon-sm"
-                          variant="ghost"
-                          aria-label={t("settings.codexArguments.remove", {
-                            index: index + 1,
-                          })}
-                          onClick={() => removeArgument(index)}
-                        >
-                          <Trash2 data-icon="inline-start" />
-                        </Button>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {hasEmptyArgument && (
-                  <FieldError>
-                    {t("settings.codexArguments.validation")}
-                  </FieldError>
-                )}
-              </div>
-            </Field>
-            <Separator />
             <Field orientation="responsive" className="px-6 py-5">
               <FieldContent>
                 <FieldTitle>{t("settings.runtime.title")}</FieldTitle>
@@ -364,7 +227,7 @@ export function SettingsPreferences({
           <Button
             data-testid="settings-save"
             aria-busy={saving}
-            disabled={busy || hasEmptyArgument}
+            disabled={busy || saving}
             onClick={() => void handleSave()}
           >
             {saving && (

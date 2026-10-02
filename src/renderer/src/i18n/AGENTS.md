@@ -30,7 +30,7 @@ Treefold 保留英文产品名和核心概念，中文负责让用户理解操�
 
 ```toml
 preserve = [
-  "Treefold", "Codex", "Git", "amux", "Workspace", "Fork", "Project", "Session", "Agent", "Skill",
+  "Treefold", "Codex", "Claude Code", "OpenCode", "Pi", "Git", "amux", "Workspace", "Fork", "Project", "Session", "Agent", "Skill",
   "AI", "API", "CLI", "SDK", "MCP", "Todo", "Context", "feature",
 ]
 ```

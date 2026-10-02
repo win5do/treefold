@@ -1,3 +1,4 @@
+import { createAgentSettings, createAgentInstallations } from "./agents.ts";
 import type { Todo, WorkspaceDirectory, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
 import type { FixtureProject, FixtureDirectory, FixtureRepository, FixtureSession, FixtureWorkspace, FixtureProjectDetail, FixtureWorkspaceDetail, FixturePreflight, SidebarFixture } from "./types.ts";
 export const FIXTURE_IDS = Object.freeze({
@@ -672,18 +673,10 @@ const deliveryPreflight: FixturePreflight = {
 export function createSidebarCoreFixture(): SidebarFixture {
   return structuredClone<SidebarFixture>({
     settings: {
-      schema_version: 1,
+      schema_version: 3,
       language: "en-US",
       theme: "system",
-      agents: {
-        codex: {
-          extra_args: [
-            "--dangerously-bypass-approvals-and-sandbox",
-            "--model",
-            "gpt-5.4",
-          ],
-        },
-      },
+      agents: createAgentSettings(),
       amux: {
         keep_daemon_running_on_exit: false,
       },
@@ -759,6 +752,7 @@ export function createSidebarCoreFixture(): SidebarFixture {
     system: {
       platform: "test",
       treefold_home: "/tmp/treefold-ui-fixture",
+      agents: createAgentInstallations(),
       codex_available: true,
       codex_version: "codex-ui-fixture",
     },

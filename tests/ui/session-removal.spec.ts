@@ -50,7 +50,7 @@ for (const owner of ["project", "workspace"] as const) {
       // The action remains available even when Resume has no conversation ID.
       await row.getByRole("button", { name: "Remove from Treefold", exact: true }).click();
       const dialog = page.getByRole("alertdialog");
-      await expect(dialog).toContainText("Its Codex conversation remains available in Codex.");
+      await expect(dialog).toContainText("Session history saved by the CLI is kept.");
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       expect(deletes).toEqual([]);
       await row.getByRole("button", { name: "Remove from Treefold", exact: true }).click();

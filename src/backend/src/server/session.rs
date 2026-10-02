@@ -199,8 +199,10 @@ pub(super) async fn create_session_for_workspace(
     let kind = trimmed(input.kind)
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| "codex".into());
-    if kind != "shell" && kind != "codex" {
-        return Err(AppError::BadRequest("kind must be shell or codex".into()));
+    if kind != "shell" && crate::agents::adapter(&kind).is_none() {
+        return Err(AppError::BadRequest(
+            "kind must be shell, codex, claude_code, opencode or pi".into(),
+        ));
     }
     let project = state.store.project(&workspace.project_id).await?;
     let repositories = state.store.workspace_repositories(&workspace.id).await?;
@@ -255,9 +257,9 @@ pub(super) async fn create_session_for_workspace(
                 .unwrap_or(&repository.git_status)
         )));
     }
-    if kind == "codex" && selected_repository.is_none() {
+    if crate::agents::adapter(&kind).is_some() && selected_repository.is_none() {
         return Err(AppError::BadRequest(
-            "Codex must start in an available Git location; non-Git locations are read-only context"
+            "Agents must start in an available Git location; non-Git locations are read-only context"
                 .into(),
         ));
     }
@@ -288,16 +290,28 @@ pub(super) async fn create_session_for_workspace(
             read_only_contexts.push(directory.path.clone());
         }
     }
-    let codex_extra_args = if kind == "codex" {
-        state.settings.load()?.agents.codex.extra_args
-    } else {
-        vec![]
-    };
+    let agents = state.settings.load()?.agents;
+    if let Some(adapter) = crate::agents::adapter(&kind) {
+        adapter
+            .detect_installation(agents.get(&kind).unwrap())
+            .ok_or_else(|| {
+                AppError::BadRequest(format!(
+                    "{} CLI is not installed or executable",
+                    adapter.name()
+                ))
+            })?;
+    }
     let session_id = new_id();
     let timestamp = now();
     let mut name = trimmed(input.name)
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| kind.clone());
+        .unwrap_or_else(|| {
+            if kind == "codex" || kind == "shell" {
+                kind.clone()
+            } else {
+                crate::agents::adapter(&kind).unwrap().name().into()
+            }
+        });
     if kind == "shell"
         && name == "shell"
         && let Some(selected) = selected_name
@@ -342,7 +356,7 @@ pub(super) async fn create_session_for_workspace(
             &session,
             &workspace.project_id,
             developer_instructions.as_deref(),
-            &codex_extra_args,
+            &agents,
         )
         .await
     {
@@ -415,6 +429,17 @@ pub(super) async fn restart_session(
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id).await?;
     ensure_session_owner_active(&state, &session).await?;
+    if let Some(adapter) = crate::agents::adapter(&session.kind) {
+        let settings = state.settings.load()?;
+        adapter
+            .detect_installation(settings.agents.get(&session.kind).unwrap())
+            .ok_or_else(|| {
+                AppError::BadRequest(format!(
+                    "{} CLI is not installed or executable",
+                    adapter.name()
+                ))
+            })?;
+    }
     capture_codex_session_id(&state.store, &mut session).await?;
     if session.kind == "codex" && session.codex_session_id.is_none() {
         return Err(AppError::api(
@@ -457,18 +482,14 @@ pub(super) async fn restart_session(
     }
     let developer_instructions =
         treefold_developer_instructions(&state, &session, &workspace).await?;
-    let codex_extra_args = if session.kind == "codex" {
-        state.settings.load()?.agents.codex.extra_args
-    } else {
-        vec![]
-    };
+    let agents = state.settings.load()?.agents;
     let process = state
         .terminals
         .spawn(
             &session,
             &workspace.project_id,
             developer_instructions.as_deref(),
-            &codex_extra_args,
+            &agents,
         )
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;

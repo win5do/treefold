@@ -1,3 +1,4 @@
+import { isAgentKind } from "@/features/agents/model";
 import { OpenInMenu } from "@/features/open-in/OpenInMenu";
 import { useEffect, useRef, useState } from "react";
 import type * as React from "react";
@@ -72,9 +73,9 @@ export function WorkspaceSidebar({
   onCreateWorkspace,
   onCreateFork,
   onCreateShell,
-  onCreateCodex,
+  onCreateAgent,
   onCreateBaseShell,
-  onCreateBaseCodex,
+  onCreateBaseAgent,
   onSyncProject,
   onSyncDirectory,
   onSyncWorkspace,
@@ -112,9 +113,9 @@ export function WorkspaceSidebar({
   onCreateWorkspace: (project: ProjectDetail) => void;
   onCreateFork: (workspace: Workspace) => void;
   onCreateShell: (stream: Workspace, directory?: Directory) => void;
-  onCreateCodex: (stream: Workspace, directory?: Directory) => void;
+  onCreateAgent: (stream: Workspace, directory?: Directory) => void;
   onCreateBaseShell: (project: ProjectDetail, directory?: Directory) => void;
-  onCreateBaseCodex: (project: ProjectDetail, directory?: Directory) => void;
+  onCreateBaseAgent: (project: ProjectDetail, directory?: Directory) => void;
   onSyncProject: (project: ProjectDetail, action: "pull" | "push") => void;
   onSyncDirectory: (
     repository: ProjectRepository,
@@ -179,10 +180,10 @@ export function WorkspaceSidebar({
           ? onCreateShell(stream, directory)
           : onCreateBaseShell(project, directory)
       }
-      onCreateCodex={(directory) =>
+      onCreateAgent={(directory) =>
         stream
-          ? onCreateCodex(stream, directory)
-          : onCreateBaseCodex(project, directory)
+          ? onCreateAgent(stream, directory)
+          : onCreateBaseAgent(project, directory)
       }
       onSync={(targetId, action) => {
         if (!stream) {
@@ -379,7 +380,7 @@ export function WorkspaceSidebar({
                     }}
                     onCodex={(directory) => {
                       onSessionMenu(null);
-                      onCreateBaseCodex(project, directory);
+                      onCreateBaseAgent(project, directory);
                     }}
                   />
                 )}
@@ -410,7 +411,7 @@ export function WorkspaceSidebar({
                         onSessionMenu={onSessionMenu}
                         onNavigate={onNavigate}
                         onCreateShell={onCreateShell}
-                        onCreateCodex={onCreateCodex}
+                        onCreateAgent={onCreateAgent}
                         onCreateFork={onCreateFork}
                         onOpenContext={openContextMenu}
                         renderOwnerContext={(stream, trigger) =>
@@ -587,7 +588,7 @@ function SidebarOwnerContextMenu({
   onCreateWorkspace,
   onCreateFork,
   onCreateShell,
-  onCreateCodex,
+  onCreateAgent,
   onSync,
   onRename,
   onFinish,
@@ -600,7 +601,7 @@ function SidebarOwnerContextMenu({
   onCreateWorkspace: (project: ProjectDetail) => void;
   onCreateFork: (stream: Workspace) => void;
   onCreateShell: (directory: Directory) => void;
-  onCreateCodex: (directory: Directory) => void;
+  onCreateAgent: (directory: Directory) => void;
   onSync: (targetId: string | null, action: "pull" | "push") => void;
   onRename: () => void;
   onFinish: () => void;
@@ -676,7 +677,7 @@ function SidebarOwnerContextMenu({
                   onSelect={(directory) =>
                     kind === "shell"
                       ? onCreateShell(directory)
-                      : onCreateCodex(directory)
+                      : onCreateAgent(directory)
                   }
                 />
               </ContextMenuSubContent>
@@ -784,7 +785,7 @@ const sidebarSelectedRowClass =
   "bg-background text-foreground ring-1 ring-border/70 hover:bg-background";
 
 function SessionKindIcon({ kind }: { kind: Session["kind"] }) {
-  if (kind === "codex") return <Bot className={sidebarTreeIconClass} />;
+  if (isAgentKind(kind)) return <Bot className={sidebarTreeIconClass} />;
   if (kind === "command")
     return <PanelsTopLeft className={sidebarTreeIconClass} />;
   return <TerminalSquare className={sidebarTreeIconClass} />;
@@ -882,7 +883,7 @@ type SidebarNodeProps = {
   onSessionMenu: (menu: SessionMenuState | null) => void;
   onNavigate: (path: string) => void;
   onCreateShell: (stream: Workspace, directory?: Directory) => void;
-  onCreateCodex: (stream: Workspace, directory?: Directory) => void;
+  onCreateAgent: (stream: Workspace, directory?: Directory) => void;
   onCreateFork: (stream: Workspace) => void;
   onOpenContext: (event: React.MouseEvent<HTMLButtonElement>) => void;
   renderOwnerContext: (
@@ -1171,7 +1172,7 @@ function SidebarCreateSessionMenu({
   menu,
   onSessionMenu,
   onCreateShell,
-  onCreateCodex,
+  onCreateAgent,
   onCreateFork,
   allowFork = false,
 }: Pick<
@@ -1179,7 +1180,7 @@ function SidebarCreateSessionMenu({
   | "stream"
   | "onSessionMenu"
   | "onCreateShell"
-  | "onCreateCodex"
+  | "onCreateAgent"
   | "onCreateFork"
 > & { menu: SessionMenuState | null; allowFork?: boolean }) {
   const { t } = useTranslation();
@@ -1209,7 +1210,7 @@ function SidebarCreateSessionMenu({
       }}
       onCodex={(directory) => {
         onSessionMenu(null);
-        onCreateCodex(stream, directory);
+        onCreateAgent(stream, directory);
       }}
     />
   );
@@ -1404,12 +1405,12 @@ function SidebarSessions({
               variant="ghost"
               className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible"
               title={
-                session.kind === "codex"
+                isAgentKind(session.kind)
                   ? t("workspaceUi.removeFromSidebar")
                   : t("workspaceUi.closeSession")
               }
               aria-label={
-                session.kind === "codex"
+                isAgentKind(session.kind)
                   ? t("workspaceUi.removeFromSidebar")
                   : t("workspaceUi.closeSession")
               }
@@ -1489,12 +1490,12 @@ function SidebarProjectSessions({
               variant="ghost"
               className="invisible mr-0.5 shrink-0 opacity-70 group-hover/session:visible focus-visible:visible"
               title={
-                session.kind === "codex"
+                isAgentKind(session.kind)
                   ? t("workspaceUi.removeFromSidebar")
                   : t("workspaceUi.closeSession")
               }
               aria-label={
-                session.kind === "codex"
+                isAgentKind(session.kind)
                   ? t("workspaceUi.removeFromSidebar")
                   : t("workspaceUi.closeSession")
               }
@@ -1538,7 +1539,7 @@ function SidebarForkNode(props: SidebarNodeProps) {
     onSessionMenu,
     onNavigate,
     onCreateShell,
-    onCreateCodex,
+    onCreateAgent,
     onCreateFork,
     onRenameSession,
     onReorderSessions,
@@ -1628,7 +1629,7 @@ function SidebarForkNode(props: SidebarNodeProps) {
         menu={sessionMenu?.id === stream.id ? sessionMenu : null}
         onSessionMenu={onSessionMenu}
         onCreateShell={onCreateShell}
-        onCreateCodex={onCreateCodex}
+        onCreateAgent={onCreateAgent}
         onCreateFork={onCreateFork}
       />
       {open && (
@@ -1670,7 +1671,7 @@ function SidebarWorkspaceNode(
     onSessionMenu,
     onNavigate,
     onCreateShell,
-    onCreateCodex,
+    onCreateAgent,
     onCreateFork,
     onRenameSession,
     onReorderSessions,
@@ -1767,7 +1768,7 @@ function SidebarWorkspaceNode(
         menu={sessionMenu?.id === stream.id ? sessionMenu : null}
         onSessionMenu={onSessionMenu}
         onCreateShell={onCreateShell}
-        onCreateCodex={onCreateCodex}
+        onCreateAgent={onCreateAgent}
         onCreateFork={onCreateFork}
         allowFork
       />

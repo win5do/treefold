@@ -176,30 +176,20 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await expect(
       dialog.getByRole("button", { name: "Shell", exact: true }),
     ).toHaveAttribute("aria-pressed", "true");
-    const directoryInput = dialog.getByLabel("Directory", { exact: true });
     const shellType = dialog.getByRole("button", { name: "Shell", exact: true });
     const agentType = dialog.getByRole("button", { name: "Agent", exact: true });
     const directories = dialog.getByRole("group", { name: "Available directories" });
     await expect(shellType).toBeFocused();
-    await page.keyboard.press("ArrowLeft");
-    await expect(agentType).toBeFocused();
+    await page.keyboard.press("Tab");
     await expect(agentType).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("ArrowRight");
-    await expect(shellType).toBeFocused();
-    await expect(shellType).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("Tab");
-    await expect(directoryInput).toBeFocused();
-    await page.keyboard.press("ArrowLeft");
-    await expect(shellType).toHaveAttribute("aria-pressed", "true");
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
     await page.keyboard.press("Shift+Tab");
-    await expect(shellType).toBeFocused();
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Tab");
+    await expect(shellType).toHaveAttribute("aria-pressed", "true");
     await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
     const firstDirectory = await directories.getByRole("button", { pressed: true }).innerText();
     await page.keyboard.press("ArrowLeft");
-    await expect(agentType).toHaveAttribute("aria-pressed", "true");
     await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
+    await expect(shellType).toHaveAttribute("aria-pressed", "true");
     await expect(directories.getByRole("button", { pressed: true })).toHaveText(firstDirectory, { useInnerText: true });
     await page.keyboard.press("ArrowRight");
     await expect(shellType).toHaveAttribute("aria-pressed", "true");
@@ -210,36 +200,14 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await page.keyboard.press("ArrowUp");
     await expect(directories.getByRole("button", { pressed: true })).toHaveText(firstDirectory, { useInnerText: true });
     await page.keyboard.press("Tab");
-    await expect(dialog.getByRole("button", { name: "Create Session", exact: true })).toBeFocused();
-    await page.keyboard.press("Meta+f");
-    await expect(directoryInput).toBeFocused();
-    await directoryInput.fill("replace me");
-    await page.keyboard.press("Meta+f");
-    await page.keyboard.type("fixture-api");
-    await expect(directoryInput).toHaveValue("fixture-api");
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Create Session", exact: true })).toBeFocused();
-    await expect(directoryInput).toHaveValue("fixture-api");
-    await page.keyboard.press("Meta+f");
-    await directoryInput.press("ArrowLeft");
-    await expect(shellType).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("ArrowDown");
-    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
-    await expect(directoryInput).toHaveValue("fixture-api");
-    await page.keyboard.press("Meta+f");
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeVisible();
+    await expect(agentType).toHaveAttribute("aria-pressed", "true");
     await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
     await terminal(FIXTURE_IDS.workspaceShell).press("Meta+t");
     await expect(shellType).toBeFocused();
-    await page.keyboard.press("Meta+f");
-    await page.keyboard.press("Escape");
-    await expect(shellType).toBeFocused();
-    await page.keyboard.press("Meta+f");
-    await directoryInput.fill("fixture-api");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     const creation = page.waitForRequest(
       (request) =>
@@ -319,12 +287,13 @@ test("settings Save sends only edited fields and supports resetting overrides", 
       reset: [
         "language",
         "theme",
-        "agents.codex.extra_args",
         "amux.keep_daemon_running_on_exit",
       ],
     });
     await expect(confirmation).toHaveCount(0);
     await expect(theme).toHaveValue("system");
+    const afterReset = await (await page.request.get(`${harness.apiUrl}/api/settings`)).json();
+    expect(afterReset.agents.codex.command).toContain("--model gpt-5.4");
     await page.screenshot({ path: "/tmp/treefold-preferences.png" });
     harness.assertNoUnexpectedRequests();
   } finally {
@@ -342,7 +311,15 @@ for (const owner of [
   { name: "Agent Session", path: `workspaces/${FIXTURE_IDS.workspace}`, sessionId: FIXTURE_IDS.workspaceCodex },
 ]) {
   test(`new Session shortcut targets the current ${owner.name}`, async () => {
-    const harness = await startUiHarness();
+    const harness = await startUiHarness(fixture => {
+      fixture.projectDetails[FIXTURE_IDS.project].default_directory_id = FIXTURE_IDS.secondaryDirectory;
+      if ("sessionId" in owner) {
+        for (const detail of Object.values(fixture.workspaceDetails)) {
+          const session = detail.sessions.find(item => item.id === owner.sessionId);
+          if (session) session.cwd = detail.workspace_directories.find(item => item.project_directory_id === FIXTURE_IDS.secondaryDirectory)?.path ?? session.cwd;
+        }
+      }
+    });
     let page: Page | undefined;
     try {
       page = await createUiSession({
@@ -374,9 +351,7 @@ for (const owner of [
           request.method() === "POST" &&
           request.url().endsWith(`/api/${owner.path}/sessions`),
       );
-      await dialog
-        .getByRole("button", { name: "Create Session", exact: true })
-        .click();
+      await page.keyboard.press("Enter");
       expect((await request).postDataJSON()).toEqual({
         kind: "shell",
         project_directory_id: FIXTURE_IDS.primaryDirectory,

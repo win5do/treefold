@@ -1,18 +1,19 @@
 # Settings and keymap configuration
 
 Treefold stores user overrides in two independent files beneath `$TREEFOLD_HOME/config`.
-Each file requires `schema_version = 1`. New files contain only that header.
+Settings use `schema_version = 3`; keymaps use `schema_version = 1`. New files contain only their schema header.
 Missing preference keys and command bindings inherit application defaults.
 
 ## Settings
 
 `settings.toml` supports `language` (`system`, `en-US`, `zh-CN`), `theme`
-(`system`, `light`, `dark`), `agents.codex.extra_args` (an argument array), and
-`amux.keep_daemon_running_on_exit` (boolean). Defaults are `system`, `system`,
-`[]`, and `false`, respectively.
+(`system`, `light`, `dark`), `agents.order` and each Agent's `command` (a complete CLI launch command), and
+`amux.keep_daemon_running_on_exit` (boolean). Language and theme default to `system`; launch commands default
+to empty (using `codex`, `claude`, `opencode`, or `pi`), and daemon retention defaults to `false`. Agent order defaults to
+Codex, Claude Code, OpenCode, Pi.
 
 ```toml
-schema_version = 1
+schema_version = 3
 theme = "dark"
 ```
 
@@ -26,13 +27,43 @@ intentional user choices.
 Restoring defaults removes the override rather than writing today's default:
 
 ```json
-{"reset":["theme","agents.codex.extra_args"]}
+{"reset":["theme","agents.codex.command"]}
 ```
 
-`reset` accepts those four leaf paths. Values in the same PATCH are applied after
-resets. The UI's Restore defaults button resets all four preferences. Users may
+`reset` accepts preference leaf paths, `agents.order`, and each supported
+Agent's `command` path. Values in the same PATCH are applied
+after resets. Preferences and individual Agents have separate reset actions. Users may
 also remove individual keys directly in the TOML file. Settings are reloaded
 from disk by the backend; reopening Settings refreshes the effective values.
+
+### Agent CLI settings
+
+Settings → Agents configures Codex, Claude Code, OpenCode, and Pi. Drag rows or
+use the up/down controls to set their order. New Agent Sessions select the first
+installed CLI in that order. The order list and New Session only show installed
+CLIs. Each Agent has an independently collapsible settings panel with its installed
+version; unavailable Agents remain configurable. Installation and
+login remain the user's responsibility.
+
+```toml
+[agents]
+order = ["codex", "claude_code", "opencode", "pi"]
+
+[agents.pi]
+# Omit command or leave it empty to use `pi` from PATH.
+command = 'pi --model "model name"'
+```
+
+Commands include the executable and its arguments. The input placeholder shows
+the default command. Quoting and escapes are supported, including executable
+paths with spaces. Commands are passed as an argv array without a shell; pipes,
+redirection, command chaining, and command substitution are rejected. Treefold-managed
+arguments cannot be overridden. Settings changes take effect on the next launch.
+Schema 1 Codex argument arrays migrate through schema 2 strings to schema 3
+commands. Schema 2 paths and arguments combine with reversible quoting, preserving
+argument values and unknown settings. Codex keeps its existing
+conversation Resume behavior. Other Agents restart their CLI; Treefold does not
+restore their native conversations in this version.
 
 ## Keymap
 
@@ -56,10 +87,17 @@ schema_version = 1
 
 Switching follows the sidebar order and wraps at either end. New Session opens a
 keyboard-accessible type and directory chooser within the current scope. It
-prefers the current Session's directory, then the Project default if available,
-then the first eligible directory. Type initially follows the selected Session
-or the most recently created type in the current window. Search and arrow keys
-select a directory; Enter creates it. Agent creation requires a ready Git directory.
+initially selects the first eligible directory and the first installed Agent
+in settings order. The standard chooser initially selects and focuses Shell.
+The choice order is type, directory,
+then Agent (when applicable). Right enters the next group. Left returns from
+Agent to directory and stays in place at the directory level;
+Up/Down selects within the directory or Agent group; arrow keys never switch type. Agents appear in a single column below
+directories. Enter creates the Session from any choice group. Tab and Shift+Tab
+switch between Shell and Agent and focus the selected directory. If no directory
+is eligible, focus stays on the selected type. In the Agent-only
+chooser, Tab leaves the current choice unchanged. Agent creation requires a
+ready Git directory.
 
 Shortcuts are case-insensitive and normalized to `super+ctrl+alt+shift+key`
 order, omitting modifiers that are absent. `cmd`, `command`, and `meta` are

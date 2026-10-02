@@ -29,7 +29,7 @@ type Scope = {
     navigate: (path: string) => void;
     session: {
       close: () => void;
-      create: (kind: "shell" | "codex", directory: Directory) => void;
+      create: (kind: import("@/domain/types").NewSessionKind, directory: Directory) => void;
     };
     global: {
       settings: () => void;
@@ -146,10 +146,6 @@ export function useAppActions(scope: Scope) {
           key={owner.id}
           name={owner.name}
           directories={owner.directories}
-          preferredDirectory={
-            creating.context.directory?.id ??
-            creating.context.project?.default_directory_id
-          }
           onClose={() => setCreating(null)}
           onCreate={(kind, directory) => {
             setCreating(null);

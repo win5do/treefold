@@ -3,11 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { appApi } from "@/api/app";
 import { appKeys } from "@/features/app/queries";
 import type { LanguagePreference } from "@/i18n";
-import type { ThemePreference } from "@/domain/types";
+import type { AgentsSettingsPatch, ThemePreference } from "@/domain/types";
 export type SettingsFormPatch = {
   language?: LanguagePreference;
   theme?: ThemePreference;
-  extraArgs?: string[];
+  agents?: AgentsSettingsPatch;
   keepDaemonRunningOnExit?: boolean;
   reset?: string[];
 };
@@ -22,16 +22,16 @@ export function useSettingsSave() {
         reset: update.reset,
         language: update.language,
         theme: update.theme,
-        agents:
-          update.extraArgs === undefined
-            ? undefined
-            : { codex: { extra_args: update.extraArgs } },
+        agents: update.agents,
         amux:
           update.keepDaemonRunningOnExit === undefined
             ? undefined
             : { keep_daemon_running_on_exit: update.keepDaemonRunningOnExit },
       });
       client.setQueryData(appKeys.settings, next);
+      if (update.agents || update.reset?.some(key => key.startsWith("agents."))) {
+        await client.invalidateQueries({ queryKey: appKeys.system });
+      }
       return { ok: true as const };
     } catch (cause) {
       return {

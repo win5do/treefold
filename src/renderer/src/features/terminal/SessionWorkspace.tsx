@@ -1,3 +1,4 @@
+import { isAgentKind } from "@/features/agents/model";
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Copy, RotateCcw } from "lucide-react";
@@ -52,7 +53,7 @@ function StoppedSession({ session, busy, onRestart }: { session: Session; busy: 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-medium">{t("terminalUi.sessionState", { status: t(`states.${session.status}`, { defaultValue: session.status }) })}</p>
           <Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}>
-            <RotateCcw data-icon="inline-start" />{t("terminalUi.resume")}</Button>
+            <RotateCcw data-icon="inline-start" />{t(isAgentKind(session.kind) && session.kind !== "codex" ? "agentsUi.restart" : "terminalUi.resume")}</Button>
         </div>
         <dl className="mt-4 grid min-w-0 gap-3 text-xs">
           <div className="min-w-0">

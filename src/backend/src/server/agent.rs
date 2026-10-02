@@ -5,11 +5,14 @@ pub(super) async fn health() -> Json<Value> {
 }
 
 pub(super) async fn system_status(State(state): State<AppState>) -> Result<Json<Value>> {
-    let codex = command_output(Path::new("."), "codex", &["--version"]).ok();
+    let agents = crate::agents::installations(&state.settings.load()?.agents).await;
+    let codex = agents.iter().find(|agent| agent.kind == "codex");
     Ok(Json(json!({
         "platform":std::env::consts::OS,
         "treefold_home":state.settings.treefold_home().to_string_lossy(),
-        "codex_available":codex.is_some(), "codex_version":codex
+        "codex_available":codex.is_some_and(|agent| agent.available),
+        "codex_version":codex.and_then(|agent| agent.version.as_deref()),
+        "agents": agents
     })))
 }
 

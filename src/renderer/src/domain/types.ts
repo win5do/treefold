@@ -1,3 +1,10 @@
+export type AgentKind = "codex" | "claude_code" | "opencode" | "pi";
+export type NewSessionKind = "shell" | AgentKind;
+export type AgentConfig = { command: string };
+export type AgentsSettings = Record<AgentKind, AgentConfig> & { order: AgentKind[] };
+export type AgentsSettingsPatch = Partial<Record<AgentKind, Partial<AgentConfig>>> & { order?: AgentKind[] };
+export type AgentInstallation = { kind: AgentKind; name: string; available: boolean; executable?: string | null; version?: string | null };
+
 import type { LanguagePreference } from "@/i18n";
 
 export type Project = {
@@ -92,7 +99,7 @@ export type Session = {
   id: string;
   workspace_id: string;
   name: string;
-  kind: "shell" | "codex" | "command";
+  kind: NewSessionKind | "command";
   cwd: string;
   original_cwd: string;
   initial_prompt: string;
@@ -476,6 +483,7 @@ export type WorkspaceDetail = Workspace & {
 export type SystemStatus = {
   platform: string;
   treefold_home: string;
+  agents: AgentInstallation[];
   codex_available: boolean;
   codex_version?: string;
 };
@@ -486,11 +494,7 @@ export type AppSettings = {
   schema_version: number;
   language: LanguagePreference;
   theme: ThemePreference;
-  agents: {
-    codex: {
-      extra_args: string[];
-    };
-  };
+  agents: AgentsSettings;
   amux: {
     keep_daemon_running_on_exit: boolean;
   };

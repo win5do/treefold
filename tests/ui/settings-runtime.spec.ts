@@ -31,7 +31,7 @@ test("settings copies runtime information as a multiline report", async () => {
     const copy = dialog.getByRole("button", { name: "Copy runtime information", exact: true });
     await copy.click();
     await expect.poll(() => copied).toEqual([
-      "Treefold Home: /tmp/treefold-ui-fixture\nPlatform: test\nCodex: codex-ui-fixture",
+      "Treefold Home: /tmp/treefold-ui-fixture\nPlatform: test",
     ]);
     await expect(page.getByRole("status").filter({ hasText: "Runtime information copied" })).toBeVisible();
 

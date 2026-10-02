@@ -1,3 +1,4 @@
+import { AGENT_NAMES, isAgentKind } from "@/features/agents/model";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { useTranslation } from "react-i18next";
 import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
@@ -247,7 +248,7 @@ export function ProjectHome({
                 className="flex items-center gap-3 p-4"
               >
                 <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted">
-                  {session.kind === "codex" ? (
+                  {isAgentKind(session.kind) ? (
                     <Bot className="size-4 text-muted-foreground" />
                   ) : session.kind === "command" ? (
                     <PanelsTopLeft className="size-4 text-muted-foreground" />
@@ -261,8 +262,8 @@ export function ProjectHome({
                       {session.name}
                     </p>
                     <Badge>
-                      {session.kind === "codex"
-                        ? "Codex"
+                      {isAgentKind(session.kind)
+                        ? AGENT_NAMES[session.kind]
                         : session.kind === "command"
                           ? t("projectsUi.command")
                           : "Shell"}

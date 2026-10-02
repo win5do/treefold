@@ -1,3 +1,6 @@
+import { useNewAgentSession } from "@/features/terminal/useNewAgentSession";
+import { isAgentKind } from "@/features/agents/model";
+import type { AgentKind } from "@/domain/types";
 import { useWorkspaceRefresh } from "@/features/app/useWorkspaceRefresh";
 import { refreshGitQueries } from "@/features/git/queries";
 import { invalidateHierarchyQueries } from "@/features/app/runtimeInvalidation";
@@ -625,15 +628,16 @@ function Workspace() {
     }
   }
 
-  async function createCodex(
+  async function createAgent(
     stream: WorkspaceDetail | Workspace,
     directory?: Directory,
+    kind: AgentKind = "codex",
   ) {
     setSessionMenu(null);
     setBusy(true);
     try {
       const created = await workspacesApi.createSession(stream.id, {
-        kind: "codex",
+        kind,
         project_directory_id: directory?.id,
       });
       queryClient.setQueryData<Session[]>(
@@ -659,7 +663,7 @@ function Workspace() {
       );
       navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.errorFrom(cause, t("appFeedback.couldNotCreateCodexSession"));
+      toast.errorFrom(cause, t("agentsUi.createFailed"));
     } finally {
       setBusy(false);
     }
@@ -688,15 +692,16 @@ function Workspace() {
     }
   }
 
-  async function createProjectCodex(
+  async function createProjectAgent(
     project: ProjectDetail,
     directory?: Directory,
+    kind: AgentKind = "codex",
   ) {
     setSessionMenu(null);
     setBusy(true);
     try {
       const created = await projectsApi.createSession(project.id, {
-        kind: "codex",
+        kind,
         project_directory_id: directory?.id,
       });
       queryClient.setQueryData<Session[]>(
@@ -705,7 +710,7 @@ function Workspace() {
       );
       navigate(`/projects/${project.id}/sessions/${created.id}`);
     } catch (cause) {
-      toast.errorFrom(cause, t("appFeedback.couldNotCreateCodexSession"));
+      toast.errorFrom(cause, t("agentsUi.createFailed"));
     } finally {
       setBusy(false);
     }
@@ -961,7 +966,7 @@ function Workspace() {
       });
       toast.errorFrom(cause, t("appFeedback.couldNotCloseSession"));
     } finally {
-      if (session.kind !== "codex") {
+      if (!isAgentKind(session.kind)) {
         queryClient.setQueryData<Session[]>(
           workspaceKeys.sessions(stream.id),
           (current = []) => current.filter((item) => item.id !== session.id),
@@ -992,7 +997,7 @@ function Workspace() {
       });
       toast.errorFrom(cause, t("appFeedback.couldNotCloseSession"));
     } finally {
-      if (session.kind !== "codex") {
+      if (!isAgentKind(session.kind)) {
         queryClient.setQueryData<Session[]>(
           projectKeys.sessions(project.id),
           (current = []) =>
@@ -1038,6 +1043,7 @@ function Workspace() {
     });
   }
 
+  const newAgentSession = useNewAgentSession();
   const shortcutDialog = useAppActions({
     project: selectedProject, workspace, session: selectedSession, busy,
     pathname: location.pathname,
@@ -1055,8 +1061,8 @@ function Workspace() {
           else if (selectedProject) void closeProjectSession(selectedProject, selectedSession);
         },
         create: (kind, directory) => {
-          if (workspace) void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory));
-          else if (selectedProject) void (kind === "shell" ? createProjectShell(selectedProject, directory) : createProjectCodex(selectedProject, directory));
+          if (workspace) void (kind === "shell" ? createShell(workspace, directory) : createAgent(workspace, directory, kind));
+          else if (selectedProject) void (kind === "shell" ? createProjectShell(selectedProject, directory) : createProjectAgent(selectedProject, directory, kind));
         },
       },
     },
@@ -1246,15 +1252,17 @@ function Workspace() {
           onCreateShell={(stream, directory) =>
             void createShell(stream, directory)
           }
-          onCreateCodex={(stream, directory) =>
-            void createCodex(stream, directory)
-          }
+          onCreateAgent={(stream, directory) => newAgentSession.open({
+            name: stream.name, directories: directory ? [directory] : [],
+            create: (kind, chosen) => void createAgent(stream, chosen, kind),
+          })}
           onCreateBaseShell={(project, directory) =>
             void createProjectShell(project, directory)
           }
-          onCreateBaseCodex={(project, directory) =>
-            void createProjectCodex(project, directory)
-          }
+          onCreateBaseAgent={(project, directory) => newAgentSession.open({
+            name: project.name, directories: directory ? [directory] : project.directories,
+            create: (kind, chosen) => void createProjectAgent(project, chosen, kind),
+          })}
           onSyncProject={(project, action) =>
             void gitSync("projects", project.id, action)
           }
@@ -1373,7 +1381,7 @@ function Workspace() {
                   detail={workspace}
                   creation={{
                     available: selectedProject?.status === "active" && workspace.status === "active",
-                    session: (kind, directory) => void (kind === "shell" ? createShell(workspace, directory) : createCodex(workspace, directory)),
+                    session: (kind, directory) => void (kind === "shell" ? createShell(workspace, directory) : createAgent(workspace, directory, kind)),
                     fork: () => setCreateForkWorkspace(workspace),
                     forkFromParent: setCreateForkWorkspace,
                     workspaceFromProject: setCreateWorkspaceProject,
@@ -1793,6 +1801,7 @@ function Workspace() {
         onConfirm={confirmRemoveWorktree}
       />
       {shortcutDialog}
+      {newAgentSession.dialog}
       <SettingsDialog
         open={settingsOpen}
         system={system}

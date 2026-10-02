@@ -1,3 +1,4 @@
+import { isAgentKind } from "@/features/agents/model";
 import { ReopenForkButton } from "./ReopenForkButton";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { NewSessionDialog } from "@/features/terminal/NewSessionDialog";
@@ -71,7 +72,7 @@ export function WorkspaceHome({
   detail: WorkspaceDetail;
   creation: {
     available: boolean;
-    session: (kind: "shell" | "codex", directory: Directory) => void;
+    session: (kind: import("@/domain/types").NewSessionKind, directory: Directory) => void;
     fork: () => void;
     workspaceFromProject: (project: ProjectDetail) => void;
     forkFromParent: (parent: Workspace) => void;
@@ -95,7 +96,7 @@ export function WorkspaceHome({
     "all",
   );
   const sessions = detail.sessions.filter(
-    (session) => filter === "all" || session.kind === filter,
+    (session) => filter === "all" || (filter === "codex" ? isAgentKind(session.kind) : session.kind === filter),
   );
   const [todoDialog, setTodoDialog] = useState<{
     id?: string;
@@ -121,7 +122,7 @@ export function WorkspaceHome({
   const displayStatus = (session: Session) => {
     if (
       session.visibility !== "visible" &&
-      session.kind === "codex" &&
+      isAgentKind(session.kind) &&
       session.status === "running"
     )
       return t("workspaceUi.background");
@@ -229,7 +230,7 @@ export function WorkspaceHome({
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
-                    {session.kind === "codex" ? (
+                    {isAgentKind(session.kind) ? (
                       <Bot className="size-4" />
                     ) : session.kind === "command" ? (
                       <PanelsTopLeft className="size-4" />
@@ -248,7 +249,7 @@ export function WorkspaceHome({
                 </div>
                 <div>
                   <Badge>
-                    {session.kind === "codex"
+                    {isAgentKind(session.kind)
                       ? "Agent"
                       : session.kind === "command"
                         ? t("workspaceUi.command")

@@ -1,3 +1,4 @@
+import { isAgentKind } from "@/features/agents/model";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -13,7 +14,7 @@ export function RemoveSessionButton({ session, disabled }: { session: Session; d
   const [open, setOpen] = useState(false);
   const [removing, setRemoving] = useState(false);
   const queryClient = useQueryClient();
-  if (session.kind !== "codex") return null;
+  if (!isAgentKind(session.kind)) return null;
   const remove = async () => {
     setRemoving(true);
     try {

@@ -299,7 +299,7 @@ impl TerminalManager {
         session: &Session,
         project_id: &str,
         developer_instructions: Option<&str>,
-        codex_extra_args: &[String],
+        agents: &crate::settings::AgentsSettings,
     ) -> anyhow::Result<Process> {
         self.ensure_runtime().await?;
         self.start_event_bridge();
@@ -312,24 +312,13 @@ impl TerminalManager {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
         let command = if session.kind == "shell" {
             shell_command(&shell, &session.initial_prompt)
-        } else if session.kind == "codex" {
-            let mut command = vec!["codex".into()];
-            command.extend(codex_arguments(
+        } else if let Some(adapter) = crate::agents::adapter(&session.kind) {
+            adapter.build_launch(
                 session,
                 developer_instructions,
-                codex_extra_args,
-            ));
-            if let Some(home) = self.treefold_home.as_ref() {
-                let log_dir = home.join("logs").join("codex").join(&session.id);
-                command.extend([
-                    "-c".into(),
-                    format!(
-                        "log_dir={}",
-                        serde_json::to_string(&log_dir.to_string_lossy())?
-                    ),
-                ]);
-            }
-            command
+                agents.get(&session.kind).unwrap(),
+                self.treefold_home.as_deref(),
+            )?
         } else {
             session.argv.clone()
         };
@@ -794,37 +783,6 @@ fn resolve_session(process_id: &str, views: &BTreeMap<String, ProcessView>) -> O
     None
 }
 
-fn codex_arguments(
-    session: &Session,
-    developer_instructions: Option<&str>,
-    extra_args: &[String],
-) -> Vec<String> {
-    let mut arguments = extra_args.to_vec();
-    arguments.extend(["-C".into(), session.cwd.clone()]);
-    for path in &session.additional_directories {
-        arguments.extend(["--add-dir".into(), path.clone()]);
-    }
-    if !arguments
-        .iter()
-        .any(|argument| argument == "--no-alt-screen")
-    {
-        // Treefold already owns the terminal viewport and scrollback. Codex's alternate-screen
-        // UI adds a second viewport boundary beside xterm's scrollbar in this embedded context.
-        arguments.push("--no-alt-screen".into());
-    }
-    if let Some(instructions) = developer_instructions {
-        let encoded = serde_json::to_string(instructions)
-            .expect("serializing developer instructions cannot fail");
-        arguments.extend(["-c".into(), format!("developer_instructions={encoded}")]);
-    }
-    if let Some(codex_id) = &session.codex_session_id {
-        arguments.extend(["resume".into(), codex_id.clone()]);
-    } else if !session.initial_prompt.is_empty() {
-        arguments.push(session.initial_prompt.clone());
-    }
-    arguments
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -832,7 +790,8 @@ mod tests {
     use amux::model::ProcessView;
     use serde_json::json;
 
-    use super::{TerminalManager, codex_arguments, resolve_session};
+    use super::{TerminalManager, resolve_session};
+    use crate::agents::codex::codex_arguments;
     use crate::model::Session;
 
     fn session() -> Session {

@@ -45,6 +45,7 @@ tokio-tungstenite = "0.27"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 uuid = { version = "1", features = ["v4", "v7"] }
 sha2 = "0.10"
+shell-words = "1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

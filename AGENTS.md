@@ -174,7 +174,7 @@ hard storage boundary.
 - Durable user preferences belong in
   `$TREEFOLD_HOME/config/settings.toml`. This file must contain
   `schema_version`, and owns `language`, `theme`, agent defaults such as
-  `agents.codex.extra_args`, and `amux.keep_daemon_running_on_exit`.
+  `agents.codex.command`, and `amux.keep_daemon_running_on_exit`.
   Store only explicit overrides; omitted keys inherit application defaults.
 - Key bindings belong in the independent `$TREEFOLD_HOME/config/keymap.toml`
   described in `docs/keymap-configuration-plan.md`. Strings override default

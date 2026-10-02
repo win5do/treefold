@@ -1,9 +1,10 @@
+import { createSettingsRoutes } from "./routes/settings.ts";
 import { createSessionLogRoutes } from "./routes/session-logs.ts";
 import { createFinishRoutes } from "./routes/finish.ts";
 import { createKeymapRoutes } from "./routes/keymap.ts";
 import assert from "node:assert/strict";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { AppSettings, BackgroundProcess, GitBranches, GitSyncItemResult, Session, WorktreeDeleteOperation, WorktreeDeletePrecheck, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
+import type { BackgroundProcess, GitBranches, GitSyncItemResult, Session, WorktreeDeleteOperation, WorktreeDeletePrecheck, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
 import type { FixtureDirectory, FixtureProject, FixtureRepository, FixtureSession, FixtureWorkspace, SidebarFixture } from "../fixtures/types.ts";
 import http from "node:http";
 import path from "node:path";
@@ -75,6 +76,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
   let worktreeDeletePolls = 0;
   const amuxStopRequests: string[] = [];
   const repositoryBranches = new Map<string, GitBranches>();
+  const settingsRoutes = createSettingsRoutes({ fixture, readJson, sendJson });
   const sessionLogRoutes = createSessionLogRoutes({ fixture });
   const finishRoutes = createFinishRoutes({ fixture, readJson, sendJson });
   const gitDiffRoutes = createGitDiffRoutes({ fixture, readJson, sendJson });
@@ -111,10 +113,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
       sendJson(response, 204, null);
       return;
     }
-    if (request.method === "GET" && pathname === "/api/settings") {
-      sendJson(response, 200, fixture.settings);
-      return;
-    }
+    if (await settingsRoutes.handle(request, response, pathname)) return;
     if (request.method === "GET" && pathname === "/api/amux") {
       sendJson(response, 200, fixture.amux);
       return;
@@ -151,41 +150,6 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
       }
       sendJson(response, 204, null);
       publishRuntimeChange(["sidebar", "sessions", "processes", "amux"]);
-      return;
-    }
-    if (request.method === "PATCH" && pathname === "/api/settings") {
-      const input = await readJson<Partial<AppSettings> & { reset?: string[] }>(request);
-      await new Promise<void>((resolve) => setTimeout(resolve, 150));
-      const allowed = new Set([
-        "reset",
-        "language",
-        "theme",
-        "agents",
-        "amux",
-      ]);
-      if (Object.keys(input).some((key) => !allowed.has(key))) {
-        sendJson(response, 400, { error: "Unknown settings field" });
-        return;
-      }
-      for (const key of input.reset ?? []) {
-        if (key === "language") fixture.settings.language = "system";
-        if (key === "theme") fixture.settings.theme = "system";
-        if (key === "agents.codex.extra_args") fixture.settings.agents.codex.extra_args = [];
-        if (key === "amux.keep_daemon_running_on_exit") fixture.settings.amux.keep_daemon_running_on_exit = false;
-      }
-      if (input.language !== undefined)
-        fixture.settings.language = input.language;
-      if (input.theme !== undefined) fixture.settings.theme = input.theme;
-      if (input.agents?.codex?.extra_args !== undefined) {
-        fixture.settings.agents.codex.extra_args = [
-          ...input.agents.codex.extra_args,
-        ];
-      }
-      if (input.amux?.keep_daemon_running_on_exit !== undefined) {
-        fixture.settings.amux.keep_daemon_running_on_exit =
-          input.amux.keep_daemon_running_on_exit;
-      }
-      sendJson(response, 200, fixture.settings);
       return;
     }
     if (request.method === "GET" && pathname === "/api/projects/summary") {
@@ -681,7 +645,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
         const input = await readJson<{ kind?: Session["kind"]; project_directory_id?: string }>(request);
         const kind = input.kind || "shell";
         if (
-          kind === "codex" &&
+          kind !== "shell" &&
           Object.keys(input).some(
             (field) => !["kind", "project_directory_id"].includes(field),
           )
@@ -698,16 +662,12 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
         const created: FixtureSession = {
           ...detail.sessions[0],
           id:
-            kind === "codex"
-              ? "session-created-project-codex-ui-fixture"
-              : "session-created-project-shell-ui-fixture",
+            `session-created-project-${kind}-ui-fixture`,
           workspace_id: `project-base-${detail.id}`,
           amux_workspace_name: `treefold-project-base-${detail.id}`,
           amux_process_name:
-            kind === "codex"
-              ? "session-created-project-codex-ui-fixture"
-              : "session-created-project-shell-ui-fixture",
-          name: kind === "shell" ? `shell · ${directory.name}` : "codex",
+            `session-created-project-${kind}-ui-fixture`,
+          name: kind === "shell" ? `shell · ${directory.name}` : kind,
           kind,
           cwd: directory.path,
           original_cwd: directory.path,
@@ -716,7 +676,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
             kind === "codex" ? "codex-created-project-ui-fixture" : undefined,
           visibility: "visible",
           status: "running",
-          argv: kind === "codex" ? ["codex"] : ["/bin/zsh", "-l"],
+          argv: kind === "shell" ? ["/bin/zsh", "-l"] : [kind],
           io_mode: "tty",
           created_at: "2026-08-10T08:12:00.000Z",
           updated_at: "2026-08-10T08:12:00.000Z",
@@ -1022,7 +982,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
         const input = await readJson<{ kind?: Session["kind"]; project_directory_id?: string; name?: string }>(request);
         const kind = input.kind || "shell";
         if (
-          kind === "codex" &&
+          kind !== "shell" &&
           Object.keys(input).some(
             (field) => !["kind", "project_directory_id"].includes(field),
           )
@@ -1051,7 +1011,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
           codex_session_id: undefined,
           status: "running",
           visibility: "visible",
-          argv: kind === "codex" ? ["codex"] : ["/bin/zsh", "-l"],
+          argv: kind === "shell" ? ["/bin/zsh", "-l"] : [kind],
           io_mode: "tty",
           created_at: "2026-08-10T08:10:00.000Z",
           updated_at: "2026-08-10T08:10:00.000Z",
@@ -1123,7 +1083,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
         sendJson(response, 404, { error: "Session not found" });
         return;
       }
-      if (sessionActionMatch[2] === "close" && session.kind !== "codex") {
+      if (sessionActionMatch[2] === "close" && (session.kind === "shell" || session.kind === "command")) {
         collections.forEach((items) => {
           const index = items.findIndex((item) => item.id === session.id);
           if (index >= 0) items.splice(index, 1);

@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { appKeys } from "@/features/app/queries";
 import { useEffect, useState, type ComponentProps } from "react";
-import { Keyboard, Settings } from "lucide-react";
+import { Bot, Keyboard, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +11,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { SettingsAgents } from "./SettingsAgents";
 import { SettingsPreferences } from "./SettingsPreferences";
 import { KeymapSettings } from "@/features/keymap/KeymapSettings";
 
@@ -43,6 +44,10 @@ export function SettingsDialog(
               onClick={() => setPage("settings")}
             >
               <Settings data-icon="inline-start" />{t("settingsUi.preferences")}</Button>
+            <Button className="justify-start" variant={page === "agents" ? "secondary" : "ghost"}
+              aria-current={page === "agents" ? "page" : undefined} onClick={() => setPage("agents")}>
+              <Bot data-icon="inline-start" />{t("agentsUi.title")}
+            </Button>
             <Button
               className="justify-start"
               variant={page === "keymap" ? "secondary" : "ghost"}
@@ -57,6 +62,9 @@ export function SettingsDialog(
             }
           >
             <SettingsPreferences {...props} />
+          </div>
+          <div className={page === "agents" ? "flex min-h-0 min-w-0 flex-1" : "hidden"}>
+            <SettingsAgents settings={props.settings} busy={props.busy} onSave={props.onSave} />
           </div>
           {page === "keymap" && (
             <div className="min-w-0 flex-1 overflow-y-auto">
