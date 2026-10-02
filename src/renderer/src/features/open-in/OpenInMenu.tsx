@@ -61,7 +61,7 @@ export function OpenInMenu({ project, workspaceId, directoryPath, directoryName,
       toast.error(t('sidebar.copyAbsolutePathFailed'));
     }
   }
-  const groups = (['fileManager', 'editor', 'terminal'] as const)
+  const groups = (['fileManager', 'terminal', 'editor'] as const)
     .map(group => ({ group, apps: (apps.data ?? []).filter(app => app.group === group) }))
     .filter(group => group.apps.length > 0);
   return (
