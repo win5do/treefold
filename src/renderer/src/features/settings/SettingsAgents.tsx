@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { systemQuery } from "@/features/app/queries";
 import { AGENT_EXECUTABLES, AGENT_KINDS, AGENT_NAMES } from "@/features/agents/model";
+import { AgentIcon } from "@/features/agents/AgentIcon";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import type { AgentKind, AgentsSettings, AgentsSettingsPatch, AppSettings } from "@/domain/types";
@@ -98,7 +99,7 @@ export function SettingsAgents({ settings, busy, onSave }: {
               aria-label={t("agentsUi.drag", { name: AGENT_NAMES[kind] })}
               onDragStart={event => { setDragging(kind); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("application/x-treefold-agent", kind); }}
               onDragEnd={() => setDragging(null)}><GripVertical data-icon="inline-start" /></Button>
-            <span className="min-w-0 flex-1 text-sm">{AGENT_NAMES[kind]}</span>
+            <span className="flex min-w-0 flex-1 items-center gap-2 text-sm"><AgentIcon kind={kind} className="size-4" />{AGENT_NAMES[kind]}</span>
             <Button variant="ghost" size="icon-sm" aria-label={t("agentsUi.moveUp", { name: AGENT_NAMES[kind] })} disabled={busy || saving || index === 0} onClick={() => move(kind, index - 1)}><ArrowUp data-icon="inline-start" /></Button>
             <Button variant="ghost" size="icon-sm" aria-label={t("agentsUi.moveDown", { name: AGENT_NAMES[kind] })} disabled={busy || saving || index === installedOrder.length - 1} onClick={() => move(kind, index + 1)}><ArrowDown data-icon="inline-start" /></Button>
           </li>)}
@@ -113,7 +114,7 @@ export function SettingsAgents({ settings, busy, onSave }: {
           return <Collapsible key={kind} className="rounded-md border">
             <CollapsibleTrigger render={<Button variant="ghost" className="h-auto w-full justify-between gap-3 px-4 py-3" />}
               aria-label={t("agentsUi.configure", { name: AGENT_NAMES[kind] })}>
-              <span>{AGENT_NAMES[kind]}</span>
+              <span className="flex items-center gap-2"><AgentIcon kind={kind} data-icon="inline-start" />{AGENT_NAMES[kind]}</span>
               <Badge variant={system.isPending || system.error ? "secondary" : installation?.available ? "success" : "destructive"} className="ml-auto max-w-64 whitespace-normal break-all">{system.isPending ? t("agentsUi.checking") : system.error ? t("agentsUi.detectionFailed") : installation?.available ? installation.version || t("agentsUi.versionUnknown") : t("agentsUi.notInstalled")}</Badge>
               <ChevronDown data-icon="inline-end" />
             </CollapsibleTrigger>

@@ -1,4 +1,5 @@
 import { isAgentKind } from "@/features/agents/model";
+import { AgentIcon } from "@/features/agents/AgentIcon";
 import { OpenInMenu } from "@/features/open-in/OpenInMenu";
 import { useEffect, useRef, useState } from "react";
 import type * as React from "react";
@@ -785,7 +786,7 @@ const sidebarSelectedRowClass =
   "bg-background text-foreground ring-1 ring-border/70 hover:bg-background";
 
 function SessionKindIcon({ kind }: { kind: Session["kind"] }) {
-  if (isAgentKind(kind)) return <Bot className={sidebarTreeIconClass} />;
+  if (isAgentKind(kind)) return <AgentIcon kind={kind} className={sidebarTreeIconClass} />;
   if (kind === "command")
     return <PanelsTopLeft className={sidebarTreeIconClass} />;
   return <TerminalSquare className={sidebarTreeIconClass} />;

@@ -232,8 +232,10 @@ source of truth for this configuration.
 - In new or touched application UI, use semantic color tokens rather than raw
   palette or hex colors. Keep reusable visual variants in shared components and
   use feature-level `className` primarily for layout.
-- Use Lucide exclusively for application icons. Button icons use `data-icon`
-  and inherit sizing from the component; standalone icons use `size-*`.
+- Use Lucide for application icons. Agent product logos are the exception: use
+  official brand artwork bundled in `features/agents/AgentIcon.tsx`.
+  Button icons use `data-icon` and inherit sizing from the component;
+  standalone icons use `size-*`.
 - Use `Field` primitives for forms, expose validation with `aria-invalid`, and
   give every dialog an accessible title.
 

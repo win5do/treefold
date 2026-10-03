@@ -1,5 +1,6 @@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useAgentCatalog } from "@/features/agents/useAgentCatalog";
+import { AgentIcon } from "@/features/agents/AgentIcon";
 import { useTranslation } from "react-i18next";
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AgentKind, Directory, NewSessionKind } from "@/domain/types";
@@ -182,7 +183,7 @@ export function NewSessionDialog({
             <RadioGroup data-session-choice="agent" aria-label={t("agentsUi.chooseAgent")} value={agent?.kind ?? null} onValueChange={value => setChosenAgent(value as AgentKind)}>
               {availableAgents.map(item => <Field key={item.kind} orientation="horizontal" data-disabled={!item.available || !!catalog.error}>
                 <RadioGroupItem ref={node => { if (node) agentRefs.current.set(item.kind, node); else agentRefs.current.delete(item.kind); }} id={`new-session-agent-${item.kind}`} value={item.kind} disabled={!item.available || !!catalog.error} />
-                <FieldLabel htmlFor={`new-session-agent-${item.kind}`}>{item.name}{!item.available && !catalog.loading && !catalog.error ? ` · ${t("agentsUi.notInstalled")}` : ""}</FieldLabel>
+                <FieldLabel htmlFor={`new-session-agent-${item.kind}`}><AgentIcon kind={item.kind} className="size-4" />{item.name}{!item.available && !catalog.loading && !catalog.error ? ` · ${t("agentsUi.notInstalled")}` : ""}</FieldLabel>
               </Field>)}
             </RadioGroup>
             {(catalog.loading || catalog.error || !agent) && <FieldDescription role="status">{t(catalog.loading ? "agentsUi.checking" : catalog.error ? "agentsUi.detectionFailed" : "agentsUi.noneInstalled")}</FieldDescription>}
