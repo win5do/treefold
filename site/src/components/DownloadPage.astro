@@ -14,7 +14,7 @@ const home = getLocalizedPath(locale, 'home');
 
 <BaseLayout title={copy.title} description={copy.description} route="download">
   <SiteHeader current="download" />
-  <main>
+  <main class="download-page">
     <section class="download-hero section-grid">
       <div class="hero-orb hero-orb-one"></div>
       <div class="site-container">
@@ -22,15 +22,19 @@ const home = getLocalizedPath(locale, 'home');
         <div class="eyebrow download-eyebrow"><span></span>{copy.eyebrow}</div>
         <h1><span>{copy.heading[0]}</span><span class="gradient-text">{copy.heading[1]}</span></h1>
         <p>{copy.intro}</p>
+        <div class="download-actions">
+          <a class="button button-primary" href="#homebrew">{copy.brewTitle}<LinkIcon name="download" /></a>
+          <a class="button button-secondary" href={siteLinks.releases} target="_blank" rel="noopener noreferrer">{copy.openReleases}<LinkIcon name="download" /></a>
+        </div>
         <div class="badge-row">{copy.badges.map((item) => <span>{item}</span>)}</div>
       </div>
     </section>
 
     <section class="download-content border-section section-grid">
       <div class="site-container">
-        <div class="notice"><span>PRIVATE</span><p><strong>{copy.noticeTitle}：</strong>{copy.notice}</p></div>
+        <div class="notice"><span>PREVIEW</span><p><strong>{copy.noticeTitle}：</strong>{copy.notice}</p></div>
         <div class="download-grid">
-          <article class="download-card featured">
+          <article id="homebrew" class="download-card featured">
             <div class="option-label"><span>{copy.option1}</span><em>{copy.recommended}</em></div>
             <h2>{copy.brewTitle}</h2><p>{copy.brewBody}</p>
             <div class="command-box"><div><span>{copy.terminal}</span><button type="button" data-copy-command={installCommand} data-idle-label={copy.copyCommand} data-copied-label={copy.copied} data-error-label={copy.copyFailed}><span data-copy-label>{copy.copyCommand}</span></button></div><pre><code><span>$</span> {installCommand}</code></pre></div>
@@ -48,7 +52,7 @@ const home = getLocalizedPath(locale, 'home');
       </div>
     </section>
 
-    <section class="content-section section-grid border-section"><div class="site-container split-layout requirements-layout"><header class="section-heading compact"><div class="kicker">{copy.before}</div><h2>{copy.beforeTitle}</h2><p>{copy.beforeBody}</p></header><div class="requirement-list">{copy.requirements.map(([title, detail], index) => <article><span>0{index + 1}</span><div><h3>{title}</h3><p>{detail}</p></div></article>)}</div></div></section>
+    <section class="content-section section-grid border-section"><div class="site-container split-layout requirements-layout"><header class="download-heading"><div class="kicker">{copy.before}</div><h2>{copy.beforeTitle}</h2><p>{copy.beforeBody}</p></header><div class="requirement-list">{copy.requirements.map(([title, detail], index) => <article><span>0{index + 1}</span><div><h3>{title}</h3><p>{detail}</p></div></article>)}</div></div></section>
 
     <section class="source-cta section-grid"><div class="site-container"><div><div class="kicker">{copy.sourceKicker}</div><h2>{copy.sourceTitle}</h2><p>{copy.sourceBody}</p></div><a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer"><LinkIcon name="github" />{copy.sourceLink}<LinkIcon /></a></div></section>
   </main>

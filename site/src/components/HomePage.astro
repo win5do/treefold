@@ -1,5 +1,8 @@
 ---
 import LinkIcon from './LinkIcon.astro';
+import ProductPreview from './ProductPreview.astro';
+import ContinuousWorkSection from './ContinuousWorkSection.astro';
+import AgentSupportSection from './AgentSupportSection.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteHeader from './SiteHeader.astro';
 import SiteFooter from './SiteFooter.astro';
@@ -31,37 +34,11 @@ const download = getLocalizedPath(locale, 'download');
           <div class="proof-row">{copy.proof.map((item) => <span><i aria-hidden="true"></i>{item}</span>)}</div>
         </div>
 
-        <div class="product-stage" role="img" aria-label={copy.workflowIllustrationLabel}>
-          <div class="product-window">
-            <div class="window-bar"><div class="window-dots"><span></span><span></span><span></span></div><span>TREEFOLD / ATLAS</span><span class="window-status">● LIVE</span></div>
-            <div class="product-body">
-              <aside class="product-sidebar">
-                <div class="ui-label">PROJECT</div>
-                <div class="project-row"><span class="project-icon">A</span><strong>atlas</strong></div>
-                <div class="ui-label spaced">WORKSPACES</div>
-                <div class="tree-row active"><span>◇</span> auth-flow</div>
-                <div class="tree-row child"><span>↳</span> validation</div>
-                <div class="tree-row"><span>◇</span> api-cache</div>
-                <div class="ui-label spaced hide-small">SESSIONS</div>
-                <div class="session-row hide-small"><i></i> Codex · auth-flow</div>
-                <div class="session-row muted hide-small"><i></i> Shell · api-cache</div>
-              </aside>
-              <div class="product-main">
-                <div class="workspace-heading"><div><span>WORKSPACE / ACTIVE</span><strong>auth-flow</strong></div><em>ISOLATED</em></div>
-                <div class="workspace-stats"><div><span>BRANCH</span><code>feature/auth-flow</code></div><div><span>DELIVERY</span><strong>Squash merge</strong></div></div>
-                <div class="todo-heading"><strong>Todo / Fork</strong><span>01 / 02</span></div>
-                <div class="todo-row"><i></i><span>{copy.todoExample}</span><em>Fork</em></div>
-                <div class="terminal-preview">
-                  <div class="terminal-tabs"><strong>Codex</strong><span>Shell</span><span>api · TTY</span></div>
-                  <code><b>●</b> {copy.forkReady}<br /><span>›</span> {copy.runningChecks}<br /><span>›</span> {copy.waitingInstruction}<span class="cursor">_</span></code>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="stage-shadow"></div>
-        </div>
+        <ProductPreview />
       </div>
     </section>
+
+    <AgentSupportSection copy={copy.agentSupport} />
 
     <section id="model" class="content-section section-grid">
       <div class="site-container">
@@ -70,13 +47,34 @@ const download = getLocalizedPath(locale, 'download');
           {copy.model.map(([number, name, summary, detail]) => <article class="feature-card"><span class="card-number">{number}</span><div class="model-icon" aria-hidden="true"><span></span><span></span><span></span></div><h3>{name}</h3><strong>{summary}</strong><p>{detail}</p></article>)}
         </div>
         <div class="inline-note"><span class="pulse-dot"></span>{copy.sessionNote}</div>
+        <div id="workflow" class="task-journey"><header class="journey-heading"><h3>{copy.workflowTitle}</h3><p>{copy.workflowBody}</p></header>
+        <div class="steps-grid">{copy.steps.map(([number, title, detail]) => <article><span>{number}</span><h3>{title}</h3><p>{detail}</p></article>)}</div>
+        </div>
+      </div>
+    </section>
+
+    <ContinuousWorkSection copy={copy.continuity} />
+
+    <section id="agents" class="content-section section-grid">
+      <div class="site-container split-layout reverse-on-mobile">
+        <div class="terminal-window" role="img" aria-label={copy.terminalIllustrationLabel}>
+          <div class="terminal-header"><div><i></i><strong>api · TTY</strong></div><span>RUNNING</span></div>
+          <div class="terminal-body"><code><span>01</span><b>$</b> amux run --name api -- cargo run<br /><span>02</span><em>Compiling service...</em><br /><span>03</span><em>Listening on 127.0.0.1:3001</em><br /><span>04</span><strong>GET /api/health 200</strong><br /><span>05</span><em>{copy.agentSessionEnded}</em></code></div>
+          <div class="terminal-footer"><span>{copy.sharedLogs}</span><span>LOGS · INPUT · STOP</span></div>
+        </div>
+        <div>
+          <header class="section-heading compact"><div class="kicker">03 / {copy.agentsKicker}</div><h2>{copy.agentsTitle}</h2><p>{copy.agentsBody}</p></header>
+          <ul class="check-list">{copy.agentPoints.map((item) => <li><span>✓</span>{item}</li>)}</ul>
+          <small class="private-note">{copy.processNote}</small>
+        </div>
       </div>
     </section>
 
     <section id="git" class="content-section section-grid border-section">
-      <div class="site-container split-layout">
+      <div class="site-container">
+        <div class="split-layout">
         <div>
-          <header class="section-heading compact"><div class="kicker">02 / {copy.gitKicker}</div><h2>{copy.gitTitle}</h2><p>{copy.gitBody}</p></header>
+          <header class="section-heading compact"><div class="kicker">04 / {copy.gitKicker}</div><h2>{copy.gitTitle}</h2><p>{copy.gitBody}</p></header>
           <div class="feature-list">{copy.gitFeatures.map(([name, detail], index) => <article><span>0{index + 1}</span><div><h3>{name}</h3><p>{detail}</p></div></article>)}</div>
         </div>
         <div class="git-window" role="img" aria-label={copy.gitIllustrationLabel}>
@@ -91,50 +89,24 @@ const download = getLocalizedPath(locale, 'download');
           </div>
           <div class="git-footer"><span>{copy.gitExample.selected}</span><span>SHIFT + CLICK</span></div>
         </div>
-      </div>
-    </section>
-
-    <section class="content-section squash-section">
-      <div class="site-container">
-        <header class="section-heading centered"><div class="kicker">{copy.squashKicker}</div><h2>{copy.squashTitle}</h2></header>
+        </div>
+        <div class="delivery-panel"><div class="delivery-header"><div><span>DELIVERY</span><h3>{copy.deliveryTitle}</h3></div></div><div class="delivery-grid">{copy.deliveryModes.map(([name, detail, badge], index) => <article><div><span>0{index + 1}</span>{badge && <em>{badge}</em>}</div><h4>{name}</h4><p>{detail}</p></article>)}</div></div>
+        <p class="delivery-note">{copy.deliveryNote}</p>
+        <details class="squash-details"><summary>{copy.squashTitle}</summary>
         <div class="squash-grid">
           <article class="squash-card">
             <div class="squash-badge">GIT HISTORY</div>
             <div class="commit-diagram" aria-hidden="true"><span>A</span><i></i><span class="selected-node">B</span><i class="selected-line"></i><span class="selected-node">C</span><b>→</b><span class="result-node">S</span></div>
             <h3>{copy.historySquashTitle}</h3><p>{copy.historySquashBody}</p>
-            <div class="squash-meta"><span>PREVIEW</span><span>SAFETY CHECKS</span><span>UNDO</span></div>
           </article>
           <article class="squash-card featured">
             <div class="squash-badge">DELIVERY</div>
             <div class="delivery-diagram" aria-hidden="true"><div><small>WORKSPACE</small><span>●—●—●</span></div><b>→</b><div><small>TARGET</small><span>●——◆</span></div></div>
             <h3>{copy.deliverySquashTitle}</h3><p>{copy.deliverySquashBody}</p>
-            <div class="squash-meta"><span>ONE COMMIT</span><span>SOURCE PRESERVED</span><span>RECOVERABLE</span></div>
           </article>
         </div>
         <p class="section-footnote">{copy.squashFootnote}</p>
-      </div>
-    </section>
-
-    <section id="workflow" class="content-section section-grid border-section">
-      <div class="site-container">
-        <header class="section-heading wide"><div><div class="kicker">03 / {copy.workflowKicker}</div><h2>{copy.workflowTitle}</h2></div><p>{copy.workflowBody}</p></header>
-        <div class="steps-grid">{copy.steps.map(([number, title, detail]) => <article><span>{number}</span><h3>{title}</h3><p>{detail}</p></article>)}</div>
-        <div class="delivery-panel"><div class="delivery-header"><div><span>DELIVERY MODE</span><h3>{copy.deliveryTitle}</h3></div><code>PER REPOSITORY</code></div><div class="delivery-grid">{copy.deliveryModes.map(([name, detail, badge], index) => <article class={index === 0 ? 'selected' : ''}><div><span>0{index + 1}</span>{badge && <em>{badge}</em>}</div><h4>{name}</h4><p>{detail}</p></article>)}</div></div>
-      </div>
-    </section>
-
-    <section id="agents" class="content-section section-grid">
-      <div class="site-container split-layout reverse-on-mobile">
-        <div class="terminal-window" role="img" aria-label={copy.terminalIllustrationLabel}>
-          <div class="terminal-header"><div><i></i><strong>api · TTY</strong></div><span>RUNNING</span></div>
-          <div class="terminal-body"><code><span>01</span><b>$</b> amux run --name api -- cargo run<br /><span>02</span><em>Compiling service...</em><br /><span>03</span><em>Listening on 127.0.0.1:3001</em><br /><span>04</span><strong>GET /api/health 200</strong><br /><span>05</span><em>{copy.agentSessionEnded}</em></code></div>
-          <div class="terminal-footer"><span>{copy.sharedLogs}</span><span>LOGS · INPUT · STOP</span></div>
-        </div>
-        <div>
-          <header class="section-heading compact"><div class="kicker">04 / {copy.agentsKicker}</div><h2>{copy.agentsTitle}</h2><p>{copy.agentsBody}</p></header>
-          <ul class="check-list">{copy.agentPoints.map((item) => <li><span>✓</span>{item}</li>)}</ul>
-          <small class="private-note">{copy.processNote}</small>
-        </div>
+        </details>
       </div>
     </section>
 

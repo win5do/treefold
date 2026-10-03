@@ -15,11 +15,6 @@ interface HomeCopy {
   source: string;
   privateNote: string;
   proof: readonly string[];
-  workflowIllustrationLabel: string;
-  todoExample: string;
-  forkReady: string;
-  runningChecks: string;
-  waitingInstruction: string;
   modelKicker: string;
   modelTitle: string;
   modelBody: string;
@@ -37,19 +32,32 @@ interface HomeCopy {
     commitActions: string;
     selected: string;
   };
-  squashKicker: string;
   squashTitle: string;
+  deliveryNote: string;
+  continuity: {
+    kicker: string;
+    title: string;
+    body: string;
+    items: readonly DetailItem[];
+    cliLabel: string;
+    cliNote: string;
+  };
   historySquashTitle: string;
   historySquashBody: string;
   deliverySquashTitle: string;
   deliverySquashBody: string;
   squashFootnote: string;
-  workflowKicker: string;
   workflowTitle: string;
   workflowBody: string;
   steps: readonly StepItem[];
   deliveryTitle: string;
   deliveryModes: readonly DeliveryMode[];
+  agentSupport: {
+    kicker: string;
+    title: string;
+    body: string;
+    available: string;
+  };
   agentsKicker: string;
   agentsTitle: string;
   agentsBody: string;
@@ -71,35 +79,30 @@ interface HomeCopy {
 export const homeCopy = {
   'zh-cn': {
     title: 'Treefold — 并行展开，干净收敛',
-    description: 'Treefold 是免费开源的 macOS App，在受管理的 Git worktree 中并行运行 Agent，并通过可视化 Git 历史与 Squash Delivery 干净交付。',
+    description: 'Treefold 是免费开源的 macOS App，在独立的 Git worktree 中组织并行 Agent 开发，集中管理 Session、Todo、代码改动和交付。支持 Codex、Claude Code、Pi、OpenCode 与 Shell。',
     eyebrow: 'FREE · OPEN SOURCE · MACOS',
     heroTitle: ['让 Agent 并行工作。', '把 Git 干净收敛。'],
-    heroBody: 'Treefold 把 Git worktree 变成可持续的 Agent 开发工作流。每项改动在独立环境中推进，再有序完成检查、Squash、交付和归档，需要时可以 reopen 或显式清理。',
-    download: '下载 macOS 版',
+    heroBody: 'Treefold 是管理并行 Agent 开发的 macOS App。为不同任务组织独立的 Git worktree，集中运行 Agent 和 Shell，跟进任务、检查改动，并完成交付与归档。',
+    download: '获取 Treefold',
     source: '查看源码',
-    privateNote: '当前为私有预发布，访问 GitHub 和下载资源需要仓库权限。',
-    proof: ['受管理的 Git worktree', '持续运行的 Agent 进程', '可视化交付与恢复'],
-    workflowIllustrationLabel: 'Treefold 工作流示意',
-    todoExample: '处理认证流程边界情况',
-    forkReady: 'Fork validation 已就绪',
-    runningChecks: '正在独立 worktree 中运行检查',
-    waitingInstruction: '等待下一条指令',
+    privateNote: '源码已公开，首个安装包尚未发布。当前可从源码运行。',
+    proof: ['独立的开发目录', '任务与 Session 集中管理', '从开工到交付收尾'],
     modelKicker: 'THE OPERATING MODEL',
-    modelTitle: '每一项工作，都有清楚的归属。',
-    modelBody: '代码、上下文、Session 和交付目标沿着同一层级组织。并行工作彼此隔离，同时始终保持可见。',
+    modelTitle: '每项工作，都有自己的位置。',
+    modelBody: '例如开发一项登录功能：把前后端仓库放进同一个 Project，为整项 feature 创建 Workspace，再用 Fork 并行处理验证与测试。',
     model: [
-      ['01', 'Project', '仓库上下文', '组织一个或多个 Git 仓库、工作目录，以及只读的 Context Directory。'],
-      ['02', 'Workspace', '开发上下文', '为一项 feature 创建独立 branch 与 worktree，承载 Session、Todo 和固定交付目标。'],
-      ['03', 'Fork', '并行子任务', '把 Todo 拆进独立的子 worktree，完成后将结果收回父 Workspace。'],
+      ['01', 'Project', '组织相关仓库', '把前后端仓库、工作目录和参考资料组织在一起，查看已有 worktree。'],
+      ['02', 'Workspace', '推进一项 feature', '为参与开发的仓库创建独立分支与 worktree，集中管理这项工作的 Session、Todo 和交付。'],
+      ['03', 'Fork', '拆出并行子任务', '从 Todo 创建 Fork，在独立 worktree 中处理子任务，再把成果合回父 Workspace。'],
     ],
-    sessionNote: 'Session 是执行现场。工作本身持续归属于对应的 Project、Workspace 或 Fork。',
-    gitKicker: 'GIT VISIBILITY',
-    gitTitle: '看清修改，也看懂历史。',
-    gitBody: '不用离开当前工作上下文，就能查看仓库状态。Changes、commit、diff 和高影响的历史操作都处于同一个可见流程。',
+    sessionNote: '隔离发生在 Workspace / Fork 层级。同一 Workspace 或 Fork 中的多个 Session 可以共享 checkout。',
+    gitKicker: 'REVIEW AND DELIVER',
+    gitTitle: '看清改动，再决定如何交付。',
+    gitBody: '在当前工作中查看 diff 和 Git History、同步分支、处理冲突。为整个 Workspace 或 Fork 选择交付方式，再逐仓库检查与执行。',
     gitFeatures: [
-      ['Git Changes', '查看文件修改、增删行数、暂存状态与 diff，再决定 stage、unstage 或 commit。'],
-      ['Git History', '浏览 commit、作者、时间与 hash；选择单个 commit 或一段历史查看对应 diff。'],
-      ['History actions', '从历史记录使用 View Diff、Copy Commit、Squash Commits…、Revert Commit 和 Reset to Commit。'],
+      ['检查代码与历史', '查看文件改动、暂存状态和提交差异，按需提交或整理历史。'],
+      ['同步分支与处理冲突', '通过 rebase 或 merge 更新代码；遇到冲突时，可以启动辅助处理 Session，检查解决结果后继续。'],
+      ['中断后继续交付', '交付进度会保留。操作中断或出现冲突后，重新检查 Git 状态，再继续剩余步骤。'],
     ],
     gitIllustrationLabel: 'Git History 功能示意',
     gitExample: {
@@ -109,29 +112,46 @@ export const homeCopy = {
       commitActions: '提交操作',
       selected: '2 个 COMMIT 已选中',
     },
-    squashKicker: 'TWO WAYS TO SQUASH',
-    squashTitle: '在正确的边界，整理 Git 历史。',
+    squashTitle: '了解两种 Squash：整理历史与交付成果',
     historySquashTitle: 'Squash 选中的历史',
     historySquashBody: '选择一段连续且未发布的 commit，将它们合并为一个。Treefold 会预览改写范围、阻止不安全的操作，并在结果仍可恢复时提供 Undo。',
     deliverySquashTitle: 'Squash merge 到目标',
     deliverySquashBody: '把 Workspace 交付到本地目标，或把 Fork 交付到父 Workspace，并在目标上生成一个 commit。源 branch 及原始 commit 保持不变。',
     squashFootnote: '两种操作都不会自动 push 或 force-push；Delivery 开始前会同时检查 source 与 target。',
-    workflowKicker: 'FROM OPEN TO FINISHED',
-    workflowTitle: '并行展开，也有清楚的归途。',
-    workflowBody: 'Treefold 让完整生命周期保持可见：创建、工作、检查、交付、归档，后续可以 reopen，或在显式删除时清理。',
+    workflowTitle: '从一项 Todo，到一份交付。',
+    workflowBody: '以登录功能为例，把任务、执行过程和代码结果连起来。',
     steps: [
-      ['01', '创建', '用独立 branch 与 worktree 创建 Workspace。'],
-      ['02', '并行', '将 Todo 分配给 Fork，让 Agent 独立推进。'],
-      ['03', '检查', '查看修改、历史、进程和交付准备情况。'],
-      ['04', 'Finish', '选择交付策略并归档，同时保留 worktree 与 branch。'],
+      ['01', '记录 Todo', '在 auth-flow Workspace 中添加“处理认证边界情况”。'],
+      ['02', '拆出 Fork', '从 Todo 创建 validation Fork，启动 Agent 处理子任务。'],
+      ['03', '检查结果', '查看 diff、运行测试，确认改动与任务要求一致。'],
+      ['04', '合回 Workspace', '将 Fork 的成果交付到父 Workspace，继续集成整项 feature。'],
     ],
-    deliveryTitle: '按仓库选择 Delivery Mode',
+    deliveryNote: '阶段性交付保留工作状态；完成交付后归档并保留分支与 worktree。远端 PR 评审和合并在你的 Git 托管平台完成。',
+    deliveryTitle: '统一选择策略，逐仓库检查与执行',
     deliveryModes: [
-      ['Squash merge 到目标', '在目标上生成一个 commit，同时保留 source 的完整历史。', '推荐'],
-      ['Merge 到目标', '把 branch 的完整历史合并到配置好的本地目标。', ''],
-      ['Push feature branch', '推送 Workspace branch，接入团队已有的评审与 CI 流程。', ''],
-      ['保留，不交付', '不集成代码而直接归档，并保留 checkout 以便稍后 reopen。', ''],
+      ['合并到目标', 'Workspace 合入本地目标，Fork 合入父 Workspace。可以阶段性交付后继续开发，也可以完成后归档。', ''],
+      ['Squash merge', '完成并归档时，可将本次成果合为一个目标提交，保留源分支和原始历史。', '完成时可选'],
+      ['推送 feature 分支', 'Workspace 可以推送分支，接入团队已有的评审与 CI；也可以推送阶段成果后继续工作。', ''],
+      ['保留，不交付', '不合并或推送代码，直接归档。保留 checkout，需要时重新打开；资源清理由显式删除处理。', ''],
     ],
+    continuity: {
+      kicker: 'KEEP WORK MOVING',
+      title: '切换 Session，继续工作。',
+      body: '代码、任务和交付目标归属于 Workspace / Fork。你可以在同一项工作中打开多个 Session，使用熟悉的 Agent 或 Shell。',
+      items: [
+        ['工作持续保留', 'Session 结束后，Workspace 中的代码与 Todo 仍然保留，方便下一次继续处理。'],
+        ['恢复 Codex 对话', '恢复已保存的 Codex 对话，继续上次的工作。'],
+        ['让 Agent 读取当前上下文', '通过 treefold CLI 查看当前 Workspace、仓库与 Todo；支持添加、编辑、删除 Todo 和标记阻塞。Codex 启动时还会自动注入工作上下文。'],
+      ],
+      cliLabel: '当前工作与任务',
+      cliNote: '在受管理的 Session 中使用 treefold CLI；配套 Skill 帮助 Agent 理解工作归属与操作边界。',
+    },
+    agentSupport: {
+      kicker: 'MULTIPLE AI AGENTS',
+      title: '使用你熟悉的 Agent。',
+      body: '在 Workspace 或 Fork 中运行 Codex、Claude Code、Pi、OpenCode，也可以打开 Shell 执行命令。请先安装并配置所选 Agent 的 CLI。',
+      available: '现已支持',
+    },
     agentsKicker: 'AMUX / MANAGED PROCESSES',
     agentsTitle: '进程托管，跨 Session 接续。',
     agentsBody: 'amux 托管开发服务与长时间运行的进程。你和 Agent 可以同时查看同一份日志；切换或结束 Session 后，仍能继续查看输出、接手排查。',
@@ -141,50 +161,45 @@ export const homeCopy = {
     agentSessionEnded: 'Agent Session 已结束 · 进程继续运行',
     sharedLogs: '你与 Agent · 同时查看日志',
     scenariosKicker: 'FITS THE REPOSITORY YOU HAVE',
-    scenariosTitle: '不同代码结构，同一套工作流。',
+    scenariosTitle: '把相关仓库，放进同一项工作。',
     scenarios: [
-      ['单仓库', '让不同 feature 独立推进，避免 Agent 争用同一个工作目录。'],
-      ['多仓库', '在多个仓库之间管理对应的 worktree 与交付状态。'],
-      ['Monorepo 与多目录', '从正确目录启动 Session，同时保持仓库级 Git 归属。'],
-      ['Context Directory', '把规范、笔记或非 Git 目录作为 Agent 的只读上下文。'],
+      ['单仓库', '为不同 feature 创建各自的 Workspace，避免并行任务争用同一份代码。'],
+      ['多仓库', '前后端共同完成一项 feature：在同一个 Workspace 中组织各仓库的 checkout，并跟踪交付进度。'],
+      ['Monorepo 与多目录', '选择具体目录启动 Session，同时保持仓库级 Git 归属。'],
+      ['Context Directory', '把规范、笔记等参考资料标记为只读上下文，供开发时查阅。'],
     ],
     ctaKicker: 'FREE AND OPEN SOURCE',
-    ctaTitle: '让并行的工作，干净地完成。',
-    ctaBody: 'Treefold 面向 Apple Silicon Mac。使用本地优先的编排数据和标准 Git 能力，核心工作流不依赖托管控制面。',
-    ctaDownload: '下载 Treefold',
+    ctaTitle: '让并行的工作，有序完成。',
+    ctaBody: '免费开源，面向 Apple Silicon Mac。Project 状态和编排数据保存在本机，使用标准 Git 分支与 worktree。Agent 的网络访问取决于所用服务和你的配置。',
+    ctaDownload: '获取 Treefold',
     ctaSource: '查看源代码',
   },
   en: {
     title: 'Treefold — Run agents in parallel. Fold the work back cleanly.',
-    description: 'Treefold is a free and open source macOS app for parallel agent development in managed Git worktrees, with visual Git history and clean squash delivery.',
+    description: 'Treefold is a free, open source macOS app for parallel agent development in isolated Git worktrees. Organize Sessions, Todos, changes, and delivery with Codex, Claude Code, Pi, OpenCode, and Shell.',
     eyebrow: 'FREE · OPEN SOURCE · MACOS',
     heroTitle: ['Run agents in parallel.', 'Fold the work back cleanly.'],
-    heroBody: 'Treefold turns Git worktrees into a durable workflow for agents. Give every change an isolated place to run, then review, squash, deliver, and archive it with intent.',
-    download: 'Download for macOS',
+    heroBody: 'Treefold is a macOS app for managing parallel agent development. Give each task its own Git worktree, run agents and shells together, track work, review changes, and deliver the results.',
+    download: 'Get Treefold',
     source: 'View source',
-    privateNote: 'Private preview. GitHub and download resources currently require repository access.',
-    proof: ['Managed Git worktrees', 'Persistent agent processes', 'Visual delivery and recovery'],
-    workflowIllustrationLabel: 'Treefold workflow illustration',
-    todoExample: 'Validate auth edge cases',
-    forkReady: 'Fork validation ready',
-    runningChecks: 'Running checks in isolated worktree',
-    waitingInstruction: 'Waiting for next instruction',
+    privateNote: 'The source is public. The first app release is not yet available; run from source today.',
+    proof: ['Separate development directories', 'Tasks and Sessions in one place', 'From starting work to delivering it'],
     modelKicker: 'THE OPERATING MODEL',
-    modelTitle: 'A place for every unit of work.',
-    modelBody: 'Code, context, sessions, and delivery follow one explicit hierarchy. Parallel work stays isolated without becoming invisible.',
+    modelTitle: 'A place for every piece of work.',
+    modelBody: 'Building a sign-in feature? Put the frontend and backend repositories in one Project, create a Workspace for the feature, and use Forks for parallel validation and testing.',
     model: [
-      ['01', 'Project', 'Repository context', 'Group one or more repositories, working directories, and read-only Context Directories.'],
-      ['02', 'Workspace', 'Development context', 'Give one feature its own branch, worktree, Sessions, Todos, and fixed delivery target.'],
-      ['03', 'Fork', 'Parallel subwork', 'Split a Todo into an isolated child worktree, then fold the result back into its parent Workspace.'],
+      ['01', 'Project', 'Organize related repositories', 'Group frontend and backend repositories, working directories, and reference material. Browse existing worktrees.'],
+      ['02', 'Workspace', 'Develop a feature', 'Create isolated branches and worktrees for the repositories involved. Keep the feature’s Sessions, Todos, and delivery together.'],
+      ['03', 'Fork', 'Work on parallel subtasks', 'Create a Fork from a Todo, work in its isolated worktree, and deliver the result back to the parent Workspace.'],
     ],
-    sessionNote: 'Sessions are execution contexts. The work stays durable in its Project, Workspace, or Fork.',
-    gitKicker: 'GIT VISIBILITY',
-    gitTitle: 'See the change. Understand the history.',
-    gitBody: 'Review repository state without leaving the work that owns it. Treefold keeps changes, commits, diffs, and high-impact history actions in one visible flow.',
+    sessionNote: 'Isolation belongs to Workspaces and Forks. Multiple Sessions in the same Workspace or Fork can share a checkout.',
+    gitKicker: 'REVIEW AND DELIVER',
+    gitTitle: 'Review the changes. Choose how to deliver.',
+    gitBody: 'Inspect diffs and Git History, sync branches, and handle conflicts in the context of your work. Choose one delivery strategy for the Workspace or Fork, then check and execute it across repositories.',
     gitFeatures: [
-      ['Git Changes', 'Inspect files, line counts, staged state, and diffs before you stage, unstage, or commit.'],
-      ['Git History', 'Browse commits, authors, timestamps, and hashes. Select one commit or a range to inspect its diff.'],
-      ['History actions', 'Use View Diff, Copy Commit, Squash Commits…, Revert Commit, and Reset to Commit from history.'],
+      ['Review code and history', 'Inspect file changes, staged state, and commit diffs. Commit or tidy up history when needed.'],
+      ['Sync branches and resolve conflicts', 'Update code with rebase or merge. When conflicts arise, start a helper Session, review the resolution, and continue.'],
+      ['Continue interrupted delivery', 'Delivery progress is saved. After an interruption or conflict, recheck Git state and continue the remaining steps.'],
     ],
     gitIllustrationLabel: 'Git History illustration',
     gitExample: {
@@ -194,29 +209,46 @@ export const homeCopy = {
       commitActions: 'COMMIT ACTIONS',
       selected: '2 COMMITS SELECTED',
     },
-    squashKicker: 'TWO WAYS TO SQUASH',
-    squashTitle: 'Clean history at the right boundary.',
+    squashTitle: 'Two uses of Squash: rewriting history and delivering work',
     historySquashTitle: 'Squash selected history',
     historySquashBody: 'Select consecutive, unpublished commits and combine them into one. Treefold previews the rewrite, blocks unsafe ranges, and offers Undo while the result remains recoverable.',
     deliverySquashTitle: 'Squash merge into target',
     deliverySquashBody: 'Finish a Workspace into its local target, or a Fork into its parent, as one commit. The source branch and its original commits remain unchanged.',
     squashFootnote: 'Neither operation pushes or force-pushes. Delivery checks both source and target before it starts.',
-    workflowKicker: 'FROM OPEN TO FINISHED',
-    workflowTitle: 'Parallel work has a clear way home.',
-    workflowBody: 'Treefold makes the complete lifecycle visible: create, work, inspect, deliver, archive, and later reopen or delete with cleanup.',
+    workflowTitle: 'From a Todo to delivered code.',
+    workflowBody: 'Follow a sign-in task from its description through execution to the resulting code.',
     steps: [
-      ['01', 'Create', 'Create a Workspace with an isolated branch and worktree.'],
-      ['02', 'Parallelize', 'Assign Todos to Forks and let agents work independently.'],
-      ['03', 'Review', 'Inspect changes, history, processes, and delivery readiness.'],
-      ['04', 'Finish', 'Choose a delivery strategy, archive the work, and retain its checkout.'],
+      ['01', 'Add a Todo', 'Add “Validate auth edge cases” to the auth-flow Workspace.'],
+      ['02', 'Create a Fork', 'Create the validation Fork from the Todo and start an agent on the subtask.'],
+      ['03', 'Review the result', 'Inspect the diff, run tests, and check the changes against the task.'],
+      ['04', 'Deliver to the Workspace', 'Integrate the Fork into its parent and continue bringing the feature together.'],
     ],
-    deliveryTitle: 'Choose delivery per repository',
+    deliveryNote: 'Intermediate delivery keeps work active. Finishing archives it while retaining branches and worktrees. Remote PR review and merging happen on your Git hosting platform.',
+    deliveryTitle: 'One strategy, checked across repositories',
     deliveryModes: [
-      ['Squash merge into target', 'Create one target commit and keep the source history unchanged.', 'RECOMMENDED'],
-      ['Merge into target', 'Integrate the branch into its configured local target with the full history.', ''],
-      ['Push feature branch', 'Push a Workspace branch for the team’s existing review and CI flow.', ''],
-      ['Preserve without delivery', 'Archive without integrating code; keep the checkout available to reopen.', ''],
+      ['Merge into target', 'Merge a Workspace into its local target or a Fork into its parent. Deliver progress and keep working, or finish and archive.', ''],
+      ['Squash merge', 'When finishing and archiving, combine the result into one target commit while preserving the source branch and history.', 'OPTIONAL AT FINISH'],
+      ['Push feature branch', 'Push a Workspace branch for your team’s review and CI. You can also push intermediate results and keep working.', ''],
+      ['Preserve without delivery', 'Archive without merging or pushing. Keep the checkout to reopen later; explicit deletion handles resource cleanup.', ''],
     ],
+    continuity: {
+      kicker: 'KEEP WORK MOVING',
+      title: 'New Sessions. Work carries on.',
+      body: 'Code, tasks, and delivery targets belong to a Workspace or Fork. Open multiple Sessions within that work, using your preferred agents or shells.',
+      items: [
+        ['Keep the work', 'When a Session ends, the Workspace’s code and Todos remain ready for the next session.'],
+        ['Resume Codex conversations', 'Resume saved Codex conversations and continue where you left off.'],
+        ['Give agents the current context', 'Use the treefold CLI to inspect the Workspace, repositories, and Todos; add, edit, remove, or block a Todo. Codex also receives work context automatically at launch.'],
+      ],
+      cliLabel: 'CURRENT WORK AND TASKS',
+      cliNote: 'Use the treefold CLI in managed Sessions. The companion Skill helps agents understand work ownership and operation boundaries.',
+    },
+    agentSupport: {
+      kicker: 'MULTIPLE AI AGENTS',
+      title: 'Work with the agents you know.',
+      body: 'Run Codex, Claude Code, Pi, or OpenCode in a Workspace or Fork, or open a Shell for commands. Install and configure your chosen agent’s CLI first.',
+      available: 'Available now',
+    },
     agentsKicker: 'AMUX / MANAGED PROCESSES',
     agentsTitle: 'Managed processes. Shared across sessions.',
     agentsBody: 'amux manages development services and long-running processes. You and your agent can read the same logs at the same time, then keep inspecting output and debugging across sessions.',
@@ -226,17 +258,17 @@ export const homeCopy = {
     agentSessionEnded: 'Agent Session ended · process remains active',
     sharedLogs: 'HUMAN + AGENT · SHARED LIVE LOGS',
     scenariosKicker: 'FITS THE REPOSITORY YOU HAVE',
-    scenariosTitle: 'One workflow across different codebases.',
+    scenariosTitle: 'Bring related repositories into the same work.',
     scenarios: [
-      ['Single repository', 'Run independent features without agents competing for one working directory.'],
-      ['Multiple repositories', 'Coordinate matching worktrees and delivery state across repositories.'],
-      ['Monorepo and multiple directories', 'Start Sessions in the right directory while keeping repository-level Git ownership.'],
-      ['Context Directory', 'Attach specifications, notes, or non-Git directories as read-only agent context.'],
+      ['Single repository', 'Give each feature its own Workspace so parallel tasks do not compete for the same checkout.'],
+      ['Multiple repositories', 'Build a feature across frontend and backend repositories. Organize their checkouts and track delivery in one Workspace.'],
+      ['Monorepo and multiple directories', 'Choose the directory where a Session starts while keeping repository-level Git ownership.'],
+      ['Context Directory', 'Mark specifications, notes, and other reference material as read-only context to consult while developing.'],
     ],
     ctaKicker: 'FREE AND OPEN SOURCE',
-    ctaTitle: 'Give parallel work a clean finish.',
-    ctaBody: 'Treefold for Apple Silicon Macs. Local-first orchestration, standard Git primitives, no hosted control plane required for the core workflow.',
-    ctaDownload: 'Download Treefold',
+    ctaTitle: 'Bring parallel work to a clear finish.',
+    ctaBody: 'Free and open source for Apple Silicon Macs. Project state and orchestration data stay on your Mac, using standard Git branches and worktrees. Agent network access depends on your services and configuration.',
+    ctaDownload: 'Get Treefold',
     ctaSource: 'Explore the source',
   },
 } satisfies Record<Locale, HomeCopy>;

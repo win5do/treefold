@@ -1,0 +1,15 @@
+---
+// Lucide geometry, shared by the compact product illustration.
+const paths = {
+  chevron: ['m9 18 6-6-6-6'],
+  folder: ['M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2Z'],
+  branch: ['M6 3v12', 'M18 6a6 6 0 0 1-6 6H6', 'M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z', 'M21 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z'],
+  workspace: ['M3 3h6v6H3z', 'M15 15h6v6h-6z', 'M6 9v6a3 3 0 0 0 3 3h6'],
+  terminal: ['m4 17 6-5-6-5', 'M12 19h8'],
+  panel: ['M3 3h18v18H3z', 'M9 3v18'],
+  check: ['m5 12 4 4L19 6'],
+  plus: ['M12 5v14', 'M5 12h14'],
+};
+interface Props { name: keyof typeof paths; }
+---
+<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{paths[Astro.props.name].map((d) => <path d={d} />)}</svg>

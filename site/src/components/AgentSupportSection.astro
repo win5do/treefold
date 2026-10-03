@@ -1,0 +1,31 @@
+---
+import AgentIcon from './AgentIcon.astro';
+import type { homeCopy } from '../i18n/home';
+
+interface Props {
+  copy: (typeof homeCopy)['en']['agentSupport'];
+}
+
+const { copy } = Astro.props;
+const agents = [
+  { kind: 'codex', name: 'Codex' },
+  { kind: 'claude_code', name: 'Claude Code' },
+  { kind: 'pi', name: 'Pi' },
+  { kind: 'opencode', name: 'OpenCode' },
+] as const;
+---
+
+<section id="agent-support" class="agent-support-section section-grid border-section">
+  <div class="site-container">
+    <header class="section-heading">
+      <div class="kicker">{copy.kicker}</div>
+      <h2>{copy.title}</h2>
+      <p>{copy.body}</p>
+    </header>
+    <p class="agent-support-label">{copy.available}</p>
+    <ul class="agent-support-grid">
+      {agents.map(({ kind, name }) => <li><AgentIcon kind={kind} /><span>{name}</span></li>)}
+    </ul>
+
+  </div>
+</section>

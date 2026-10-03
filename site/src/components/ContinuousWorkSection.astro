@@ -1,0 +1,32 @@
+---
+import type { homeCopy } from '../i18n/home';
+interface Props { copy: (typeof homeCopy)['en']['continuity']; }
+const { copy } = Astro.props;
+---
+<section id="continuity" class="content-section section-grid border-section">
+  <div class="site-container split-layout">
+    <div>
+      <header class="section-heading compact"><div class="kicker">02 / {copy.kicker}</div><h2>{copy.title}</h2><p>{copy.body}</p></header>
+      <div class="feature-list">{copy.items.map(([title, detail], index) => <article><span>0{index + 1}</span><div><h3>{title}</h3><p>{detail}</p></div></article>)}</div>
+    </div>
+    <div class="context-example">
+      <div class="context-label">{copy.cliLabel}</div>
+      <dl><div><dt>Project</dt><dd>atlas</dd></div><div><dt>Workspace</dt><dd>auth-flow</dd></div><div><dt>Fork</dt><dd>validation</dd></div></dl>
+      <pre><code><span>$</span> treefold current --json
+<span>$</span> treefold todo list --json</code></pre>
+      <p>{copy.cliNote}</p>
+    </div>
+  </div>
+</section>
+<style>
+  .context-example { min-width: 0; padding: 28px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-raised); }
+  .context-label { color: var(--muted); font-size: 12px; }
+  dl { margin: 24px 0; }
+  dl > div { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--border); }
+  dt { color: var(--muted); font-size: 13px; }
+  dd { margin: 0; font-family: var(--font-mono); font-size: 13px; }
+  pre { overflow-x: auto; margin: 0; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); font-size: 12px; line-height: 2.2; }
+  code > span { color: var(--accent-bright); }
+  p { margin: 20px 0 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
+  @media (max-width: 620px) { .context-example { padding: 20px; } pre { padding: 12px; font-size: 10px; } }
+</style>

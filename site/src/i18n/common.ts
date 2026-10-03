@@ -5,7 +5,8 @@ interface CommonCopy {
     homeLabel: string;
     model: string;
     git: string;
-    workflow: string;
+    continuity: string;
+    agentSupport: string;
     agents: string;
     download: string;
     menuLabel: string;
@@ -29,9 +30,10 @@ export const commonCopy = {
   'zh-cn': {
     header: {
       homeLabel: 'Treefold 首页',
-      model: '产品模型',
-      git: 'Git 可视化',
-      workflow: '工作方式',
+      model: '工作组织',
+      git: '检查与交付',
+      continuity: '持续工作',
+      agentSupport: 'AI Agent',
       agents: '进程托管',
       download: '下载',
       menuLabel: '打开导航菜单',
@@ -53,9 +55,10 @@ export const commonCopy = {
   en: {
     header: {
       homeLabel: 'Treefold home',
-      model: 'Model',
-      git: 'Git visibility',
-      workflow: 'Workflow',
+      model: 'Organization',
+      git: 'Review & delivery',
+      continuity: 'Continuity',
+      agentSupport: 'AI Agents',
       agents: 'Processes',
       download: 'Download',
       menuLabel: 'Open navigation',
