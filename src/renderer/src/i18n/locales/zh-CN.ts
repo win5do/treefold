@@ -207,7 +207,8 @@ export const zhCN = {
     },
     runtime: {
       title: "运行环境",
-      description: "Treefold 当前使用的路径与平台。",
+      description: "Treefold 当前的版本、路径与平台。",
+      appVersion: "应用版本",
       copy: "复制运行环境",
       copied: "已复制运行环境",
       copyFailed: "无法复制运行环境",
@@ -409,8 +410,7 @@ export const zhCN = {
     "comparisonTooLarge": "比较内容过大，无法显示。请缩小所选提交范围。"
   },
   "integrationUi": {
-    "app": "应用",
-    "bundle": "资源包",
+    "app": "应用版本",
     "protocol": "协议"
   },
   "keymapUi": {

@@ -10,6 +10,7 @@ app.setPath('userData', process.env.TREEFOLD_TEST_HOME!);
 app.whenReady().then(() => {
   installOpenInFixture();
   ipcMain.handle('treefold:api-url', () => process.env.TREEFOLD_TEST_API_URL!);
+  ipcMain.handle('treefold:app-version', () => '0.1.0-alpha.20261003000000');
   ipcMain.handle('treefold:open-directory', () => null);
   ipcMain.handle('treefold:log', () => {});
   const [width, height] = process.env.TREEFOLD_TEST_WINDOW_SIZE!.split(',').map(Number);

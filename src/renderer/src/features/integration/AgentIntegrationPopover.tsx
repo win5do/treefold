@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import type { AgentIntegrationState } from "@/domain/types";
-import { agentIntegrationQuery, appKeys } from "@/features/app/queries";
+import { agentIntegrationQuery, appKeys, appVersionQuery } from "@/features/app/queries";
 import { toast } from "@/lib/toast";
 
 const componentLabels = {
@@ -33,6 +33,7 @@ export function AgentIntegrationPopover() {
   const [busy, setBusy] = useState(false);
   const prompted = useRef(false);
   const statusQuery = useQuery(agentIntegrationQuery());
+  const appVersion = useQuery(appVersionQuery());
   const status = statusQuery.data;
   const ready = status?.state === "ready";
 
@@ -71,8 +72,7 @@ export function AgentIntegrationPopover() {
         </div>
         <Table data-testid="agent-integration-table" className="table-fixed">
           <TableBody>
-            <TableRow><TableCell className="w-24 text-muted-foreground">{t("integrationUi.app")}</TableCell><TableCell className="font-mono">{status?.app_version ?? "—"}</TableCell></TableRow>
-            <TableRow><TableCell className="text-muted-foreground">{t("integrationUi.bundle")}</TableCell><TableCell className="truncate font-mono" title={status?.bundle_path}>{status?.bundle_version ?? "—"}</TableCell></TableRow>
+            <TableRow><TableCell className="w-24 text-muted-foreground">{t("integrationUi.app")}</TableCell><TableCell className="font-mono">{appVersion.data ?? "—"}</TableCell></TableRow>
             <TableRow><TableCell className="text-muted-foreground">{t("integrationUi.protocol")}</TableCell><TableCell className="font-mono">{status?.protocol_version ?? "—"}</TableCell></TableRow>
             {status?.components.map((component) => <TableRow key={component.id}>
               <TableCell className="text-muted-foreground">{componentLabels[component.id]}</TableCell>

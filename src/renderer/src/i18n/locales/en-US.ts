@@ -205,7 +205,8 @@ export const enUS = {
     },
     runtime: {
       title: "Runtime",
-      description: "Current Treefold paths and platform.",
+      description: "Current Treefold version, paths, and platform.",
+      appVersion: "App version",
       copy: "Copy runtime information",
       copied: "Runtime information copied",
       copyFailed: "Could not copy runtime information",
@@ -407,8 +408,7 @@ export const enUS = {
     "comparisonTooLarge": "This comparison is too large to display safely. Narrow the selected commit range."
   },
   "integrationUi": {
-    "app": "App",
-    "bundle": "Bundle",
+    "app": "App version",
     "protocol": "Protocol"
   },
   "keymapUi": {

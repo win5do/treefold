@@ -63,6 +63,7 @@ async function start() {
   ipcMain.handle('treefold:open-in-apps', event => { trusted(event); return listOpenInApps(); });
   ipcMain.handle('treefold:open-in-app', (event, id, directory) => { trusted(event); return openInApp(id, directory); });
   ipcMain.handle('treefold:api-url', event => { trusted(event); return apiUrl; });
+  ipcMain.handle('treefold:app-version', event => { trusted(event); return app.getVersion(); });
   ipcMain.handle('treefold:open-directory', async (event, options) => {
     trusted(event);
     const result = await dialog.showOpenDialog(window, { title: typeof options?.title === 'string' ? options.title : 'Choose a directory', properties: ['openDirectory'] });

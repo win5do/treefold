@@ -1,5 +1,6 @@
 import type { SettingsFormPatch } from "./useSettingsSave";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog";
@@ -23,6 +24,7 @@ import type {
 } from "@/domain/types";
 import type { LanguagePreference } from "@/i18n";
 import { toast } from "@/lib/toast";
+import { appVersionQuery } from "@/features/app/queries";
 
 type SettingsSaveFeedback =
   { kind: "idle" | "saving" };
@@ -42,6 +44,7 @@ export function SettingsPreferences({
   onSave: (update: SettingsFormPatch) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const { t } = useTranslation();
+  const appVersion = useQuery(appVersionQuery());
   const [language, setLanguage] = useState<LanguagePreference>("system");
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [keepDaemonRunningOnExit, setKeepDaemonRunningOnExit] = useState(false);
@@ -99,6 +102,7 @@ export function SettingsPreferences({
     else toast.error(t("settings.saveFailed", { message: result.error }));
   };
   const runtimeItems = [
+    { key: "app-version", label: t("settings.runtime.appVersion"), value: appVersion.data ?? "—" },
     { key: "treefold-home", label: t("settingsUi.treefoldHome"), value: system?.treefold_home ?? "—" },
     { key: "platform", label: t("settingsUi.platform"), value: system?.platform ?? "—" },
   ];
@@ -197,7 +201,7 @@ export function SettingsPreferences({
                 <Button
                   className="self-start"
                   variant="outline"
-                  disabled={!system}
+                  disabled={!system || !appVersion.data}
                   onClick={() => void copyRuntime()}
                 >
                   <Copy data-icon="inline-start" />

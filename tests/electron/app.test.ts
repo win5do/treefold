@@ -23,6 +23,7 @@ test('packaged Electron loads Rust API, persists settings, and preserves close-t
     await page.getByTestId('open-settings').waitFor();
     assert.match(page.url(), /^treefold:\/\/app\//);
     apiUrl = await page.evaluate(() => window.treefoldDesktop!.apiUrl());
+    assert.equal(await page.evaluate(() => window.treefoldDesktop!.appVersion()), await desktop.evaluate(({ app }) => app.getVersion()));
     assert.equal((await fetch(`${apiUrl}/api/health`)).status, 200);
     assert.equal(await page.evaluate(async () => (await navigator.permissions.query({ name: 'clipboard-write' as PermissionName })).state), 'granted');
     await page.getByTestId('open-settings').click();
