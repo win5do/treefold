@@ -166,7 +166,7 @@ export const enUS = {
     "detectionFailed": "Could not check Agent installation. Try again.",
     "loading": "Loading Agent settings…",
     command: "{{name}} launch command",
-    commandHint: "Leave empty to use the default command. Include the executable and arguments; quote paths or values containing spaces. Pipes, redirection, and shell expansion are not supported. Changes apply on the next launch.",
+    commandHint: "Leave empty to use the default command. Include the executable and arguments; quote paths or values containing spaces. Use supported interactive options only; subcommands, positional arguments, and Treefold-managed options are rejected when saving. Shell syntax is not supported. Changes apply on the next launch.",
     "resetAgent": "Reset {{name}}",
     "chooseAgent": "Agent",
     "noneInstalled": "No Agents are installed. Install a CLI or configure its launch command in Settings → Agents."

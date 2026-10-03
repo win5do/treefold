@@ -312,12 +312,22 @@ impl TerminalManager {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
         let command = if session.kind == "shell" {
             shell_command(&shell, &session.initial_prompt)
-        } else if let Some(adapter) = crate::agents::adapter(&session.kind) {
-            adapter.build_launch(
-                session,
-                developer_instructions,
+        } else if crate::agents::name(&session.kind).is_some() {
+            let log_dir = self
+                .treefold_home
+                .as_deref()
+                .map(|home| home.join("logs").join(&session.kind).join(&session.id));
+            crate::agents::build_launch(
+                &session.kind,
+                &crate::agents::LaunchContext {
+                    cwd: &session.cwd,
+                    additional_directories: &session.additional_directories,
+                    initial_prompt: &session.initial_prompt,
+                    instructions: developer_instructions,
+                    resume_id: session.codex_session_id.as_deref(),
+                    log_dir: log_dir.as_deref(),
+                },
                 agents.get(&session.kind).unwrap(),
-                self.treefold_home.as_deref(),
             )?
         } else {
             session.argv.clone()
@@ -791,127 +801,6 @@ mod tests {
     use serde_json::json;
 
     use super::{TerminalManager, resolve_session};
-    use crate::agents::codex::codex_arguments;
-    use crate::model::Session;
-
-    fn session() -> Session {
-        Session {
-            id: "session-1".into(),
-            workspace_id: "workspace-1".into(),
-            name: "Codex".into(),
-            kind: "codex".into(),
-            cwd: "/tmp/primary worktree".into(),
-            original_cwd: "/tmp/primary worktree".into(),
-            initial_prompt: "Implement the feature".into(),
-            codex_session_id: None,
-            visibility: "visible".into(),
-            hidden_at: None,
-            evicted_at: None,
-            amux_workspace_name: TerminalManager::workspace_name("/tmp/primary worktree"),
-            amux_process_name: "session-1".into(),
-            status: "stopped".into(),
-            exit_code: None,
-            exit_signal: String::new(),
-            argv: Vec::new(),
-            io_mode: "tty".into(),
-            launch_started_at: String::new(),
-            last_attached_at: None,
-            created_at: String::new(),
-            updated_at: String::new(),
-            additional_directories: vec!["/tmp/attached repo".into()],
-        }
-    }
-
-    #[test]
-    fn injects_developer_instructions_without_merging_them_into_the_user_prompt() {
-        let session = session();
-        let instructions = "Treefold snapshot\npath = \"/tmp/a b\"";
-        let arguments = codex_arguments(
-            &session,
-            Some(instructions),
-            &["--model".into(), "gpt-5.4".into()],
-        );
-
-        assert_eq!(
-            arguments[0..6],
-            [
-                "--model",
-                "gpt-5.4",
-                "-C",
-                &session.cwd,
-                "--add-dir",
-                "/tmp/attached repo"
-            ]
-        );
-        let config_index = arguments.iter().position(|value| value == "-c").unwrap();
-        let encoded = arguments[config_index + 1]
-            .strip_prefix("developer_instructions=")
-            .unwrap();
-        assert_eq!(
-            serde_json::from_str::<String>(encoded).unwrap(),
-            instructions
-        );
-        assert_eq!(arguments.last().unwrap(), &session.initial_prompt);
-    }
-
-    #[test]
-    fn refreshes_developer_instructions_when_resuming() {
-        let mut session = session();
-        session.codex_session_id = Some("codex-session-1".into());
-        let arguments = codex_arguments(&session, Some("current Treefold snapshot"), &[]);
-
-        assert!(
-            arguments
-                .iter()
-                .any(|value| value == "developer_instructions=\"current Treefold snapshot\"")
-        );
-        assert_eq!(
-            &arguments[arguments.len() - 2..],
-            ["resume", "codex-session-1"]
-        );
-        assert!(
-            !arguments
-                .iter()
-                .any(|value| value == &session.initial_prompt)
-        );
-    }
-
-    #[test]
-    fn passes_global_extra_args_through_unchanged() {
-        let session = session();
-        let configured = vec![
-            "--search".into(),
-            "--dangerously-bypass-approvals-and-sandbox".into(),
-        ];
-
-        let arguments = codex_arguments(&session, None, &configured);
-        assert_eq!(&arguments[..configured.len()], configured);
-    }
-
-    #[test]
-    fn uses_inline_mode_for_the_embedded_terminal_without_duplicate_flags() {
-        let session = session();
-
-        let arguments = codex_arguments(&session, None, &[]);
-        assert_eq!(
-            arguments
-                .iter()
-                .filter(|argument| argument.as_str() == "--no-alt-screen")
-                .count(),
-            1
-        );
-
-        let configured = vec!["--no-alt-screen".into(), "--search".into()];
-        let arguments = codex_arguments(&session, None, &configured);
-        assert_eq!(
-            arguments
-                .iter()
-                .filter(|argument| argument.as_str() == "--no-alt-screen")
-                .count(),
-            1
-        );
-    }
-
     #[test]
     fn assigns_one_stable_amux_workspace_per_root_directory() {
         let first = TerminalManager::workspace_name("/tmp/worktree-a");

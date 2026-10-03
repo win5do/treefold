@@ -58,7 +58,25 @@ Commands include the executable and its arguments. The input placeholder shows
 the default command. Quoting and escapes are supported, including executable
 paths with spaces. Commands are passed as an argv array without a shell; pipes,
 redirection, command chaining, and command substitution are rejected. Treefold-managed
-arguments cannot be overridden. Settings changes take effect on the next launch.
+arguments cannot be overridden. Launch commands must select interactive mode:
+subcommands (including `codex resume`), positional prompts/paths, explicit `--`,
+and help/version modes are rejected. Each adapter declares supported option
+arity, so `--model resume` remains a value while `--model x resume` is rejected.
+Unknown options and short-option clusters are rejected rather than guessed;
+new CLI/extension flags need an adapter rule. Pi requires separate option values
+and supports its exact multi-letter short options. Known variadic options consume
+their values until the next option; quote a list or repeat options where supported.
+CLI option values and configuration-file contents are not fully validated here.
+Settings changes take effect on the next launch.
+
+Settings validation, executable detection, and launch use the same public parser.
+Adapters are private to the agents module and only validate/build CLI arguments;
+`LaunchContext` carries launch inputs without a persistence model dependency.
+The public launch function validates before resolving the executable or building
+arguments. Codex owns its log-directory, developer-instruction, and resume options.
+Invalid settings writes leave the existing file untouched. Existing commands
+outside these rules must be corrected in `settings.toml`; they are never silently
+rewritten to remove arguments.
 Schema 1 Codex argument arrays migrate through schema 2 strings to schema 3
 commands. Schema 2 paths and arguments combine with reversible quoting, preserving
 argument values and unknown settings. Codex keeps its existing

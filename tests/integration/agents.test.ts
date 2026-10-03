@@ -34,10 +34,23 @@ test('installed Agent CLIs receive literal arguments and cwd; missing CLIs canno
       expect(await failed.text()).toContain('not installed');
     }
     expect(await (await fetch(`${url}/api/projects/${project.id}/sessions`)).json()).toEqual([]);
+    const settingsPath = path.join(home, 'config/settings.toml');
+    const savedSettings = await readFile(settingsPath, 'utf8');
+    for (const [kind, command] of [
+      ['codex', 'codex resume previous'],
+      ['claude_code', 'claude --model sonnet update'],
+      ['opencode', 'opencode run task'],
+      ['pi', 'pi --mode rpc'],
+    ]) {
+      const invalid = await request('/api/settings', { agents: { [kind]: { command } } }, 'PATCH');
+      expect(invalid.status).toBe(400);
+      expect(await invalid.text()).toMatch(/subcommands|managed by Treefold/);
+      expect(await readFile(settingsPath, 'utf8')).toBe(savedSettings);
+    }
     for (const kind of ['claude_code', 'opencode', 'pi']) {
       const script = path.join(root, `${kind} cli`);
       await writeFile(script, '#!/bin/sh\nif [ "$1" = --version ]; then printf "1.2.3\\n"; exit 0; fi\nprintf "%s\\n" "$PWD" "$@" > "$TREEFOLD_HOME/launch-$TREEFOLD_SESSION_ID.txt"\n', { mode: 0o700 });
-      const args = '--model "model with spaces" --test-value \'$HOME;$(echo literal)\'';
+      const args = '--model \'model with spaces $HOME;$(echo literal)\'';
       expect((await request('/api/settings', { agents: { [kind]: { command: `${JSON.stringify(script)} ${args}` } } }, 'PATCH')).ok).toBe(true);
       const system = await (await fetch(`${url}/api/system`)).json();
       expect(system.agents.find((agent: { kind: string }) => agent.kind === kind)).toMatchObject({ available: true, executable: script, version: "1.2.3" });
@@ -46,8 +59,8 @@ test('installed Agent CLIs receive literal arguments and cwd; missing CLIs canno
       const session = await createdResponse.json();
       expect(session.kind).toBe(kind);
       const record = path.join(home, `launch-${session.id}.txt`);
-      await expect.poll(async () => readFile(record, 'utf8').catch(() => '')).toBe(`${repository}\n--model\nmodel with spaces\n--test-value\n$HOME;$(echo literal)\n`);
-      expect(session.argv).toEqual([script, '--model', 'model with spaces', '--test-value', '$HOME;$(echo literal)']);
+      await expect.poll(async () => readFile(record, 'utf8').catch(() => '')).toBe(`${repository}\n--model\nmodel with spaces $HOME;$(echo literal)\n`);
+      expect(session.argv).toEqual([script, '--model', 'model with spaces $HOME;$(echo literal)']);
       expect((await request('/api/settings', { agents: { [kind]: { command: `${JSON.stringify(script)} --model restarted` } } }, 'PATCH')).ok).toBe(true);
       expect((await request(`/api/sessions/${session.id}/restart`, {})).ok).toBe(true);
       await expect.poll(async () => readFile(record, 'utf8').catch(() => '')).toBe(`${repository}\n--model\nrestarted\n`);

@@ -199,7 +199,7 @@ pub(super) async fn create_session_for_workspace(
     let kind = trimmed(input.kind)
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| "codex".into());
-    if kind != "shell" && crate::agents::adapter(&kind).is_none() {
+    if kind != "shell" && crate::agents::name(&kind).is_none() {
         return Err(AppError::BadRequest(
             "kind must be shell, codex, claude_code, opencode or pi".into(),
         ));
@@ -257,7 +257,7 @@ pub(super) async fn create_session_for_workspace(
                 .unwrap_or(&repository.git_status)
         )));
     }
-    if crate::agents::adapter(&kind).is_some() && selected_repository.is_none() {
+    if crate::agents::name(&kind).is_some() && selected_repository.is_none() {
         return Err(AppError::BadRequest(
             "Agents must start in an available Git location; non-Git locations are read-only context"
                 .into(),
@@ -291,15 +291,10 @@ pub(super) async fn create_session_for_workspace(
         }
     }
     let agents = state.settings.load()?.agents;
-    if let Some(adapter) = crate::agents::adapter(&kind) {
-        adapter
-            .detect_installation(agents.get(&kind).unwrap())
-            .ok_or_else(|| {
-                AppError::BadRequest(format!(
-                    "{} CLI is not installed or executable",
-                    adapter.name()
-                ))
-            })?;
+    if let Some(agent_name) = crate::agents::name(&kind) {
+        crate::agents::detect_installation(&kind, agents.get(&kind).unwrap()).ok_or_else(|| {
+            AppError::BadRequest(format!("{} CLI is not installed or executable", agent_name))
+        })?;
     }
     let session_id = new_id();
     let timestamp = now();
@@ -309,7 +304,7 @@ pub(super) async fn create_session_for_workspace(
             if kind == "codex" || kind == "shell" {
                 kind.clone()
             } else {
-                crate::agents::adapter(&kind).unwrap().name().into()
+                crate::agents::name(&kind).unwrap().into()
             }
         });
     if kind == "shell"
@@ -429,16 +424,15 @@ pub(super) async fn restart_session(
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id).await?;
     ensure_session_owner_active(&state, &session).await?;
-    if let Some(adapter) = crate::agents::adapter(&session.kind) {
+    if let Some(agent_name) = crate::agents::name(&session.kind) {
         let settings = state.settings.load()?;
-        adapter
-            .detect_installation(settings.agents.get(&session.kind).unwrap())
-            .ok_or_else(|| {
-                AppError::BadRequest(format!(
-                    "{} CLI is not installed or executable",
-                    adapter.name()
-                ))
-            })?;
+        crate::agents::detect_installation(
+            &session.kind,
+            settings.agents.get(&session.kind).unwrap(),
+        )
+        .ok_or_else(|| {
+            AppError::BadRequest(format!("{} CLI is not installed or executable", agent_name))
+        })?;
     }
     capture_codex_session_id(&state.store, &mut session).await?;
     if session.kind == "codex" && session.codex_session_id.is_none() {

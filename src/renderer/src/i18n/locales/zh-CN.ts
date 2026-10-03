@@ -168,7 +168,7 @@ export const zhCN = {
     "detectionFailed": "无法检查 Agent 安装状态，请重试。",
     "loading": "正在加载 Agent 设置…",
     command: "{{name}} 启动命令",
-    commandHint: "留空使用默认命令。填写可执行文件和参数，包含空格的路径或参数值需加引号。不支持管道、重定向和 Shell 展开。修改在下次启动时生效。",
+    commandHint: "留空使用默认命令。填写可执行文件和参数，包含空格的路径或参数值需加引号。仅支持已适配的交互式选项；保存时会拒绝子命令、位置参数和 Treefold 管理的选项。不支持 Shell 语法。修改在下次启动时生效。",
     "resetAgent": "重置 {{name}}",
     "chooseAgent": "Agent",
     "noneInstalled": "尚未安装 Agent，请安装 CLI 或在“设置 → Agent”中配置启动命令。"

@@ -99,9 +99,7 @@ impl Settings {
         validate_order(&self.agents.order)?;
         for kind in AGENT_KINDS {
             let config = self.agents.get(kind).unwrap();
-            crate::agents::adapter(kind)
-                .unwrap()
-                .parse_command(&config.command)?;
+            crate::agents::parse_command(kind, &config.command)?;
         }
         Ok(())
     }
@@ -181,9 +179,7 @@ impl SettingsPatch {
             ] {
                 if let Some(patch) = patch {
                     if let Some(command) = &patch.command {
-                        crate::agents::adapter(kind)
-                            .unwrap()
-                            .parse_command(command)?;
+                        crate::agents::parse_command(kind, command)?;
                     }
                 }
             }
@@ -438,13 +434,13 @@ fn migrate_document(contents: &str) -> anyhow::Result<DocumentMut> {
             // Quote legacy values to preserve argv exactly, including spaces and shell characters.
             let executable = executable
                 .filter(|value| !value.is_empty())
-                .unwrap_or(crate::agents::adapter(kind).unwrap().executable());
+                .unwrap_or(crate::agents::default_executable(kind).unwrap());
             let mut words = vec![executable.to_owned()];
             words.extend(
                 shell_words::split(args.unwrap_or("")).context("Invalid legacy Agent arguments")?,
             );
             let command = if words.len() == 1
-                && words[0] == crate::agents::adapter(kind).unwrap().executable()
+                && words[0] == crate::agents::default_executable(kind).unwrap()
             {
                 String::new()
             } else {
@@ -711,8 +707,9 @@ mod tests {
             "a b",
             "--config",
             "value=\"quoted\"",
-            "--other",
+            "--profile",
             "$HOME;$(echo x)",
+            "--model",
             "",
         ];
         let args =
@@ -754,10 +751,7 @@ extra_args = ""
         std::fs::write(&store.path, input).unwrap();
         let settings = store.load().unwrap();
         assert_eq!(
-            crate::agents::adapter("codex")
-                .unwrap()
-                .parse_command(&settings.agents.codex.command)
-                .unwrap(),
+            crate::agents::parse_command("codex", &settings.agents.codex.command).unwrap(),
             (
                 "/tools with spaces/codex".into(),
                 vec!["--model".into(), "a b".into()]
@@ -800,6 +794,43 @@ extra_args = ""
         ] {
             assert!(store.update(serde_json::from_str(patch).unwrap()).is_err());
             assert_eq!(std::fs::read_to_string(&store.path).unwrap(), before);
+        }
+    }
+    #[test]
+    fn rejects_noninteractive_agent_commands_atomically_on_save_and_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SettingsStore::open(dir.path()).unwrap();
+        let before = std::fs::read_to_string(&store.path).unwrap();
+        for (kind, command) in [
+            ("codex", "codex resume existing"),
+            ("codex", "codex --model test exec task"),
+            ("claude_code", "claude update"),
+            ("opencode", "opencode run task"),
+            ("pi", "pi --model test 'initial prompt'"),
+        ] {
+            let patch =
+                serde_json::from_value(serde_json::json!({"agents": {kind: {"command": command}}}))
+                    .unwrap();
+            let error = store.update(patch).unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(crate::agents::name(kind).unwrap())
+            );
+            assert_eq!(std::fs::read_to_string(&store.path).unwrap(), before);
+            let mut document = before.parse::<toml_edit::DocumentMut>().unwrap();
+            super::set_agent_value(
+                &mut document,
+                Some(kind),
+                "command",
+                toml_edit::value(command),
+            )
+            .unwrap();
+            let invalid = document.to_string();
+            std::fs::write(&store.path, &invalid).unwrap();
+            assert!(store.load().is_err());
+            assert_eq!(std::fs::read_to_string(&store.path).unwrap(), invalid);
+            std::fs::write(&store.path, &before).unwrap();
         }
     }
 }

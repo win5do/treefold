@@ -1,230 +1,85 @@
-//! CLI adapters. Process and PTY ownership remains with TerminalManager/amux.
-pub(crate) mod codex;
+//! CLI adapters. Only the functions in this module expose parsing and launching;
+//! concrete adapters cannot override the shared validation pipeline.
+mod claude_code;
+mod codex;
 mod command;
+mod opencode;
+mod pi;
+#[cfg(test)]
+mod tests;
+mod validation;
 
-use crate::{
-    model::Session,
-    settings::{AgentSettings, AgentsSettings},
-};
-use anyhow::{Context, Result, bail};
+use crate::settings::{AgentSettings, AgentsSettings};
+use anyhow::{Context, Result};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
-pub trait AgentAdapter: Sync {
-    fn kind(&self) -> &'static str;
+/// Launch inputs, independent of database records and process ownership.
+pub struct LaunchContext<'a> {
+    pub cwd: &'a str,
+    pub additional_directories: &'a [String],
+    pub initial_prompt: &'a str,
+    pub instructions: Option<&'a str>,
+    pub resume_id: Option<&'a str>,
+    pub log_dir: Option<&'a Path>,
+}
+
+trait AgentAdapter: Sync {
     fn name(&self) -> &'static str;
     fn executable(&self) -> &'static str;
-    fn reserved_args(&self) -> &'static [&'static str];
-    fn arguments(
-        &self,
-        session: &Session,
-        instructions: Option<&str>,
-        extra: Vec<String>,
-    ) -> Result<Vec<String>>;
-
-    fn detect_installation(&self, config: &AgentSettings) -> Option<PathBuf> {
-        let (executable, _) = self.parse_command(&config.command).ok()?;
-        resolve_executable(&executable)
-    }
-
-    fn parse_command(&self, text: &str) -> Result<(String, Vec<String>)> {
-        let (executable, args) = command::parse(if text.trim().is_empty() {
-            self.executable()
-        } else {
-            text
-        })?;
-        for argument in &args {
-            let flag = argument.split('=').next().unwrap_or(argument);
-            if flag == "--"
-                || self.reserved_args().iter().any(|reserved| {
-                    flag == *reserved
-                        || (reserved.len() == 2
-                            && reserved.starts_with('-')
-                            && argument.starts_with(reserved))
-                })
-            {
-                bail!("{} argument {flag} is managed by Treefold", self.name());
-            }
-        }
-        Ok((executable, args))
-    }
-
-    fn build_launch(
-        &self,
-        session: &Session,
-        instructions: Option<&str>,
-        config: &AgentSettings,
-        home: Option<&Path>,
-    ) -> Result<Vec<String>> {
-        let executable = self
-            .detect_installation(config)
-            .with_context(|| format!("{} CLI is not installed or executable", self.name()))?;
-        let (_, extra) = self.parse_command(&config.command)?;
-        let mut command = vec![executable.to_string_lossy().into_owned()];
-        let mut args = self.arguments(session, instructions, extra)?;
-        if self.kind() == "codex" {
-            if let Some(home) = home {
-                args.extend([
-                    "-c".into(),
-                    format!(
-                        "log_dir={}",
-                        serde_json::to_string(
-                            &home.join("logs/codex").join(&session.id).to_string_lossy()
-                        )?
-                    ),
-                ]);
-            }
-        }
-        command.extend(args);
-        Ok(command)
-    }
+    fn validate_user_args(&self, args: &[String]) -> Result<()>;
+    fn build_args(&self, context: &LaunchContext<'_>, user_args: &[String]) -> Result<Vec<String>>;
 }
 
-struct Codex;
-impl AgentAdapter for Codex {
-    fn kind(&self) -> &'static str {
-        "codex"
-    }
-    fn name(&self) -> &'static str {
-        "Codex"
-    }
-    fn executable(&self) -> &'static str {
-        "codex"
-    }
-    fn reserved_args(&self) -> &'static [&'static str] {
-        &["-C", "--cd", "--add-dir"]
-    }
-    fn arguments(
-        &self,
-        session: &Session,
-        instructions: Option<&str>,
-        extra: Vec<String>,
-    ) -> Result<Vec<String>> {
-        Ok(codex::codex_arguments(session, instructions, &extra))
-    }
-}
-
-struct ClaudeCode;
-impl AgentAdapter for ClaudeCode {
-    fn kind(&self) -> &'static str {
-        "claude_code"
-    }
-    fn name(&self) -> &'static str {
-        "Claude Code"
-    }
-    fn executable(&self) -> &'static str {
-        "claude"
-    }
-    fn reserved_args(&self) -> &'static [&'static str] {
-        &[
-            "--cwd",
-            "--session-id",
-            "--resume",
-            "-r",
-            "--continue",
-            "-c",
-            "--print",
-            "-p",
-            "--add-dir",
-            "--append-system-prompt",
-            "--append-system-prompt-file",
-        ]
-    }
-    fn arguments(
-        &self,
-        session: &Session,
-        instructions: Option<&str>,
-        mut extra: Vec<String>,
-    ) -> Result<Vec<String>> {
-        for directory in &session.additional_directories {
-            extra.extend(["--add-dir".into(), directory.clone()]);
-        }
-        if let Some(instructions) = instructions {
-            extra.extend(["--append-system-prompt".into(), instructions.into()]);
-        }
-        if !session.initial_prompt.is_empty() {
-            extra.extend(["--".into(), session.initial_prompt.clone()]);
-        }
-        Ok(extra)
-    }
-}
-
-struct OpenCode;
-impl AgentAdapter for OpenCode {
-    fn kind(&self) -> &'static str {
-        "opencode"
-    }
-    fn name(&self) -> &'static str {
-        "OpenCode"
-    }
-    fn executable(&self) -> &'static str {
-        "opencode"
-    }
-    fn reserved_args(&self) -> &'static [&'static str] {
-        &["--session", "-s", "--continue", "-c", "--prompt", "--dir"]
-    }
-    fn arguments(
-        &self,
-        session: &Session,
-        _instructions: Option<&str>,
-        mut extra: Vec<String>,
-    ) -> Result<Vec<String>> {
-        if !session.initial_prompt.is_empty() {
-            extra.extend(["--prompt".into(), session.initial_prompt.clone()]);
-        }
-        Ok(extra)
-    }
-}
-
-struct Pi;
-impl AgentAdapter for Pi {
-    fn kind(&self) -> &'static str {
-        "pi"
-    }
-    fn name(&self) -> &'static str {
-        "Pi"
-    }
-    fn executable(&self) -> &'static str {
-        "pi"
-    }
-    fn reserved_args(&self) -> &'static [&'static str] {
-        &[
-            "--session",
-            "--session-dir",
-            "--resume",
-            "-r",
-            "--continue",
-            "-c",
-            "--mode",
-            "--print",
-            "-p",
-            "--append-system-prompt",
-        ]
-    }
-    fn arguments(
-        &self,
-        session: &Session,
-        instructions: Option<&str>,
-        mut extra: Vec<String>,
-    ) -> Result<Vec<String>> {
-        if let Some(instructions) = instructions {
-            extra.extend(["--append-system-prompt".into(), instructions.into()]);
-        }
-        if !session.initial_prompt.is_empty() {
-            extra.extend(["--".into(), session.initial_prompt.clone()]);
-        }
-        Ok(extra)
-    }
-}
-
-pub fn adapter(kind: &str) -> Option<&'static dyn AgentAdapter> {
+fn adapter(kind: &str) -> Option<&'static dyn AgentAdapter> {
     match kind {
-        "codex" => Some(&Codex),
-        "claude_code" => Some(&ClaudeCode),
-        "opencode" => Some(&OpenCode),
-        "pi" => Some(&Pi),
+        "codex" => Some(&codex::Codex),
+        "claude_code" => Some(&claude_code::ClaudeCode),
+        "opencode" => Some(&opencode::OpenCode),
+        "pi" => Some(&pi::Pi),
         _ => None,
     }
+}
+
+pub fn name(kind: &str) -> Option<&'static str> {
+    adapter(kind).map(|adapter| adapter.name())
+}
+
+pub fn default_executable(kind: &str) -> Option<&'static str> {
+    adapter(kind).map(|adapter| adapter.executable())
+}
+
+/// Used for settings writes, file reads, detection, and immediately before launch.
+pub fn parse_command(kind: &str, text: &str) -> Result<(String, Vec<String>)> {
+    let adapter = adapter(kind).with_context(|| format!("Unsupported Agent: {kind}"))?;
+    let (executable, args) = command::parse(if text.trim().is_empty() {
+        adapter.executable()
+    } else {
+        text
+    })
+    .map_err(|error| anyhow::anyhow!("{}: {error}", adapter.name()))?;
+    adapter.validate_user_args(&args)?;
+    Ok((executable, args))
+}
+
+pub fn detect_installation(kind: &str, config: &AgentSettings) -> Option<PathBuf> {
+    let (executable, _) = parse_command(kind, &config.command).ok()?;
+    resolve_executable(&executable)
+}
+
+pub fn build_launch(
+    kind: &str,
+    context: &LaunchContext<'_>,
+    config: &AgentSettings,
+) -> Result<Vec<String>> {
+    // Validate before checking the executable so configuration errors remain precise.
+    let (executable, args) = parse_command(kind, &config.command)?;
+    let adapter = adapter(kind).expect("validated Agent kind");
+    let executable = resolve_executable(&executable)
+        .with_context(|| format!("{} CLI is not installed or executable", adapter.name()))?;
+    let mut command = vec![executable.to_string_lossy().into_owned()];
+    command.extend(adapter.build_args(context, &args)?);
+    Ok(command)
 }
 
 #[derive(Serialize)]
@@ -242,7 +97,7 @@ pub async fn installations(settings: &AgentsSettings) -> Vec<AgentInstallation> 
         .iter()
         .map(|kind| {
             let adapter = adapter(kind).expect("validated Agent order");
-            let executable = adapter.detect_installation(settings.get(kind).unwrap());
+            let executable = detect_installation(kind, settings.get(kind).unwrap());
             AgentInstallation {
                 kind: kind.clone(),
                 name: adapter.name(),
@@ -310,96 +165,4 @@ fn resolve_executable(value: &str) -> Option<PathBuf> {
                     .is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
         })
         .and_then(|path| std::path::absolute(path).ok())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_quotes_without_shell_expansion_and_rejects_owned_flags() {
-        let adapter = adapter("claude_code").unwrap();
-        assert_eq!(
-            adapter
-                .parse_command("claude --model 'a b' --setting '$HOME;$(touch /tmp/no)' ")
-                .unwrap()
-                .1,
-            ["--model", "a b", "--setting", "$HOME;$(touch /tmp/no)"]
-        );
-        assert!(adapter.parse_command("claude --model 'unfinished").is_err());
-        for argument in ["--resume=other", "-rother", "--session-id other", "--print"] {
-            assert!(
-                adapter
-                    .parse_command(&format!("claude {argument}"))
-                    .is_err()
-            );
-        }
-    }
-
-    #[test]
-    fn empty_commands_use_each_adapters_default_executable() {
-        for (kind, executable) in [
-            ("codex", "codex"),
-            ("claude_code", "claude"),
-            ("opencode", "opencode"),
-            ("pi", "pi"),
-        ] {
-            for text in ["", "   "] {
-                assert_eq!(
-                    adapter(kind).unwrap().parse_command(text).unwrap(),
-                    (executable.into(), vec![])
-                );
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn versions_use_the_configured_cli_and_failure_keeps_it_available() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let mut settings = AgentsSettings::default();
-        for (kind, config, script) in [
-            ("codex", &mut settings.codex, "printf 'codex-cli 1.2.3\\n'"),
-            (
-                "claude",
-                &mut settings.claude_code,
-                "printf '2.3.4 (Claude Code)\\n' >&2",
-            ),
-            ("opencode", &mut settings.opencode, "exit 1"),
-            ("pi", &mut settings.pi, "exec sleep 10"),
-        ] {
-            let path = dir.path().join(kind);
-            std::fs::write(
-                &path,
-                format!("#!/bin/sh\n[ \"$1\" = --version ] || exit 9\n{script}\n"),
-            )
-            .unwrap();
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-            config.command = shell_words::quote(&path.to_string_lossy()).into_owned();
-        }
-        let agents = installations(&settings).await;
-        assert!(agents.iter().all(|agent| agent.available));
-        assert_eq!(agents[0].version.as_deref(), Some("codex-cli 1.2.3"));
-        assert_eq!(agents[1].version.as_deref(), Some("2.3.4 (Claude Code)"));
-        assert_eq!(agents[2].version, None);
-        assert_eq!(agents[3].version, None);
-    }
-
-    #[test]
-    fn installation_requires_an_executable_file() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("agent with spaces");
-        let config = AgentSettings {
-            command: shell_words::quote(&path.to_string_lossy()).into_owned(),
-            ..Default::default()
-        };
-        let adapter = adapter("pi").unwrap();
-        assert!(adapter.detect_installation(&config).is_none());
-        std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-        assert!(adapter.detect_installation(&config).is_none());
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
-        assert_eq!(adapter.detect_installation(&config).unwrap(), path);
-    }
 }
