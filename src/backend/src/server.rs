@@ -400,6 +400,10 @@ fn app(state: AppState) -> Router {
         .route("/api/projects/{id}/workspaces", post(create_workspace))
         .route("/api/workspaces/{id}/forks", post(create_fork))
         .route(
+            "/api/workspaces/{id}/delete-precheck",
+            get(workspace_delete::delete_precheck),
+        )
+        .route(
             "/api/workspaces/{id}",
             get(get_workspace)
                 .patch(update_workspace)

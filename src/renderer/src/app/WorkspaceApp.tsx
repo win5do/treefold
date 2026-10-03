@@ -52,7 +52,6 @@ import type {
   SessionMenuState,
   Workspace,
   WorkspaceDetail,
-  WorkspaceDeleteOptions,
   WorkspaceRepository,
   GitWorktree,
   GitSyncItemResult,
@@ -74,7 +73,7 @@ import { FinishWorkspaceDialog } from "@/features/delivery/FinishWorkspaceDialog
 import { ParentOperationDialog } from "@/features/workspace/ParentOperationDialog";
 import { CreateForkDialog } from "@/features/fork/CreateForkDialog";
 import { RenameDialog } from "@/features/app/RenameDialog";
-import { DeleteRecordDialog } from "@/features/app/RecordActions";
+import { DeleteWorkspaceDialog } from "@/features/workspace/DeleteWorkspaceDialog";
 import {
   AddDirectoryDialog,
   CreateProjectDialog,
@@ -845,28 +844,14 @@ function Workspace() {
     setDeleteTarget({ kind: "project", value: project });
   }
 
-  async function permanentlyDeleteTarget(cleanupManaged = false, options: WorkspaceDeleteOptions = { delete_worktrees: false, delete_branches: false }) {
-    if (!deleteTarget) return;
-    const ok = await act(() =>
-      deleteTarget.kind === "project"
-        ? projectsApi.delete(deleteTarget.value.id, cleanupManaged)
-        : workspacesApi.delete(deleteTarget.value.id, options),
-    );
+  async function permanentlyDeleteTarget(cleanupManaged = false) {
+    if (deleteTarget?.kind !== "project") return;
+    const deleted = deleteTarget.value;
+    const ok = await act(() => projectsApi.delete(deleted.id, cleanupManaged));
     if (!ok) return;
-    const deleted = deleteTarget;
     setDeleteTarget(null);
-    if (
-      deleted.kind === "project" &&
-      (params.projectId === deleted.value.id ||
-        workspace?.project.id === deleted.value.id)
-    )
+    if (params.projectId === deleted.id || workspace?.project.id === deleted.id)
       navigate("/");
-    if (deleted.kind !== "project" && params.workspaceId === deleted.value.id)
-      navigate(
-        deleted.value.parent_workspace_id
-          ? `/workspaces/${deleted.value.parent_workspace_id}`
-          : `/projects/${deleted.value.project_id}`,
-      );
   }
 
   function removeWorktree(worktree: GitWorktree) {
@@ -1772,7 +1757,7 @@ function Workspace() {
           void (renameTarget && rename(renameTarget, name, description))
         }
       />
-      <DeleteRecordDialog
+      <DeleteWorkspaceDialog
         target={
           deleteTarget?.kind === "project" ? null : deleteTarget
         }
@@ -1780,7 +1765,14 @@ function Workspace() {
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        onConfirm={(options) => void permanentlyDeleteTarget(false, options)}
+        onDeleted={(deleted) => {
+          setDeleteTarget(null);
+          if (params.workspaceId === deleted.id) {
+            navigate(deleted.parent_workspace_id
+              ? `/workspaces/${deleted.parent_workspace_id}`
+              : `/projects/${deleted.project_id}`);
+          }
+        }}
       />
       <DeleteProjectDialog
         target={deleteTarget?.kind === "project" ? deleteTarget.value : null}

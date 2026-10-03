@@ -17,6 +17,7 @@ import type {
   Workspace,
   WorkspaceDetail,
   WorkspaceDeleteOptions,
+  WorkspaceDeletePrecheck,
   WorkspaceRepository,
 } from "@/domain/types";
 
@@ -27,10 +28,16 @@ export const workspacesApi = {
     request<Workspace>(`/api/workspaces/${id}`, { method: "PATCH", json }),
   reopen: (id: string, confirmSquash = false) =>
     request<Workspace>(`/api/workspaces/${id}/reopen?confirm_squash=${confirmSquash}`, { method: "POST" }),
+  deletePrecheck: (id: string, options: WorkspaceDeleteOptions, signal?: AbortSignal) =>
+    request<WorkspaceDeletePrecheck>(`/api/workspaces/${id}/delete-precheck?${new URLSearchParams({
+      delete_worktrees: String(options.delete_worktrees),
+      delete_branches: String(options.delete_branches),
+    })}`, { signal }),
   delete: (id: string, options: WorkspaceDeleteOptions) =>
     request(`/api/workspaces/${id}?${new URLSearchParams({
       delete_worktrees: String(options.delete_worktrees),
       delete_branches: String(options.delete_branches),
+      ...(options.discard_token ? { discard_token: options.discard_token } : {}),
     })}`, { method: "DELETE" }),
   createFork: (id: string, json: unknown) =>
     request<Workspace>(`/api/workspaces/${id}/forks`, { method: "POST", json }),

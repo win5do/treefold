@@ -1,3 +1,4 @@
+import { createWorkspaceDeletionRoutes } from "./routes/workspace-deletion.ts";
 import { createSettingsRoutes } from "./routes/settings.ts";
 import { createSessionLogRoutes } from "./routes/session-logs.ts";
 import { createFinishRoutes } from "./routes/finish.ts";
@@ -76,6 +77,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
   let worktreeDeletePolls = 0;
   const amuxStopRequests: string[] = [];
   const repositoryBranches = new Map<string, GitBranches>();
+  const workspaceDeletionRoutes = createWorkspaceDeletionRoutes({ fixture, sendJson });
   const settingsRoutes = createSettingsRoutes({ fixture, readJson, sendJson });
   const sessionLogRoutes = createSessionLogRoutes({ fixture });
   const finishRoutes = createFinishRoutes({ fixture, readJson, sendJson });
@@ -97,6 +99,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
 
     const requestUrl = new URL(request.url ?? "/", "http://fixture.test");
     const pathname = requestUrl.pathname;
+    if (await workspaceDeletionRoutes.handle(request, response, pathname)) return;
     if (await sessionLogRoutes.handle(request, response, pathname)) return;
     if (await finishRoutes.handle(request, response, pathname)) return;
     if (await gitDiffRoutes.handle(request, response, pathname)) return;

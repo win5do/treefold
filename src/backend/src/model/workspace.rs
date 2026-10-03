@@ -1,6 +1,22 @@
 use serde::{Deserialize, Serialize};
 
 use super::{Project, ProjectDirectory, ProjectRepository};
+
+#[derive(Debug, Serialize)]
+pub struct WorkspaceDeletePrecheck {
+    pub undelivered_branches: Vec<WorkspaceDeleteBranch>,
+    pub discard_token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkspaceDeleteBranch {
+    pub workspace_name: String,
+    pub repository_name: String,
+    pub branch: String,
+    pub head: String,
+    pub commit_count: u64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct SidebarData {
     pub projects: Vec<SidebarProject>,

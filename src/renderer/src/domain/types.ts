@@ -566,9 +566,21 @@ export type Keymap = { schema_version: number; commands: KeymapCommand[] };
 export interface WorkspaceDeleteOptions {
   delete_worktrees: boolean;
   delete_branches: boolean;
+  discard_token?: string;
 }
 
 export type WorktreePrunePreview = {
   report: string;
   entries: { path: string; reason: string; workspaces: string[] }[];
 };
+
+export interface WorkspaceDeletePrecheck {
+  undelivered_branches: {
+    workspace_name: string;
+    repository_name: string;
+    branch: string;
+    head: string;
+    commit_count: number;
+  }[];
+  discard_token: string | null;
+}

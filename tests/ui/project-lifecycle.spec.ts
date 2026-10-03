@@ -62,7 +62,7 @@ test("Project archive waits for active children and restore re-enables editing",
     await row.getByTestId("project-actions-trigger").click();
     await expect(page.getByTestId("delete-project-action")).toHaveAttribute("data-blocked", "true");
     await page.getByTestId("delete-project-action").click();
-    await expect(page.getByRole("status")).toContainText(/Archive Project/i);
+    await expect(page.getByRole("status", { name: /Archive Project/i })).toContainText(/Archive Project/i);
     expect(harness.deleteRequests).toEqual([]);
     await page.keyboard.press("Escape");
     await project.click();
