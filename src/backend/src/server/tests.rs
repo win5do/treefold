@@ -1815,7 +1815,7 @@ mod current_workspace_tests {
 
         let mut pending = codex.clone();
         pending.id = "pending-project-codex".into();
-        pending.name = "codex".into();
+        pending.name = "Codex".into();
         pending.amux_process_name = pending.id.clone();
         pending.agent_session_id = None;
         let log_dir = root.join("logs/codex").join(&pending.id);
@@ -1891,7 +1891,7 @@ mod current_workspace_tests {
         );
         state
             .store
-            .rename_session(&pending.id, "codex")
+            .rename_session(&pending.id, "Codex")
             .await
             .unwrap();
         assert!(
@@ -1903,7 +1903,7 @@ mod current_workspace_tests {
         );
         assert_eq!(
             state.store.session(&pending.id).await.unwrap().name,
-            "codex"
+            "Codex"
         );
         assert!(
             !state

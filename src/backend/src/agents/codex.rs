@@ -56,9 +56,6 @@ const RULES: Rules = Rules {
 };
 
 impl AgentAdapter for Codex {
-    fn default_session_name(&self) -> &'static str {
-        "codex"
-    }
     fn metadata(&self, context: &super::MetadataContext<'_>) -> super::AgentMetadata {
         self.metadata_batch(std::slice::from_ref(context)).remove(0)
     }

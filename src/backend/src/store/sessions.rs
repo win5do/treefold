@@ -333,6 +333,83 @@ mod tests {
     use sqlx::{Connection, Executor};
 
     #[tokio::test]
+    async fn codex_default_name_upgrade_preserves_owned_titles() {
+        let root = tempfile::tempdir().unwrap();
+        let old = tempfile::tempdir().unwrap();
+        let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g1");
+        for entry in std::fs::read_dir(migrations).unwrap().flatten() {
+            if entry.file_name().to_string_lossy().as_ref() < "20261003154835" {
+                std::fs::copy(entry.path(), old.path().join(entry.file_name())).unwrap();
+            }
+        }
+        let mut connection = sqlx::SqliteConnection::connect_with(
+            &sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(root.path().join(crate::store::CURRENT_DATABASE_FILENAME))
+                .create_if_missing(true),
+        )
+        .await
+        .unwrap();
+        sqlx::migrate::Migrator::new(old.path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        connection.execute("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','t','t');
+            INSERT INTO workspaces(id,project_id,name,kind,status,created_at,updated_at) VALUES('w','p','W','workspace','active','t','t');").await.unwrap();
+        let cases = [
+            ("default", "codex", "codex", 0, "Codex"),
+            ("owned-lowercase", "codex", "codex", 1, "codex"),
+            ("owned-capitalized", "codex", "Codex", 1, "Codex"),
+            ("owned-title", "codex", "Saved title", 1, "Saved title"),
+            ("other-kind", "shell", "codex", 1, "codex"),
+        ];
+        for (id, kind, name, handled, _) in cases {
+            sqlx::query("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,agent_session_id,agent_title_imported,status,launch_started_at,created_at,updated_at) VALUES(?,'w',?,?,'/repo','/repo',?,?,'stopped','t','t','t')")
+                .bind(id).bind(name).bind(kind).bind(id).bind(handled)
+                .execute(&mut connection).await.unwrap();
+        }
+        connection.close().await.unwrap();
+
+        let store = Store::open(root.path()).await.unwrap();
+        let mut fresh = store.session("default").await.unwrap();
+        for (id, _, _, handled, expected) in cases {
+            let session = store.session(id).await.unwrap();
+            assert_eq!(session.name, expected, "{id}");
+            assert_eq!(session.agent_session_id.as_deref(), Some(id));
+            assert_eq!(
+                store
+                    .import_agent_title(id, id, "Automatic title")
+                    .await
+                    .unwrap(),
+                handled == 0,
+                "{id}"
+            );
+        }
+
+        fresh.id = "fresh".into();
+        fresh.name = crate::agents::default_session_name("codex").unwrap().into();
+        fresh.agent_session_id = Some("fresh-native".into());
+        store.create_session(&fresh).await.unwrap();
+        assert_eq!(store.session("fresh").await.unwrap().name, "Codex");
+        assert!(
+            store
+                .import_agent_title("fresh", "fresh-native", "New title")
+                .await
+                .unwrap()
+        );
+        store.rename_session("fresh", "Codex").await.unwrap();
+        assert!(
+            !store
+                .import_agent_title("fresh", "fresh-native", "Overwrite rename")
+                .await
+                .unwrap()
+        );
+        assert_eq!(store.session("fresh").await.unwrap().name, "Codex");
+        store.pool.close().await;
+    }
+
+    #[tokio::test]
     async fn agent_metadata_upgrade_preserves_codex_and_history_finalization_covers_all_agents() {
         let root = tempfile::tempdir().unwrap();
         let old = tempfile::tempdir().unwrap();
