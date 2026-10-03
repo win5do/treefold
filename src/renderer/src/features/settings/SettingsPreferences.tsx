@@ -198,8 +198,10 @@ export function SettingsPreferences({
                 <FieldDescription>
                   {t("settings.runtime.description")}
                 </FieldDescription>
+              </FieldContent>
+              <div className="flex w-full min-w-0 flex-col gap-2 @md/field-group:max-w-sm">
                 <Button
-                  className="self-start"
+                  className="self-end"
                   variant="outline"
                   disabled={!system || !appVersion.data}
                   onClick={() => void copyRuntime()}
@@ -207,21 +209,21 @@ export function SettingsPreferences({
                   <Copy data-icon="inline-start" />
                   {t("settings.runtime.copy")}
                 </Button>
-              </FieldContent>
-              <dl className="w-full divide-y overflow-hidden rounded-md border @md/field-group:max-w-sm">
-                {runtimeItems.map((item) => (
-                  <div
-                    key={item.key}
-                    data-testid={`settings-runtime-${item.key}`}
-                    className="grid min-h-10 grid-cols-[7rem_minmax(0,1fr)] items-center gap-2 px-3"
-                  >
-                    <dt className="text-sm text-muted-foreground">{item.label}</dt>
-                    <dd className="min-w-0 truncate font-mono text-xs" title={item.value}>
-                      {item.value}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+                <dl className="w-full divide-y overflow-hidden rounded-md border">
+                  {runtimeItems.map((item) => (
+                    <div
+                      key={item.key}
+                      data-testid={`settings-runtime-${item.key}`}
+                      className="grid min-h-10 grid-cols-[7rem_minmax(0,1fr)] items-center gap-2 px-3"
+                    >
+                      <dt className="text-sm text-muted-foreground">{item.label}</dt>
+                      <dd className="min-w-0 truncate font-mono text-xs" title={item.value}>
+                        {item.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
             </Field>
           </FieldGroup>
         </div>

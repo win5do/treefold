@@ -28,7 +28,7 @@ test("settings copies runtime information as a multiline report", async () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByTestId("settings-runtime-treefold-home"))
       .toContainText("/tmp/treefold-ui-fixture");
-    const copy = dialog.getByRole("button", { name: "Copy runtime information", exact: true });
+    const copy = dialog.getByRole("button", { name: "Copy environment information", exact: true });
     await copy.click();
     await expect.poll(() => copied).toEqual([
       "App version: 0.1.0-alpha.20261003000000\nTreefold Home: /tmp/treefold-ui-fixture\nPlatform: test",

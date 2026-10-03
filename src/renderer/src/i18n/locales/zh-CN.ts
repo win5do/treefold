@@ -209,7 +209,7 @@ export const zhCN = {
       title: "运行环境",
       description: "Treefold 当前的版本、路径与平台。",
       appVersion: "应用版本",
-      copy: "复制运行环境",
+      copy: "复制环境信息",
       copied: "已复制运行环境",
       copyFailed: "无法复制运行环境",
     },

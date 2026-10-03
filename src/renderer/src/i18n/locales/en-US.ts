@@ -207,7 +207,7 @@ export const enUS = {
       title: "Runtime",
       description: "Current Treefold version, paths, and platform.",
       appVersion: "App version",
-      copy: "Copy runtime information",
+      copy: "Copy environment information",
       copied: "Runtime information copied",
       copyFailed: "Could not copy runtime information",
     },
