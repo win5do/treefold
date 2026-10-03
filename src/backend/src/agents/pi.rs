@@ -1,3 +1,5 @@
+mod metadata;
+mod runtime;
 use super::{
     AgentAdapter, LaunchContext,
     validation::{
@@ -74,6 +76,27 @@ const RULES: Rules = Rules {
     attached_values: false,
 };
 impl AgentAdapter for Pi {
+    fn prepare(
+        &self,
+        context: &LaunchContext<'_>,
+    ) -> Result<std::collections::BTreeMap<String, String>> {
+        runtime::prepare(context)?;
+        Ok(Default::default())
+    }
+
+    fn validate_resume(&self, context: &super::MetadataContext<'_>) -> Result<()> {
+        anyhow::ensure!(
+            context.native_id.is_some()
+                && metadata::read(context).id.as_deref() == context.native_id,
+            "Pi session history is missing or its identity changed. The existing Session has been preserved."
+        );
+        Ok(())
+    }
+
+    fn metadata(&self, context: &super::MetadataContext<'_>) -> super::AgentMetadata {
+        metadata::read(context)
+    }
+
     fn name(&self) -> &'static str {
         "Pi"
     }
@@ -85,10 +108,20 @@ impl AgentAdapter for Pi {
     }
     fn build_args(&self, context: &LaunchContext<'_>, user_args: &[String]) -> Result<Vec<String>> {
         let mut args = user_args.to_vec();
+        if let Some(directory) = context.runtime_dir {
+            args.extend([
+                "--session".into(),
+                directory
+                    .join("session.jsonl")
+                    .to_string_lossy()
+                    .into_owned(),
+            ]);
+        }
+
         if let Some(instructions) = context.instructions {
             args.extend(["--append-system-prompt".into(), instructions.into()]);
         }
-        if !context.initial_prompt.is_empty() {
+        if context.resume_id.is_none() && !context.initial_prompt.is_empty() {
             args.extend(["--".into(), context.initial_prompt.into()]);
         }
         Ok(args)

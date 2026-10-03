@@ -1,3 +1,4 @@
+mod metadata;
 use super::{
     AgentAdapter, LaunchContext,
     validation::{
@@ -80,6 +81,10 @@ const RULES: Rules = Rules {
     attached_values: true,
 };
 impl AgentAdapter for ClaudeCode {
+    fn metadata(&self, context: &super::MetadataContext<'_>) -> super::AgentMetadata {
+        metadata::read(context)
+    }
+
     fn name(&self) -> &'static str {
         "Claude Code"
     }
@@ -91,13 +96,20 @@ impl AgentAdapter for ClaudeCode {
     }
     fn build_args(&self, context: &LaunchContext<'_>, user_args: &[String]) -> Result<Vec<String>> {
         let mut args = user_args.to_vec();
+        if let Some(id) = context.resume_id {
+            args.extend(["--resume".into(), id.into()]);
+        } else {
+            let id = uuid::Uuid::parse_str(context.session_id)?;
+            args.extend(["--session-id".into(), id.hyphenated().to_string()]);
+        }
+
         for directory in context.additional_directories {
             args.extend(["--add-dir".into(), directory.clone()]);
         }
         if let Some(instructions) = context.instructions {
             args.extend(["--append-system-prompt".into(), instructions.into()]);
         }
-        if !context.initial_prompt.is_empty() {
+        if context.resume_id.is_none() && !context.initial_prompt.is_empty() {
             args.extend(["--".into(), context.initial_prompt.into()]);
         }
         Ok(args)

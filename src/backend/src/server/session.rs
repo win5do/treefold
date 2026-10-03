@@ -196,9 +196,10 @@ pub(super) async fn create_session_for_workspace(
             "cannot create a Session in an archived Project".into(),
         ));
     }
-    let kind = trimmed(input.kind)
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| "codex".into());
+    let kind = match trimmed(input.kind).filter(|v| !v.is_empty()) {
+        Some(kind) => kind,
+        None => selected_agent(state, &AgentSelection::default())?,
+    };
     if kind != "shell" && crate::agents::name(&kind).is_none() {
         return Err(AppError::BadRequest(
             "kind must be shell, codex, claude_code, opencode or pi".into(),
@@ -301,11 +302,9 @@ pub(super) async fn create_session_for_workspace(
     let mut name = trimmed(input.name)
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| {
-            if kind == "codex" || kind == "shell" {
-                kind.clone()
-            } else {
-                crate::agents::name(&kind).unwrap().into()
-            }
+            crate::agents::default_session_name(&kind)
+                .unwrap_or(&kind)
+                .into()
         });
     if kind == "shell"
         && name == "shell"
@@ -321,7 +320,7 @@ pub(super) async fn create_session_for_workspace(
         original_cwd: cwd.clone(),
         cwd: cwd.clone(),
         initial_prompt: trimmed(input.initial_prompt).unwrap_or_default(),
-        codex_session_id: None,
+        agent_session_id: None,
         visibility: "visible".into(),
         hidden_at: None,
         evicted_at: None,
@@ -413,7 +412,7 @@ pub(super) async fn stop_session(
         .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    capture_codex_session_id(&state.store, &mut session).await?;
+    capture_agent_session_id(&state, &mut session).await?;
     state.store.set_session_status(&id, "stopped").await?;
     state.runtime.publish_session(id);
     Ok(StatusCode::NO_CONTENT)
@@ -434,14 +433,15 @@ pub(super) async fn restart_session(
             AppError::BadRequest(format!("{} CLI is not installed or executable", agent_name))
         })?;
     }
-    capture_codex_session_id(&state.store, &mut session).await?;
-    if session.kind == "codex" && session.codex_session_id.is_none() {
+    capture_agent_session_id(&state, &mut session).await?;
+    if crate::agents::name(&session.kind).is_some() && session.agent_session_id.is_none() {
         return Err(AppError::api(
             StatusCode::CONFLICT,
-            "CODEX_SESSION_ID_PENDING",
-            "Codex has not saved an identifiable conversation yet. Retry after its session file is available. The existing Session has been preserved; create a new Session if Codex never started.",
+            crate::agents::identity_pending_code(&session.kind),
+            "The Agent has not saved an identifiable conversation yet. Retry after its session data is available. The existing Session has been preserved; create a new Session if the Agent never started.",
         ));
     }
+    validate_agent_resume(&state, &session).await?;
     state
         .terminals
         .prepare_restart(&session.amux_workspace_name, &session.amux_process_name)
@@ -451,7 +451,7 @@ pub(super) async fn restart_session(
     if workspace.kind == "base" {
         workspace = sync_project_session_workspace(&state, &workspace.project_id).await?;
     }
-    if session.kind == "codex" {
+    if crate::agents::name(&session.kind).is_some() {
         session.additional_directories = state
             .store
             .workspace_repositories(&workspace.id)
@@ -509,7 +509,7 @@ pub(super) async fn close_session(
         state.runtime.publish_session(id);
         return Ok(Json(session));
     }
-    capture_codex_session_id(&state.store, &mut session).await?;
+    capture_agent_session_id(&state, &mut session).await?;
     let _ = state
         .terminals
         .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
@@ -851,7 +851,7 @@ pub(super) async fn reconcile_process(
         return Ok(());
     }
 
-    // A root marker identifies Treefold's own Shell/Codex process. It is not a
+    // A root marker identifies Treefold's own Shell/Agent process. It is not a
     // separately discoverable Command Session.
     if process.session_root {
         if let Some(session_id) = process.session_id.as_deref()
@@ -900,7 +900,7 @@ pub(super) async fn reconcile_process(
         cwd: process.cwd.clone(),
         original_cwd: process.cwd.clone(),
         initial_prompt: String::new(),
-        codex_session_id: None,
+        agent_session_id: None,
         visibility: "visible".into(),
         hidden_at: None,
         evicted_at: None,

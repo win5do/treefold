@@ -1,3 +1,4 @@
+import { AgentSelect, useAgentChoice } from "@/features/agents/AgentSelect";
 import { isAgentKind } from "@/features/agents/model";
 import { ReopenForkButton } from "./ReopenForkButton";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
@@ -90,13 +91,14 @@ export function WorkspaceHome({
   onTodoForkCreated: (fork: Workspace, session?: Session) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const todoAgent = useAgentChoice();
   const [creatingSession, setCreatingSession] = useState(false);
   useEffect(() => setCreatingSession(false), [detail.id]);
-  const [filter, setFilter] = useState<"all" | "codex" | "shell" | "command">(
+  const [filter, setFilter] = useState<"all" | "agent" | "shell" | "command">(
     "all",
   );
   const sessions = detail.sessions.filter(
-    (session) => filter === "all" || (filter === "codex" ? isAgentKind(session.kind) : session.kind === filter),
+    (session) => filter === "all" || (filter === "agent" ? isAgentKind(session.kind) : session.kind === filter),
   );
   const [todoDialog, setTodoDialog] = useState<{
     id?: string;
@@ -185,7 +187,7 @@ export function WorkspaceHome({
             {(
               [
                 ["all", t("workspaceUi.all")],
-                ["codex", "Agent"],
+                ["agent", "Agent"],
                 ["shell", "Shell"],
                 ["command", t("workspaceUi.command")],
               ] as const
@@ -243,7 +245,7 @@ export function WorkspaceHome({
                       {session.name}
                     </p>
                     <p className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">
-                      {session.codex_session_id || session.id}
+                      {session.agent_session_id || session.id}
                     </p>
                   </div>
                 </div>
@@ -308,6 +310,7 @@ export function WorkspaceHome({
           <section data-testid="workspace-todos-section" className="mt-8">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold">{t("workspaceUi.todos")}</h2>
+              {detail.status === "active" && <AgentSelect choice={todoAgent} disabled={todoBusy} />}
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">
                   {detail.todos.length}
@@ -453,11 +456,11 @@ export function WorkspaceHome({
                               size="icon-sm"
                               variant="ghost"
                               aria-label={t("workspaceUi.delegateTodoToFork")}
-                              disabled={todoBusy || !canDelegate}
+                              disabled={todoBusy || !canDelegate || !todoAgent.kind}
                               onClick={() =>
                                 void runTodo(async () => {
                                   const result = await todosApi.createFork(
-                                    todo.id,
+                                    todo.id, todoAgent.kind,
                                   );
                                   onTodoForkCreated(result.fork, result.session);
                                 })

@@ -209,8 +209,8 @@ pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> anyhow
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 },
                 _ = identity_poll.tick() => {
-                    if let Err(error) = capture_pending_codex_sessions(&bridge_state).await {
-                        log::error!("failed to capture Codex session identity: {error}");
+                    if let Err(error) = capture_pending_agent_sessions(&bridge_state).await {
+                        log::error!("failed to capture Agent session metadata: {error}");
                     }
                 }
                 _ = fallback.tick() => {
@@ -480,8 +480,13 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/parent-operations/{id}", get(get_parent_operation))
         .route(
+            "/api/parent-operations/{id}/resolve-with-agent",
+            post(resolve_parent_operation_with_agent),
+        )
+        // Retain the existing HTTP route for older clients.
+        .route(
             "/api/parent-operations/{id}/resolve-with-codex",
-            post(resolve_parent_operation_with_codex),
+            post(resolve_parent_operation_with_agent),
         )
         .route(
             "/api/parent-operations/{id}/abort",
@@ -601,7 +606,7 @@ async fn list_background_processes(
 }
 
 mod agent;
-mod codex_identity;
+mod agent_metadata;
 mod delivery;
 mod finish_batch;
 mod finish_recovery;
@@ -627,7 +632,7 @@ mod worktree_status;
 mod worktree_workspace;
 
 use agent::*;
-use codex_identity::*;
+use agent_metadata::*;
 use delivery::*;
 use fork::*;
 use git_routes::*;

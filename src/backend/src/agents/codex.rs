@@ -1,3 +1,5 @@
+mod identity;
+mod metadata;
 use super::{
     AgentAdapter, LaunchContext,
     validation::{
@@ -54,6 +56,60 @@ const RULES: Rules = Rules {
 };
 
 impl AgentAdapter for Codex {
+    fn default_session_name(&self) -> &'static str {
+        "codex"
+    }
+    fn metadata(&self, context: &super::MetadataContext<'_>) -> super::AgentMetadata {
+        self.metadata_batch(std::slice::from_ref(context)).remove(0)
+    }
+    fn metadata_batch(&self, contexts: &[super::MetadataContext<'_>]) -> Vec<super::AgentMetadata> {
+        let titles = if contexts.iter().any(|context| context.read_title) {
+            metadata::load_titles()
+        } else {
+            Default::default()
+        };
+        let mut ids: Vec<_> = contexts
+            .iter()
+            .map(|context| {
+                context
+                    .native_id
+                    .map(str::to_owned)
+                    .or_else(|| metadata::launch_identity(context.argv, context.session_id))
+            })
+            .collect();
+        let pending: Vec<_> = contexts
+            .iter()
+            .zip(&ids)
+            .filter(|(_, id)| id.is_none())
+            .map(|(context, _)| (context.session_id.into(), context.original_cwd.into()))
+            .collect();
+        if !pending.is_empty() {
+            if let Some(home) = metadata::home() {
+                let mut found = identity::scan(&home, &pending);
+                for (context, id) in contexts.iter().zip(&mut ids) {
+                    if id.is_none() {
+                        *id = found.remove(context.session_id);
+                    }
+                }
+            }
+        }
+        contexts
+            .iter()
+            .zip(ids)
+            .map(|(context, id)| {
+                let title = if context.read_title {
+                    id.as_ref().and_then(|id| titles.get(id)).cloned()
+                } else {
+                    None
+                };
+                super::AgentMetadata { id, title }
+            })
+            .collect()
+    }
+    fn identity_pending_code(&self) -> &'static str {
+        "CODEX_SESSION_ID_PENDING"
+    }
+
     fn name(&self) -> &'static str {
         "Codex"
     }

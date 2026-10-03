@@ -19,7 +19,9 @@ pub(super) struct TodoForkResult {
 pub(super) async fn create_todo_fork(
     State(state): State<AppState>,
     AxumPath(todo_id): AxumPath<String>,
+    Query(selection): Query<AgentSelection>,
 ) -> Result<(StatusCode, Json<TodoForkResult>)> {
+    let agent_kind = selected_agent(&state, &selection)?;
     let todo = state.store.todo(&todo_id).await?;
     let owner = state.store.workspace(&todo.workspace_id).await?;
     ensure_active_workspace(&owner)?;
@@ -102,7 +104,7 @@ pub(super) async fn create_todo_fork(
         fork.clone(),
         CreateSession {
             name: Some("Todo Agent".into()),
-            kind: Some("codex".into()),
+            kind: Some(agent_kind),
             project_directory_id: None,
             initial_prompt: Some(todo.content),
         },

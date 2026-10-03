@@ -630,7 +630,7 @@ function Workspace() {
   async function createAgent(
     stream: WorkspaceDetail | Workspace,
     directory?: Directory,
-    kind: AgentKind = "codex",
+    kind?: AgentKind,
   ) {
     setSessionMenu(null);
     setBusy(true);
@@ -694,7 +694,7 @@ function Workspace() {
   async function createProjectAgent(
     project: ProjectDetail,
     directory?: Directory,
-    kind: AgentKind = "codex",
+    kind?: AgentKind,
   ) {
     setSessionMenu(null);
     setBusy(true);

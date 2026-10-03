@@ -111,7 +111,7 @@ test("sidebar Agent creation keeps its Project and directory while selecting a C
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "sidebar-agent-choice", windowSize: "1000,520" });
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
     await page.getByTestId("sidebar-project-action").click();
-    await page.getByTestId("session-kind-codex").hover();
+    await page.getByTestId("session-kind-agent").hover();
     await page.getByTestId(`session-directory-${FIXTURE_IDS.primaryDirectory}`).click();
     const dialog = page.getByRole("dialog", { name: "New Session", exact: true });
     await expect(dialog.getByRole("radio", { name: "Pi", exact: true })).toBeChecked();

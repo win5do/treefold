@@ -103,7 +103,7 @@ export type Session = {
   cwd: string;
   original_cwd: string;
   initial_prompt: string;
-  codex_session_id?: string;
+  agent_session_id?: string;
   visibility: "visible" | "hidden";
   hidden_at?: string;
   evicted_at?: string;

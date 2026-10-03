@@ -26,15 +26,15 @@ export function NewSessionDialog({
 }: {
   name: string;
   directories: Directory[];
-  initialType?: "shell" | "codex";
+  initialType?: "shell" | "agent";
   agentOnly?: boolean;
   onClose: () => void;
   onCreate: (kind: NewSessionKind, directory: Directory) => void;
 }) {
   const { t } = useTranslation();
-  const [kind, setKind] = useState<"shell" | "codex">(initialType);
+  const [kind, setKind] = useState<"shell" | "agent">(initialType);
   const typeRefs = useRef<
-    Partial<Record<"shell" | "codex", HTMLButtonElement | null>>
+    Partial<Record<"shell" | "agent", HTMLButtonElement | null>>
   >({});
   const catalog = useAgentCatalog();
   const [chosenAgent, setChosenAgent] = useState<AgentKind | null>(null);
@@ -70,7 +70,7 @@ export function NewSessionDialog({
       event.stopPropagation();
       if (!agentOnly) {
         focusDirectoryAfterSwitch.current = true;
-        setKind(kind === "shell" ? "codex" : "shell");
+        setKind(kind === "shell" ? "agent" : "shell");
       }
       return;
     }
@@ -91,7 +91,7 @@ export function NewSessionDialog({
     }
     if (event.key === "ArrowRight") {
       if (group === "type") focusDirectory();
-      else if (group === "directory" && kind === "codex" && agent) agentRefs.current.get(agent.kind)?.focus();
+      else if (group === "directory" && kind === "agent" && agent) agentRefs.current.get(agent.kind)?.focus();
       return;
     }
     const step = event.key === "ArrowDown" ? 1 : -1;
@@ -117,7 +117,7 @@ export function NewSessionDialog({
           className="shrink-0"
           value={[kind]}
           onValueChange={(values) => {
-            if (values[0]) setKind(values[0] as "shell" | "codex");
+            if (values[0]) setKind(values[0] as "shell" | "agent");
           }}
           aria-label={t("terminalUi.sessionType")}
         >
@@ -130,9 +130,9 @@ export function NewSessionDialog({
             Shell
           </ToggleGroupItem>
           <ToggleGroupItem
-            ref={(node) => { typeRefs.current.codex = node; }}
-            value="codex"
-            onFocus={() => setKind("codex")}
+            ref={(node) => { typeRefs.current.agent = node; }}
+            value="agent"
+            onFocus={() => setKind("agent")}
           >
             Agent
           </ToggleGroupItem>
@@ -148,7 +148,7 @@ export function NewSessionDialog({
             >
               {directories.map((directory) => {
                 const disabled =
-                  kind === "codex" &&
+                  kind === "agent" &&
                   (!directory.is_git || directory.git_status !== "ready");
                 return (
                   <Button
@@ -178,7 +178,7 @@ export function NewSessionDialog({
               {directories.length === 0 && <p role="status">{t("terminalUi.noDirectories")}</p>}
             </div>
           </FieldSet>
-          {kind === "codex" && <FieldSet>
+          {kind === "agent" && <FieldSet>
             <FieldLegend>{t("agentsUi.chooseAgent")}</FieldLegend>
             <RadioGroup data-session-choice="agent" aria-label={t("agentsUi.chooseAgent")} value={agent?.kind ?? null} onValueChange={value => setChosenAgent(value as AgentKind)}>
               {availableAgents.map(item => <Field key={item.kind} orientation="horizontal" data-disabled={!item.available || !!catalog.error}>
@@ -190,7 +190,7 @@ export function NewSessionDialog({
           </FieldSet>}
         </div>
         <p className="min-h-10 shrink-0 text-xs text-muted-foreground">{t(agentOnly ? "terminalUi.agentKeyboardHint" : "terminalUi.sessionKeyboardHint")}</p>
-        <Button className="shrink-0" disabled={!active || (kind === "codex" && !agent)} onClick={create}>{t("terminalUi.createSession")}</Button>
+        <Button className="shrink-0" disabled={!active || (kind === "agent" && !agent)} onClick={create}>{t("terminalUi.createSession")}</Button>
       </DialogContent>
     </Dialog>
   );

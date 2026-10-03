@@ -1,6 +1,8 @@
 use super::*;
 fn context() -> LaunchContext<'static> {
     LaunchContext {
+        session_id: "01a08fff908b76b28c1c3826e810b018",
+        runtime_dir: None,
         cwd: "/tmp/primary worktree",
         additional_directories: &[],
         initial_prompt: "Implement the feature",
@@ -13,6 +15,8 @@ fn context() -> LaunchContext<'static> {
 fn injects_developer_instructions_without_merging_them_into_the_user_prompt() {
     let dirs = vec!["/tmp/attached repo".into()];
     let context = LaunchContext {
+        session_id: "01a08fff908b76b28c1c3826e810b018",
+        runtime_dir: None,
         additional_directories: &dirs,
         ..context()
     };
@@ -20,6 +24,8 @@ fn injects_developer_instructions_without_merging_them_into_the_user_prompt() {
     let arguments = Codex
         .build_args(
             &LaunchContext {
+                session_id: "01a08fff908b76b28c1c3826e810b018",
+                runtime_dir: None,
                 instructions: Some(instructions),
                 ..context
             },
@@ -56,6 +62,8 @@ fn refreshes_developer_instructions_when_resuming() {
     let arguments = Codex
         .build_args(
             &LaunchContext {
+                session_id: "01a08fff908b76b28c1c3826e810b018",
+                runtime_dir: None,
                 instructions: Some("current Treefold snapshot"),
                 ..context
             },

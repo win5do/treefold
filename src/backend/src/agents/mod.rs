@@ -3,6 +3,8 @@
 mod claude_code;
 mod codex;
 mod command;
+mod metadata;
+pub use metadata::{AgentMetadata, MetadataContext, runtime_dir};
 mod opencode;
 mod pi;
 #[cfg(test)]
@@ -16,6 +18,8 @@ use std::path::{Path, PathBuf};
 
 /// Launch inputs, independent of database records and process ownership.
 pub struct LaunchContext<'a> {
+    pub session_id: &'a str,
+    pub runtime_dir: Option<&'a Path>,
     pub cwd: &'a str,
     pub additional_directories: &'a [String],
     pub initial_prompt: &'a str,
@@ -25,6 +29,29 @@ pub struct LaunchContext<'a> {
 }
 
 trait AgentAdapter: Sync {
+    fn metadata_batch(&self, contexts: &[MetadataContext<'_>]) -> Vec<AgentMetadata> {
+        contexts
+            .iter()
+            .map(|context| self.metadata(context))
+            .collect()
+    }
+    fn metadata(&self, context: &MetadataContext<'_>) -> AgentMetadata;
+    fn prepare(
+        &self,
+        _context: &LaunchContext<'_>,
+    ) -> Result<std::collections::BTreeMap<String, String>> {
+        Ok(Default::default())
+    }
+    fn validate_resume(&self, _context: &MetadataContext<'_>) -> Result<()> {
+        Ok(())
+    }
+    fn identity_pending_code(&self) -> &'static str {
+        "AGENT_SESSION_ID_PENDING"
+    }
+
+    fn default_session_name(&self) -> &'static str {
+        self.name()
+    }
     fn name(&self) -> &'static str;
     fn executable(&self) -> &'static str;
     fn validate_user_args(&self, args: &[String]) -> Result<()>;
@@ -165,4 +192,54 @@ fn resolve_executable(value: &str) -> Option<PathBuf> {
                     .is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
         })
         .and_then(|path| std::path::absolute(path).ok())
+}
+
+pub fn read_metadata(kind: &str, context: &MetadataContext<'_>) -> AgentMetadata {
+    adapter(kind)
+        .map(|agent| agent.metadata(context))
+        .unwrap_or_default()
+}
+pub fn identity_pending_code(kind: &str) -> &'static str {
+    adapter(kind)
+        .map(|agent| agent.identity_pending_code())
+        .unwrap_or("AGENT_SESSION_ID_PENDING")
+}
+pub fn prepare_environment(
+    kind: &str,
+    context: &LaunchContext<'_>,
+) -> Result<std::collections::BTreeMap<String, String>> {
+    adapter(kind).context("Unsupported Agent")?.prepare(context)
+}
+pub fn select_available(settings: &AgentsSettings, requested: Option<&str>) -> Result<String> {
+    if let Some(kind) = requested {
+        let config = settings.get(kind).context("Unsupported Agent")?;
+        anyhow::ensure!(
+            detect_installation(kind, config).is_some(),
+            "{} CLI is not installed or executable",
+            name(kind).unwrap()
+        );
+        return Ok(kind.into());
+    }
+    settings
+        .order
+        .iter()
+        .find(|kind| detect_installation(kind, settings.get(kind).unwrap()).is_some())
+        .cloned()
+        .context("No installed Agent is available")
+}
+
+pub fn read_metadata_batch(kind: &str, contexts: &[MetadataContext<'_>]) -> Vec<AgentMetadata> {
+    adapter(kind)
+        .map(|agent| agent.metadata_batch(contexts))
+        .unwrap_or_default()
+}
+
+pub fn default_session_name(kind: &str) -> Option<&'static str> {
+    adapter(kind).map(|agent| agent.default_session_name())
+}
+
+pub fn validate_resume(kind: &str, context: &MetadataContext<'_>) -> Result<()> {
+    adapter(kind)
+        .context("Unsupported Agent")?
+        .validate_resume(context)
 }

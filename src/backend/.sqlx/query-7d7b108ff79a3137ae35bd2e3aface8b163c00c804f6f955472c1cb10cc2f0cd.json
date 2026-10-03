@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id, codex_session_id AS 'codex_session_id!' FROM sessions WHERE kind='codex' AND name='codex' AND codex_session_id IS NOT NULL AND codex_title_imported=0",
+  "query": "SELECT id, agent_session_id AS 'agent_session_id!' FROM sessions WHERE agent_session_id IS NOT NULL AND agent_title_imported=0",
   "describe": {
     "columns": [
       {
@@ -15,13 +15,13 @@
         }
       },
       {
-        "name": "codex_session_id!",
+        "name": "agent_session_id!",
         "ordinal": 1,
         "type_info": "Text",
         "origin": {
           "Table": {
             "table": "sessions",
-            "name": "codex_session_id"
+            "name": "agent_session_id"
           }
         }
       }
@@ -34,5 +34,5 @@
       true
     ]
   },
-  "hash": "4c2217ce372d07736dfb2e23ca9b976094b3ed816991ae02a0a22e1bad4c58d6"
+  "hash": "7d7b108ff79a3137ae35bd2e3aface8b163c00c804f6f955472c1cb10cc2f0cd"
 }

@@ -160,6 +160,7 @@ export const zhCN = {
     emptyHint: "点击右上角「新建 Project」开始。",
   },
   agentsUi: {
+    noneAvailable: "暂无可用 Agent",
     refresh: "重新检测 Agent",
     createFailed: "无法创建 Agent Session",
     restart: "重新启动",

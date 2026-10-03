@@ -1,5 +1,4 @@
 mod agents;
-mod codex_metadata;
 mod error;
 mod git;
 mod ids;

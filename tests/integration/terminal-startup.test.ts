@@ -85,7 +85,7 @@ setTimeout(() => finish(false), 100);
     };
     const project = await post("/api/projects", { name: "Terminal startup", path: repository });
     const session = await post(`/api/projects/${project.id}/sessions`, { kind: "codex" });
-    expect(session.argv[0]).toBe("codex");
+    expect(session.argv[0]).toBe(path.join(bin, "codex"));
     const exists = (file: string) => access(file).then(() => true, () => false);
     // Deliberately exceed Codex's probe deadline before attaching any terminal.
     await new Promise(resolve => setTimeout(resolve, 250));
@@ -129,10 +129,10 @@ setTimeout(() => finish(false), 100);
     expect(JSON.parse(await readFile(started, "utf8"))).toEqual({ pid, rows: 33, cols: 99, amuxIoMode: "tty" });
     expect(JSON.parse(await readFile(result, "utf8")).ok).toBe(true);
     const currentSession = async () => (await fetch(`${api}/api/sessions/${session.id}`)).json();
-    await expect.poll(async () => (await currentSession()).codex_session_id, { timeout: 10_000 }).toBe("managed-codex");
+    await expect.poll(async () => (await currentSession()).agent_session_id, { timeout: 10_000 }).toBe("managed-codex");
     expect((await currentSession()).status).toBe("running");
     await post(`/api/sessions/${session.id}/stop`);
-    expect((await currentSession()).codex_session_id).toBe("managed-codex");
+    expect((await currentSession()).agent_session_id).toBe("managed-codex");
 
     // Stopping a still-waiting Session must not launch the target afterward.
     await rm(started);
@@ -153,7 +153,7 @@ setTimeout(() => finish(false), 100);
     await rememberRuntime();
     await post("/api/amux/stop");
     const recovered = await (await fetch(`${api}/api/sessions/${cancelled.id}`)).json();
-    expect(recovered.codex_session_id).toBe(shutdownId);
+    expect(recovered.agent_session_id).toBe(shutdownId);
     expect(recovered.status).toBe("stopped");
 
     // The daemon is offline, but its persisted process still reserves this name.
@@ -167,7 +167,7 @@ setTimeout(() => finish(false), 100);
     await expect.poll(async () => (await (await fetch(`${api}/api/amux`)).json()).running, { timeout: 15_000 }).toBe(false);
     const resumed = await post(`/api/sessions/${session.id}/restart`);
     expect(resumed.status).toBe("running");
-    expect(resumed.codex_session_id).toBe("managed-codex");
+    expect(resumed.agent_session_id).toBe("managed-codex");
     expect(resumed.argv).toContain("resume");
     expect(resumed.argv).toContain("managed-codex");
     expect(await exists(started)).toBe(false);

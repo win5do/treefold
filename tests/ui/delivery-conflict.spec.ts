@@ -27,7 +27,7 @@ test("AI conflict resolution opens its Session and preserves delivery for manual
     await expect(dialog).not.toBeVisible();
     await openDelivery();
     await expect(dialog.getByRole("button", { name: "Open Session", exact: true })).toBeVisible();
-    expect(harness.parentOperationRequests.filter(request => request.endsWith(":resolve-with-codex"))).toHaveLength(1);
+    expect(harness.parentOperationRequests.filter(request => request.endsWith(":resolve-with-agent"))).toHaveLength(1);
     harness.assertNoUnexpectedRequests();
   } finally {
     try { await closeUiSession(page); } finally { await harness.close(); }

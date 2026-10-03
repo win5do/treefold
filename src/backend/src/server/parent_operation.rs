@@ -103,21 +103,23 @@ pub(super) async fn get_parent_operation(
     .await
 }
 
-pub(super) async fn resolve_parent_operation_with_codex(
+pub(super) async fn resolve_parent_operation_with_agent(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
+    Query(selection): Query<AgentSelection>,
 ) -> Result<(StatusCode, Json<Session>)> {
     let operation = state.store.parent_operation(&id).await?;
     let operation = reconcile_parent_operation(&state, &operation).await?;
     if !matches!(operation.status.as_str(), "conflicted" | "resolving") {
         return Err(AppError::BadRequest(
-            "only a conflicted parent operation can be resolved with Codex".into(),
+            "only a conflicted parent operation can be resolved with an Agent".into(),
         ));
     }
     if let Some(session_id) = operation.resolver_session_id.as_deref() {
         return Ok((StatusCode::OK, Json(state.store.session(session_id).await?)));
     }
 
+    let agent_kind = selected_agent(&state, &selection)?;
     let source_workspace = state.store.workspace(&operation.workspace_id).await?;
     let review_handoff = if operation.origin == "finish" {
         format!(
@@ -195,7 +197,7 @@ pub(super) async fn resolve_parent_operation_with_codex(
                 "Resolve {} {}",
                 operation.direction, operation.strategy
             )),
-            kind: Some("codex".into()),
+            kind: Some(agent_kind),
             project_directory_id: Some(selected.project_directory_id.clone()),
             initial_prompt: Some(prompt),
         },

@@ -1,81 +1,12 @@
-//! Recover identities from scoped launch logs, with exact runtime-context fallback.
-use super::*;
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader, Read},
+    path::Path,
 };
-
-pub(super) async fn capture_pending_codex_sessions(state: &AppState) -> Result<()> {
-    let sessions = state.store.uncaptured_codex_sessions().await?;
-    for (session_id, codex_id) in discover(sessions).await? {
-        state
-            .store
-            .set_codex_session_id(&session_id, &codex_id)
-            .await?;
-        state.runtime.publish_session_list(Some(session_id));
-    }
-    let pending = state.store.pending_codex_titles().await?;
-    if !pending.is_empty() {
-        let titles = tokio::task::spawn_blocking(crate::codex_metadata::load_titles)
-            .await
-            .map_err(|error| anyhow::anyhow!(error))?;
-        for (session_id, codex_id) in pending {
-            if let Some(title) = titles.get(&codex_id) {
-                if state
-                    .store
-                    .import_codex_title(&session_id, &codex_id, title)
-                    .await?
-                {
-                    state.runtime.publish_session_list(Some(session_id));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-pub(super) async fn capture_codex_session_id(store: &Store, session: &mut Session) -> Result<()> {
-    if session.kind != "codex" || session.codex_session_id.is_some() {
-        return Ok(());
-    }
-    if let Some(id) = discover(vec![session.clone()]).await?.remove(&session.id) {
-        store.set_codex_session_id(&session.id, &id).await?;
-        // A concurrent capture or repair may already have supplied the identity.
-        session.codex_session_id = store.session(&session.id).await?.codex_session_id;
-    }
-    Ok(())
-}
-
-async fn discover(sessions: Vec<Session>) -> Result<HashMap<String, String>> {
-    if sessions.is_empty() {
-        return Ok(HashMap::new());
-    }
-    let home = crate::codex_metadata::home();
-    tokio::task::spawn_blocking(move || {
-        let mut found = HashMap::new();
-        let identities: Vec<_> = sessions
-            .into_iter()
-            .filter_map(|s| {
-                if let Some(id) = crate::codex_metadata::launch_identity(&s.argv, &s.id) {
-                    found.insert(s.id, id);
-                    None
-                } else {
-                    Some((s.id, s.original_cwd))
-                }
-            })
-            .collect();
-        if let Some(home) = home {
-            if !identities.is_empty() {
-                found.extend(scan(&home, &identities));
-            }
-        }
-        found
-    })
-    .await
-    .map_err(|error| anyhow::anyhow!(error).into())
-}
-
-fn scan(home: &Path, sessions: &[(String, String)]) -> HashMap<String, String> {
+pub(super) fn scan(home: &Path, sessions: &[(String, String)]) -> HashMap<String, String> {
     let mut directories = vec![home.join("sessions")];
     let mut found: HashMap<String, Option<String>> = HashMap::new();
     while let Some(directory) = directories.pop() {

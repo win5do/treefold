@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { Session, Todo, Workspace } from "@/domain/types";
+import type { AgentKind, Session, Todo, Workspace } from "@/domain/types";
 
 export type TodoForkResult = {
   fork: Workspace;
@@ -13,5 +13,5 @@ export const todosApi = {
   update: (id: string, json: { content?: string; status?: "pending" | "done" }) =>
     request<Todo>(`/api/todos/${id}`, { method: "PATCH", json }),
   delete: (id: string) => request(`/api/todos/${id}`, { method: "DELETE" }),
-  createFork: (id: string) => request<TodoForkResult>(`/api/todos/${id}/fork`, { method: "POST" }),
+  createFork: (id: string, agentKind?: AgentKind) => request<TodoForkResult>(`/api/todos/${id}/fork${agentKind ? `?agent_kind=${agentKind}` : ""}`, { method: "POST" }),
 };

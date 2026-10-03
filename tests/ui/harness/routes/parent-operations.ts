@@ -115,7 +115,7 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }: Rou
       }
 
       const actionMatch = pathname.match(
-        /^\/api\/parent-operations\/([^/]+)\/(resolve-with-codex|abort)$/,
+        /^\/api\/parent-operations\/([^/]+)\/(resolve-with-agent|abort)$/,
       );
       if (request.method !== "POST" || !actionMatch) return false;
 
@@ -128,17 +128,17 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }: Rou
       }
       const action = actionMatch[2];
       requests.push(`POST ${operation.id}:${action}`);
-      if (action === "resolve-with-codex") {
+      if (action === "resolve-with-agent") {
         const session: Session = {
           id: "parent-resolver-session-ui-fixture",
           workspace_id:
             operation.target_workspace_id ?? operation.workspace_id,
           name: "Resolve parent operation",
-          kind: "codex",
+          kind: (new URL(request.url!, "http://fixture").searchParams.get("agent_kind") ?? "codex") as Session["kind"],
           cwd: operation.target_path,
           original_cwd: operation.target_path,
           initial_prompt: "Resolve fixed parent operation",
-          codex_session_id: "codex-parent-resolver-ui-fixture",
+          agent_session_id: "codex-parent-resolver-ui-fixture",
           visibility: "visible",
           amux_workspace_name: "treefold-parent-resolver",
           amux_process_name: "parent-resolver-session-ui-fixture",
@@ -149,6 +149,7 @@ export function createParentOperationRoutes({ fixture, readJson, sendJson }: Rou
           created_at: operationTimestamp,
           updated_at: operationTimestamp,
         };
+        requests.push(`AGENT ${session.kind}`);
         fixture.workspaceDetails[FIXTURE_IDS.workspace].sessions.push(session);
         operation.status = "resolving";
         operation.phase = "resolving";

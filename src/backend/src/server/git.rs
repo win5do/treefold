@@ -1079,7 +1079,7 @@ pub(super) async fn archive_workspace(
         state.store.update_todo(&todo.id, "pending").await?;
     }
     for mut session in state.store.sessions(&id).await? {
-        capture_codex_session_id(&state.store, &mut session).await?;
+        capture_agent_session_id(&state, &mut session).await?;
         let _ = state
             .terminals
             .stop_existing(&session.amux_workspace_name, &session.amux_process_name)

@@ -37,7 +37,7 @@ for (const owner of ["project", "workspace"] as const) {
             if (record.id === id) {
               record.visibility = "hidden";
               record.status = "stopped";
-              record.codex_session_id = null;
+              record.agent_session_id = null;
             }
             Object.values(record).forEach(visit);
           }

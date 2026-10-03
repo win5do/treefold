@@ -154,7 +154,7 @@ test("a stopped Codex can copy its full command and resume", async () => {
         if (!value || typeof value !== "object") return;
         const record = value as Record<string, unknown>;
         if (record.id === FIXTURE_IDS.workspaceCodex) {
-          record.codex_session_id = null;
+          record.agent_session_id = null;
           record.argv = command;
           if (record.status === "exited") record.status = "stopped";
         }

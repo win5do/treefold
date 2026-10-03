@@ -1730,7 +1730,7 @@ mod current_workspace_tests {
             cwd: repository.to_string_lossy().into_owned(),
             original_cwd: repository.to_string_lossy().into_owned(),
             initial_prompt: "Keep this context".into(),
-            codex_session_id: Some("codex-session-id".into()),
+            agent_session_id: Some("codex-session-id".into()),
             visibility: "visible".into(),
             hidden_at: None,
             evicted_at: None,
@@ -1748,6 +1748,32 @@ mod current_workspace_tests {
             additional_directories: vec![],
         };
         state.store.create_session(&codex).await.unwrap();
+        // Every Agent gets the same managed context and Close retains its record.
+        for kind in ["claude_code", "opencode", "pi"] {
+            let mut other = codex.clone();
+            other.id = format!("saved-{kind}");
+            other.kind = kind.into();
+            other.agent_session_id = Some(format!("native-{kind}"));
+            other.amux_process_name = other.id.clone();
+            state.store.create_session(&other).await.unwrap();
+            let workspace = state.store.workspace(&other.workspace_id).await.unwrap();
+            let instructions =
+                crate::server::treefold_developer_instructions(&state, &other, &workspace)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            assert!(instructions.contains("<treefold_runtime_context>"));
+            assert!(instructions.contains(&other.id));
+            assert!(instructions.contains("read_only"));
+            let _ = close_session(State(state.clone()), axum::extract::Path(other.id.clone()))
+                .await
+                .unwrap();
+            let saved = state.store.session(&other.id).await.unwrap();
+            assert_eq!(saved.visibility, "hidden");
+            assert_eq!(saved.status, "stopped");
+            assert_eq!(saved.agent_session_id, other.agent_session_id);
+        }
+
         let _ = close_session(State(state.clone()), axum::extract::Path(codex.id.clone()))
             .await
             .expect("hide saved Project Codex");
@@ -1764,14 +1790,14 @@ mod current_workspace_tests {
                 .await
                 .unwrap()
                 .len(),
-            1
+            4
         );
 
         let mut finalized_shell = codex.clone();
         finalized_shell.id = "finalized-shell".into();
         finalized_shell.name = "Finalized Shell".into();
         finalized_shell.kind = "shell".into();
-        finalized_shell.codex_session_id = None;
+        finalized_shell.agent_session_id = None;
         finalized_shell.visibility = "visible".into();
         finalized_shell.amux_process_name = finalized_shell.id.clone();
         state.store.create_session(&finalized_shell).await.unwrap();
@@ -1791,7 +1817,7 @@ mod current_workspace_tests {
         pending.id = "pending-project-codex".into();
         pending.name = "codex".into();
         pending.amux_process_name = pending.id.clone();
-        pending.codex_session_id = None;
+        pending.agent_session_id = None;
         let log_dir = root.join("logs/codex").join(&pending.id);
         std::fs::create_dir_all(&log_dir).unwrap();
         let codex_id = "01a08fff-908b-76b2-8c1c-3826e810b018";
@@ -1809,7 +1835,7 @@ mod current_workspace_tests {
             ),
         ];
         state.store.create_session(&pending).await.unwrap();
-        crate::server::capture_codex_session_id(&state.store, &mut pending)
+        crate::server::capture_agent_session_id(&state, &mut pending)
             .await
             .unwrap();
         assert_eq!(
@@ -1818,14 +1844,14 @@ mod current_workspace_tests {
                 .session(&pending.id)
                 .await
                 .unwrap()
-                .codex_session_id
+                .agent_session_id
                 .as_deref(),
             Some(codex_id)
         );
         assert!(
             state
                 .store
-                .pending_codex_titles()
+                .pending_agent_titles()
                 .await
                 .unwrap()
                 .iter()
@@ -1834,21 +1860,21 @@ mod current_workspace_tests {
         assert!(
             !state
                 .store
-                .import_codex_title(&pending.id, codex_id, " ")
+                .import_agent_title(&pending.id, codex_id, " ")
                 .await
                 .unwrap()
         );
         assert!(
             !state
                 .store
-                .import_codex_title(&pending.id, "wrong-id", "Wrong title")
+                .import_agent_title(&pending.id, "wrong-id", "Wrong title")
                 .await
                 .unwrap()
         );
         assert!(
             state
                 .store
-                .import_codex_title(&pending.id, codex_id, "Generated title")
+                .import_agent_title(&pending.id, codex_id, "Generated title")
                 .await
                 .unwrap()
         );
@@ -1859,7 +1885,7 @@ mod current_workspace_tests {
         assert!(
             !state
                 .store
-                .import_codex_title(&pending.id, codex_id, "Later Codex title")
+                .import_agent_title(&pending.id, codex_id, "Later Codex title")
                 .await
                 .unwrap()
         );
@@ -1871,7 +1897,7 @@ mod current_workspace_tests {
         assert!(
             !state
                 .store
-                .import_codex_title(&pending.id, codex_id, "Later Codex title")
+                .import_agent_title(&pending.id, codex_id, "Later Codex title")
                 .await
                 .unwrap()
         );
@@ -1882,7 +1908,7 @@ mod current_workspace_tests {
         assert!(
             !state
                 .store
-                .pending_codex_titles()
+                .pending_agent_titles()
                 .await
                 .unwrap()
                 .iter()
@@ -1891,7 +1917,7 @@ mod current_workspace_tests {
         assert!(
             !state
                 .store
-                .import_codex_title(&codex.id, "codex-session-id", "Replace custom name")
+                .import_agent_title(&codex.id, "codex-session-id", "Replace custom name")
                 .await
                 .unwrap()
         );
@@ -3584,7 +3610,7 @@ mod current_workspace_tests {
                 cwd: workspace.checkout_path.clone(),
                 original_cwd: workspace.checkout_path.clone(),
                 initial_prompt: String::new(),
-                codex_session_id: None,
+                agent_session_id: None,
                 visibility: "visible".into(),
                 hidden_at: None,
                 evicted_at: None,

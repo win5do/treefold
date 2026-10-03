@@ -755,8 +755,8 @@ pub(super) async fn finish_workspace_steps(
 
     if !delivery_phase_at_least(&operation.phase, "sessions_finalized")? {
         for mut session in state.store.sessions(id).await? {
-            capture_codex_session_id(&state.store, &mut session).await?;
-            if input.keep_session_history && session.kind == "codex" {
+            capture_agent_session_id(&state, &mut session).await?;
+            if input.keep_session_history && crate::agents::name(&session.kind).is_some() {
                 let _ = state
                     .terminals
                     .stop_existing(&session.amux_workspace_name, &session.amux_process_name)

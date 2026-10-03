@@ -1,10 +1,10 @@
-import type { Todo } from "../../../../src/renderer/src/domain/types.ts";
+import type { AgentKind, Todo } from "../../../../src/renderer/src/domain/types.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RouteDependencies } from "../types.ts";
 import { FIXTURE_IDS } from "../../fixtures/sidebar-core.ts";
 
 export function createTodoRoutes({ fixture, readJson, sendJson }: RouteDependencies) {
-  const requests: ({ action: string; id: string; forkId?: string } & Partial<Todo>)[] = [];
+  const requests: ({ action: string; id: string; forkId?: string; agentKind?: AgentKind } & Partial<Todo>)[] = [];
 
   return {
     requests,
@@ -55,10 +55,11 @@ export function createTodoRoutes({ fixture, readJson, sendJson }: RouteDependenc
       );
       if (request.method === "POST" && forkMatch && forkTodo) {
         const fork = fixture.workspaceDetails[FIXTURE_IDS.fork];
-        const session = fork.sessions[0];
+        const agentKind = (new URL(request.url!, "http://fixture").searchParams.get("agent_kind") ?? "codex") as AgentKind;
+        const session = { ...fork.sessions[0], kind: agentKind };
         forkTodo.status = "in_progress";
         forkTodo.fork_id = fork.id;
-        requests.push({ action: "fork", id: forkTodo.id, forkId: fork.id });
+        requests.push({ action: "fork", id: forkTodo.id, forkId: fork.id, agentKind });
         sendJson(response, 201, { fork, session });
         return true;
       }

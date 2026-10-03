@@ -6,7 +6,7 @@ use crate::{
     model::Session,
 };
 
-const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
+const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,agent_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
 
 #[derive(sqlx::FromRow)]
 struct SessionRow {
@@ -17,7 +17,7 @@ struct SessionRow {
     cwd: String,
     original_cwd: String,
     initial_prompt: String,
-    codex_session_id: Option<String>,
+    agent_session_id: Option<String>,
     visibility: String,
     hidden_at: Option<String>,
     evicted_at: Option<String>,
@@ -43,7 +43,7 @@ impl From<SessionRow> for Session {
             cwd: r.cwd,
             original_cwd: r.original_cwd,
             initial_prompt: r.initial_prompt,
-            codex_session_id: r.codex_session_id,
+            agent_session_id: r.agent_session_id,
             visibility: r.visibility,
             hidden_at: r.hidden_at,
             evicted_at: r.evicted_at,
@@ -105,12 +105,13 @@ impl Store {
     }
     pub async fn create_session(&self, s: &Session) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-        sqlx::query("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,codex_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        let title_handled = crate::agents::default_session_name(&s.kind) != Some(s.name.as_str());
+        sqlx::query("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,agent_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at,agent_title_imported) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
             .bind(&s.id).bind(&s.workspace_id).bind(&s.name).bind(&s.kind).bind(&s.cwd).bind(&s.original_cwd)
-            .bind(&s.initial_prompt).bind(&s.codex_session_id).bind(&s.visibility).bind(&s.hidden_at).bind(&s.evicted_at)
+            .bind(&s.initial_prompt).bind(&s.agent_session_id).bind(&s.visibility).bind(&s.hidden_at).bind(&s.evicted_at)
             .bind(&s.amux_workspace_name).bind(&s.amux_process_name).bind(&s.status).bind(s.exit_code).bind(&s.exit_signal)
             .bind(serde_json::to_string(&s.argv).unwrap_or_default()).bind(&s.io_mode).bind(&s.launch_started_at)
-            .bind(&s.last_attached_at).bind(&s.created_at).bind(&s.updated_at).execute(&mut *tx).await?;
+            .bind(&s.last_attached_at).bind(&s.created_at).bind(&s.updated_at).bind(title_handled).execute(&mut *tx).await?;
         for path in &s.additional_directories {
             sqlx::query("INSERT INTO session_additional_directories(session_id,path) VALUES(?,?)")
                 .bind(&s.id)
@@ -190,7 +191,7 @@ impl Store {
     pub async fn rename_session(&self, id: &str, name: &str) -> Result<()> {
         let timestamp = now();
         let r = sqlx::query!(
-            "UPDATE sessions SET name=?,codex_title_imported=1,updated_at=? WHERE id=?",
+            "UPDATE sessions SET name=?,agent_title_imported=1,updated_at=? WHERE id=?",
             name,
             timestamp,
             id
@@ -233,35 +234,38 @@ impl Store {
             .await?;
         Ok(())
     }
-    pub async fn pending_codex_titles(&self) -> Result<Vec<(String, String)>> {
-        Ok(sqlx::query!("SELECT id, codex_session_id AS 'codex_session_id!' FROM sessions WHERE kind='codex' AND name='codex' AND codex_session_id IS NOT NULL AND codex_title_imported=0")
-            .fetch_all(&self.pool).await?.into_iter().map(|row| (row.id, row.codex_session_id)).collect())
+    pub async fn pending_agent_titles(&self) -> Result<Vec<(String, String)>> {
+        Ok(sqlx::query!("SELECT id, agent_session_id AS 'agent_session_id!' FROM sessions WHERE agent_session_id IS NOT NULL AND agent_title_imported=0")
+            .fetch_all(&self.pool).await?.into_iter().map(|row| (row.id, row.agent_session_id)).collect())
     }
 
-    pub async fn import_codex_title(&self, id: &str, codex_id: &str, title: &str) -> Result<bool> {
+    pub async fn import_agent_title(&self, id: &str, native_id: &str, title: &str) -> Result<bool> {
         let title = title.trim();
         if title.is_empty() {
             return Ok(false);
         }
         let timestamp = now();
-        Ok(sqlx::query!("UPDATE sessions SET name=?,codex_title_imported=1,updated_at=? WHERE id=? AND kind='codex' AND name='codex' AND codex_session_id=? AND codex_title_imported=0", title, timestamp, id, codex_id)
+        Ok(sqlx::query!("UPDATE sessions SET name=?,agent_title_imported=1,updated_at=? WHERE id=? AND agent_session_id=? AND agent_title_imported=0", title, timestamp, id, native_id)
             .execute(&self.pool).await?.rows_affected() == 1)
     }
 
-    pub async fn uncaptured_codex_sessions(&self) -> Result<Vec<Session>> {
+    pub async fn uncaptured_agent_sessions(&self) -> Result<Vec<Session>> {
         let sql = format!(
-            "SELECT {SESSION_COLUMNS} FROM sessions WHERE kind=? AND codex_session_id IS NULL"
+            "SELECT {SESSION_COLUMNS} FROM sessions WHERE kind=? AND agent_session_id IS NULL"
         );
-        self.session_rows(&sql, "codex").await
+        let mut sessions = Vec::new();
+        for kind in crate::settings::AGENT_KINDS {
+            sessions.extend(self.session_rows(&sql, kind).await?);
+        }
+        Ok(sessions)
     }
-    pub async fn set_codex_session_id(&self, id: &str, codex_session_id: &str) -> Result<()> {
-        sqlx::query("UPDATE sessions SET codex_session_id=?,updated_at=? WHERE id=? AND codex_session_id IS NULL")
-            .bind(codex_session_id)
+    pub async fn set_agent_session_id(&self, id: &str, agent_session_id: &str) -> Result<bool> {
+        Ok(sqlx::query("UPDATE sessions SET agent_session_id=?,updated_at=? WHERE id=? AND agent_session_id IS NULL")
+            .bind(agent_session_id)
             .bind(now())
             .bind(id)
             .execute(&self.pool)
-            .await?;
-        Ok(())
+            .await?.rows_affected() == 1)
     }
     pub async fn delete_session(&self, id: &str) -> Result<()> {
         sqlx::query("DELETE FROM sessions WHERE id=?")
@@ -283,7 +287,7 @@ impl Store {
                 .bind(workspace_id)
                 .execute(&mut *tx)
                 .await?;
-            sqlx::query("UPDATE sessions SET cwd=?,visibility='hidden',hidden_at=?,status='stopped',updated_at=? WHERE workspace_id=? AND kind='codex'").bind(resume_cwd).bind(&timestamp).bind(&timestamp).bind(workspace_id).execute(&mut *tx).await?;
+            sqlx::query("UPDATE sessions SET cwd=?,visibility='hidden',hidden_at=?,status='stopped',updated_at=? WHERE workspace_id=? AND kind IN ('codex','claude_code','opencode','pi')").bind(resume_cwd).bind(&timestamp).bind(&timestamp).bind(workspace_id).execute(&mut *tx).await?;
         } else {
             sqlx::query("DELETE FROM sessions WHERE workspace_id=?")
                 .bind(workspace_id)
@@ -320,5 +324,97 @@ impl Store {
         }
         tx.commit().await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::{Connection, Executor};
+
+    #[tokio::test]
+    async fn agent_metadata_upgrade_preserves_codex_and_history_finalization_covers_all_agents() {
+        let root = tempfile::tempdir().unwrap();
+        let old = tempfile::tempdir().unwrap();
+        let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g1");
+        for entry in std::fs::read_dir(&migrations).unwrap().flatten() {
+            if entry.file_name().to_string_lossy().as_ref() < "20261003010000" {
+                std::fs::copy(entry.path(), old.path().join(entry.file_name())).unwrap();
+            }
+        }
+        let mut connection = sqlx::SqliteConnection::connect_with(
+            &sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(root.path().join(crate::store::CURRENT_DATABASE_FILENAME))
+                .create_if_missing(true),
+        )
+        .await
+        .unwrap();
+        sqlx::migrate::Migrator::new(old.path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        connection.execute("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','t','t');
+            INSERT INTO workspaces(id,project_id,name,kind,status,created_at,updated_at) VALUES('w','p','W','workspace','active','t','t');
+            INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,codex_session_id,codex_title_imported,status,launch_started_at,created_at,updated_at) VALUES('codex','w','My saved title','codex','/old','/old','saved-codex',1,'stopped','t','t','t');").await.unwrap();
+        connection.close().await.unwrap();
+        let store = Store::open(root.path()).await.unwrap();
+        let original = store.session("codex").await.unwrap();
+        assert_eq!(original.agent_session_id.as_deref(), Some("saved-codex"));
+        assert_eq!(original.name, "My saved title");
+        assert!(
+            !store
+                .import_agent_title("codex", "saved-codex", "Overwrite")
+                .await
+                .unwrap()
+        );
+        for kind in ["claude_code", "opencode", "pi"] {
+            let mut session = original.clone();
+            session.id = kind.into();
+            session.kind = kind.into();
+            session.name = crate::agents::name(kind).unwrap().into();
+            session.status = "running".into();
+            session.agent_session_id = Some(format!("native-{kind}"));
+            store.create_session(&session).await.unwrap();
+            assert!(
+                store
+                    .import_agent_title(kind, &format!("native-{kind}"), "Automatic title")
+                    .await
+                    .unwrap()
+            );
+            assert!(
+                !store
+                    .import_agent_title(kind, &format!("native-{kind}"), "Later title")
+                    .await
+                    .unwrap()
+            );
+            store
+                .rename_session(kind, crate::agents::name(kind).unwrap())
+                .await
+                .unwrap();
+            assert!(
+                !store
+                    .import_agent_title(kind, &format!("native-{kind}"), "Overwrite rename")
+                    .await
+                    .unwrap()
+            );
+        }
+        store.finalize_sessions("w", "/target", true).await.unwrap();
+        let sessions = store.sessions("w").await.unwrap();
+        assert_eq!(sessions.len(), 4);
+        for session in sessions {
+            assert_eq!(session.cwd, "/target");
+            assert_eq!(session.original_cwd, "/old");
+            assert_eq!(session.visibility, "hidden");
+            assert_eq!(session.status, "stopped");
+            assert!(session.agent_session_id.is_some());
+        }
+        store
+            .finalize_sessions("w", "/target", false)
+            .await
+            .unwrap();
+        assert!(store.sessions("w").await.unwrap().is_empty());
+        store.pool.close().await;
     }
 }

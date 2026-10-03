@@ -35,7 +35,7 @@ Treefold backend
 
 Treefold backend 应封装独立适配层，将 Codex 协议转换为自己的稳定 DTO；React
 前端不得直接依赖 App Server 的原始响应。Treefold Session 与 Codex Thread 通过
-已持久化的 `codex_session_id` 关联。
+已持久化的 `agent_session_id` 关联。
 
 可考虑提供类似下面的内部 API：
 

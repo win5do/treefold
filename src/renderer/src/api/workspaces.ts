@@ -1,5 +1,6 @@
 import { request } from "./client";
 import type {
+  AgentKind,
   DeliveryPreflight,
   FinishBatch,
   FinishPlanItem,
@@ -98,8 +99,8 @@ export const workspacesApi = {
     ),
   parentOperation: (id: string, signal?: AbortSignal) =>
     request<ParentOperation>(`/api/parent-operations/${id}`, { signal }),
-  resolveParentOperation: (id: string) =>
-    request<Session>(`/api/parent-operations/${id}/resolve-with-codex`, {
+  resolveParentOperation: (id: string, agentKind?: AgentKind) =>
+    request<Session>(`/api/parent-operations/${id}/resolve-with-agent${agentKind ? `?agent_kind=${agentKind}` : ""}`, {
       method: "POST",
     }),
   abortParentOperation: (id: string) =>

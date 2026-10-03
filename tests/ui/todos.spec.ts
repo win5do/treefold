@@ -5,7 +5,9 @@ import { startUiHarness } from "./ui-harness.ts";
 import { closeUiSession, createUiSession } from "./harness/session.ts";
 
 test("todos", async () => {
-  const harness = await startUiHarness();
+  const harness = await startUiHarness(fixture => {
+    fixture.system.agents.find(agent => agent.kind === "pi")!.available = true;
+  });
   let page!: Page;
 
   try {
@@ -55,10 +57,12 @@ test("todos", async () => {
     await expect.poll(() => harness.todoRequests.some((request) => request.action === "update"), { timeout: 3_000 }).toBeTruthy();
 
     const pendingTodo = section.locator('[data-todo-id="todo-pending-ui-fixture"]');
+    await section.getByRole("combobox", { name: "Agent", exact: true }).selectOption("pi");
     await pendingTodo.locator('button[aria-label="Delegate Todo to Fork"]').click();
     await expect.poll(async () =>
         (page.url()).includes(`/workspaces/${FIXTURE_IDS.fork}`), { timeout: 3_000 }).toBeTruthy();
     assert.equal(harness.todoRequests.at(-1)!.action, "fork");
+    assert.equal(harness.todoRequests.at(-1)!.agentKind, "pi");
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.fork}`);
     await expect(page.getByRole("heading", { name: FIXTURE_NAMES.fork, exact: true })).toBeVisible();
     await expect(page.getByTestId("workspace-todos-section")).toHaveCount(0);

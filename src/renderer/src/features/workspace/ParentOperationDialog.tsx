@@ -1,3 +1,4 @@
+import { AgentSelect, useAgentChoice } from "@/features/agents/AgentSelect";
 import { compactPath } from "@/lib/compactPath";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";
@@ -21,6 +22,7 @@ import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select"
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type {
+  AgentKind,
   ParentOperation,
   ParentOperationPreview,
   ParentOperationStrategy,
@@ -118,12 +120,12 @@ export function ParentOperationDialog({
     }
   };
 
-  const resolve = async () => {
+  const resolve = async (kind?: AgentKind) => {
     if (!currentOperation) return;
     setBusy(true);
     setError("");
     try {
-      const session = await workspacesApi.resolveParentOperation(currentOperation.id);
+      const session = await workspacesApi.resolveParentOperation(currentOperation.id, kind);
       setResolverSession(session);
       setOperation(await workspacesApi.parentOperation(currentOperation.id));
     } catch (reason) {
@@ -213,7 +215,7 @@ export function ParentOperationDialog({
             operation={currentOperation}
             busy={busy}
             resolverSession={resolverSession}
-            onResolve={() => void resolve()}
+            onResolve={kind => void resolve(kind)}
             onOpenSession={() => {
               if (resolverSession) {
                 onOpenSession(currentOperation, resolverSession);
@@ -273,11 +275,12 @@ export function ParentOperationPanel({
   operation: ParentOperation;
   busy: boolean;
   resolverSession?: Session | null;
-  onResolve: () => void;
+  onResolve: (kind?: AgentKind) => void;
   onOpenSession: () => void;
   onAbort: () => void;
 }) {
   const { t } = useTranslation();
+  const choice = useAgentChoice();
   const conflicted = operation.status === "conflicted" || operation.status === "resolving";
   return (
     <Alert variant={conflicted || operation.status === "recovery_required" ? "warning" : "default"}>
@@ -289,9 +292,10 @@ export function ParentOperationPanel({
       <AlertDescription className="flex flex-col gap-2">
         {operation.error && <p>{operation.error}</p>}
         {operation.strategy === "squash" && conflicted && <p>{t("squashUi.resolveHint")} <code className="break-all">git commit --allow-empty -m "Squash delivery" -m "Treefold-Squash: {operation.id}"</code></p>}
+        {conflicted && !operation.resolver_session_id && <AgentSelect choice={choice} disabled={busy} />}
         <div className="flex flex-wrap gap-2">
           {conflicted && (
-            <Button size="sm" disabled={busy} onClick={onResolve}>
+            <Button size="sm" disabled={busy || (!operation.resolver_session_id && !choice.kind)} onClick={() => onResolve(choice.kind)}>
               {busy ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}{t("workspaceUi.resolveWithAI")}</Button>
           )}
           {(resolverSession || operation.resolver_session_id) && (

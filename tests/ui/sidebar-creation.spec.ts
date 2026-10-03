@@ -14,7 +14,7 @@ test("sidebar creation submenu is reachable and enforces directory permissions",
     const menu = page.getByTestId("sidebar-session-menu");
     const submenu = page.locator('[data-testid="directory-session-submenu"]:not([data-closed])');
     await trigger.click();
-    await moveUiPointerTo(page, menu.getByTestId("session-kind-codex"));
+    await moveUiPointerTo(page, menu.getByTestId("session-kind-agent"));
     await expect(submenu.getByTestId(`session-directory-${FIXTURE_IDS.attachedDirectory}`)).toBeDisabled();
     await page.getByTestId("page-content").click();
     await expect(menu).toHaveCount(0);

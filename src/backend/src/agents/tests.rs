@@ -237,6 +237,8 @@ fn codex_config_values_cannot_replace_managed_context() {
 #[test]
 fn launch_always_validates_before_executable_resolution() {
     let context = LaunchContext {
+        session_id: "01a08fff908b76b28c1c3826e810b018",
+        runtime_dir: None,
         cwd: "/tmp",
         additional_directories: &[],
         initial_prompt: "",
@@ -267,6 +269,8 @@ fn launch_preserves_literal_values_and_adds_only_agent_specific_context() {
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
     let directories = vec!["/extra directory".into()];
     let context = LaunchContext {
+        session_id: "01a08fff908b76b28c1c3826e810b018",
+        runtime_dir: None,
         cwd: "/work directory",
         additional_directories: &directories,
         initial_prompt: "--help",
@@ -306,6 +310,8 @@ fn launch_preserves_literal_values_and_adds_only_agent_specific_context() {
                 ),
             ],
             "claude_code" => vec![
+                "--session-id".into(),
+                "01a08fff-908b-76b2-8c1c-3826e810b018".into(),
                 "--add-dir".into(),
                 directories[0].clone(),
                 "--append-system-prompt".into(),
@@ -326,6 +332,8 @@ fn launch_preserves_literal_values_and_adds_only_agent_specific_context() {
     let resumed = build_launch(
         "codex",
         &LaunchContext {
+            session_id: "01a08fff908b76b28c1c3826e810b018",
+            runtime_dir: None,
             resume_id: Some("saved-session"),
             ..context
         },
@@ -334,4 +342,124 @@ fn launch_preserves_literal_values_and_adds_only_agent_specific_context() {
     .unwrap();
     assert_eq!(&resumed[resumed.len() - 2..], ["resume", "saved-session"]);
     assert!(!resumed.iter().any(|arg| arg == "--help"));
+}
+
+#[test]
+fn managed_agents_resume_exactly_without_replaying_the_initial_prompt() {
+    let root = tempfile::tempdir().unwrap();
+    let context = LaunchContext {
+        session_id: "01a08fff908b76b28c1c3826e810b018",
+        runtime_dir: Some(root.path()),
+        cwd: "/checkout",
+        additional_directories: &[],
+        initial_prompt: "do not replay",
+        instructions: Some("updated context"),
+        resume_id: Some("saved-native-id"),
+        log_dir: None,
+    };
+    for (kind, option) in [
+        ("claude_code", "--resume"),
+        ("opencode", "--session"),
+        ("pi", "--session"),
+    ] {
+        let argv = adapter(kind).unwrap().build_args(&context, &[]).unwrap();
+        let expected = if kind == "pi" {
+            root.path()
+                .join("session.jsonl")
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            "saved-native-id".into()
+        };
+        assert!(
+            argv.windows(2)
+                .any(|pair| pair == [option, expected.as_str()]),
+            "{kind}: {argv:?}"
+        );
+        assert!(!argv.iter().any(|arg| arg == context.initial_prompt));
+    }
+}
+
+#[test]
+fn pi_identity_requires_the_scoped_file_and_never_switches_saved_identity() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("session.jsonl");
+    let native_id = "01a08fff-908b-76b2-8c1c-3826e810b018";
+    let argv = vec![
+        "pi".into(),
+        "--session".into(),
+        path.to_string_lossy().into_owned(),
+    ];
+    let mut context = MetadataContext {
+        session_id: "managed",
+        original_cwd: "/checkout",
+        argv: &argv,
+        native_id: None,
+        runtime_dir: root.path(),
+        read_title: true,
+    };
+    std::fs::write(&path, format!("{{\"type\":\"session\",\"id\":\"{native_id}\"}}\n{{\"type\":\"session_info\",\"name\":\"Saved task\"}}\n")).unwrap();
+    let metadata = read_metadata("pi", &context);
+    assert_eq!(metadata.id.as_deref(), Some(native_id));
+    assert_eq!(metadata.title.as_deref(), Some("Saved task"));
+    context.native_id = Some(native_id);
+    assert!(validate_resume("pi", &context).is_ok());
+    std::fs::remove_file(&path).unwrap();
+    assert!(validate_resume("pi", &context).is_err());
+    context.native_id = Some("different");
+    assert!(read_metadata("pi", &context).id.is_none());
+    context.native_id = None;
+    context.argv = &[];
+    assert!(read_metadata("pi", &context).id.is_none());
+}
+
+#[test]
+fn opencode_metadata_ignores_placeholder_titles_and_conflicting_identity() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("metadata.json");
+    let mut context = MetadataContext {
+        session_id: "managed",
+        original_cwd: "/checkout",
+        argv: &[],
+        native_id: None,
+        runtime_dir: root.path(),
+        read_title: true,
+    };
+    std::fs::write(
+        &path,
+        r#"{"id":"ses_root","title":"New session - 2026-10-03T00:00:00.000Z"}"#,
+    )
+    .unwrap();
+    let metadata = read_metadata("opencode", &context);
+    assert_eq!(metadata.id.as_deref(), Some("ses_root"));
+    assert!(metadata.title.is_none());
+    std::fs::write(&path, r#"{"id":"ses_root","title":"Implement task"}"#).unwrap();
+    assert_eq!(
+        read_metadata("opencode", &context).title.as_deref(),
+        Some("Implement task")
+    );
+    context.native_id = Some("ses_other");
+    assert!(read_metadata("opencode", &context).id.is_none());
+}
+
+#[test]
+fn workflow_agent_selection_uses_configured_order_and_rejects_unavailable_choices() {
+    let mut settings = AgentsSettings::default();
+    settings.order = vec![
+        "pi".into(),
+        "opencode".into(),
+        "codex".into(),
+        "claude_code".into(),
+    ];
+    settings.pi.command = "/treefold-test-missing-agent".into();
+    settings.opencode.command = "/bin/echo".into();
+    settings.codex.command = "/bin/echo".into();
+    settings.claude_code.command = "/treefold-test-missing-agent".into();
+    assert_eq!(select_available(&settings, None).unwrap(), "opencode");
+    assert_eq!(select_available(&settings, Some("codex")).unwrap(), "codex");
+    assert!(select_available(&settings, Some("pi")).is_err());
+    assert!(select_available(&settings, Some("shell")).is_err());
+    settings.opencode.command = "/treefold-test-missing-agent".into();
+    settings.codex.command = "/treefold-test-missing-agent".into();
+    assert!(select_available(&settings, None).is_err());
 }

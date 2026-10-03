@@ -1,4 +1,4 @@
-import { isAgentKind } from "@/features/agents/model";
+import { agentShiftEnter } from "@/features/agents/terminal";
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Copy, RotateCcw } from "lucide-react";
@@ -53,7 +53,7 @@ function StoppedSession({ session, busy, onRestart }: { session: Session; busy: 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-medium">{t("terminalUi.sessionState", { status: t(`states.${session.status}`, { defaultValue: session.status }) })}</p>
           <Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}>
-            <RotateCcw data-icon="inline-start" />{t(isAgentKind(session.kind) && session.kind !== "codex" ? "agentsUi.restart" : "terminalUi.resume")}</Button>
+            <RotateCcw data-icon="inline-start" />{t("terminalUi.resume")}</Button>
         </div>
         <dl className="mt-4 grid min-w-0 gap-3 text-xs">
           <div className="min-w-0">
@@ -129,13 +129,12 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
       terminal.loadAddon(new WebLinksAddon(openSessionLink));
       terminal.open(host);
     }
-    if (session.kind === "codex") {
-      // xterm encodes Shift+Enter as ordinary Enter. Use Codex's Ctrl+J
-      // newline fallback until the terminal supports extended keyboard input.
+    const shiftEnter = agentShiftEnter(session.kind);
+    if (shiftEnter) {
       terminal.attachCustomKeyEventHandler((event) => {
         if (event.key !== "Enter" || !event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.keyCode === 229) return true;
         event.preventDefault();
-        if (event.type === "keydown" && !terminal.options.disableStdin) terminal.input("\n", true);
+        if (event.type === "keydown" && !terminal.options.disableStdin) terminal.input(shiftEnter, true);
         return false;
       });
     }

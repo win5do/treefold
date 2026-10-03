@@ -10,7 +10,9 @@ import {
 } from "./harness/session.ts";
 
 test("parent-operations", async () => {
-  const harness = await startUiHarness();
+  const harness = await startUiHarness(fixture => {
+    fixture.system.agents.find(agent => agent.kind === "claude_code")!.available = true;
+  });
   let page!: Page;
 
   async function ownerMenu(selector: string) {
@@ -57,6 +59,7 @@ test("parent-operations", async () => {
     await merge.click();
     await (dialog.locator('[data-testid="start-parent-operation"]')).click();
     await expect.poll(async () => (await dialog.innerText()).includes("Resolve with AI"), { timeout: 3_000 }).toBeTruthy();
+    await dialog.getByRole("combobox", { name: "Agent", exact: true }).selectOption("claude_code");
     await (dialog.locator("button:text-is(\"Resolve with AI\")")).click();
     await expect.poll(async () => (await dialog.innerText()).includes("Open Session"), { timeout: 3_000 }).toBeTruthy();
     await (dialog.locator("button:text-is(\"Close\")")).click();
@@ -66,14 +69,15 @@ test("parent-operations", async () => {
     await (menu.locator('[data-testid="update-from-parent-action"]')).click();
     dialog = page.locator('[data-testid="parent-operation-dialog"]');
     await dialog.waitFor({ timeout: 3_000, state: 'visible' });
-    assert.match(await dialog.innerText(), /Resolving/);
+    await expect(dialog).toContainText("Resolving");
     await (dialog.locator("button:text-is(\"Abort Git operation\")")).click();
     await expect.poll(async () => (await dialog.innerText()).includes("Aborted"), { timeout: 3_000 }).toBeTruthy();
     await (dialog.locator("button:text-is(\"Close\")")).click();
 
     assert.ok(harness.parentOperationRequests.includes(`POST ${FIXTURE_IDS.workspacePrimaryLocation}:update:merge`));
-    assert.ok(harness.parentOperationRequests.some((item) => item.endsWith(":resolve-with-codex")));
+    assert.ok(harness.parentOperationRequests.some((item) => item.endsWith(":resolve-with-agent")));
     assert.ok(harness.parentOperationRequests.some((item) => item.endsWith(":abort")));
+    assert.ok(harness.parentOperationRequests.includes("AGENT claude_code"));
     harness.assertNoUnexpectedRequests();
   } finally {
     try { await closeUiSession(page); } finally { await harness.close(); }

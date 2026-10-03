@@ -1,3 +1,5 @@
+mod metadata;
+mod runtime;
 use super::{
     AgentAdapter, LaunchContext,
     validation::{
@@ -40,6 +42,26 @@ const RULES: Rules = Rules {
     attached_values: true,
 };
 impl AgentAdapter for OpenCode {
+    fn validate_resume(&self, _context: &super::MetadataContext<'_>) -> Result<()> {
+        // Reject invalid inherited configuration before replacing the existing process.
+        runtime::configuration(std::env::var("OPENCODE_CONFIG_CONTENT").ok().as_deref())?;
+        Ok(())
+    }
+
+    fn metadata(&self, context: &super::MetadataContext<'_>) -> super::AgentMetadata {
+        metadata::read(context)
+    }
+
+    fn prepare(
+        &self,
+        context: &LaunchContext<'_>,
+    ) -> Result<std::collections::BTreeMap<String, String>> {
+        runtime::prepare(
+            context,
+            std::env::var("OPENCODE_CONFIG_CONTENT").ok().as_deref(),
+        )
+    }
+
     fn name(&self) -> &'static str {
         "OpenCode"
     }
@@ -51,7 +73,11 @@ impl AgentAdapter for OpenCode {
     }
     fn build_args(&self, context: &LaunchContext<'_>, user_args: &[String]) -> Result<Vec<String>> {
         let mut args = user_args.to_vec();
-        if !context.initial_prompt.is_empty() {
+        if let Some(id) = context.resume_id {
+            args.extend(["--session".into(), id.into()]);
+        }
+
+        if context.resume_id.is_none() && !context.initial_prompt.is_empty() {
             args.extend(["--prompt".into(), context.initial_prompt.into()]);
         }
         Ok(args)

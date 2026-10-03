@@ -218,7 +218,7 @@ function session({
     original_cwd: cwd,
     initial_prompt:
       kind === "codex" ? "Verify the deterministic UI fixture." : "",
-    codex_session_id: codexSessionId,
+    agent_session_id: codexSessionId,
     visibility: visible ? "visible" : "hidden",
     amux_workspace_name: `treefold-${workspaceId}`,
     amux_process_name: id,

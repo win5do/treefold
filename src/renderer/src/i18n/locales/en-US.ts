@@ -158,6 +158,7 @@ export const enUS = {
     emptyHint: "Click New Project in the top right to get started.",
   },
   agentsUi: {
+    noneAvailable: "No available Agents",
     refresh: "Recheck Agents",
     createFailed: "Could not create Agent Session",
     restart: "Restart",

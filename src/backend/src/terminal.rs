@@ -310,6 +310,7 @@ impl TerminalManager {
         };
         self.ensure_workspace(&workspace, &session.cwd).await?;
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        let mut agent_environment = BTreeMap::new();
         let command = if session.kind == "shell" {
             shell_command(&shell, &session.initial_prompt)
         } else if crate::agents::name(&session.kind).is_some() {
@@ -317,18 +318,30 @@ impl TerminalManager {
                 .treefold_home
                 .as_deref()
                 .map(|home| home.join("logs").join(&session.kind).join(&session.id));
-            crate::agents::build_launch(
+            let runtime_dir = self
+                .treefold_home
+                .as_deref()
+                .map(|home| crate::agents::runtime_dir(home, &session.kind, &session.id));
+            if let Some(directory) = &runtime_dir {
+                std::fs::create_dir_all(directory)?;
+            }
+            let context = crate::agents::LaunchContext {
+                session_id: &session.id,
+                runtime_dir: runtime_dir.as_deref(),
+                cwd: &session.cwd,
+                additional_directories: &session.additional_directories,
+                initial_prompt: &session.initial_prompt,
+                instructions: developer_instructions,
+                resume_id: session.agent_session_id.as_deref(),
+                log_dir: log_dir.as_deref(),
+            };
+            let command = crate::agents::build_launch(
                 &session.kind,
-                &crate::agents::LaunchContext {
-                    cwd: &session.cwd,
-                    additional_directories: &session.additional_directories,
-                    initial_prompt: &session.initial_prompt,
-                    instructions: developer_instructions,
-                    resume_id: session.codex_session_id.as_deref(),
-                    log_dir: log_dir.as_deref(),
-                },
+                &context,
                 agents.get(&session.kind).unwrap(),
-            )?
+            )?;
+            agent_environment = crate::agents::prepare_environment(&session.kind, &context)?;
+            command
         } else {
             session.argv.clone()
         };
@@ -375,7 +388,8 @@ impl TerminalManager {
                 session.initial_prompt.clone(),
             );
         }
-        let command = if session.kind == "codex" {
+        env.extend(agent_environment);
+        let command = if crate::agents::name(&session.kind).is_some() {
             self.launch_gates.prepare(&session.id, command)?
         } else {
             command

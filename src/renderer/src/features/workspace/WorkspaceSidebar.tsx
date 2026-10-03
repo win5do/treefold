@@ -379,7 +379,7 @@ export function WorkspaceSidebar({
                       onSessionMenu(null);
                       onCreateBaseShell(project, directory);
                     }}
-                    onCodex={(directory) => {
+                    onAgent={(directory) => {
                       onSessionMenu(null);
                       onCreateBaseAgent(project, directory);
                     }}
@@ -657,7 +657,7 @@ function SidebarOwnerContextMenu({
         {(!stream || stream.kind === "workspace") && <ContextMenuSeparator />}
         <ContextMenuGroup>
           <ContextMenuLabel>{t("sidebar.newSessionIn")}</ContextMenuLabel>
-          {(["shell", "codex"] as const).map((kind) => (
+          {(["shell", "agent"] as const).map((kind) => (
             <ContextMenuSub key={kind}>
               <ContextMenuSubTrigger data-testid={`session-kind-${kind}`}>
                 {kind === "shell" ? <Shell /> : <Bot />}
@@ -672,7 +672,7 @@ function SidebarOwnerContextMenu({
                   surface="context"
                   testIdPrefix="session-directory"
                   disabled={(directory) =>
-                    kind === "codex" &&
+                    kind === "agent" &&
                     (!directory.is_git || directory.git_status !== "ready")
                   }
                   onSelect={(directory) =>
@@ -902,7 +902,7 @@ type SidebarNodeProps = {
 };
 
 type SidebarSyncTarget = { id: string; name: string };
-type SidebarSessionKind = "shell" | "codex";
+type SidebarSessionKind = "shell" | "agent";
 type SidebarSubmenu =
   | { kind: "session"; sessionKind: SidebarSessionKind }
   | { kind: "sync"; action: "pull" | "push" };
@@ -930,7 +930,7 @@ function SessionDirectoryMenu({
   footerRows = 1,
   onSync,
   onShell,
-  onCodex,
+  onAgent,
 }: {
   directories: Directory[];
   testId: string;
@@ -942,7 +942,7 @@ function SessionDirectoryMenu({
   footerRows?: number;
   onSync?: (targetId: string | null, action: "pull" | "push") => void;
   onShell: (directory: Directory) => void;
-  onCodex: (directory: Directory) => void;
+  onAgent: (directory: Directory) => void;
 }) {
   const { t } = useTranslation();
   const directoryGroups = groupDirectories(directories);
@@ -1000,7 +1000,7 @@ function SessionDirectoryMenu({
       <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
         {t("sidebar.newSessionIn")}
       </p>
-      {(["shell", "codex"] as const).map((sessionKind) => {
+      {(["shell", "agent"] as const).map((sessionKind) => {
         const label = sessionKind === "shell" ? "Shell" : "Agent";
         return (
           <button
@@ -1108,13 +1108,13 @@ function SessionDirectoryMenu({
             surface="sidebar"
             testIdPrefix="session-directory"
             disabled={(directory) =>
-              activeSessionKind === "codex" &&
+              activeSessionKind === "agent" &&
               (!directory.is_git || directory.git_status !== "ready")
             }
             onSelect={(directory) =>
               activeSessionKind === "shell"
                 ? onShell(directory)
-                : onCodex(directory)
+                : onAgent(directory)
             }
           />
         </div>
@@ -1209,7 +1209,7 @@ function SidebarCreateSessionMenu({
         onSessionMenu(null);
         onCreateShell(stream, directory);
       }}
-      onCodex={(directory) => {
+      onAgent={(directory) => {
         onSessionMenu(null);
         onCreateAgent(stream, directory);
       }}

@@ -675,7 +675,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
           cwd: directory.path,
           original_cwd: directory.path,
           initial_prompt: "",
-          codex_session_id:
+          agent_session_id:
             kind === "codex" ? "codex-created-project-ui-fixture" : undefined,
           visibility: "visible",
           status: "running",
@@ -1011,7 +1011,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
             : detail.checkout_path,
           original_cwd: detail.checkout_path,
           initial_prompt: "",
-          codex_session_id: undefined,
+          agent_session_id: undefined,
           status: "running",
           visibility: "visible",
           argv: kind === "shell" ? ["/bin/zsh", "-l"] : [kind],
