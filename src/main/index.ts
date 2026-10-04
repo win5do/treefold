@@ -36,12 +36,12 @@ function trusted(event: IpcMainInvokeEvent) {
   if (actual.protocol !== expected.protocol || actual.host !== expected.host) throw new Error('Untrusted desktop origin');
 }
 async function start() {
-  const resources = app.isPackaged ? process.resourcesPath : path.join(root, 'src/backend', 'bundle-staging');
-  const bin = app.isPackaged ? path.join(resources, 'bin') : path.join(resources, 'dev-sidecars', 'bin');
+  const resources = app.isPackaged ? process.resourcesPath : path.join(root, 'src/backend/bundle-staging/dev-sidecars');
+  const bin = path.join(resources, 'bin');
   backend = new Backend({
     executable: app.isPackaged ? path.join(bin, 'treefold-backend') : process.env.TREEFOLD_BACKEND_PATH || path.join(root, 'src/backend/target/debug/treefold-backend'),
     env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_RESOURCE_DIR: resources, TREEFOLD_BUNDLED_BIN_DIR: bin,
-      TREEFOLD_AMUX_SKILL_DIR: app.isPackaged ? path.join(resources, 'agent-integration/skills/amux') : path.join(resources, 'dev-sidecars/skills/amux') },
+      TREEFOLD_AMUX_SKILL_DIR: path.join(resources, 'agent-integration/skills/amux') },
     onStderr: message => { if (!app.isPackaged) console.error(message); },
     onExit: error => {
       if (!ready || quitting) return;

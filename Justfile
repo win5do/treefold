@@ -41,7 +41,7 @@ typecheck:
 # Check Rust formatting and compilation.
 check-backend:
     cargo fmt --manifest-path src/backend/Cargo.toml --check
-    cargo check --manifest-path src/backend/Cargo.toml
+    cargo xtask backend check
 
 # Validate migrations and offline SQLx metadata.
 database-check:
@@ -53,7 +53,7 @@ database-prepare:
 
 # Build the standalone Rust backend.
 build-backend:
-    cargo build --manifest-path src/backend/Cargo.toml
+    cargo xtask backend build
 
 # Prepare sidecars independently (dev or bundle).
 prepare-sidecars mode="dev":
@@ -77,7 +77,7 @@ test: test-backend test-integration test-ui
 
 # Run Rust tests.
 test-backend:
-    cargo test --manifest-path src/backend/Cargo.toml
+    cargo xtask backend test
 
 # Build the backend before running Playwright backend and installation tests.
 test-integration: build-backend

@@ -39,7 +39,7 @@ brew install --cask win5do/tap/treefold
 
 ### 从源码运行
 
-准备 stable Rust、Node.js 24.12 或更新版本、Git 和 `just`。默认构建还需要同级目录 `../amux` 中的 amux 源码；自定义路径见 [开发环境说明](AGENTS.md#development-environment-and-commands)。
+准备 stable Rust、Node.js 24.12 或更新版本、Git 和 `just`。默认构建使用 Cargo.lock 锁定的 GitHub main 分支 amux 源码；本地联调可用 `TREEFOLD_AMUX_MANIFEST` 统一指定 runtime、CLI 和 Skill 的源码，详见 [开发环境说明](AGENTS.md#development-environment-and-commands)。
 
 在仓库根目录运行：
 

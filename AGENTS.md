@@ -149,10 +149,32 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
   lifecycle with isolated homes; build the package first.
 - `just build` invokes `cargo xtask sidecars bundle` before applying
   the Electron bundle configuration.
-- Development runs prepare debug sidecars through the same xtask workflow. The
-  default co-workspace layout resolves amux from `../amux`; override it with
-  `TREEFOLD_AMUX_MANIFEST` and override Skill discovery with
-  `TREEFOLD_AMUX_SKILL_DIR` only when necessary.
+- Development runs prepare debug sidecars through the same xtask workflow.
+  amux defaults to the GitHub `main` dependency pinned in `src/backend/Cargo.lock`.
+  Update it deliberately with `cargo update --manifest-path src/backend/Cargo.toml
+  -p amux-runtime`; ordinary builds use the locked revision.
+- For local amux development, set `TREEFOLD_AMUX_MANIFEST=/absolute/path/to/amux/Cargo.toml`.
+  Relative paths resolve from this Treefold checkout, including in worktrees.
+  `just` backend tasks, development, packaging, and SQLx preparation all apply the
+  same Cargo patch and resolve the actual runtime dependency before selecting
+  the CLI and Skill. Each invocation uses temporary local lockfiles seeded from
+  the backend and amux lockfiles, retaining other dependency pins while allowing
+  a different local amux version. It does not rewrite tracked dependency files.
+- Use `cargo xtask backend <build|check|test|clippy|run> [ARGS...]` for standalone
+  backend Cargo work with that override, for example `cargo xtask backend test
+  terminal::tests`. Raw Cargo does not interpret `TREEFOLD_AMUX_MANIFEST` and the
+  backend build script rejects that combination instead of silently using Git.
+- Do not separately select CLI or Skill source when building. xtask derives
+  both from the backend's resolved amux package, validates the requested local
+  path, and records `amux-source.json` in staged resources. Development watch
+  mode also watches that source's Rust files and Cargo manifests/lockfile.
+  Skills are refreshed on each build; use `just prepare-sidecars` for Skill-only
+  edits instead of restarting Electron for documentation changes.
+  Development resources (binaries, integration manifest, and both Skills) live
+  together under `bundle-staging/dev-sidecars`; do not read an earlier release's
+  integration resources from its parent directory.
+  `TREEFOLD_AMUX_SKILL_DIR` is a runtime staging path supplied by Electron, not
+  a build-source override.
 - Stage the amux binary, version, and `skills/amux` from the same selected amux
   source so they remain one release unit.
 - Run `just install-app-local` to build an ad-hoc signed App and DMG and replace
@@ -284,7 +306,7 @@ rules also apply to backend and tooling work.
 Use existing runner filters for focused verification, for example
 `npm run test:ui -- tests/ui/keymap.spec.ts` or
 `npm run test:ui -- tests/ui/keymap.spec.ts -g 'Session shortcuts'`.
-For Rust, use `cargo test --manifest-path src/backend/Cargo.toml <test-filter>`.
+For Rust, use `cargo xtask backend test <test-filter>`.
 Check that the selected command actually discovered and ran the intended tests.
 
 Reserve `just check`, `just test`, and full packaging/lifecycle validation for

@@ -151,9 +151,7 @@ impl IntegrationManager {
             PathBuf::from(path)
         } else {
             development_root
-                .parent()
-                .expect("Treefold development root has a parent")
-                .join("amux/skills/amux")
+                .join("src/backend/bundle-staging/dev-sidecars/agent-integration/skills/amux")
         };
         Ok(Self::from_parts(
             treefold_home,

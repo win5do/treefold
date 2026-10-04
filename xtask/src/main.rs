@@ -6,10 +6,10 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
-use toml_edit::DocumentMut;
+mod amux;
+use amux::{BACKEND_MANIFEST, BackendCargo};
 
 const TREEFOLD_MANIFEST: &str = "src/cli/Cargo.toml";
-const DEFAULT_AMUX_MANIFEST: &str = "../amux/Cargo.toml";
 const TARGET_DIR: &str = "src/backend/target";
 const DEV_STAGING: &str = "src/backend/bundle-staging/dev-sidecars";
 const BUNDLE_STAGING: &str = "src/backend/bundle-staging/agent-integration";
@@ -25,6 +25,9 @@ fn main() {
 fn run() -> Result<()> {
     let mut args = env::args().skip(1);
     match (args.next().as_deref(), args.next().as_deref()) {
+        (Some("backend"), Some(command)) => {
+            amux::run_backend(&repository_root()?, command, args.collect())
+        }
         (Some("sidecars"), Some("dev")) => prepare_dev_sidecars(args.collect()),
         (Some("sidecars"), Some("bundle")) => {
             if let Some(argument) = args.next() {
@@ -35,7 +38,7 @@ fn run() -> Result<()> {
         (Some("database"), Some("prepare")) => database_prepare(false, args.collect()),
         (Some("database"), Some("check")) => database_prepare(true, args.collect()),
         _ => bail!(
-            "usage: cargo xtask <sidecars <dev [-- BUILD_ARGS...]|bundle>|database <prepare|check>>"
+            "usage: cargo xtask <backend <build|check|test|clippy|run> [ARGS...]|sidecars <dev [-- BUILD_ARGS...]|bundle>|database <prepare|check>>"
         ),
     }
 }
@@ -45,6 +48,7 @@ fn database_prepare(check: bool, remaining: Vec<String>) -> Result<()> {
         bail!("unexpected argument for database command: {argument}");
     }
     let root = repository_root()?;
+    let backend = BackendCargo::new(&root)?;
     let source = root.join("src/backend/migrations/g1");
     let crate_dir = root.join("src/backend");
     let temporary = tempfile::tempdir().context("create temporary database directory")?;
@@ -76,7 +80,8 @@ fn database_prepare(check: bool, remaining: Vec<String>) -> Result<()> {
     if check {
         command.arg("--check");
     }
-    command.args(["--", "--all-targets"]);
+    command.args(["--", "--all-targets", "--locked"]);
+    backend.configure(&mut command);
     run_command(
         &mut command,
         if check {
@@ -134,12 +139,6 @@ impl BuildOptions {
     }
 }
 
-struct AmuxSource {
-    manifest: PathBuf,
-    skill: PathBuf,
-    version: String,
-}
-
 fn repository_root() -> Result<PathBuf> {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -150,9 +149,10 @@ fn repository_root() -> Result<PathBuf> {
 fn prepare_dev_sidecars(args: Vec<String>) -> Result<()> {
     let root = repository_root()?;
     let options = parse_dev_options(&args)?;
-    let amux = resolve_amux(&root)?;
+    let backend = BackendCargo::new(&root)?;
+    let amux = &backend.amux;
     let target_dir = root.join(TARGET_DIR);
-    build_sidecars(&root, &amux, &target_dir, &options)?;
+    build_sidecars(&root, &backend, &target_dir, &options)?;
 
     let artifact_dir = options.artifact_dir(&target_dir);
     let staging = root.join(DEV_STAGING);
@@ -161,7 +161,14 @@ fn prepare_dev_sidecars(args: Vec<String>) -> Result<()> {
         fs::create_dir_all(&bin).with_context(|| format!("create {}", bin.display()))?;
         copy_file(&artifact_dir.join("treefold"), &bin.join("treefold"))?;
         copy_file(&artifact_dir.join("amux"), &bin.join("amux"))?;
-        copy_tree(&amux.skill, &temporary.join("skills/amux"))
+        let integration = temporary.join("agent-integration");
+        copy_tree(&amux.skill, &integration.join("skills/amux"))?;
+        copy_tree(
+            &root.join("src/cli/skills/treefold"),
+            &integration.join("skills/treefold"),
+        )?;
+        stage_integration_manifest(&root, &integration, &amux.version)?;
+        backend.write_source(&temporary.join("amux-source.json"))
     })?;
 
     eprintln!("Prepared development sidecars in {}", staging.display());
@@ -175,9 +182,10 @@ fn prepare_bundle_sidecars() -> Result<()> {
         profile: Profile::Release,
         target: Some(host.clone()),
     };
-    let amux = resolve_amux(&root)?;
+    let backend = BackendCargo::new(&root)?;
+    let amux = &backend.amux;
     let target_dir = root.join(TARGET_DIR);
-    build_sidecars(&root, &amux, &target_dir, &options)?;
+    build_sidecars(&root, &backend, &target_dir, &options)?;
 
     let artifact_dir = options.artifact_dir(&target_dir);
     let binaries = root.join("src/backend/bundle-staging/bin");
@@ -193,6 +201,7 @@ fn prepare_bundle_sidecars() -> Result<()> {
             &root.join("src/cli/skills/treefold"),
             &temporary.join("skills/treefold"),
         )?;
+        backend.write_source(&temporary.join("amux-source.json"))?;
         stage_integration_manifest(&root, temporary, &amux.version)
     })?;
 
@@ -235,62 +244,52 @@ fn parse_dev_options(args: &[String]) -> Result<BuildOptions> {
     Ok(BuildOptions { profile, target })
 }
 
-fn resolve_amux(root: &Path) -> Result<AmuxSource> {
-    let configured = env::var_os("TREEFOLD_AMUX_MANIFEST")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(DEFAULT_AMUX_MANIFEST));
-    let manifest = if configured.is_absolute() {
-        configured
-    } else {
-        root.join(configured)
-    };
-    if !manifest.is_file() {
-        bail!(
-            "amux source is required at {}; set TREEFOLD_AMUX_MANIFEST",
-            manifest.display()
-        );
-    }
-    let amux_root = manifest.parent().context("amux manifest has no parent")?;
-    let skill = amux_root.join("skills/amux");
-    if !skill.join("SKILL.md").is_file() {
-        bail!("amux Skill is required at {}", skill.display());
-    }
-    let document = fs::read_to_string(&manifest)
-        .with_context(|| format!("read {}", manifest.display()))?
-        .parse::<DocumentMut>()
-        .with_context(|| format!("parse {}", manifest.display()))?;
-    let version = document
-        .get("package")
-        .and_then(|package| package.get("version"))
-        .and_then(|version| version.as_str())
-        .context("amux package.version is missing")?
-        .to_owned();
-
-    Ok(AmuxSource {
-        manifest,
-        skill,
-        version,
-    })
+fn cargo_build(root: &Path) -> Command {
+    let mut command = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    command.current_dir(root).arg("build");
+    command
 }
 
 fn build_sidecars(
     root: &Path,
-    amux: &AmuxSource,
+    backend: &BackendCargo,
     target_dir: &Path,
     options: &BuildOptions,
 ) -> Result<()> {
+    let mut treefold = cargo_build(root);
+    treefold.arg("--locked");
     build_binary(
-        root,
+        treefold,
         &root.join(TREEFOLD_MANIFEST),
         "treefold",
         target_dir,
         options,
     )?;
-    build_binary(root, &amux.manifest, "amux", target_dir, options)?;
+
+    let mut amux = cargo_build(root);
+    // Local package/dependency changes may require resolving the CLI lock too.
+    // Keep those writes out of the selected worktree and Cargo's Git cache.
+    let local_lock = if backend.amux.source.is_none() {
+        let temporary = tempfile::tempdir()?;
+        let lockfile = temporary.path().join("Cargo.lock");
+        let source = backend.amux.manifest.with_file_name("Cargo.lock");
+        if source.is_file() {
+            amux::seed_local_lock(&source, &lockfile)?;
+        }
+        amux.env("CARGO_RESOLVER_LOCKFILE_PATH", lockfile);
+        Some(temporary)
+    } else {
+        amux.arg("--locked");
+        None
+    };
+    build_binary(amux, &backend.amux.manifest, "amux", target_dir, options)?;
+    drop(local_lock);
+
+    let mut command = backend.command();
+    command.args(["build", "--locked"]);
     build_binary(
-        root,
-        &root.join("src/backend/Cargo.toml"),
+        command,
+        &root.join(BACKEND_MANIFEST),
         "treefold-backend",
         target_dir,
         options,
@@ -298,18 +297,14 @@ fn build_sidecars(
 }
 
 fn build_binary(
-    root: &Path,
+    mut command: Command,
     manifest: &Path,
     binary: &str,
     target_dir: &Path,
     options: &BuildOptions,
 ) -> Result<()> {
     eprintln!("Preparing {binary} sidecar");
-    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let mut command = Command::new(cargo);
     command
-        .current_dir(root)
-        .arg("build")
         .arg("--target-dir")
         .arg(target_dir)
         .arg("--bin")
@@ -322,13 +317,7 @@ fn build_binary(
     if let Some(target) = &options.target {
         command.arg("--target").arg(target);
     }
-    let status = command
-        .status()
-        .with_context(|| format!("run cargo build for {binary}"))?;
-    if !status.success() {
-        bail!("cargo build for {binary} exited with {status}");
-    }
-    Ok(())
+    run_command(&mut command, &format!("cargo build for {binary}"))
 }
 
 fn rust_host_target() -> Result<String> {
@@ -431,7 +420,12 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
         if file_type.is_dir() {
             copy_tree(&source_path, &destination_path)?;
         } else if file_type.is_file() {
-            copy_file(&source_path, &destination_path)?;
+            // On macOS fs::copy can clone the file and emit a source-side
+            // FSEvent. Do not notify file watchers about unchanged Skill source
+            // files while staging; retain executable script modes as well.
+            fs::write(&destination_path, fs::read(&source_path)?)
+                .with_context(|| format!("copy Skill {}", source_path.display()))?;
+            fs::set_permissions(&destination_path, fs::metadata(&source_path)?.permissions())?;
         } else {
             bail!("unsupported file type in Skill: {}", source_path.display());
         }
@@ -442,6 +436,26 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn skill_staging_preserves_executable_scripts() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("skill/scripts");
+        fs::create_dir_all(&source).unwrap();
+        let script = source.join("run.sh");
+        fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let destination = root.path().join("staged");
+        copy_tree(&root.path().join("skill"), &destination).unwrap();
+        let staged = destination.join("scripts/run.sh");
+        assert_eq!(fs::read(&staged).unwrap(), fs::read(&script).unwrap());
+        assert_eq!(
+            fs::metadata(staged).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+    }
 
     #[test]
     fn parses_build_target_and_release_options() {

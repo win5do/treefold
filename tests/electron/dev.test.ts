@@ -1,7 +1,7 @@
 import { test } from '@playwright/test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, writeFile, rm, utimes } from 'node:fs/promises';
+import { execFileSync, spawn } from 'node:child_process';
+import { cp, mkdtemp, readFile, writeFile, rm, utimes, realpath } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -24,9 +24,20 @@ async function until(check: () => boolean | Promise<boolean>, description: strin
   throw new Error(`Timed out: ${description}`);
 }
 
-test('electron-vite watches main, preload and Rust while releasing the previous backend', async () => {
+test('electron-vite watches main, preload, backend and selected amux while releasing the previous backend', async () => {
   test.setTimeout(240000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-vite-'));
+  const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--locked', '--manifest-path', 'src/backend/Cargo.toml', '--format-version', '1'], { maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' })) as { packages: { name: string; manifest_path: string }[] };
+  const originalAmux = metadata.packages.find(pkg => pkg.name === 'amux-runtime');
+  assert.ok(originalAmux);
+  const amux = path.join(await realpath(home), 'amux worktree');
+  await cp(path.dirname(originalAmux.manifest_path), amux, { recursive: true, filter: source => !['.git', 'target'].includes(path.basename(source)) });
+  const amuxManifest = path.join(amux, 'Cargo.toml');
+  await writeFile(amuxManifest, (await readFile(amuxManifest, 'utf8')).replace(/^version = .*$/m, 'version = "0.0.0-treefold-test"'));
+  const amuxCli = path.join(amux, 'src/bin/amux.rs');
+  await writeFile(amuxCli, (await readFile(amuxCli, 'utf8')).replace('about = "', 'about = "Treefold local amux fixture: '));
+  const amuxLock = await readFile(path.join(amux, 'Cargo.lock'), 'utf8');
+  const backendLock = await readFile('src/backend/Cargo.lock', 'utf8');
   const externalLog = path.join(home, 'external-open.jsonl');
   const externalHook = path.join(home, 'external-boundary.cjs');
   const externalReady = path.join(home, 'external-ready');
@@ -52,7 +63,7 @@ if (process.versions.electron) {
   let output = '';
   const child = spawn(process.execPath, ['node_modules/electron-vite/bin/electron-vite.js', 'dev', '--watch'], {
     detached: true,
-    env: { ...process.env, NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${externalHook}`].filter(Boolean).join(" "), TREEFOLD_HOME: home, TREEFOLD_UI_PORT: String(await availablePort()), TREEFOLD_API_ADDR: '127.0.0.1:0' },
+    env: { ...process.env, NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${externalHook}`].filter(Boolean).join(" "), TREEFOLD_AMUX_MANIFEST: path.join(amux, 'Cargo.toml'), TREEFOLD_HOME: home, TREEFOLD_UI_PORT: String(await availablePort()), TREEFOLD_API_ADDR: '127.0.0.1:0' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   child.stdout.on('data', chunk => { output += chunk; });
@@ -76,6 +87,22 @@ if (process.versions.electron) {
     await assert.rejects(fetch(`${endpoints()[0]}/api/health`));
     await touch('src/backend/src/main.rs');
     await runningUntil(async () => await readyCount() >= 3, 'Rust rebuild and restart');
+    const staged = 'src/backend/bundle-staging/dev-sidecars';
+    assert.equal(JSON.parse(await readFile(path.join(staged, 'amux-source.json'), 'utf8')).manifest_path, path.join(amux, 'Cargo.toml'));
+    const amuxSkill = path.join(amux, 'skills/amux/SKILL.md');
+    const skill = `${await readFile(amuxSkill, 'utf8')}\n<!-- local worktree watcher -->\n`;
+    await writeFile(amuxSkill, skill);
+    await touch(path.join(amux, 'src/lib.rs'));
+    const stagedSkill = path.resolve(staged, 'agent-integration/skills/amux');
+    await runningUntil(async () => await readyCount() >= 4 && await readFile(path.join(stagedSkill, 'SKILL.md'), 'utf8') === skill, 'local amux Rust rebuild and Skill refresh');
+    assert.match(execFileSync(path.join(staged, 'bin/amux'), ['--help'], { encoding: 'utf8' }), /Treefold local amux fixture/);
+    const integration = await (await fetch(`${endpoints().at(-1)}/api/agent-integration`)).json() as { components: { id: string; version: string; source_path: string }[] };
+    for (const id of ['amux_cli', 'amux_skill']) {
+      assert.equal(integration.components.find(component => component.id === id)?.version, '0.0.0-treefold-test');
+    }
+    assert.equal(integration.components.find(component => component.id === 'amux_skill')?.source_path, stagedSkill, 'development must not use a previous release Skill');
+    assert.equal(await readFile(path.join(amux, 'Cargo.lock'), 'utf8'), amuxLock, 'local CLI builds must preserve the source lock');
+    assert.equal(await readFile('src/backend/Cargo.lock', 'utf8'), backendLock, 'local development must preserve the Git dependency lock');
     assert.equal((await fetch(`${endpoints().at(-1)}/api/health`)).status, 200);
     assert.doesNotMatch(output, /Another Treefold backend|couldn't start|Untrusted desktop/);
     assert.equal(await readFile(externalReady, 'utf8'), 'ready', 'external browser guard must be installed');
