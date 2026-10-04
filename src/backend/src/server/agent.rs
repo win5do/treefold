@@ -29,6 +29,7 @@ pub(super) async fn amux_status(
 }
 
 pub(super) async fn stop_amux(State(state): State<AppState>) -> Result<StatusCode> {
+    super::session_titles::capture(&state, true).await?;
     state.terminals.stop_daemon().await?;
     state.store.stop_active_sessions().await?;
     capture_pending_agent_sessions(&state).await?;

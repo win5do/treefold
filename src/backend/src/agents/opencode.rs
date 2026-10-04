@@ -1,4 +1,3 @@
-mod metadata;
 mod runtime;
 use super::{
     AgentAdapter, LaunchContext,
@@ -25,6 +24,7 @@ const RULES: Rules = Rules {
         ("--print-logs", Flag),
         ("--mdns", Flag),
         ("--auto", Flag),
+        ("--standalone", Flag),
     ],
     reserved: &[
         "--session",
@@ -42,14 +42,14 @@ const RULES: Rules = Rules {
     attached_values: true,
 };
 impl AgentAdapter for OpenCode {
-    fn validate_resume(&self, _context: &super::MetadataContext<'_>) -> Result<()> {
+    fn validate_resume(&self, context: &super::MetadataContext<'_>) -> Result<()> {
         // Reject invalid inherited configuration before replacing the existing process.
         runtime::configuration(std::env::var("OPENCODE_CONFIG_CONTENT").ok().as_deref())?;
+        runtime::cli_configuration(
+            context.runtime_dir,
+            std::env::var("OPENCODE_CLI_CONFIG_CONTENT").ok().as_deref(),
+        )?;
         Ok(())
-    }
-
-    fn metadata(&self, context: &super::MetadataContext<'_>) -> super::AgentMetadata {
-        metadata::read(context)
     }
 
     fn prepare(
@@ -59,6 +59,12 @@ impl AgentAdapter for OpenCode {
         runtime::prepare(
             context,
             std::env::var("OPENCODE_CONFIG_CONTENT").ok().as_deref(),
+            runtime::cli_configuration(
+                context.runtime_dir.ok_or_else(|| {
+                    anyhow::anyhow!("OpenCode requires a managed runtime directory")
+                })?,
+                std::env::var("OPENCODE_CLI_CONFIG_CONTENT").ok().as_deref(),
+            )?,
         )
     }
 
@@ -73,6 +79,10 @@ impl AgentAdapter for OpenCode {
     }
     fn build_args(&self, context: &LaunchContext<'_>, user_args: &[String]) -> Result<Vec<String>> {
         let mut args = user_args.to_vec();
+        // Native shared services do not inherit this launch's integration config.
+        if !args.iter().any(|arg| arg == "--standalone") {
+            args.push("--standalone".into());
+        }
         if let Some(id) = context.resume_id {
             args.extend(["--session".into(), id.into()]);
         }

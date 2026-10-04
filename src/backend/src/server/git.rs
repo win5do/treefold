@@ -1089,6 +1089,7 @@ pub(super) async fn archive_workspace(
             .set_session_status(&session.id, "stopped")
             .await?;
     }
+    super::session_titles::capture(&state, true).await?;
     state.runtime.publish_sessions();
     Ok(Json(state.store.workspace(&id).await?))
 }

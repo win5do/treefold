@@ -1,11 +1,8 @@
-//! Schedule metadata reads and commit results; vendor formats live in agents/.
+//! Receive native identities from Treefold-owned Hook/extension receipts.
 use super::*;
 
 pub(super) async fn capture_pending_agent_sessions(state: &AppState) -> Result<()> {
-    let mut sessions = state.store.uncaptured_agent_sessions().await?;
-    for (id, _) in state.store.pending_agent_titles().await? {
-        sessions.push(state.store.session(&id).await?);
-    }
+    let sessions = state.store.uncaptured_agent_sessions().await?;
     let home = state.settings.treefold_home();
     let results = tokio::task::spawn_blocking(move || {
         let mut results = Vec::new();
@@ -23,11 +20,8 @@ pub(super) async fn capture_pending_agent_sessions(state: &AppState) -> Result<(
                 .zip(&directories)
                 .map(|(session, directory)| crate::agents::MetadataContext {
                     session_id: &session.id,
-                    original_cwd: &session.original_cwd,
-                    argv: &session.argv,
                     native_id: session.agent_session_id.as_deref(),
                     runtime_dir: directory,
-                    read_title: session.agent_session_id.is_some(),
                 })
                 .collect();
             for (session, metadata) in sessions
@@ -43,13 +37,7 @@ pub(super) async fn capture_pending_agent_sessions(state: &AppState) -> Result<(
     .map_err(|error| anyhow::anyhow!(error))?;
     for (id, metadata) in results {
         if let Some(native_id) = metadata.id {
-            let mut changed = state.store.set_agent_session_id(&id, &native_id).await?;
-            if let Some(title) = metadata.title {
-                changed |= state
-                    .store
-                    .import_agent_title(&id, &native_id, &title)
-                    .await?;
-            }
+            let changed = state.store.set_agent_session_id(&id, &native_id).await?;
             if changed {
                 state.runtime.publish_session_list(Some(id));
             }
@@ -65,7 +53,7 @@ pub(super) async fn capture_agent_session_id(
     if crate::agents::name(&session.kind).is_none() || session.agent_session_id.is_some() {
         return Ok(());
     }
-    if let Some(id) = discover(state, session, false).await?.id {
+    if let Some(id) = discover(state, session).await?.id {
         state.store.set_agent_session_id(&session.id, &id).await?;
         session.agent_session_id = state.store.session(&session.id).await?.agent_session_id;
         state.runtime.publish_session_list(Some(session.id.clone()));
@@ -73,11 +61,7 @@ pub(super) async fn capture_agent_session_id(
     Ok(())
 }
 
-async fn discover(
-    state: &AppState,
-    session: &Session,
-    read_title: bool,
-) -> Result<crate::agents::AgentMetadata> {
+async fn discover(state: &AppState, session: &Session) -> Result<crate::agents::AgentMetadata> {
     let session = session.clone();
     let directory =
         crate::agents::runtime_dir(&state.settings.treefold_home(), &session.kind, &session.id);
@@ -86,11 +70,8 @@ async fn discover(
             &session.kind,
             &crate::agents::MetadataContext {
                 session_id: &session.id,
-                original_cwd: &session.original_cwd,
-                argv: &session.argv,
                 native_id: session.agent_session_id.as_deref(),
                 runtime_dir: &directory,
-                read_title,
             },
         )
     })
@@ -110,11 +91,8 @@ pub(super) async fn validate_agent_resume(state: &AppState, session: &Session) -
             &session.kind,
             &crate::agents::MetadataContext {
                 session_id: &session.id,
-                original_cwd: &session.original_cwd,
-                argv: &session.argv,
                 native_id: session.agent_session_id.as_deref(),
                 runtime_dir: &directory,
-                read_title: false,
             },
         )
     })

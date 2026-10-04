@@ -1,3 +1,4 @@
+import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { isAgentKind } from "@/features/agents/model";
 import { useTranslation } from "react-i18next";
 import { useState } from "react";
@@ -32,7 +33,7 @@ export function RemoveSessionButton({ session, disabled }: { session: Session; d
     <AlertDialog open={open} onOpenChange={(value) => { if (!removing) setOpen(value); }}>
       <AlertDialogContent>
         <AlertDialogTitle>{t("terminalUi.removeSessionFromTreefold")}</AlertDialogTitle>
-        <AlertDialogDescription>{t("terminalUi.removeDescription", { name: session.name })}</AlertDialogDescription>
+        <AlertDialogDescription>{t("terminalUi.removeDescription", { name: sessionDisplayName(session) })}</AlertDialogDescription>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={removing}>{t("terminalUi.cancel")}</AlertDialogCancel>
           <AlertDialogAction variant="destructive" disabled={removing} onClick={() => void remove()}>{t("terminalUi.remove")}</AlertDialogAction>

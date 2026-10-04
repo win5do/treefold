@@ -1,4 +1,5 @@
-import { request, websocketUrl } from "./client";
+import i18n from "@/i18n";
+import { ApiError, request, websocketUrl } from "./client";
 import type { Session } from "@/domain/types";
 
 export const sessionsApi = {
@@ -7,7 +8,15 @@ export const sessionsApi = {
   delete: (id: string) => request(`/api/sessions/${id}`, { method: "DELETE" }),
   close: (id: string) => request(`/api/sessions/${id}/close`, { method: "POST" }),
   open: (id: string) => request<Session>(`/api/sessions/${id}/open`, { method: "POST" }),
-  restart: (id: string) => request<Session>(`/api/sessions/${id}/restart`, { method: "POST" }),
+  restart: async (id: string) => {
+    try { return await request<Session>(`/api/sessions/${id}/restart`, { method: "POST" }); }
+    catch (cause) {
+      if (cause instanceof ApiError && ["AGENT_SESSION_ID_PENDING", "CODEX_SESSION_ID_PENDING"].includes(cause.code)) {
+        throw new ApiError(cause.status, cause.code, i18n.t("terminalUi.resumeIdentityMissing"), cause.details, cause.requestId);
+      }
+      throw cause;
+    }
+  },
   terminalSocketUrl: (id: string, controllerClientId: string, inputClientId: string, afterOutputSequence: bigint | null) => {
     const query = new URLSearchParams({ controller_client_id: controllerClientId, input_client_id: inputClientId });
     if (afterOutputSequence !== null) query.set("after_output_sequence", afterOutputSequence.toString());

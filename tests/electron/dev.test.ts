@@ -1,6 +1,7 @@
 import { test } from '@playwright/test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import { cp, mkdtemp, readFile, writeFile, rm, utimes, realpath } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -68,6 +69,13 @@ if (process.versions.electron) {
   });
   child.stdout.on('data', chunk => { output += chunk; });
   child.stderr.on('data', chunk => { output += chunk; });
+  const groupStopped = async () => {
+    const {stdout} = await promisify(execFile)('ps', ['-axo', 'pgid=,stat=']);
+    return !stdout.split('\n').some(line => {
+      const [group, state] = line.trim().split(/\s+/);
+      return Number(group) === child.pid && !state.startsWith('Z');
+    });
+  };
   const runningUntil = (check: () => boolean | Promise<boolean>, description: string) => until(() => {
     if (child.exitCode !== null || child.signalCode) throw new Error(`Dev process exited (${child.exitCode ?? child.signalCode})`);
     return check();
@@ -117,7 +125,11 @@ if (process.versions.electron) {
       await until(async () => {
         if (child.exitCode === null && child.signalCode === null) return false;
         try { await readFile(path.join(home, 'runtime/api-url')); return false; }
-        catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT'; }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+          // Chromium helpers can still flush profile files after Vite and the backend exit.
+          return groupStopped();
+        }
       }, 'dev process and backend cleanup', 15000);
       stopped = true;
     } finally {
@@ -125,6 +137,7 @@ if (process.versions.electron) {
         // Escalate only when graceful shutdown failed, never after a completed exit.
         if (!stopped) {
           try { process.kill(-child.pid!, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+          await until(groupStopped, 'owned Electron process group exit', 10000);
         }
       } finally {
         await rm(home, { recursive: true, force: true });

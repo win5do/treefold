@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sessions SET terminal_title=? WHERE id=? AND terminal_title IS NOT ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "99b5227a83a22989ab54291c3bb18277606a1daccf941b7e982f27295070d708"
+}

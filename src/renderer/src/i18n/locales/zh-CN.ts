@@ -734,6 +734,7 @@ export const zhCN = {
     "resetDescription": "将恢复本页所有设置的默认值并立即保存，未保存的修改也会被替换。"
   },
   "terminalUi": {
+    "resumeIdentityMissing": "Agent Hook 或扩展尚未回传 Session ID，无法恢复这个 Session。请在 Agent 中启用或信任集成后新建 Session。当前记录已保留。",
     "newSession": "新建 Session",
     "sessionType": "Session 类型",
     "directory": "目录",
@@ -837,6 +838,9 @@ export const zhCN = {
     "editTodo": "编辑 Todo",
     "openExecutionFork": "打开执行 Fork",
     "delegateTodoToFork": "委派给 Fork",
+    "delegateTodoDescription": "选择 Agent，在新建的 Fork 中执行这个 Todo。",
+    "confirmDelegateTodo": "委派",
+    "delegatingTodo": "正在委派…",
     "reopenTodoBeforeDelegating": "请先重新打开 Todo，再委派",
     "permanentlyDeleteTodo": "永久删除 Todo",
     "permanentlyDeleteThisTodo": "永久删除此 Todo？",

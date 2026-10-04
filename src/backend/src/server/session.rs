@@ -299,6 +299,10 @@ pub(super) async fn create_session_for_workspace(
     }
     let session_id = new_id();
     let timestamp = now();
+    let name_is_custom = input
+        .name
+        .as_deref()
+        .is_some_and(|name| !name.trim().is_empty());
     let mut name = trimmed(input.name)
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| {
@@ -320,6 +324,8 @@ pub(super) async fn create_session_for_workspace(
         original_cwd: cwd.clone(),
         cwd: cwd.clone(),
         initial_prompt: trimmed(input.initial_prompt).unwrap_or_default(),
+        name_is_custom,
+        terminal_title: None,
         agent_session_id: None,
         visibility: "visible".into(),
         hidden_at: None,
@@ -412,6 +418,7 @@ pub(super) async fn stop_session(
         .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    super::session_titles::capture(&state, true).await?;
     capture_agent_session_id(&state, &mut session).await?;
     state.store.set_session_status(&id, "stopped").await?;
     state.runtime.publish_session(id);
@@ -433,12 +440,13 @@ pub(super) async fn restart_session(
             AppError::BadRequest(format!("{} CLI is not installed or executable", agent_name))
         })?;
     }
+    super::session_titles::capture(&state, true).await?;
     capture_agent_session_id(&state, &mut session).await?;
     if crate::agents::name(&session.kind).is_some() && session.agent_session_id.is_none() {
         return Err(AppError::api(
             StatusCode::CONFLICT,
             crate::agents::identity_pending_code(&session.kind),
-            "The Agent has not saved an identifiable conversation yet. Retry after its session data is available. The existing Session has been preserved; create a new Session if the Agent never started.",
+            "The Agent Hook or extension has not reported a Session ID, so this Session cannot be resumed. Enable or trust the integration in the Agent before starting a new Session. This Session has been preserved.",
         ));
     }
     validate_agent_resume(&state, &session).await?;
@@ -509,6 +517,11 @@ pub(super) async fn close_session(
         state.runtime.publish_session(id);
         return Ok(Json(session));
     }
+    let _ = state
+        .terminals
+        .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
+        .await;
+    super::session_titles::capture(&state, true).await?;
     capture_agent_session_id(&state, &mut session).await?;
     let _ = state
         .terminals
@@ -900,6 +913,8 @@ pub(super) async fn reconcile_process(
         cwd: process.cwd.clone(),
         original_cwd: process.cwd.clone(),
         initial_prompt: String::new(),
+        name_is_custom: false,
+        terminal_title: None,
         agent_session_id: None,
         visibility: "visible".into(),
         hidden_at: None,

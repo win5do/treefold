@@ -1,4 +1,11 @@
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--agent-hook") {
+        if let Err(error) = treefold_lib::run_agent_hook() {
+            eprintln!("Treefold Agent hook: {error:#}");
+        }
+        // Metadata is advisory; callback failures must not block the Agent.
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--await-terminal") {
         if let Err(error) = treefold_lib::run_terminal_launch_gate() {
             eprintln!("Treefold terminal launch failed: {error:#}");

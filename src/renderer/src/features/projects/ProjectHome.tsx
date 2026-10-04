@@ -1,3 +1,4 @@
+import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { AGENT_NAMES, isAgentKind } from "@/features/agents/model";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { useTranslation } from "react-i18next";
@@ -259,7 +260,7 @@ export function ProjectHome({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <p className="truncate text-sm font-semibold">
-                      {session.name}
+                      {sessionDisplayName(session)}
                     </p>
                     <Badge>
                       {isAgentKind(session.kind)

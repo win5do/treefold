@@ -34,6 +34,7 @@ static MIGRATOR: Migrator = sqlx::migrate!("./migrations/g1");
 pub struct Store {
     pub(super) pool: SqlitePool,
     database_path: Arc<PathBuf>,
+    pub(crate) titles: Arc<crate::session_title::TitleCache>,
 }
 
 impl Store {
@@ -91,6 +92,7 @@ impl Store {
         let store = Self {
             pool,
             database_path: Arc::new(database_path),
+            titles: Arc::default(),
         };
         log::info!("opened SQLite database {}", store.database_path.display());
         Ok(store)

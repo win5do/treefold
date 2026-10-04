@@ -1730,6 +1730,8 @@ mod current_workspace_tests {
             cwd: repository.to_string_lossy().into_owned(),
             original_cwd: repository.to_string_lossy().into_owned(),
             initial_prompt: "Keep this context".into(),
+            name_is_custom: false,
+            terminal_title: None,
             agent_session_id: Some("codex-session-id".into()),
             visibility: "visible".into(),
             hidden_at: None,
@@ -1838,56 +1840,35 @@ mod current_workspace_tests {
         crate::server::capture_agent_session_id(&state, &mut pending)
             .await
             .unwrap();
-        assert_eq!(
+        assert!(
             state
                 .store
                 .session(&pending.id)
                 .await
                 .unwrap()
                 .agent_session_id
-                .as_deref(),
-            Some(codex_id)
+                .is_none(),
+            "native log files must not authorize Resume"
         );
-        assert!(
-            state
-                .store
-                .pending_agent_titles()
-                .await
-                .unwrap()
-                .iter()
-                .any(|(id, _)| id == &pending.id)
+        state.store.titles.update(
+            &pending.id,
+            "Generated title".into(),
+            std::time::Instant::now(),
         );
-        assert!(
-            !state
-                .store
-                .import_agent_title(&pending.id, codex_id, " ")
-                .await
-                .unwrap()
-        );
-        assert!(
-            !state
-                .store
-                .import_agent_title(&pending.id, "wrong-id", "Wrong title")
-                .await
-                .unwrap()
-        );
-        assert!(
-            state
-                .store
-                .import_agent_title(&pending.id, codex_id, "Generated title")
-                .await
-                .unwrap()
-        );
+        state.store.persist_terminal_titles(true).await.unwrap();
         assert_eq!(
             state.store.session(&pending.id).await.unwrap().name,
-            "Generated title"
+            "Codex"
         );
-        assert!(
-            !state
+        assert_eq!(
+            state
                 .store
-                .import_agent_title(&pending.id, codex_id, "Later Codex title")
+                .session(&pending.id)
                 .await
                 .unwrap()
+                .terminal_title
+                .as_deref(),
+            Some("Generated title")
         );
         state
             .store
@@ -1895,31 +1876,12 @@ mod current_workspace_tests {
             .await
             .unwrap();
         assert!(
-            !state
+            state
                 .store
-                .import_agent_title(&pending.id, codex_id, "Later Codex title")
+                .session(&pending.id)
                 .await
                 .unwrap()
-        );
-        assert_eq!(
-            state.store.session(&pending.id).await.unwrap().name,
-            "Codex"
-        );
-        assert!(
-            !state
-                .store
-                .pending_agent_titles()
-                .await
-                .unwrap()
-                .iter()
-                .any(|(id, _)| id == &pending.id)
-        );
-        assert!(
-            !state
-                .store
-                .import_agent_title(&codex.id, "codex-session-id", "Replace custom name")
-                .await
-                .unwrap()
+                .name_is_custom
         );
 
         let codex_history = root.join("codex-owned-history.jsonl");
@@ -3610,6 +3572,8 @@ mod current_workspace_tests {
                 cwd: workspace.checkout_path.clone(),
                 original_cwd: workspace.checkout_path.clone(),
                 initial_prompt: String::new(),
+                name_is_custom: false,
+                terminal_title: None,
                 agent_session_id: None,
                 visibility: "visible".into(),
                 hidden_at: None,

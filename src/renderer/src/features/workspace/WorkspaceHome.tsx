@@ -1,4 +1,5 @@
-import { AgentSelect, useAgentChoice } from "@/features/agents/AgentSelect";
+import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
+import { DelegateTodoDialog } from "./DelegateTodoDialog";
 import { isAgentKind } from "@/features/agents/model";
 import { ReopenForkButton } from "./ReopenForkButton";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
@@ -91,7 +92,6 @@ export function WorkspaceHome({
   onTodoForkCreated: (fork: Workspace, session?: Session) => void;
 }) {
   const { t, i18n } = useTranslation();
-  const todoAgent = useAgentChoice();
   const [creatingSession, setCreatingSession] = useState(false);
   useEffect(() => setCreatingSession(false), [detail.id]);
   const [filter, setFilter] = useState<"all" | "agent" | "shell" | "command">(
@@ -104,9 +104,11 @@ export function WorkspaceHome({
     id?: string;
     content: string;
   } | null>(null);
+  const [todoDelegation, setTodoDelegation] = useState<{ id: string; trigger: HTMLButtonElement } | null>(null);
+  const delegatedTodo = detail.todos.find(todo => todo.id === todoDelegation?.id);
   const [todoBusy, setTodoBusy] = useState(false);
   const [todoError, setTodoError] = useState("");
-  useEffect(() => setTodoDialog(null), [detail.id]);
+  useEffect(() => { setTodoDialog(null); setTodoDelegation(null); }, [detail.id]);
   const runTodo = async (action: () => Promise<unknown>) => {
     setTodoBusy(true);
     setTodoError("");
@@ -211,94 +213,96 @@ export function WorkspaceHome({
           </span>
         </div>
         )}
-        <div className="mt-4 overflow-hidden rounded-xl border border-border bg-card">
-          {detail.sessions.length > 0 && (
-          <div className="hidden grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] gap-3 border-b border-border/60 bg-muted/50 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
-            <span>Session</span>
-            <span>{t("workspaceUi.type")}</span>
-            <span>{t("workspaceUi.status")}</span>
-            <span>{t("workspaceUi.started")}</span>
-            <span>{t("workspaceUi.lastActive")}</span>
-            <span>Workspace</span>
-            <span className="text-right">{t("workspaceUi.actions")}</span>
-          </div>
-          )}
-          {sessions.map((session) => {
-            return (
-              <div
-                key={session.id}
-                data-testid={`workspace-session-${session.id}`}
-                className="grid gap-3 border-b border-border/60 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_90px_130px_130px_130px_minmax(110px,1fr)_120px] md:items-center"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
-                    {isAgentKind(session.kind) ? (
-                      <Bot className="size-4" />
-                    ) : session.kind === "command" ? (
-                      <PanelsTopLeft className="size-4" />
-                    ) : (
-                      <TerminalSquare className="size-4" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {session.name}
-                    </p>
-                    <p className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">
-                      {session.agent_session_id || session.id}
-                    </p>
-                  </div>
-                </div>
-                <div>
-                  <Badge>
-                    {isAgentKind(session.kind)
-                      ? "Agent"
-                      : session.kind === "command"
-                        ? t("workspaceUi.command")
-                        : "Shell"}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-foreground">
-                  <StatusDot status={session.status} />
-                  {displayStatus(session)}
-                </div>
-                <span className="hidden text-xs text-muted-foreground md:block">
-                  {formatTime(session.launch_started_at)}
-                </span>
-                <span className="hidden text-xs text-muted-foreground md:block">
-                  {formatTime(
-                    session.hidden_at ||
-                      session.last_attached_at ||
-                      session.updated_at ||
-                      session.created_at,
-                  )}
-                </span>
-                <code
-                  className="hidden truncate text-[10px] text-muted-foreground md:block"
-                  title={session.cwd}
+        <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card">
+          <div className={cn(detail.sessions.length > 0 && "md:min-w-[56rem]")}>
+            {detail.sessions.length > 0 && (
+            <div className="hidden grid-cols-[minmax(180px,1.4fr)_72px_90px_110px_110px_minmax(110px,1fr)_96px] gap-3 border-b border-border/60 bg-muted px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+              <span>Session</span>
+              <span>{t("workspaceUi.type")}</span>
+              <span>{t("workspaceUi.status")}</span>
+              <span>{t("workspaceUi.started")}</span>
+              <span>{t("workspaceUi.lastActive")}</span>
+              <span>Workspace</span>
+              <span className="sticky right-0 z-10 -my-2.5 -mr-4 border-l border-border/60 bg-muted py-2.5 pr-4 pl-3 text-right">{t("workspaceUi.actions")}</span>
+            </div>
+            )}
+            {sessions.map((session) => {
+              return (
+                <div
+                  key={session.id}
+                  data-testid={`workspace-session-${session.id}`}
+                  className="grid gap-3 border-b border-border/60 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_72px_90px_110px_110px_minmax(110px,1fr)_96px] md:items-center"
                 >
-                  {session.cwd}
-                </code>
-                <div className="flex items-center justify-end gap-1">
-                  {detail.status === "active" && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() => onOpen(session)}
-                    >{t("workspaceUi.open")}</Button>
-                  )}
-                  <RemoveSessionButton session={session} disabled={busy} />
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
+                      {isAgentKind(session.kind) ? (
+                        <Bot className="size-4" />
+                      ) : session.kind === "command" ? (
+                        <PanelsTopLeft className="size-4" />
+                      ) : (
+                        <TerminalSquare className="size-4" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {sessionDisplayName(session)}
+                      </p>
+                      <p className="mt-0.5 truncate font-mono text-[9px] text-muted-foreground">
+                        {session.agent_session_id || session.id}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <Badge>
+                      {isAgentKind(session.kind)
+                        ? "Agent"
+                        : session.kind === "command"
+                          ? t("workspaceUi.command")
+                          : "Shell"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-foreground">
+                    <StatusDot status={session.status} />
+                    {displayStatus(session)}
+                  </div>
+                  <span className="hidden text-xs text-muted-foreground md:block">
+                    {formatTime(session.launch_started_at)}
+                  </span>
+                  <span className="hidden text-xs text-muted-foreground md:block">
+                    {formatTime(
+                      session.hidden_at ||
+                        session.last_attached_at ||
+                        session.updated_at ||
+                        session.created_at,
+                    )}
+                  </span>
+                  <code
+                    className="hidden truncate text-[10px] text-muted-foreground md:block"
+                    title={session.cwd}
+                  >
+                    {session.cwd}
+                  </code>
+                  <div className="flex items-center justify-end gap-1 md:sticky md:right-0 md:z-10 md:-my-3.5 md:-mr-4 md:self-stretch md:border-l md:border-border/60 md:bg-card md:py-3.5 md:pr-4 md:pl-3">
+                    {detail.status === "active" && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => onOpen(session)}
+                      >{t("workspaceUi.open")}</Button>
+                    )}
+                    <RemoveSessionButton session={session} disabled={busy} />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-          {sessions.length === 0 && (
-            <Empty className="py-12"><EmptyHeader>
-              <EmptyTitle>{t(detail.sessions.length > 0 ? "workspaceUi.noSessionsMatchTheFilter" : !creation.available ? "projectsUi.noSessions" : detail.kind === "fork" ? "workspaceUi.startSubtask" : "workspaceUi.startFeature")}</EmptyTitle>
-              {detail.sessions.length === 0 && creation.available && <EmptyDescription>{t(detail.kind === "fork" ? "workspaceUi.startSubtaskDescription" : "workspaceUi.startFeatureDescription")}</EmptyDescription>}
-            </EmptyHeader></Empty>
-          )}
+              );
+            })}
+            {sessions.length === 0 && (
+              <Empty className="py-12"><EmptyHeader>
+                <EmptyTitle>{t(detail.sessions.length > 0 ? "workspaceUi.noSessionsMatchTheFilter" : !creation.available ? "projectsUi.noSessions" : detail.kind === "fork" ? "workspaceUi.startSubtask" : "workspaceUi.startFeature")}</EmptyTitle>
+                {detail.sessions.length === 0 && creation.available && <EmptyDescription>{t(detail.kind === "fork" ? "workspaceUi.startSubtaskDescription" : "workspaceUi.startFeatureDescription")}</EmptyDescription>}
+              </EmptyHeader></Empty>
+            )}
+          </div>
         </div>
         </section>
         {creatingSession && creation.available && <NewSessionDialog
@@ -310,7 +314,6 @@ export function WorkspaceHome({
           <section data-testid="workspace-todos-section" className="mt-8">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold">{t("workspaceUi.todos")}</h2>
-              {detail.status === "active" && <AgentSelect choice={todoAgent} disabled={todoBusy} />}
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-muted-foreground">
                   {detail.todos.length}
@@ -456,15 +459,8 @@ export function WorkspaceHome({
                               size="icon-sm"
                               variant="ghost"
                               aria-label={t("workspaceUi.delegateTodoToFork")}
-                              disabled={todoBusy || !canDelegate || !todoAgent.kind}
-                              onClick={() =>
-                                void runTodo(async () => {
-                                  const result = await todosApi.createFork(
-                                    todo.id, todoAgent.kind,
-                                  );
-                                  onTodoForkCreated(result.fork, result.session);
-                                })
-                              }
+                              disabled={todoBusy || !canDelegate}
+                              onClick={event => setTodoDelegation({ id: todo.id, trigger: event.currentTarget })}
                             >
                               <GitFork />
                             </Button>
@@ -656,6 +652,16 @@ export function WorkspaceHome({
         )}
 
 
+        {detail.kind === "workspace" && delegatedTodo && todoDelegation && (
+          <DelegateTodoDialog key={`${detail.id}-${delegatedTodo.id}`}
+            todo={delegatedTodo} trigger={todoDelegation.trigger}
+            onClose={() => setTodoDelegation(null)}
+            onCreated={result => {
+              setTodoDelegation(null);
+              onTodosChanged();
+              onTodoForkCreated(result.fork, result.session);
+            }} />
+        )}
         <Dialog
           open={detail.kind === "workspace" && Boolean(todoDialog)}
           onOpenChange={(open) => !open && setTodoDialog(null)}

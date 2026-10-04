@@ -2,59 +2,72 @@
 
 ## Ownership
 
-`agents/mod.rs` owns the adapter contract and dispatch. Each provider owns its
-CLI arguments, launch resources, native metadata parser and resume validation
-under `agents/<provider>/`. `server/agent_metadata.rs` schedules bounded reads,
-commits discovered metadata and publishes changes; it does not parse vendor files.
-Session creation, context generation, directory refresh, Close, Stop, Resume and
-delivery are shared workflows.
+`agents/mod.rs` owns CLI adapters. `agents/hooks.rs` prepares process-local
+integrations and accepts native callbacks; `server/agent_metadata.rs` commits
+Treefold-owned identity receipts. No adapter scans Agent logs, title indexes,
+transcripts or directory timestamps to discover an ID.
 
-Generation 1 adds a forward migration renaming `codex_session_id` to
-`agent_session_id` and `codex_title_imported` to `agent_title_imported`, preserving
-existing values. The Session API now exposes `agent_session_id` for every Agent.
-All renderer consumers use that field. Existing custom names are marked handled.
+`session_title.rs` parses terminal OSC 0/2 and coalesces title writes.
+`server/session_titles.rs` observes amux output independently of mounted Tabs.
+The renderer uses one `sessionDisplayName` helper for the sidebar and history lists.
 
 ## Exact conversation association
 
-| Agent | Initial launch association | Resume | Title source |
-| --- | --- | --- | --- |
-| Codex | Scoped `logs/codex/<treefold-id>/codex-tui.log`; exact runtime-context fallback in Codex history | `resume <native-id>` | `$CODEX_HOME/session_index.jsonl` |
-| Claude Code | Explicit `--session-id <UUID>` derived from the Treefold ID; matching transcript under `$CLAUDE_CONFIG_DIR/projects` (default `~/.claude/projects`) | `--resume <native-id>` | Transcript `custom-title`, then `summary` |
-| OpenCode | A per-Session plugin binds the first root `chat.message` hook after verifying the Session through the native client; metadata events cannot establish identity | `--session <native-id>` | Verified Session title, then matching `session.updated` events |
-| Pi | Explicit `--session <absolute-file>` under the managed runtime directory; native header ID | The same absolute Session file, with its header cwd updated to the current checkout | Latest `session_info.name` |
+| Agent | Official callback | Resume |
+| --- | --- | --- |
+| Codex | `SessionStart` / `UserPromptSubmit` command Hook, `session_id` | `resume <native-id>` |
+| Claude Code | Process-local plugin with `SessionStart` / `UserPromptSubmit`, `session_id` | `--resume <native-id>` |
+| OpenCode 2 | TUI extension reads the current Session route and verifies it through `context.data.session.get` | `--session <native-id>` |
+| Pi | `session_start` extension event and `ctx.sessionManager.getSessionId()` | Managed absolute Session file |
 
-Additional runtime resources live in
-`$TREEFOLD_HOME/data/agent-sessions/<kind>/<treefold-id>/`. OpenCode receives the
-plugin and a generated instruction file through `OPENCODE_CONFIG_CONTENT`, merged
-with inherited inline JSONC configuration (including comments and trailing commas).
-Resume validates that configuration before removing the old process.
-Existing plugins, instructions, models and
-permissions are retained. These are per-process overrides; user config files and
-repository instructions are not rewritten.
+The fixed Hook command invokes the bundled backend's `--agent-hook` mode.
+Per-launch environment supplies its path, runtime directory and launch token;
+Hook definitions contain no changing UUIDs. Unchanged integration files are not
+rewritten. Receipts are private atomic files under
+`$TREEFOLD_HOME/data/agent-sessions/<kind>/<treefold-id>/`. The receiver rejects
+stale launch tokens, wrong Agent kinds and conflicting saved identities.
 
-No adapter associates history using only cwd or timestamps. Existing non-Codex
-Sessions created before this integration have no exact launch association; their
-records remain available, but Resume returns an identity-pending error. New
-Sessions establish the required association. Missing Pi history or a different
-header ID is rejected before replacing the old process, because Pi would otherwise
-create a new conversation at a missing path.
+Native review/trust still applies. Treefold does not approve Hook definitions,
+trust workspaces, or enable disabled extensions. With no callback, there is no
+new `agent_session_id` and Resume returns HTTP 409 before replacing a process.
+The Session remains visible and can still be opened or removed. Existing saved
+IDs are retained on upgrade. A supplied Claude `--session-id` alone does not
+count as a confirmed identity.
 
-Treefold Resume reopens the saved native conversation. Native CLI operations such
-as new, switch and fork remain available; Treefold does not follow those switches
-or replace its saved association. OpenCode ignores unrelated creation/title events
-and user messages from other conversations when collecting metadata.
-Resume supplies the persisted native ID even if the metadata sidecar was lost.
-Blank OpenCode Sessions acquire identity on their first root user message.
+Codex uses a process-local server (`--no-daemon`) so callbacks receive this
+launch's environment. OpenCode also uses `--standalone` so generated instructions
+reach its own server. Its **TUI** extension runs in the local terminal, so a shared native server cannot bind a different terminal's Session.
+`OPENCODE_CLI_CONFIG_CONTENT` and inline JSONC overrides are preserved in generated
+process-local config. The native `cli.json` plugin list and disable rules are
+retained; original user files are never rewritten. Pi's explicit
+`--no-extensions` / `-ne` prevents injecting the Treefold extension.
 
-On Pi Resume, after the old process stops, Treefold atomically updates only the
-managed history header's cwd; the native ID, other header fields
-and transcript bytes are preserved. Pi otherwise prefers the old header cwd over
-the child process cwd, which can point to a removed worktree.
+Treefold retains the first root association. Native new/switch/fork operations
+remain available but do not replace Treefold's saved Resume target. This is a
+limitation: the observed terminal title can describe a switched native Session.
+Create separate Treefold Sessions when each conversation needs its own Resume.
 
-Metadata adapters follow the CLI file/event formats and can require updates when
-those formats change. Codex fallback scanning and title-index reading are batched.
-Claude Code and Pi read bounded header/tail windows so titles appended to long
-histories can still be found. Missing or malformed metadata leaves capture pending.
+Pi Resume validates the already-known ID against its managed file before
+replacing a process. After stopping the old process, it atomically updates only
+that file's header cwd so a removed worktree does not break Resume. This reads
+native history to validate/relocate a known target, never to discover its ID.
+
+## Titles and persistence
+
+- Display priority: explicit name, latest useful terminal title (including the
+  last persisted title), then `name · last 8 characters of the Treefold ID`.
+- `name_is_custom` records explicit ownership, including a rename to `Codex`.
+  `terminal_title` is separate and never overwrites `name`.
+- Live title observation runs every two seconds, including unopened Tabs.
+  Changes are saved after five quiet seconds, with a maximum thirty-second wait
+  during continuous changes. Stop/Close and graceful backend exit flush changes.
+  A forced crash can lose the unsaved window; retained amux output is replayed
+  on reconnect.
+- Empty titles, product-only placeholders and Claude spinner-only changes do
+  not replace the last useful title. The parser handles fragmented UTF-8, BEL
+  and ST terminators and bounds input/title size.
+- A forward-only migration retains previous imported/custom names and native
+  IDs, renames the ownership flag and adds `terminal_title`.
 
 ## Shared behavior
 
@@ -72,9 +85,6 @@ histories can still be found. Missing or malformed metadata leaves capture pendi
 - All Agent TUIs wait for a controlling terminal to report valid dimensions.
   Provider-specific keyboard mappings live in renderer Agent implementations;
   Codex retains its Ctrl+J fallback for Shift+Enter.
-- Treefold imports the first available native title once. It does not synthesize
-  titles for Agents that have not produced one. Manual names and renames are
-  never overwritten, even if the user renames back to the default label.
 - Close stops/removes the managed process and hides the record. Remove from
   Treefold deletes the record/process, retaining native history and runtime files.
 - Delivery with history retention stops all Agent processes, hides their records,
@@ -91,13 +101,12 @@ resolver Session is reused.
 ## Verification boundaries
 
 The integration fixture runs inert CLIs through the real backend, adapters and
-amux. It checks launch arguments, context, exact native IDs, title import and
-Resume for all four providers. Claude Code and OpenCode were not installed on the
-verification machine, so this does not establish model-backed native CLI acceptance.
-Focused regressions cover unrelated OpenCode events, native switching while
-retaining the saved association, lost metadata on Resume, JSONC parsing,
-preserving a running process when Resume rejects invalid inline configuration
-and Pi's persisted cwd.
+amux. It executes the generated callbacks/extensions, observes OSC titles,
+checks retained titles, exact Resume arguments and rejects Resume when native
+files exist but no callback was received. This does not replace native CLI
+trust/compatibility testing. Focused tests cover stale/wrong callbacks, viewed
+OpenCode roots, observer disposal, bounded title parsing, write coalescing,
+forward migration, JSONC preservation and Pi relocation.
 
 The integration fixture exercises single-process Stop/Resume without a keeper
 Shell. It requires the accompanying amux lifecycle fix: terminal notifications
@@ -107,8 +116,8 @@ their names until deletion; the fix preserves the existing name uniqueness rule.
 
 ## References
 
-- [Claude Code CLI](https://code.claude.com/docs/en/cli-reference)
-- [OpenCode config](https://opencode.ai/docs/config/)
-- [OpenCode plugins](https://opencode.ai/docs/plugins/)
-- Pi 1.0.0 `--help` and `core/session-manager.js` from `@earendil-works/pi-coding-agent`
-- [Codex log configuration](https://developers.openai.com/codex/config-reference/)
+- [Codex Hooks](https://learn.chatgpt.com/docs/hooks)
+- [Claude Code Hooks](https://code.claude.com/docs/en/hooks)
+- [OpenCode TUI plugin API](https://github.com/anomalyco/opencode/blob/v2/packages/plugin/src/tui/context.ts)
+- [OpenCode TUI configuration](https://github.com/anomalyco/opencode/blob/v2/services/www/src/docs/content/cli/plugins.mdx)
+- Pi 1.0.0 extension types in `@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`

@@ -36,7 +36,12 @@ test('Open With sends the selected app and the Project, Workspace or Fork direct
         if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
       }
       await openMenu(page, owner);
-      await expect(page.getByTestId('open-in-submenu').filter({ visible: true }).getByRole('menuitem')).toHaveText(['Copy Absolute Path', ...apps.map(app => app.label)]);
+      const submenu = page.getByTestId('open-in-submenu').filter({ visible: true });
+      const labels = ['Copy Absolute Path', ...apps.map(app => app.label)];
+      await expect(submenu.getByRole('menuitem')).toHaveCount(labels.length);
+      for (const name of labels) {
+        await expect(submenu.getByRole('menuitem', { name, exact: true })).toBeVisible();
+      }
       await page.getByRole('menuitem', { name: label, exact: true }).click();
       await page.getByTestId('open-in-submenu').waitFor({ state: 'hidden' });
       await page.getByTestId('directory-session-context-menu').waitFor({ state: 'hidden' });

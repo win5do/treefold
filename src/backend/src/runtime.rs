@@ -193,10 +193,25 @@ async fn serve_backend(home: &std::path::Path, user_home: &std::path::Path) -> a
     use std::io::Write;
     std::io::stdout().flush()?;
     let result = tokio::select! {
-        result = server::serve(listener, state) => result,
+        result = server::serve(listener, state.clone()) => result,
         result = shutdown_requested() => result,
     };
-    remove_api_url(&api_url_file, &api_url);
+    // The desktop normally exits through stdin, not a signal. Flush while amux
+    // is still reachable, with a deadline inside the desktop's stop timeout.
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(4),
+        server::flush_session_metadata(&state),
+    )
+    .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => log::error!("failed to flush Session metadata: {error}"),
+        Err(_) => log::warn!("Session metadata flush timed out"),
+    }
+    if let Err(error) = store.persist_terminal_titles(true).await {
+        log::error!("failed to persist terminal titles: {error}");
+    }
+
     if !settings
         .load()
         .map(|value| value.amux.keep_daemon_running_on_exit)
@@ -211,6 +226,7 @@ async fn serve_backend(home: &std::path::Path, user_home: &std::path::Path) -> a
             log::error!("failed to stop persisted Sessions: {error}");
         }
     }
+    remove_api_url(&api_url_file, &api_url);
     log::info!("Treefold backend stopped");
     result
 }

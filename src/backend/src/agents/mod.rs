@@ -3,6 +3,7 @@
 mod claude_code;
 mod codex;
 mod command;
+pub(crate) mod hooks;
 mod metadata;
 pub use metadata::{AgentMetadata, MetadataContext, runtime_dir};
 mod opencode;
@@ -29,13 +30,6 @@ pub struct LaunchContext<'a> {
 }
 
 trait AgentAdapter: Sync {
-    fn metadata_batch(&self, contexts: &[MetadataContext<'_>]) -> Vec<AgentMetadata> {
-        contexts
-            .iter()
-            .map(|context| self.metadata(context))
-            .collect()
-    }
-    fn metadata(&self, context: &MetadataContext<'_>) -> AgentMetadata;
     fn prepare(
         &self,
         _context: &LaunchContext<'_>,
@@ -195,9 +189,7 @@ fn resolve_executable(value: &str) -> Option<PathBuf> {
 }
 
 pub fn read_metadata(kind: &str, context: &MetadataContext<'_>) -> AgentMetadata {
-    adapter(kind)
-        .map(|agent| agent.metadata(context))
-        .unwrap_or_default()
+    hooks::read(kind, context)
 }
 pub fn identity_pending_code(kind: &str) -> &'static str {
     adapter(kind)
@@ -208,7 +200,11 @@ pub fn prepare_environment(
     kind: &str,
     context: &LaunchContext<'_>,
 ) -> Result<std::collections::BTreeMap<String, String>> {
-    adapter(kind).context("Unsupported Agent")?.prepare(context)
+    let mut env = adapter(kind)
+        .context("Unsupported Agent")?
+        .prepare(context)?;
+    env.extend(hooks::prepare(kind, context)?);
+    Ok(env)
 }
 pub fn select_available(settings: &AgentsSettings, requested: Option<&str>) -> Result<String> {
     if let Some(kind) = requested {
@@ -229,9 +225,10 @@ pub fn select_available(settings: &AgentsSettings, requested: Option<&str>) -> R
 }
 
 pub fn read_metadata_batch(kind: &str, contexts: &[MetadataContext<'_>]) -> Vec<AgentMetadata> {
-    adapter(kind)
-        .map(|agent| agent.metadata_batch(contexts))
-        .unwrap_or_default()
+    contexts
+        .iter()
+        .map(|context| hooks::read(kind, context))
+        .collect()
 }
 
 pub fn default_session_name(kind: &str) -> Option<&'static str> {

@@ -768,6 +768,7 @@ pub(super) async fn finish_workspace_steps(
                     .await;
             }
         }
+        super::session_titles::capture(&state, true).await?;
         let resume_cwd = if input.delete_worktree {
             target_path.as_str()
         } else {

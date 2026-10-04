@@ -296,6 +296,11 @@ fn launch_preserves_literal_values_and_adds_only_agent_specific_context() {
         );
         let mut expected = match kind {
             "codex" => vec![
+                "--no-daemon".into(),
+                "-c".into(),
+                hooks::codex_override("SessionStart"),
+                "-c".into(),
+                hooks::codex_override("UserPromptSubmit"),
                 "-C".into(),
                 context.cwd.into(),
                 "--add-dir".into(),
@@ -321,6 +326,7 @@ fn launch_preserves_literal_values_and_adds_only_agent_specific_context() {
                 "--append-system-prompt".into(),
                 "Treefold instructions".into(),
             ],
+            "opencode" => vec!["--standalone".into()],
             _ => vec![],
         };
         expected.extend([
@@ -381,27 +387,19 @@ fn managed_agents_resume_exactly_without_replaying_the_initial_prompt() {
 }
 
 #[test]
-fn pi_identity_requires_the_scoped_file_and_never_switches_saved_identity() {
+fn pi_history_validates_a_known_id_but_never_discovers_one() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("session.jsonl");
     let native_id = "01a08fff-908b-76b2-8c1c-3826e810b018";
-    let argv = vec![
-        "pi".into(),
-        "--session".into(),
-        path.to_string_lossy().into_owned(),
-    ];
     let mut context = MetadataContext {
         session_id: "managed",
-        original_cwd: "/checkout",
-        argv: &argv,
         native_id: None,
         runtime_dir: root.path(),
-        read_title: true,
     };
     std::fs::write(&path, format!("{{\"type\":\"session\",\"id\":\"{native_id}\"}}\n{{\"type\":\"session_info\",\"name\":\"Saved task\"}}\n")).unwrap();
     let metadata = read_metadata("pi", &context);
-    assert_eq!(metadata.id.as_deref(), Some(native_id));
-    assert_eq!(metadata.title.as_deref(), Some("Saved task"));
+    assert!(metadata.id.is_none());
+    assert!(validate_resume("pi", &context).is_err());
     context.native_id = Some(native_id);
     assert!(validate_resume("pi", &context).is_ok());
     std::fs::remove_file(&path).unwrap();
@@ -409,37 +407,7 @@ fn pi_identity_requires_the_scoped_file_and_never_switches_saved_identity() {
     context.native_id = Some("different");
     assert!(read_metadata("pi", &context).id.is_none());
     context.native_id = None;
-    context.argv = &[];
     assert!(read_metadata("pi", &context).id.is_none());
-}
-
-#[test]
-fn opencode_metadata_ignores_placeholder_titles_and_conflicting_identity() {
-    let root = tempfile::tempdir().unwrap();
-    let path = root.path().join("metadata.json");
-    let mut context = MetadataContext {
-        session_id: "managed",
-        original_cwd: "/checkout",
-        argv: &[],
-        native_id: None,
-        runtime_dir: root.path(),
-        read_title: true,
-    };
-    std::fs::write(
-        &path,
-        r#"{"id":"ses_root","title":"New session - 2026-10-03T00:00:00.000Z"}"#,
-    )
-    .unwrap();
-    let metadata = read_metadata("opencode", &context);
-    assert_eq!(metadata.id.as_deref(), Some("ses_root"));
-    assert!(metadata.title.is_none());
-    std::fs::write(&path, r#"{"id":"ses_root","title":"Implement task"}"#).unwrap();
-    assert_eq!(
-        read_metadata("opencode", &context).title.as_deref(),
-        Some("Implement task")
-    );
-    context.native_id = Some("ses_other");
-    assert!(read_metadata("opencode", &context).id.is_none());
 }
 
 #[test]

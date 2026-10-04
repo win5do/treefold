@@ -2276,6 +2276,7 @@ dependencies = [
  "amux-runtime",
  "anyhow",
  "axum",
+ "base64",
  "chrono",
  "flexi_logger",
  "fs2",

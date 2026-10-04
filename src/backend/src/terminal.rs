@@ -583,6 +583,23 @@ impl TerminalManager {
         )).await?))
     }
 
+    /// Observe output without starting a stopped daemon.
+    pub(crate) async fn passive_logs(
+        &self,
+        workspace: &str,
+        process: &str,
+        after: u64,
+    ) -> anyhow::Result<axum::body::Body> {
+        anyhow::ensure!(self.client.ready().await, "amux is offline");
+        let body = self
+            .client
+            .stream(&format!(
+                "/v1/processes/{workspace}/{process}/logs?after={after}&follow=false"
+            ))
+            .await?;
+        Ok(axum::body::Body::new(body))
+    }
+
     pub async fn logs_existing(
         &self,
         workspace: &str,

@@ -328,6 +328,7 @@ pub(super) async fn update_project(
                     .await?;
             }
         }
+        super::session_titles::capture(&state, true).await?;
     }
     if input.status.is_some() {
         state.store.update_project_status(&id, status).await?;

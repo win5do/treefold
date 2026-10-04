@@ -1,3 +1,4 @@
+import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { isAgentKind } from "@/features/agents/model";
 import { AgentIcon } from "@/features/agents/AgentIcon";
 import { OpenInMenu } from "@/features/open-in/OpenInMenu";
@@ -1393,10 +1394,10 @@ function SidebarSessions({
           >
             <button
               className="flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden px-2 text-left focus-visible:outline-none"
-              title={session.name}
+              title={sessionDisplayName(session)}
             >
               <SessionKindIcon kind={session.kind} />
-              <span className="min-w-0 flex-1 truncate">{session.name}</span>
+              <span className="min-w-0 flex-1 truncate">{sessionDisplayName(session)}</span>
               <StatusDot status={session.status} />
               <span className="shrink-0 text-[10px]">{t(`states.${session.status}`, { defaultValue: session.status })}</span>
             </button>
@@ -1476,13 +1477,13 @@ function SidebarProjectSessions({
           >
             <button
               className="flex h-8 min-w-0 flex-1 items-center gap-2 overflow-hidden px-2 text-left focus-visible:outline-none"
-              title={session.name}
+              title={sessionDisplayName(session)}
               onClick={() =>
                 onNavigate(`/projects/${project.id}/sessions/${session.id}`)
               }
             >
               <SessionKindIcon kind={session.kind} />
-              <span className="min-w-0 flex-1 truncate">{session.name}</span>
+              <span className="min-w-0 flex-1 truncate">{sessionDisplayName(session)}</span>
               <StatusDot status={session.status} />
               <span className="shrink-0 text-[10px]">{t(`states.${session.status}`, { defaultValue: session.status })}</span>
             </button>

@@ -732,6 +732,7 @@ export const enUS = {
     "resetDescription": "All settings on this page will be reset to their defaults and saved immediately. Unsaved changes will also be replaced."
   },
   "terminalUi": {
+    "resumeIdentityMissing": "The Agent Hook or extension has not reported a Session ID, so this Session cannot be resumed. Enable or trust the integration in the Agent before starting a new Session. This Session has been preserved.",
     "newSession": "New Session",
     "sessionType": "Session type",
     "directory": "Directory",
@@ -835,6 +836,9 @@ export const enUS = {
     "editTodo": "Edit Todo",
     "openExecutionFork": "Open execution Fork",
     "delegateTodoToFork": "Delegate Todo to Fork",
+    "delegateTodoDescription": "Choose an Agent to run this Todo in a new Fork.",
+    "confirmDelegateTodo": "Delegate",
+    "delegatingTodo": "Delegating…",
     "reopenTodoBeforeDelegating": "Reopen Todo before delegating",
     "permanentlyDeleteTodo": "Permanently delete Todo",
     "permanentlyDeleteThisTodo": "Permanently delete this Todo?",

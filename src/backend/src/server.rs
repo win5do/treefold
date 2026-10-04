@@ -54,6 +54,7 @@ pub struct AppState {
 
 #[derive(Clone)]
 pub struct RuntimeHub {
+    title_observer: Arc<tokio::sync::Mutex<session_titles::Observer>>,
     instance_id: Arc<str>,
     revision: Arc<AtomicU64>,
     changes: tokio::sync::broadcast::Sender<RuntimeChange>,
@@ -87,6 +88,7 @@ impl Default for RuntimeHub {
     fn default() -> Self {
         let (changes, _) = tokio::sync::broadcast::channel(256);
         Self {
+            title_observer: Arc::default(),
             instance_id: Arc::from(new_id()),
             revision: Arc::new(AtomicU64::new(0)),
             changes,
@@ -219,10 +221,27 @@ pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> anyhow
             }
         }
     });
-    let app = app(state);
+    let title_state = state.clone();
+    tokio::spawn(async move {
+        let mut poll = tokio::time::interval(Duration::from_secs(2));
+        poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            poll.tick().await;
+            if let Err(error) = session_titles::capture(&title_state, false).await {
+                log::error!("failed to observe terminal titles: {error}");
+            }
+        }
+    });
+    let app = app(state.clone());
     log::info!("Rust API listening on http://{}", listener.local_addr()?);
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Called by the backend owner for signals and the desktop's shutdown pipe.
+pub(crate) async fn flush_session_metadata(state: &AppState) -> Result<()> {
+    capture_pending_agent_sessions(state).await?;
+    session_titles::capture(state, true).await
 }
 
 fn app(state: AppState) -> Router {
@@ -641,3 +660,5 @@ use parent_operation::*;
 use session::*;
 use verification::*;
 use workspace::*;
+
+mod session_titles;

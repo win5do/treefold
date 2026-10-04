@@ -86,15 +86,10 @@ impl AgentAdapter for Pi {
 
     fn validate_resume(&self, context: &super::MetadataContext<'_>) -> Result<()> {
         anyhow::ensure!(
-            context.native_id.is_some()
-                && metadata::read(context).id.as_deref() == context.native_id,
+            context.native_id.is_some() && metadata::matches_history(context),
             "Pi session history is missing or its identity changed. The existing Session has been preserved."
         );
         Ok(())
-    }
-
-    fn metadata(&self, context: &super::MetadataContext<'_>) -> super::AgentMetadata {
-        metadata::read(context)
     }
 
     fn name(&self) -> &'static str {
@@ -108,6 +103,20 @@ impl AgentAdapter for Pi {
     }
     fn build_args(&self, context: &LaunchContext<'_>, user_args: &[String]) -> Result<Vec<String>> {
         let mut args = user_args.to_vec();
+        if !args
+            .iter()
+            .any(|arg| arg == "--no-extensions" || arg == "-ne")
+        {
+            if let Some(directory) = context.runtime_dir {
+                args.extend([
+                    "--extension".into(),
+                    super::hooks::integration_dir(directory)
+                        .join("pi.mjs")
+                        .to_string_lossy()
+                        .into_owned(),
+                ]);
+            }
+        }
         if let Some(directory) = context.runtime_dir {
             args.extend([
                 "--session".into(),

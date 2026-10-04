@@ -58,7 +58,7 @@ const meta = id => JSON.stringify({type: 'session_meta', timestamp: new Date().t
 // A simultaneous standalone Codex in the same cwd must never be associated.
 fs.writeFileSync(dir + '/ghostty.jsonl', meta('standalone-codex'));
 fs.writeFileSync(dir + '/managed.jsonl', meta('managed-codex'));
-setTimeout(() => fs.appendFileSync(dir + '/managed.jsonl', JSON.stringify({type: 'response_item', payload: {role: 'developer', content: [{type: 'input_text', text: instructions}]}}) + '\\n'), 350);
+setTimeout(() => require('node:child_process').execFileSync(process.env.TREEFOLD_AGENT_HOOK, ['--agent-hook', 'codex'], {input:JSON.stringify({session_id:'managed-codex'})}), 350);
 
 fs.writeFileSync(started, JSON.stringify({pid: process.pid, rows: process.stdout.rows, cols: process.stdout.columns, amuxIoMode: process.env.AMUX_IO_MODE}));
 process.stdin.setRawMode(true);
@@ -144,7 +144,7 @@ setTimeout(() => finish(false), 100);
     expect((await restart.json()).error.code).toBe("CODEX_SESSION_ID_PENDING");
     expect(await exists(started)).toBe(false);
 
-    // Metadata flushed at shutdown must also be recovered for a stopped Session.
+    // Even an exact-looking native history file cannot authorize a stopped Session without a Hook.
     const shutdownId = "shutdown-codex";
     await writeFile(path.join(root, "codex-home/sessions/shutdown.jsonl"), [
       {type: "session_meta", payload: {id: shutdownId, cwd: cancelled.original_cwd}},
@@ -153,7 +153,7 @@ setTimeout(() => finish(false), 100);
     await rememberRuntime();
     await post("/api/amux/stop");
     const recovered = await (await fetch(`${api}/api/sessions/${cancelled.id}`)).json();
-    expect(recovered.agent_session_id).toBe(shutdownId);
+    expect(recovered.agent_session_id).toBeUndefined();
     expect(recovered.status).toBe("stopped");
 
     // The daemon is offline, but its persisted process still reserves this name.

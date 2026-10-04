@@ -6,13 +6,15 @@ use crate::{
     model::Session,
 };
 
-const SESSION_COLUMNS: &str = "id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,agent_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
+const SESSION_COLUMNS: &str = "id,workspace_id,name,name_is_custom,terminal_title,kind,cwd,original_cwd,initial_prompt,agent_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
 
 #[derive(sqlx::FromRow)]
 struct SessionRow {
     id: String,
     workspace_id: String,
     name: String,
+    name_is_custom: bool,
+    terminal_title: Option<String>,
     kind: String,
     cwd: String,
     original_cwd: String,
@@ -39,6 +41,8 @@ impl From<SessionRow> for Session {
             id: r.id,
             workspace_id: r.workspace_id,
             name: r.name,
+            name_is_custom: r.name_is_custom,
+            terminal_title: r.terminal_title,
             kind: r.kind,
             cwd: r.cwd,
             original_cwd: r.original_cwd,
@@ -70,7 +74,7 @@ impl Store {
             .fetch_all(&self.pool)
             .await?
             .into_iter()
-            .map(Into::into)
+            .map(|row| self.with_title(row.into()))
             .collect())
     }
     pub async fn session_workspace_candidates(&self) -> Result<Vec<(String, String)>> {
@@ -101,12 +105,12 @@ impl Store {
             .await?;
         let mut value: Session = row.into();
         value.additional_directories = self.session_additional_directories(id).await?;
-        Ok(value)
+        Ok(self.with_title(value))
     }
     pub async fn create_session(&self, s: &Session) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-        let title_handled = crate::agents::default_session_name(&s.kind) != Some(s.name.as_str());
-        sqlx::query("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,agent_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at,agent_title_imported) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        let title_handled = s.name_is_custom;
+        sqlx::query("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,agent_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at,name_is_custom) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
             .bind(&s.id).bind(&s.workspace_id).bind(&s.name).bind(&s.kind).bind(&s.cwd).bind(&s.original_cwd)
             .bind(&s.initial_prompt).bind(&s.agent_session_id).bind(&s.visibility).bind(&s.hidden_at).bind(&s.evicted_at)
             .bind(&s.amux_workspace_name).bind(&s.amux_process_name).bind(&s.status).bind(s.exit_code).bind(&s.exit_signal)
@@ -191,7 +195,7 @@ impl Store {
     pub async fn rename_session(&self, id: &str, name: &str) -> Result<()> {
         let timestamp = now();
         let r = sqlx::query!(
-            "UPDATE sessions SET name=?,agent_title_imported=1,updated_at=? WHERE id=?",
+            "UPDATE sessions SET name=?,name_is_custom=1,updated_at=? WHERE id=?",
             name,
             timestamp,
             id
@@ -234,19 +238,25 @@ impl Store {
             .await?;
         Ok(())
     }
-    pub async fn pending_agent_titles(&self) -> Result<Vec<(String, String)>> {
-        Ok(sqlx::query!("SELECT id, agent_session_id AS 'agent_session_id!' FROM sessions WHERE agent_session_id IS NOT NULL AND agent_title_imported=0")
-            .fetch_all(&self.pool).await?.into_iter().map(|row| (row.id, row.agent_session_id)).collect())
-    }
-
-    pub async fn import_agent_title(&self, id: &str, native_id: &str, title: &str) -> Result<bool> {
-        let title = title.trim();
-        if title.is_empty() {
-            return Ok(false);
+    fn with_title(&self, mut session: Session) -> Session {
+        if let Some(title) = self.titles.get(&session.id) {
+            session.terminal_title = Some(title);
         }
-        let timestamp = now();
-        Ok(sqlx::query!("UPDATE sessions SET name=?,agent_title_imported=1,updated_at=? WHERE id=? AND agent_session_id=? AND agent_title_imported=0", title, timestamp, id, native_id)
-            .execute(&self.pool).await?.rows_affected() == 1)
+        session
+    }
+    pub async fn persist_terminal_titles(&self, flush: bool) -> Result<()> {
+        for (id, title) in self.titles.pending(std::time::Instant::now(), flush) {
+            sqlx::query!(
+                "UPDATE sessions SET terminal_title=? WHERE id=? AND terminal_title IS NOT ?",
+                title,
+                id,
+                title
+            )
+            .execute(&self.pool)
+            .await?;
+            self.titles.saved(&id, &title);
+        }
+        Ok(())
     }
 
     pub async fn uncaptured_agent_sessions(&self) -> Result<Vec<Session>> {
@@ -377,35 +387,24 @@ mod tests {
             let session = store.session(id).await.unwrap();
             assert_eq!(session.name, expected, "{id}");
             assert_eq!(session.agent_session_id.as_deref(), Some(id));
-            assert_eq!(
-                store
-                    .import_agent_title(id, id, "Automatic title")
-                    .await
-                    .unwrap(),
-                handled == 0,
-                "{id}"
-            );
+            assert_eq!(session.name_is_custom, handled != 0);
         }
-
         fresh.id = "fresh".into();
-        fresh.name = crate::agents::default_session_name("codex").unwrap().into();
-        fresh.agent_session_id = Some("fresh-native".into());
+        fresh.name = "Codex".into();
+        fresh.agent_session_id = None;
         store.create_session(&fresh).await.unwrap();
-        assert_eq!(store.session("fresh").await.unwrap().name, "Codex");
-        assert!(
-            store
-                .import_agent_title("fresh", "fresh-native", "New title")
-                .await
-                .unwrap()
-        );
+        store
+            .titles
+            .update("fresh", "Terminal task".into(), std::time::Instant::now());
+        store.persist_terminal_titles(true).await.unwrap();
+        let reopened = Store::open(root.path()).await.unwrap();
+        let saved = reopened.session("fresh").await.unwrap();
+        assert_eq!(saved.terminal_title.as_deref(), Some("Terminal task"));
+        assert_eq!(saved.name, "Codex");
+        assert!(!saved.name_is_custom);
         store.rename_session("fresh", "Codex").await.unwrap();
-        assert!(
-            !store
-                .import_agent_title("fresh", "fresh-native", "Overwrite rename")
-                .await
-                .unwrap()
-        );
-        assert_eq!(store.session("fresh").await.unwrap().name, "Codex");
+        assert!(store.session("fresh").await.unwrap().name_is_custom);
+        reopened.pool.close().await;
         store.pool.close().await;
     }
 
@@ -440,12 +439,7 @@ mod tests {
         let original = store.session("codex").await.unwrap();
         assert_eq!(original.agent_session_id.as_deref(), Some("saved-codex"));
         assert_eq!(original.name, "My saved title");
-        assert!(
-            !store
-                .import_agent_title("codex", "saved-codex", "Overwrite")
-                .await
-                .unwrap()
-        );
+        assert!(original.name_is_custom);
         for kind in ["claude_code", "opencode", "pi"] {
             let mut session = original.clone();
             session.id = kind.into();
@@ -454,28 +448,19 @@ mod tests {
             session.status = "running".into();
             session.agent_session_id = Some(format!("native-{kind}"));
             store.create_session(&session).await.unwrap();
-            assert!(
-                store
-                    .import_agent_title(kind, &format!("native-{kind}"), "Automatic title")
-                    .await
-                    .unwrap()
-            );
-            assert!(
-                !store
-                    .import_agent_title(kind, &format!("native-{kind}"), "Later title")
-                    .await
-                    .unwrap()
+            store
+                .titles
+                .update(kind, "Automatic title".into(), std::time::Instant::now());
+            store.persist_terminal_titles(true).await.unwrap();
+            assert_eq!(
+                store.session(kind).await.unwrap().terminal_title.as_deref(),
+                Some("Automatic title")
             );
             store
                 .rename_session(kind, crate::agents::name(kind).unwrap())
                 .await
                 .unwrap();
-            assert!(
-                !store
-                    .import_agent_title(kind, &format!("native-{kind}"), "Overwrite rename")
-                    .await
-                    .unwrap()
-            );
+            assert!(store.session(kind).await.unwrap().name_is_custom);
         }
         store.finalize_sessions("w", "/target", true).await.unwrap();
         let sessions = store.sessions("w").await.unwrap();

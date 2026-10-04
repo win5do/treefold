@@ -33,20 +33,16 @@ fn injects_developer_instructions_without_merging_them_into_the_user_prompt() {
         )
         .unwrap();
 
-    assert_eq!(
-        arguments[0..6],
-        [
-            "--model",
-            "gpt-5.4",
-            "-C",
-            context.cwd,
-            "--add-dir",
-            "/tmp/attached repo"
-        ]
+    assert_eq!(&arguments[..2], ["--model", "gpt-5.4"]);
+    assert!(arguments.windows(2).any(|pair| pair == ["-C", context.cwd]));
+    assert!(
+        arguments
+            .windows(2)
+            .any(|pair| pair == ["--add-dir", "/tmp/attached repo"])
     );
-    let config_index = arguments.iter().position(|value| value == "-c").unwrap();
-    let encoded = arguments[config_index + 1]
-        .strip_prefix("developer_instructions=")
+    let encoded = arguments
+        .iter()
+        .find_map(|value| value.strip_prefix("developer_instructions="))
         .unwrap();
     assert_eq!(
         serde_json::from_str::<String>(encoded).unwrap(),

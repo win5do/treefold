@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, realpath, readdir } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { Backend } from '../../src/main/backend.ts';
 
 // Inert executables exercise the real API -> adapter -> amux launch chain without credentials.
@@ -11,7 +12,7 @@ test('Agents receive context, capture identity and title, and resume their nativ
   const home = path.join(root, 'home');
   const repository = path.join(root, 'repository with spaces');
   const executable = path.resolve(process.env.TREEFOLD_BACKEND_PATH || 'src/backend/target/debug/treefold-backend');
-  const backend = new Backend({ executable, env: { ...process.env, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), OPENCODE_CONFIG_CONTENT: '{ /* retained */ "model": "test/model", "instructions": [], }', TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' }, timeout: 15000 });
+  const backend = new Backend({ executable, env: { ...process.env, CODEX_HOME: path.join(root, 'codex'), CLAUDE_CONFIG_DIR: path.join(root, 'claude'), OPENCODE_CONFIG_DIR: path.join(root, 'opencode'), OPENCODE_CLI_CONFIG_CONTENT: '{"plugins":["-fixture.disabled"]}', OPENCODE_CONFIG_CONTENT: '{ /* retained */ "model": "test/model", "instructions": [], }', TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' }, timeout: 15000 });
   let url: string | undefined;
   const sockets: WebSocket[] = [];
   const ownedPids = new Set<number>();
@@ -91,13 +92,25 @@ const line = value => JSON.stringify(value) + '\\n';
     instructions = value('--append-system-prompt');
   } else {
     const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT);
-    const {Treefold} = await import(require('node:url').pathToFileURL(config.plugin.at(-1)).href);
-    const hooks = await Treefold({client:{session:{get:async () => ({data:{id:nativeId,title:'Fixture title'}})}}});
-    await hooks.event({event:{type:'session.updated',properties:{info:{id:'ses_unrelated',title:'Do not bind'}}}});
-    await hooks['chat.message']({sessionID:nativeId});
-    await hooks.event({event:{type:'session.updated',properties:{info:{id:nativeId,title:'Fixture title'}}}});
     instructions = fs.readFileSync(config.instructions.at(-1), 'utf8');
   }
+  if (!args.includes('No hook')) {
+    if (kind === 'codex' || kind === 'claude_code') {
+      const command = kind === 'codex'
+        ? args.find(arg => arg.startsWith('hooks.SessionStart=')).match(/command='([^']+)'/)[1]
+        : JSON.parse(fs.readFileSync(path.join(value('--plugin-dir'), 'hooks/hooks.json'), 'utf8')).hooks.SessionStart[0].hooks[0].command;
+      require('node:child_process').execFileSync('/bin/sh', ['-c', command], { input: JSON.stringify({ session_id: nativeId }) });
+    } else if (kind === 'pi') {
+      const extension = await import(require('node:url').pathToFileURL(value('--extension')).href);
+      extension.default({on: (_event, callback) => callback({reason:'startup'}, {sessionManager:{getSessionId:()=>nativeId}})});
+    } else {
+      const tui = JSON.parse(process.env.OPENCODE_CLI_CONFIG_CONTENT);
+      const extension = await import(require('node:url').pathToFileURL(path.join(tui.plugins[0], 'tui.js')).href);
+      const dispose = extension.default.setup({ui:{router:{current:()=>({type:'session',sessionID:nativeId})}},data:{session:{get:()=>({id:nativeId}),root:id=>id}}});
+      dispose();
+    }
+  }
+  process.stdout.write('\\x1b]2;Fixture title\\x07');
   fs.appendFileSync(path.join(process.env.TREEFOLD_HOME, 'launch-' + process.env.TREEFOLD_SESSION_ID + '.jsonl'), line({pid:process.pid, cwd:effectiveCwd, args, instructions, nativeId}));
   process.stdin.resume();
 })().catch(error => { console.error(error); process.exit(1); });
@@ -124,12 +137,16 @@ const line = value => JSON.stringify(value) + '\\n';
       expect(first.instructions).toContain("read_only");
       const current = async () => (await fetch(`${url}/api/sessions/${session.id}`)).json();
       await expect.poll(async () => (await current()).agent_session_id, { timeout: 10000 }).toBe(first.nativeId);
-      await expect.poll(async () => (await current()).name, { timeout: 10000 }).toBe('Fixture title');
+      await expect.poll(async () => (await current()).terminal_title, { timeout: 10000 }).toBe('Fixture title');
+      expect((await current()).name).toBe(({codex:'Codex',claude_code:'Claude Code',opencode:'OpenCode',pi:'Pi'} as Record<string,string>)[kind]);
       if (kind === 'opencode') {
         // Reopen the backend with invalid inherited config while amux retains the
         // existing conversation. Resume must fail before stopping/removing it.
         const inlineConfig = backend.env.OPENCODE_CONFIG_CONTENT;
         await backend.stop();
+        const persisted = new DatabaseSync(path.join(home, 'data/treefold_1.sqlite'), {readOnly:true});
+        try { expect(persisted.prepare('SELECT terminal_title FROM sessions WHERE id = ?').get(session.id)?.terminal_title).toBe('Fixture title'); }
+        finally { persisted.close(); }
         backend.env.OPENCODE_CONFIG_CONTENT = '{';
         url = await backend.start();
         const nativeProcess = async () => {
@@ -175,6 +192,21 @@ const line = value => JSON.stringify(value) + '\\n';
       expect((await current()).agent_session_id).toBe(first.nativeId);
       if (kind !== 'pi') expect(second.args).toContain(first.nativeId);
       expect((await request(`/api/sessions/${session.id}/stop`, {})).ok).toBe(true);
+      expect((await current()).terminal_title).toBe('Fixture title');
+      const database = new DatabaseSync(path.join(home, 'data/treefold_1.sqlite'), {readOnly:true});
+      try { expect(database.prepare('SELECT terminal_title FROM sessions WHERE id = ?').get(session.id)?.terminal_title).toBe('Fixture title'); }
+      finally { database.close(); }
+
+      const withoutHook = await (await request(`/api/projects/${project.id}/sessions`, {kind, initial_prompt:'No hook'})).json();
+      await attach(withoutHook.id);
+      const uncaptured = async () => (await fetch(`${url}/api/sessions/${withoutHook.id}`)).json();
+      await expect.poll(async () => (await uncaptured()).terminal_title, {timeout:10000}).toBe('Fixture title');
+      expect((await uncaptured()).agent_session_id).toBeUndefined();
+      expect((await request(`/api/sessions/${withoutHook.id}/stop`, {})).ok).toBe(true);
+      const rejected = await request(`/api/sessions/${withoutHook.id}/restart`, {});
+      expect(rejected.status).toBe(409);
+      expect(await rejected.text()).toContain('Hook or extension');
+      expect((await uncaptured()).id).toBe(withoutHook.id);
       expect((await request('/api/settings', { agents: { [kind]: { command: JSON.stringify(path.join(root, 'missing')) } } }, 'PATCH')).ok).toBe(true);
       expect((await request(`/api/sessions/${session.id}/restart`, {})).status).toBe(400);
       expect((await current()).id).toBe(session.id);

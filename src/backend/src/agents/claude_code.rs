@@ -1,4 +1,3 @@
-mod metadata;
 use super::{
     AgentAdapter, LaunchContext,
     validation::{
@@ -81,10 +80,6 @@ const RULES: Rules = Rules {
     attached_values: true,
 };
 impl AgentAdapter for ClaudeCode {
-    fn metadata(&self, context: &super::MetadataContext<'_>) -> super::AgentMetadata {
-        metadata::read(context)
-    }
-
     fn name(&self) -> &'static str {
         "Claude Code"
     }
@@ -96,6 +91,15 @@ impl AgentAdapter for ClaudeCode {
     }
     fn build_args(&self, context: &LaunchContext<'_>, user_args: &[String]) -> Result<Vec<String>> {
         let mut args = user_args.to_vec();
+        if let Some(directory) = context.runtime_dir {
+            args.extend([
+                "--plugin-dir".into(),
+                super::hooks::integration_dir(directory)
+                    .join("claude")
+                    .to_string_lossy()
+                    .into_owned(),
+            ]);
+        }
         if let Some(id) = context.resume_id {
             args.extend(["--resume".into(), id.into()]);
         } else {

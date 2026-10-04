@@ -99,6 +99,8 @@ export type Session = {
   id: string;
   workspace_id: string;
   name: string;
+  name_is_custom?: boolean;
+  terminal_title?: string;
   kind: NewSessionKind | "command";
   cwd: string;
   original_cwd: string;

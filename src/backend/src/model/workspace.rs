@@ -152,6 +152,10 @@ pub struct Session {
     pub id: String,
     pub workspace_id: String,
     pub name: String,
+    #[serde(default)]
+    pub name_is_custom: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_title: Option<String>,
     pub kind: String,
     pub cwd: String,
     pub original_cwd: String,
