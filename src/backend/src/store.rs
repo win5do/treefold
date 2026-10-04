@@ -26,9 +26,9 @@ mod workspaces;
 
 pub(crate) use operations::ParentOperationUpdate;
 
-pub const CURRENT_DATABASE_GENERATION: i64 = 1;
-pub const CURRENT_DATABASE_FILENAME: &str = "treefold_1.sqlite";
-static MIGRATOR: Migrator = sqlx::migrate!("./migrations/g1");
+pub const CURRENT_DATABASE_GENERATION: i64 = 2;
+pub const CURRENT_DATABASE_FILENAME: &str = "treefold_2.sqlite";
+static MIGRATOR: Migrator = sqlx::migrate!("./migrations/g2");
 
 #[derive(Clone)]
 pub struct Store {
@@ -121,7 +121,7 @@ mod tests {
     };
 
     #[tokio::test]
-    async fn generation_one_database_is_created_and_reopens_with_data() {
+    async fn generation_two_database_is_created_and_reopens_with_data() {
         let directory = tempfile::tempdir().unwrap();
         let data = directory.path().join("data");
         let store = Store::open(&data).await.unwrap();
@@ -152,7 +152,7 @@ mod tests {
             .await
             .unwrap(),
             0,
-            "every generation 1 domain table must be STRICT"
+            "every generation 2 domain table must be STRICT"
         );
         assert!(
             sqlx::query(
@@ -182,68 +182,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn project_base_removal_preserves_workspace_and_fork_snapshots() {
-        let directory = tempfile::tempdir().unwrap();
-        let source = tempfile::tempdir().unwrap();
-        for entry in
-            std::fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g1")).unwrap()
-        {
-            let entry = entry.unwrap();
-            if entry.file_name().to_string_lossy().as_ref() < "20260924060000" {
-                std::fs::copy(entry.path(), source.path().join(entry.file_name())).unwrap();
-            }
-        }
-        let options = SqliteConnectOptions::new()
-            .filename(directory.path().join(CURRENT_DATABASE_FILENAME))
-            .create_if_missing(true);
-        let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
-        sqlx::migrate::Migrator::new(source.path())
-            .await
-            .unwrap()
-            .run(&mut connection)
-            .await
-            .unwrap();
-        connection.execute("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','t','t');
-            INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,base_branch,created_at,updated_at) VALUES('r','p','R','/repo','/repo/.git','obsolete','t','t');
-            INSERT INTO workspaces(id,project_id,name,kind,status,created_at,updated_at) VALUES('w','p','W','workspace','active','t','t');
-            INSERT INTO workspaces(id,project_id,name,kind,parent_workspace_id,status,created_at,updated_at) VALUES('f','p','F','fork','w','active','t','t');
-            INSERT INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,base_branch,start_commit,created_at,updated_at) VALUES('wr','w','r','R','/repo','ready','main','base-w','t','t'),('fr','f','r','R','/repo','ready','feature/w','base-f','t','t');").await.unwrap();
-        connection.close().await.unwrap();
-        let store = Store::open(directory.path()).await.unwrap();
-        let workspace = store.workspace_repository("wr").await.unwrap();
-        let fork = store.workspace_repository("fr").await.unwrap();
-        assert_eq!(
-            (
-                workspace.base_branch.as_deref(),
-                workspace.start_commit.as_deref()
-            ),
-            (Some("main"), Some("base-w"))
-        );
-        assert_eq!(
-            (fork.base_branch.as_deref(), fork.start_commit.as_deref()),
-            (Some("feature/w"), Some("base-f"))
-        );
-        assert_eq!(store.repository("r").await.unwrap().source_root, "/repo");
-        store.pool.close().await;
-    }
-
-    #[tokio::test]
     async fn legacy_database_files_are_ignored_and_untouched() {
         let directory = tempfile::tempdir().unwrap();
         let data = directory.path().join("data");
         std::fs::create_dir_all(&data).unwrap();
-        for name in ["treefold.db", "treefold.db-wal", "treefold.db-shm"] {
+        let old_path = data.join("treefold_1.sqlite");
+        let options = SqliteConnectOptions::new()
+            .filename(&old_path)
+            .create_if_missing(true);
+        let mut old = SqliteConnection::connect_with(&options).await.unwrap();
+        old.execute("PRAGMA user_version = 1; CREATE TABLE projects(id TEXT PRIMARY KEY, name TEXT NOT NULL) STRICT; INSERT INTO projects VALUES('old-project', 'Development data');")
+            .await.unwrap();
+        old.close().await.unwrap();
+        let old_bytes = std::fs::read(&old_path).unwrap();
+        let legacy_files = [
+            "treefold.db",
+            "treefold.db-wal",
+            "treefold.db-shm",
+            "treefold_1.sqlite-wal",
+            "treefold_1.sqlite-shm",
+        ];
+        for name in legacy_files {
             std::fs::write(data.join(name), format!("legacy-{name}")).unwrap();
         }
 
-        let store = Store::open(&data).await.unwrap();
-        for name in ["treefold.db", "treefold.db-wal", "treefold.db-shm"] {
+        // Both first launch and reopening must leave the unsupported generation alone.
+        for _ in 0..2 {
+            let store = Store::open(&data).await.unwrap();
             assert_eq!(
-                std::fs::read_to_string(data.join(name)).unwrap(),
-                format!("legacy-{name}")
+                sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM projects")
+                    .fetch_one(&store.pool)
+                    .await
+                    .unwrap(),
+                0
             );
+            assert_eq!(std::fs::read(&old_path).unwrap(), old_bytes);
+            for name in legacy_files {
+                assert_eq!(
+                    std::fs::read_to_string(data.join(name)).unwrap(),
+                    format!("legacy-{name}")
+                );
+            }
+            store.pool.close().await;
         }
-        store.pool.close().await;
     }
 
     #[tokio::test]
@@ -296,11 +277,11 @@ mod tests {
             .filename(path)
             .create_if_missing(true);
         let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
-        connection.execute("PRAGMA user_version = 2").await.unwrap();
+        connection.execute("PRAGMA user_version = 1").await.unwrap();
         connection.close().await.unwrap();
 
         let error = Store::open(directory.path()).await.err().unwrap();
-        assert!(error.to_string().contains("expected 1, found 2"));
+        assert!(error.to_string().contains("expected 2, found 1"));
     }
 
     #[tokio::test]
@@ -308,7 +289,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::open(directory.path()).await.unwrap();
         let changed_source = tempfile::tempdir().unwrap();
-        let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g1");
+        let migrations = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g2");
         for entry in std::fs::read_dir(migrations).unwrap() {
             let entry = entry.unwrap();
             if entry
@@ -320,7 +301,7 @@ mod tests {
             }
         }
         std::fs::write(
-            changed_source.path().join("20260902000000_initial.sql"),
+            changed_source.path().join("20261004013417_initial.sql"),
             "-- deliberately changed after execution\nSELECT 1;\n",
         )
         .unwrap();
@@ -332,7 +313,7 @@ mod tests {
         assert!(
             matches!(
                 error,
-                sqlx::migrate::MigrateError::VersionMismatch(20260902000000)
+                sqlx::migrate::MigrateError::VersionMismatch(20261004013417)
             ),
             "unexpected migration error: {error}"
         );

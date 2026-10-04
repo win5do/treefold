@@ -130,16 +130,21 @@ compatible.
 
 ## Development schema migration
 
-The current SQLite database generation is 1 at
-`$TREEFOLD_HOME/data/treefold_1.sqlite`. SQLx manages immutable UTC timestamped
-migrations within `src/backend/migrations/g1` through `_sqlx_migrations`, while
-SQLite `user_version` exclusively identifies the database generation. All
-domain tables are `STRICT`. Append a forward-only migration for every
-within-generation schema or data change; never edit or squash a committed
-migration in a published generation. The pre-SQLx `treefold.db`,
-`treefold.db-wal`, and `treefold.db-shm` files are ignored and left untouched.
+The current SQLite database generation is 2 at
+`$TREEFOLD_HOME/data/treefold_2.sqlite`. Its complete initial schema is the
+first-release baseline. SQLx manages immutable UTC timestamped migrations
+within `src/backend/migrations/g2` through `_sqlx_migrations`, while SQLite
+`user_version` exclusively identifies the database generation. All domain
+tables are `STRICT`. Append a forward-only migration for every within-generation
+schema or data change; never edit or squash a committed migration in a published
+generation.
 
-Major generations use a new fixed filename and migration directory. A future
-g2 upgrade creates and validates a temporary `treefold_2.sqlite`, copies data
-with explicit g1-to-g2 conversion code, then closes and atomically renames it.
-The g1 database remains in place for rollback.
+Generation 1 development data is not imported. Existing `treefold_1.sqlite`,
+the pre-SQLx `treefold.db`, and their WAL/SHM files are ignored and left untouched.
+New installations and existing development homes both start with an empty
+generation 2 database.
+
+Future major generations use a new fixed filename and migration directory.
+When preserving data, create and validate a temporary target, copy data with
+explicit generation conversion code, then close and atomically rename it.
+Preserve the previous database for rollback.

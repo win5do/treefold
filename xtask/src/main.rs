@@ -49,10 +49,10 @@ fn database_prepare(check: bool, remaining: Vec<String>) -> Result<()> {
     }
     let root = repository_root()?;
     let backend = BackendCargo::new(&root)?;
-    let source = root.join("src/backend/migrations/g1");
+    let source = root.join("src/backend/migrations/g2");
     let crate_dir = root.join("src/backend");
     let temporary = tempfile::tempdir().context("create temporary database directory")?;
-    let database = temporary.path().join("treefold_1.sqlite");
+    let database = temporary.path().join("treefold_2.sqlite");
     let database_url = format!("sqlite://{}", database.display());
 
     run_command(
@@ -69,7 +69,7 @@ fn database_prepare(check: bool, remaining: Vec<String>) -> Result<()> {
             .arg(&source)
             .arg("--database-url")
             .arg(&database_url),
-        "apply generation 1 migrations",
+        "apply generation 2 migrations",
     )?;
 
     let mut command = Command::new("cargo");
@@ -91,7 +91,7 @@ fn database_prepare(check: bool, remaining: Vec<String>) -> Result<()> {
         },
     )?;
     eprintln!(
-        "SQLx metadata {} for database generation 1",
+        "SQLx metadata {} for database generation 2",
         if check { "is current" } else { "was updated" }
     );
     Ok(())

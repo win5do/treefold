@@ -209,7 +209,7 @@ hard storage boundary.
   lowercase 32-character `TEXT`. Stable composite IDs such as Project base
   Workspace IDs remain strings and must not be replaced with random UUIDs.
 - SQLx migrations live in the active generation directory, currently
-  `src/backend/migrations/g1`, and use UTC timestamp filenames. SQLx's
+  `src/backend/migrations/g2`, and use UTC timestamp filenames. SQLx's
   `_sqlx_migrations` owns within-generation history; `PRAGMA user_version` is
   reserved for the database generation. Domain tables must use SQLite `STRICT`
   mode. Never add startup-time ad-hoc `ALTER`, `DROP`, or data-rewrite logic
@@ -218,7 +218,10 @@ hard storage boundary.
   pre-release development. For every schema or data change—including adding a
   column, constraint, index, or backfill—append a timestamped forward-only
   migration; never edit or squash a migration in a published generation.
-- A major generation gets a new fixed database filename and independent
+- Generation 2 is the first-release baseline. It starts with a complete initial
+  schema and does not import generation 1 development data. Existing
+  `treefold_1.sqlite` and its WAL/SHM files are ignored and left untouched.
+- Future major generations get a new fixed database filename and independent
   migration directory. Create and validate the target in a unique temporary
   file, copy data through explicit generation conversion code, then atomically
   rename it. Preserve the prior generation for rollback. The binary's fixed

@@ -494,28 +494,6 @@ mod current_workspace_tests {
             .unwrap();
         assert_eq!(other.branch.as_deref(), Some("feature/import"));
         assert_eq!(other.git_status, "ready");
-        // Reconstruct the previous schema with real snapshots, then apply the
-        // forward migration and verify conservative ownership backfilling.
-        let mut upgrade_connection = state.store.pool.acquire().await.unwrap();
-        sqlx::raw_sql("ALTER TABLE workspace_repositories DROP COLUMN worktree_ownership")
-            .execute(&mut *upgrade_connection)
-            .await
-            .unwrap();
-        sqlx::raw_sql(include_str!(
-            "../../migrations/g1/20261002000000_worktree_ownership.sql"
-        ))
-        .execute(&mut *upgrade_connection)
-        .await
-        .unwrap();
-        drop(upgrade_connection);
-        let upgraded = state.store.workspace_repositories(&ids[0]).await.unwrap();
-        assert_eq!(upgraded.len(), snapshots.len());
-        for snapshot in &snapshots {
-            let actual = upgraded.iter().find(|item| item.id == snapshot.id).unwrap();
-            assert_eq!(actual.worktree_ownership, snapshot.worktree_ownership);
-            assert_eq!(actual.checkout_path, snapshot.checkout_path);
-            assert_eq!(actual.branch, snapshot.branch);
-        }
 
         assert_eq!(
             other.worktree_ownership,

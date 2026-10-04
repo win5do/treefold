@@ -144,7 +144,7 @@ const line = value => JSON.stringify(value) + '\\n';
         // existing conversation. Resume must fail before stopping/removing it.
         const inlineConfig = backend.env.OPENCODE_CONFIG_CONTENT;
         await backend.stop();
-        const persisted = new DatabaseSync(path.join(home, 'data/treefold_1.sqlite'), {readOnly:true});
+        const persisted = new DatabaseSync(path.join(home, 'data/treefold_2.sqlite'), {readOnly:true});
         try { expect(persisted.prepare('SELECT terminal_title FROM sessions WHERE id = ?').get(session.id)?.terminal_title).toBe('Fixture title'); }
         finally { persisted.close(); }
         backend.env.OPENCODE_CONFIG_CONTENT = '{';
@@ -193,7 +193,7 @@ const line = value => JSON.stringify(value) + '\\n';
       if (kind !== 'pi') expect(second.args).toContain(first.nativeId);
       expect((await request(`/api/sessions/${session.id}/stop`, {})).ok).toBe(true);
       expect((await current()).terminal_title).toBe('Fixture title');
-      const database = new DatabaseSync(path.join(home, 'data/treefold_1.sqlite'), {readOnly:true});
+      const database = new DatabaseSync(path.join(home, 'data/treefold_2.sqlite'), {readOnly:true});
       try { expect(database.prepare('SELECT terminal_title FROM sessions WHERE id = ?').get(session.id)?.terminal_title).toBe('Fixture title'); }
       finally { database.close(); }
 
