@@ -3,7 +3,7 @@ import LinkIcon from './LinkIcon.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import SiteHeader from './SiteHeader.astro';
 import SiteFooter from './SiteFooter.astro';
-import { installCommand, siteLinks } from '../config/site';
+import { currentRelease, installCommand, siteLinks } from '../config/site';
 import { getLocalizedPath, normalizeLocale } from '../i18n/config';
 import { downloadCopy } from '../i18n/download';
 
@@ -24,7 +24,7 @@ const home = getLocalizedPath(locale, 'home');
         <p>{copy.intro}</p>
         <div class="download-actions">
           <a class="button button-primary" href="#homebrew">{copy.brewTitle}<LinkIcon name="download" /></a>
-          <a class="button button-secondary" href={siteLinks.releases} target="_blank" rel="noopener noreferrer">{copy.openReleases}<LinkIcon name="download" /></a>
+          <a class="button button-secondary" href={currentRelease.dmgUrl}>{copy.dmgTitle}<LinkIcon name="download" /></a>
         </div>
         <div class="badge-row">{copy.badges.map((item) => <span>{item}</span>)}</div>
       </div>
@@ -32,7 +32,7 @@ const home = getLocalizedPath(locale, 'home');
 
     <section class="download-content border-section section-grid">
       <div class="site-container">
-        <div class="notice"><span>PREVIEW</span><p><strong>{copy.noticeTitle}：</strong>{copy.notice}</p></div>
+        <div class="notice"><span>ALPHA</span><p><strong>{copy.noticeTitle}：</strong>{copy.notice}</p></div>
         <div class="download-grid">
           <article id="homebrew" class="download-card featured">
             <div class="option-label"><span>{copy.option1}</span><em>{copy.recommended}</em></div>
@@ -44,9 +44,10 @@ const home = getLocalizedPath(locale, 'home');
           <article class="download-card">
             <div class="option-label"><span>{copy.option2}</span></div>
             <h2>{copy.dmgTitle}</h2><p>{copy.dmgBody}</p>
-            <div class="release-asset"><span>{copy.expected}</span><code>Treefold_&lt;version&gt;_aarch64.dmg</code></div>
+            <div class="release-asset"><span>{copy.expected}</span><code>{currentRelease.dmgFilename}</code></div>
             <small>{copy.releaseNote}</small>
-            <a href={siteLinks.releases} target="_blank" rel="noopener noreferrer">{copy.openReleases}<LinkIcon /></a>
+            <a href={currentRelease.dmgUrl}>{copy.dmgTitle}<LinkIcon name="download" /></a>
+            <a href={currentRelease.url} target="_blank" rel="noopener noreferrer">{copy.openReleases}<LinkIcon /></a>
           </article>
         </div>
       </div>

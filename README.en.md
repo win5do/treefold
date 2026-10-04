@@ -27,19 +27,19 @@ Organize multiple repositories and context directories in one Project, and share
 
 ### App downloads
 
-Treefold is currently in private preview, with no published Release. The repository and [Homebrew tap](https://github.com/win5do/homebrew-tap) require access. For now, use the source development workflow below.
-
-Once a release is available, download the Apple Silicon DMG from [GitHub Releases](https://github.com/win5do/treefold/releases), or run the following in an environment with access to the tap:
+The first public alpha, **0.1.0-alpha.1**, is available. Install it through the [Homebrew tap](https://github.com/win5do/homebrew-tap):
 
 ```bash
 brew install --cask win5do/tap/treefold
 ```
 
-This command requires a published Release and cannot complete installation yet.
+You can also download the [Apple Silicon DMG](https://github.com/win5do/treefold/releases/download/v0.1.0-alpha.1/Treefold-0.1.0-alpha.1-arm64.dmg), open it, and drag Treefold into Applications. The [Release page](https://github.com/win5do/treefold/releases/tag/v0.1.0-alpha.1) includes a ZIP archive, SHA-256 checksums, and release notes.
+
+This alpha is ad-hoc signed and has not been notarized by Apple. If macOS blocks the app on first launch, choose Open Anyway in System Settings → Privacy & Security, then confirm when prompted. Use `brew upgrade --cask treefold` for future updates.
 
 ### Run from source
 
-Install stable Rust, Node.js 24.12 or newer, Git, and `just`. The default build also requires the amux source checkout at `../amux`; see the [development setup](AGENTS.md#development-environment-and-commands) for custom paths.
+Install stable Rust, Node.js 24.12 or newer, Git, and `just`. The default build uses the amux Git revision pinned in Cargo.lock. For local development, `TREEFOLD_AMUX_MANIFEST` selects one source for the runtime, CLI, and Skill; see the [development setup](AGENTS.md#development-environment-and-commands).
 
 From the repository root:
 
@@ -101,7 +101,7 @@ See [configuration and key bindings](docs/keymap-configuration.md) for details.
 ```bash
 just                  # List available tasks
 just app-dev-watch    # Also watch Electron and Rust changes
-just build            # Build the macOS app and DMG in release/
+just build            # Build the macOS app, DMG, and ZIP in release/
 ```
 
 The [development guide](AGENTS.md#development-environment-and-commands) covers environment setup, amux paths, validation commands, and local installation. UI tests run in hidden Electron windows by default.

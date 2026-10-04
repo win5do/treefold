@@ -1,5 +1,6 @@
 appId: com.win5do.treefold
 productName: Treefold
+artifactName: '${productName}-${version}-${arch}.${ext}'
 asar: true
 directories:
   output: release
@@ -16,6 +17,7 @@ extraResources:
   - from: build/icons/32x32.png
     to: icon.png
 mac:
+  minimumSystemVersion: '14.0'
   category: public.app-category.developer-tools
   icon: build/icons/icon.icns
   identity: '-'
@@ -25,6 +27,7 @@ mac:
   notarize: false
   target:
     - dmg
+    - zip
     - dir
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist

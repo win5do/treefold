@@ -27,15 +27,15 @@ Treefold 是一个本地优先的 macOS 应用，让你在独立的 Git worktree
 
 ### 安装包
 
-当前为私有预发布阶段，尚未发布 Release。仓库与 [Homebrew tap](https://github.com/win5do/homebrew-tap) 需要访问权限。现阶段请通过下方的源码开发流程运行。
-
-安装包发布后，可从 [GitHub Releases](https://github.com/win5do/treefold/releases) 下载 Apple Silicon 的 DMG，或在具备 tap 访问权限的环境中运行：
+首个公开 Alpha 版本 **0.1.0-alpha.1** 已发布。通过 [Homebrew tap](https://github.com/win5do/homebrew-tap) 安装：
 
 ```bash
 brew install --cask win5do/tap/treefold
 ```
 
-此命令需要已发布的 Release，当前还不能完成安装。
+也可直接下载 [Apple Silicon DMG](https://github.com/win5do/treefold/releases/download/v0.1.0-alpha.1/Treefold-0.1.0-alpha.1-arm64.dmg)，打开后将 Treefold 拖入“应用程序”。[Release 页面](https://github.com/win5do/treefold/releases/tag/v0.1.0-alpha.1) 同时提供 ZIP、SHA-256 校验文件和版本说明。
+
+当前 Alpha 使用 ad-hoc 签名，尚未经过 Apple 公证。首次打开如果被 macOS 阻止，请在“系统设置 → 隐私与安全性”中选择“仍要打开”，然后按提示确认。后续可运行 `brew upgrade --cask treefold` 更新。
 
 ### 从源码运行
 
@@ -101,7 +101,7 @@ Treefold 的 Project 状态、Session 元数据、Todo 和配置保存在本机�
 ```bash
 just                  # 列出可用任务
 just app-dev-watch    # 同时监听 Electron 与 Rust 变更
-just build            # 在 release/ 生成 macOS App 与 DMG
+just build            # 在 release/ 生成 macOS App、DMG 与 ZIP
 ```
 
 [开发指南](AGENTS.md#development-environment-and-commands) 包含环境配置、amux 路径、验证命令和本地安装说明。UI 测试默认在隐藏的 Electron 窗口中运行。

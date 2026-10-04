@@ -19,8 +19,8 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amux-runtime"
-version = "0.1.0-alpha.1"
-source = "git+https://github.com/win5do/amux.git?branch=main#7d2e5983ec7e78ab7bb629c00f17bb956320833c"
+version = "0.1.0-alpha.2"
+source = "git+https://github.com/win5do/amux.git?branch=main#584ba7d5e2299c8f5c521b5c623e7d82aebb139b"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "treefold-backend"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "amux-runtime",
  "anyhow",

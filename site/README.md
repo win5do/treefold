@@ -13,12 +13,13 @@ npm run build
 
 The Chinese pages are `/` and `/download`; English equivalents live at `/en/`
 and `/en/download/`. The header language switch keeps visitors on the matching
-home or download page. The site currently links to the private
-`win5do/treefold` repository and the private `win5do/tap` Homebrew tap. The
-release page is empty, so the download page explicitly marks both installation
-methods as pending. Before public launch, publish an installable Release, verify
-the tap's version and checksum against its DMG, and replace the private-release
-notice. The Cask currently supports Apple Silicon and macOS Sonoma or newer.
+home or download page. Treefold 0.1.0-alpha.1 is available from the public
+`win5do/treefold` GitHub Releases and the `win5do/tap` Homebrew tap. The download
+page links directly to the DMG and shows the Homebrew installation command.
+Release version and download URLs live in `src/config/site.ts`; update them
+alongside the tap's version and DMG checksum for each release. The Cask supports
+Apple Silicon and macOS Sonoma or newer. Keep the ad-hoc signing and first-launch
+instructions visible until Developer ID signing and Apple notarization are enabled.
 
 The homepage uses labeled workflow and Git illustrations rather than App
 screenshots. Product copy follows the current implementation, including Git

@@ -17,7 +17,11 @@ export async function bundleApp({ localInstall = false, directoryOnly = false }:
     : metadata.version);
   if (valid(version) !== version) throw new Error(`TREEFOLD_BUILD_VERSION must be valid SemVer, received: ${version}`);
 
-  const env = { ...process.env, TREEFOLD_BUILD_VERSION: version };
+  const env = {
+    ...process.env,
+    TREEFOLD_BUILD_VERSION: version,
+    MACOSX_DEPLOYMENT_TARGET: process.env.MACOSX_DEPLOYMENT_TARGET ?? '14.0',
+  };
   execFileSync('cargo', ['xtask', 'sidecars', 'bundle'], { cwd: root, env, stdio: 'inherit' });
   execFileSync('npm', ['run', 'build'], { cwd: root, env, stdio: 'inherit' });
 
