@@ -43,7 +43,7 @@ mod current_workspace_tests {
                 .expect("open test Store"),
             keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
             settings: SettingsStore::open(&home).expect("open test Settings"),
-            terminals: TerminalManager::default(),
+            terminals: TerminalManager::default().with_treefold_home(home.clone()),
             runtime: RuntimeHub::default(),
             integration: crate::integration::IntegrationManager::test(&home),
         }
