@@ -94,7 +94,7 @@ Use Settings to adjust preferences and key bindings. Configuration lives under `
 - `config/settings.toml`: language, theme, and agent defaults.
 - `config/keymap.toml`: key binding overrides. Omitted bindings follow defaults; `false` disables a binding.
 
-See [configuration and key bindings](docs/keymap-configuration-plan.md) for details.
+See [configuration and key bindings](docs/keymap-configuration.md) for details.
 
 ## Development and builds
 
@@ -108,7 +108,6 @@ The [development guide](AGENTS.md#development-environment-and-commands) covers e
 
 ## Documentation
 
-- [Product direction](docs/product-strategy.md)
 - [Project, Workspace, and Fork model](docs/project-workspace-model.md)
 - [Git worktree lifecycle](docs/git-worktree-lifecycle.md)
 - [Agent Skills, CLI, and App API](docs/agent-skill-cli-api-architecture.md)

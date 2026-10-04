@@ -88,3 +88,12 @@ branch defaults to the new local branch name. Creation can override each remote
 without modifying Project settings; a checkout without an upstream remote starts
 unconfigured. Local development is still available, and push requires configuring
 the Repository target first. A successful push establishes the Git upstream.
+
+## Deferred pull request creation
+
+Repository-configured pull request creation is deferred. If added, Treefold may
+run a user-provided command such as `gh pr create` after pushing a Workspace
+feature branch. Treefold supplies delivery context; the configured CLI and the
+user's environment own provider selection, credentials, and authentication.
+Treefold must not add Git hosting token or authentication management for this
+workflow. Pull request review and merge remain on the Git hosting platform.

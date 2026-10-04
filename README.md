@@ -94,7 +94,7 @@ Treefold 的 Project 状态、Session 元数据、Todo 和配置保存在本机�
 - `config/settings.toml`：语言、主题与 Agent 默认设置。
 - `config/keymap.toml`：快捷键覆盖；省略的绑定使用默认值，`false` 表示禁用。
 
-详见 [配置与快捷键](docs/keymap-configuration-plan.md)。
+详见 [配置与快捷键](docs/keymap-configuration.md)。
 
 ## 开发与构建
 
@@ -108,7 +108,6 @@ just build            # 在 release/ 生成 macOS App 与 DMG
 
 ## 产品文档
 
-- [产品方向](docs/product-strategy.md)
 - [Project、Workspace 与 Fork 模型](docs/project-workspace-model.md)
 - [Git worktree 生命周期](docs/git-worktree-lifecycle.md)
 - [Agent Skill、CLI 与 App API](docs/agent-skill-cli-api-architecture.md)

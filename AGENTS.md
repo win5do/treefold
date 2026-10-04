@@ -199,7 +199,7 @@ hard storage boundary.
   `agents.codex.command`, and `amux.keep_daemon_running_on_exit`.
   Store only explicit overrides; omitted keys inherit application defaults.
 - Key bindings belong in the independent `$TREEFOLD_HOME/config/keymap.toml`
-  described in `docs/keymap-configuration-plan.md`. Strings override default
+  described in `docs/keymap-configuration.md`. Strings override default
   bindings, `false` disables them, and omission follows defaults. Both UI and
   file edits use that single source of truth.
 - `$TREEFOLD_HOME/data/treefold_<generation>.sqlite` owns Projects, Directories, Workspaces,

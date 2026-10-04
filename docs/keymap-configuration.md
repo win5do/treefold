@@ -79,9 +79,10 @@ outside these rules must be corrected in `settings.toml`; they are never silentl
 rewritten to remove arguments.
 Schema 1 Codex argument arrays migrate through schema 2 strings to schema 3
 commands. Schema 2 paths and arguments combine with reversible quoting, preserving
-argument values and unknown settings. Codex keeps its existing
-conversation Resume behavior. Other Agents restart their CLI; Treefold does not
-restore their native conversations in this version.
+argument values and unknown settings. All four Agents support Resume of the
+saved native conversation when its exact association is available. See
+[Agent Sessions and metadata](agent-session-metadata.md) for provider-specific
+association, validation, and legacy Session limitations.
 
 ## Keymap
 

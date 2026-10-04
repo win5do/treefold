@@ -20,14 +20,15 @@ Project
 ## Project Repository and Directory
 
 A `ProjectRepository` owns canonical Git identity and policy: source root, Git
-common directory, preferred delivery remote, delivery mode, status, and one setup
+common directory, preferred remote, status, and one setup
 command with a repository-relative setup workdir. A Project cannot register the
 same Git common directory through another linked worktree.
 
 Project has no configured base branch. Switch branches in the Project source
 checkout. Push/Pull use that checkout's current branch and its Git upstream;
 a missing upstream, detached HEAD, or unborn branch requires setup first.
-Delivery mode and preferred delivery remote remain Repository defaults.
+Delivery strategy is selected for each Workspace/Fork operation; see
+[Git worktree lifecycle](git-worktree-lifecycle.md).
 
 Workspace creation displays each Repository's current branch without a branch
 selector and records its base branch and starting commit on the Workspace
