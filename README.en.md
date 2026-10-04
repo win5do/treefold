@@ -8,7 +8,7 @@ Treefold is a local-first macOS app for running Codex and Shell Sessions in isol
 
 Built for developers who already use Codex CLI and want to work on several tasks at once: each feature gets a Workspace, subtasks can run in Forks, and code, Sessions, and Todos stay attached to the work they belong to.
 
-[Install and run](#install-and-run) · [Workflow](#workflow) · [GitHub Releases](https://github.com/win5do/treefold/releases) · [Documentation](#documentation)
+[Website](https://treefold.fffeng566.workers.dev/) · [Install and run](#install-and-run) · [Workflow](#workflow) · [GitHub Releases](https://github.com/win5do/treefold/releases) · [Documentation](#documentation)
 
 ## Why Treefold
 
@@ -114,5 +114,7 @@ The [development guide](AGENTS.md#development-environment-and-commands) covers e
 - [Frontend and backend communication](docs/frontend-backend-communication.md)
 
 ## License
+
+Copyright (C) 2026 [win5do](https://github.com/win5do).
 
 Treefold is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (AGPL-3.0-only).

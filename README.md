@@ -8,7 +8,7 @@ Treefold 是一个本地优先的 macOS 应用，让你在独立的 Git worktree
 
 适合已经使用 Codex CLI、希望同时推进多项开发任务的开发者：每项 feature 有自己的 Workspace，子任务可以拆成 Fork，代码、Session 和 Todo 始终归属于对应的工作。
 
-[安装与运行](#安装与运行) · [使用流程](#使用流程) · [GitHub Releases](https://github.com/win5do/treefold/releases) · [产品文档](#产品文档)
+[官网](https://treefold.fffeng566.workers.dev/) · [安装与运行](#安装与运行) · [使用流程](#使用流程) · [GitHub Releases](https://github.com/win5do/treefold/releases) · [产品文档](#产品文档)
 
 ## 为什么使用 Treefold
 
@@ -114,5 +114,7 @@ just build            # 在 release/ 生成 macOS App、DMG 与 ZIP
 - [前后端通信](docs/frontend-backend-communication.md)
 
 ## 许可证
+
+Copyright (C) 2026 [win5do](https://github.com/win5do).
 
 Treefold 使用 [GNU Affero General Public License v3.0 only](LICENSE)（AGPL-3.0-only）。

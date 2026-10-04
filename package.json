@@ -3,6 +3,7 @@
   "version": "0.1.0-alpha.1",
   "private": true,
   "license": "AGPL-3.0-only",
+  "copyright": "Copyright (C) 2026 win5do",
   "allowScripts": {
     "fsevents@2.3.3": true
   },
@@ -66,8 +67,12 @@
     "vite": "^7.3.6"
   },
   "main": "out/main/index.cjs",
-  "description": "Local-first workspace for parallel coding agents",
-  "author": "Treefold contributors",
+  "description": "Local-first macOS workspace for parallel coding agents in isolated Git worktrees",
+  "homepage": "https://treefold.fffeng566.workers.dev/",
+  "author": {
+    "name": "win5do",
+    "url": "https://github.com/win5do"
+  },
   "engines": {
     "node": ">=24.12.0"
   }
