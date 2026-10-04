@@ -10,6 +10,8 @@ Built for developers who already use Codex CLI and want to work on several tasks
 
 [Website](https://treefold.fffeng566.workers.dev/) · [Install and run](#install-and-run) · [Workflow](#workflow) · [GitHub Releases](https://github.com/win5do/treefold/releases) · [Documentation](#documentation)
 
+If you find Treefold useful, consider [giving it a star on GitHub](https://github.com/win5do/treefold) to support the project.
+
 ## Why Treefold
 
 - **Keep parallel work isolated.** Separate branches and worktrees for Workspaces and Forks help keep changes from different tasks apart.

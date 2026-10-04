@@ -246,6 +246,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
 .cta-section h2 { max-width: 860px; margin: 20px auto 0; font-size: clamp(3rem, 6vw, 5.7rem); font-weight: 520; line-height: 1.03; letter-spacing: -.068em; }
 .cta-section p { max-width: 650px; margin: 25px auto 0; color: var(--muted); font-size: 15px; line-height: 1.8; }
 .cta-section .hero-actions { justify-content: center; }
+.cta-section .private-note { margin-top: 18px; }
 
 /* Supported agents */
 .agent-support-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 18px 0 0; padding: 0; list-style: none; }

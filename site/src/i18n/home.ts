@@ -74,6 +74,7 @@ interface HomeCopy {
   ctaBody: string;
   ctaDownload: string;
   ctaSource: string;
+  ctaStarNote: string;
 }
 
 export const homeCopy = {
@@ -172,7 +173,8 @@ export const homeCopy = {
     ctaTitle: '让并行的工作，有序完成。',
     ctaBody: '免费开源，面向 Apple Silicon Mac。Project 状态和编排数据保存在本机，使用标准 Git 分支与 worktree。Agent 的网络访问取决于所用服务和你的配置。',
     ctaDownload: '获取 Treefold',
-    ctaSource: '查看源代码',
+    ctaSource: 'Star on GitHub',
+    ctaStarNote: '如果 Treefold 对你有帮助，欢迎点个 Star，支持这个开源项目。',
   },
   en: {
     title: 'Treefold — Run agents in parallel. Fold the work back cleanly.',
@@ -269,6 +271,7 @@ export const homeCopy = {
     ctaTitle: 'Bring parallel work to a clear finish.',
     ctaBody: 'Free and open source for Apple Silicon Macs. Project state and orchestration data stay on your Mac, using standard Git branches and worktrees. Agent network access depends on your services and configuration.',
     ctaDownload: 'Get Treefold',
-    ctaSource: 'Explore the source',
+    ctaSource: 'Star on GitHub',
+    ctaStarNote: 'If you find Treefold useful, consider giving it a star on GitHub to support the project.',
   },
 } satisfies Record<Locale, HomeCopy>;

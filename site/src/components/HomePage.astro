@@ -117,7 +117,19 @@ const download = getLocalizedPath(locale, 'download');
       </div>
     </section>
 
-    <section class="cta-section section-grid"><div class="cta-orb"></div><div class="site-container"><div class="kicker">{copy.ctaKicker}</div><h2>{copy.ctaTitle}</h2><p>{copy.ctaBody}</p><div class="hero-actions"><a class="button button-primary" href={download}>{copy.ctaDownload}<LinkIcon name="download" /></a><a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer"><LinkIcon name="github" />{copy.ctaSource}<LinkIcon /></a></div></div></section>
+    <section class="cta-section section-grid">
+      <div class="cta-orb"></div>
+      <div class="site-container">
+        <div class="kicker">{copy.ctaKicker}</div>
+        <h2>{copy.ctaTitle}</h2>
+        <p>{copy.ctaBody}</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href={download}>{copy.ctaDownload}<LinkIcon name="download" /></a>
+          <a class="button button-secondary" href={siteLinks.github} target="_blank" rel="noopener noreferrer"><LinkIcon name="star" />{copy.ctaSource}<LinkIcon /></a>
+        </div>
+        <small class="private-note">{copy.ctaStarNote}</small>
+      </div>
+    </section>
   </main>
   <SiteFooter />
 </BaseLayout>

@@ -10,6 +10,8 @@ Treefold 是一个本地优先的 macOS 应用，让你在独立的 Git worktree
 
 [官网](https://treefold.fffeng566.workers.dev/) · [安装与运行](#安装与运行) · [使用流程](#使用流程) · [GitHub Releases](https://github.com/win5do/treefold/releases) · [产品文档](#产品文档)
 
+如果 Treefold 对你有帮助，欢迎在 [GitHub 上点个 Star](https://github.com/win5do/treefold)，支持这个开源项目。
+
 ## 为什么使用 Treefold
 
 - **隔离开发**：为不同 Workspace 和 Fork 管理独立的分支与 worktree，减少并行任务之间的代码干扰。
