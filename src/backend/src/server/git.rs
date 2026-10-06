@@ -1339,7 +1339,7 @@ pub(super) fn refresh_location_observation(location: &mut Directory) -> Result<(
     if let (Some(expected), Some(observed)) = (
         location.repository_url.as_deref(),
         repository_url.as_deref(),
-    ) && !repository_identity_matches(expected, observed)
+    ) && !repository_identity_matches(path, expected, observed)
     {
         location.git_status = "mismatch".into();
         return Ok(());
@@ -1354,7 +1354,7 @@ pub(super) fn refresh_location_observation(location: &mut Directory) -> Result<(
     Ok(())
 }
 
-pub(super) fn repository_identity_matches(expected: &str, observed: &str) -> bool {
+pub(super) fn repository_identity_matches(path: &Path, expected: &str, observed: &str) -> bool {
     fn normalize(value: &str) -> String {
         value
             .trim()
@@ -1364,7 +1364,14 @@ pub(super) fn repository_identity_matches(expected: &str, observed: &str) -> boo
             .replace(':', "/")
             .to_ascii_lowercase()
     }
-    normalize(expected) == normalize(observed)
+    let observed = normalize(observed);
+    if normalize(expected) == observed {
+        return true;
+    }
+    // `remote get-url` expands insteadOf rules. Resolve the saved/input URL in
+    // the same repository configuration without contacting the remote.
+    git::output(path, &["ls-remote", "--get-url", "--", expected])
+        .is_ok_and(|resolved| normalize(&resolved) == observed)
 }
 pub(super) fn command_output(
     dir: &Path,

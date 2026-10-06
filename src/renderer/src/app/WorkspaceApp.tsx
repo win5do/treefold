@@ -1,3 +1,4 @@
+import { CreateProjectDialog } from "@/features/projects/CreateProjectDialog";
 import { useNewAgentSession } from "@/features/terminal/useNewAgentSession";
 import { isAgentKind } from "@/features/agents/model";
 import type { AgentKind } from "@/domain/types";
@@ -76,7 +77,6 @@ import { RenameDialog } from "@/features/app/RenameDialog";
 import { DeleteWorkspaceDialog } from "@/features/workspace/DeleteWorkspaceDialog";
 import {
   AddDirectoryDialog,
-  CreateProjectDialog,
   EditDirectoryDialog,
   EditRepositoryDialog,
   RepositoryBranchesDialog,
@@ -1494,25 +1494,8 @@ function Workspace() {
 
       <CreateProjectDialog
         open={createProjectOpen}
-        busy={busy}
         onOpenChange={setCreateProjectOpen}
-        onSubmit={async ({ name, locations }) => {
-          let created: Project | null = null;
-          const ok = await act(async () => {
-            created = await projectsApi.create({
-              name,
-              locations,
-            });
-          });
-          if (ok && created) {
-            const detail = normalizeProject(
-              await projectsApi.detail((created as Project).id),
-            );
-            queryClient.setQueryData(projectKeys.detail(detail.id), detail);
-            setCreateProjectOpen(false);
-            navigate(`/projects/${detail.id}`);
-          }
-        }}
+        onCreated={(project) => navigate(`/projects/${project.id}`)}
       />
       <AddDirectoryDialog
         project={addDirectoryProject}

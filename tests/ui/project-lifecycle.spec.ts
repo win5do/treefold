@@ -10,12 +10,17 @@ test("Project creation imports only the selected discovered locations", async ()
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "project-create" });
     await page.goto(harness.baseUrl);
     await page.getByTestId("new-project-action").click();
-    const dialog = page.getByRole("dialog", { name: "New Project", exact: true });
+    const dialog = page.getByRole("dialog", { name: /^New Project/ });
+    await dialog.getByRole("option", { name: "Local path", exact: true }).click();
     await dialog.locator('input[name="name"]').fill("Multi repo fixture");
     await dialog.locator("#project-path").fill("/tmp/treefold-ui-fixture/multi-repo");
     await expect(dialog.getByRole("checkbox", { name: /backend/ })).toBeChecked();
     await expect(dialog.getByRole("checkbox", { name: /docs/ })).toBeChecked();
+    await dialog.getByRole("radio", { name: /frontend/ }).check();
     await dialog.getByRole("checkbox", { name: /frontend/ }).uncheck();
+    await expect(dialog.getByRole("radio", { name: /backend/ })).toBeChecked();
+    await dialog.getByRole("button", { name: "Continue", exact: true }).click();
+    expect(harness.locationRequests).toEqual([]);
     await dialog.getByRole("button", { name: "Create Project", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(harness.locationRequests.map(({ path, isGit }) => ({ path, isGit }))).toEqual([

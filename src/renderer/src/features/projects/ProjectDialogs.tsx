@@ -1,6 +1,6 @@
 import { compactPath } from "@/lib/compactPath";
 import { useTranslation } from "react-i18next";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -34,7 +34,6 @@ import type {
   Directory,
   LocationDraft,
   ProjectDetail,
-  ProjectPathCandidate,
   ProjectRepository,
 } from "@/domain/types";
 
@@ -61,133 +60,6 @@ function WorktreeSetupField({
       />
       <FieldDescription>{t("projectsUi.startsAfterWorktreeCreationInAVisibleSetupShell")}</FieldDescription>
     </Field>
-  );
-}
-
-export function CreateProjectDialog({
-  open,
-  busy,
-  onOpenChange,
-  onSubmit,
-}: {
-  open: boolean;
-  busy: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (value: { name: string; locations: string[] }) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [name, setName] = useState("");
-  const nameEdited = useRef(false);
-  const [path, setPath] = useState("");
-  const [candidates, setCandidates] = useState<ProjectPathCandidate[]>([]);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [primary, setPrimary] = useState("");
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState("");
-  const [picking, setPicking] = useState(false);
-  useEffect(() => {
-    if (!open) {
-      setName(""); nameEdited.current = false; setPath(""); setCandidates([]); setSelected([]);
-      setPrimary(""); setChecking(false); setError("");
-      return;
-    }
-    const value = path.trim();
-    if (!value) { setCandidates([]); setSelected([]); setPrimary(""); setChecking(false); setError(""); return; }
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      setChecking(true);
-      void projectsApi.inspectProjectPath(value, controller.signal).then((result) => {
-        const paths = result.candidates.map((candidate) => candidate.path);
-        setCandidates(result.candidates);
-        setSelected(paths);
-        setPrimary(result.candidates.find((candidate) => candidate.is_git)?.path ?? "");
-        setError(result.candidates.some((candidate) => candidate.is_git) ? "" : t("projectsUi.noGitRepositoryFound"));
-        if (!nameEdited.current) setName(result.path.split("/").pop() || "");
-      }).catch((cause) => {
-        if (controller.signal.aborted) return;
-        setCandidates([]); setSelected([]); setPrimary("");
-        setError(cause instanceof Error ? cause.message : t("projectsUi.couldNotInspectLocation"));
-      }).finally(() => { if (!controller.signal.aborted) setChecking(false); });
-    }, 350);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [open, path, t]);
-  async function choosePath() {
-    setPicking(true);
-    try {
-      const value = await openDirectory({ directory: true, multiple: false, title: t("projectsUi.chooseADirectoryForTreefold") });
-      if (typeof value === "string") setPath(value);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("projectsUi.couldNotOpenFinder"));
-    } finally { setPicking(false); }
-  }
-  const chosen = candidates.filter((candidate) => selected.includes(candidate.path));
-  const canCreate = !busy && !checking && Boolean(name.trim()) &&
-    chosen.some((candidate) => candidate.is_git) && Boolean(primary) &&
-    chosen.some((candidate) => candidate.path === primary);
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[min(94vw,52rem)] overflow-x-hidden sm:max-w-[min(94vw,52rem)]">
-        <DialogHeader>
-          <DialogTitle>{t("projectsUi.newProject")}</DialogTitle>
-          <DialogDescription>{t("projectsUi.projectDescription")}</DialogDescription>
-        </DialogHeader>
-        <form className="flex min-w-0 flex-col gap-4" onSubmit={(event) => {
-          event.preventDefault();
-          if (canCreate) void onSubmit({ name: name.trim(), locations: [primary, ...chosen.map((candidate) => candidate.path).filter((value) => value !== primary)] });
-        }}>
-          <FieldGroup className="min-w-0 gap-3">
-            <Field>
-              <FieldLabel className="sr-only" htmlFor="project-name">{t("projectsUi.projectName")}</FieldLabel>
-              <Input
-                id="project-name"
-                name="name"
-                value={name}
-                onChange={(event) => { setName(event.target.value); nameEdited.current = true; }}
-                placeholder={t("projectsUi.projectName")}
-                required
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="project-path">{t("projectsUi.projectPath")}</FieldLabel>
-              <div className="flex gap-2">
-                <Input id="project-path" className="min-w-0 flex-1" value={path} title={path}
-                  onChange={(event) => { setPath(event.target.value); setChecking(Boolean(event.target.value.trim())); }}
-                  placeholder="/absolute/path/to/project" />
-                <Button type="button" variant="secondary" disabled={busy || picking} onClick={() => void choosePath()}>
-                  <FolderOpen data-icon="inline-start" />{t("projectsUi.choose")}
-                </Button>
-              </div>
-              {checking && <FieldDescription>{t("projectsUi.checkingRepository")}</FieldDescription>}
-              {error && <FieldDescription className="text-destructive">{error}</FieldDescription>}
-            </Field>
-          </FieldGroup>
-          {candidates.length > 0 && <div className="min-w-0 max-h-[40vh] overflow-y-auto rounded-lg border p-2">
-            <p className="px-2 py-1 text-xs text-muted-foreground">{t("projectsUi.confirmLocations")}</p>
-            {candidates.map((candidate) => <div key={candidate.path} className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2">
-              <input type="checkbox" aria-label={t("projectsUi.includeLocation", { name: candidate.path })}
-                checked={selected.includes(candidate.path)} onChange={(event) => {
-                  const next = event.target.checked ? [...selected, candidate.path] : selected.filter((value) => value !== candidate.path);
-                  setSelected(next);
-                  if (!next.includes(primary)) setPrimary(candidates.find((item) => item.is_git && next.includes(item.path))?.path ?? "");
-                }} />
-              <span className="min-w-0 flex-1 truncate" title={candidate.path}>
-                {compactPath(candidate.path)}
-                {candidate.repository_root && candidate.repository_root !== candidate.path &&
-                  <span className="block truncate text-muted-foreground" title={candidate.repository_root}>{t("projectsUi.repositoryRoot", { path: compactPath(candidate.repository_root) })}</span>}
-              </span>
-              <Badge className="shrink-0" variant={candidate.is_git ? "success" : "neutral"}>{candidate.is_git ? t("projectsUi.gitRepository") : t("projectsUi.readOnlyContext")}</Badge>
-              {candidate.is_git && selected.includes(candidate.path) && <label className="flex shrink-0 items-center gap-1 text-xs">
-                <input type="radio" name="primary-location" checked={primary === candidate.path} onChange={() => setPrimary(candidate.path)} />
-                {t("projectsUi.primaryLocation")}
-              </label>}
-            </div>)}
-          </div>}
-          <div className="flex justify-end">
-            <Button type="submit" disabled={!canCreate}>{t("projectsUi.createProject")}</Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 

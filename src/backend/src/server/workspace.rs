@@ -99,6 +99,13 @@ pub(super) async fn create_project(
     State(state): State<AppState>,
     ApiJson(input): ApiJson<CreateProject>,
 ) -> Result<(StatusCode, Json<Project>)> {
+    Ok((
+        StatusCode::CREATED,
+        Json(create_project_impl(state, input).await?),
+    ))
+}
+
+pub(super) async fn create_project_impl(state: AppState, input: CreateProject) -> Result<Project> {
     let locations = input
         .locations
         .as_ref()
@@ -203,10 +210,7 @@ pub(super) async fn create_project(
                 return Err(error);
             }
         }
-        return Ok((
-            StatusCode::CREATED,
-            Json(state.store.project(&project_id).await?),
-        ));
+        return state.store.project(&project_id).await;
     }
     if let Some((path, is_git)) = inspected_path {
         let mut location = Directory {
@@ -233,13 +237,16 @@ pub(super) async fn create_project(
             head_summary: None,
             dirty: false,
         };
-        refresh_location_observation(&mut location)?;
-        state.store.create_directory(&location).await?;
+        if let Err(error) = refresh_location_observation(&mut location) {
+            state.store.delete_project(&project_id).await?;
+            return Err(error);
+        }
+        if let Err(error) = state.store.create_directory(&location).await {
+            state.store.delete_project(&project_id).await?;
+            return Err(error);
+        }
     }
-    Ok((
-        StatusCode::CREATED,
-        Json(state.store.project(&project_id).await?),
-    ))
+    state.store.project(&project_id).await
 }
 
 #[derive(Deserialize)]
@@ -1131,16 +1138,17 @@ pub(super) async fn clone_project_repository_impl(
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("managed source has no parent")))?;
     std::fs::create_dir_all(parent)
         .map_err(|error| AppError::BadRequest(format!("create managed source: {error}")))?;
-    let clone_result = command_output(
+    let clone_result = crate::git::output_with_env(
         parent,
-        "git",
         &[
             "clone",
             "--origin",
             "origin",
+            "--",
             url,
             source.to_string_lossy().as_ref(),
         ],
+        &[("GIT_TERMINAL_PROMPT", "0")],
     );
     if let Err(error) = clone_result {
         let _ = std::fs::remove_dir_all(parent);
@@ -1367,9 +1375,9 @@ pub(super) async fn reattach_project_repository(
                     "git",
                     &["remote", "get-url", flag, remote],
                 ) {
-                    matched |= urls
-                        .lines()
-                        .any(|url| repository_identity_matches(expected, url));
+                    matched |= urls.lines().any(|url| {
+                        repository_identity_matches(Path::new(&candidate), expected, url)
+                    });
                 }
             }
         }

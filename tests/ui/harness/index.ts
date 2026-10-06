@@ -1,3 +1,4 @@
+import { createProjectCreationRoutes } from "./routes/project-creation.ts";
 import { createWorkspaceDeletionRoutes } from "./routes/workspace-deletion.ts";
 import { createSettingsRoutes } from "./routes/settings.ts";
 import { createSessionLogRoutes } from "./routes/session-logs.ts";
@@ -59,6 +60,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
   let nextBulkSyncResults: GitSyncItemResult[] | null = null;
   const workspaceLocationUpdates: (Partial<WorkspaceRepository> & { id: string })[] = [];
   const locationRequests: { projectId: string; path: string; isGit: boolean }[] = [];
+  const projectCreationRoutes = createProjectCreationRoutes({ fixture, readJson, sendJson }, locationRequests);
   const logsRevealRequests: string[] = [];
   let nextLocationError: { status: number; code: string; message: string } | null = null;
   const repositoryUpdateRequests: (Partial<FixtureRepository> & { id: string })[] = [];
@@ -99,6 +101,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
 
     const requestUrl = new URL(request.url ?? "/", "http://fixture.test");
     const pathname = requestUrl.pathname;
+    if (await projectCreationRoutes.handle(request, response, pathname)) return;
     if (await workspaceDeletionRoutes.handle(request, response, pathname)) return;
     if (await sessionLogRoutes.handle(request, response, pathname)) return;
     if (await finishRoutes.handle(request, response, pathname)) return;
@@ -275,76 +278,6 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
       sendJson(response, 202, worktreeDeleteOperation);
       return;
     }
-    if (request.method === "POST" && pathname === "/api/projects") {
-      const input = await readJson<{ name: string; description?: string; locations?: string[] }>(request);
-      const created: FixtureProject = {
-        id: "project-created-primary-requirement",
-        name: input.name,
-        description: input.description ?? "",
-        status: "active",
-        created_at: "2026-08-09T08:30:00.000Z",
-        updated_at: "2026-08-09T08:30:00.000Z",
-      };
-      const locations: FixtureDirectory[] = [];
-      fixture.projects.push(created);
-      fixture.projectDetails[created.id] = {
-        ...created,
-        locations,
-        directories: locations,
-        repositories: [],
-        sessions: [],
-        workspaces: [],
-        worktrees: [],
-      };
-      for (const [index, locationPath] of (input.locations ?? []).entries()) {
-        const isGit = !/docs|documentation|reference|context/i.test(locationPath);
-        const name = locationPath.split("/").at(-1) || locationPath;
-        const directory: FixtureDirectory = {
-          id: `created-location-${index}`, project_id: created.id, name,
-          description: "", worktree_setup_command: "", path: locationPath,
-          git_status: isGit ? "ready" : "not_git", role: index === 0 ? "primary" : "attached",
-          is_git: isGit, dirty: false, created_at: created.created_at,
-        };
-        if (isGit) {
-          const repository: FixtureRepository = {
-            id: `created-repository-${index}`, project_id: created.id, name,
-            source_root: locationPath, git_common_dir: `${locationPath}/.git`,
-            setup_command: "", setup_workdir: ".", git_status: "ready",
-            created_at: created.created_at, updated_at: created.updated_at,
-          };
-          fixture.projectDetails[created.id].repositories.push(repository);
-          directory.repository_id = repository.id;
-          directory.relative_path = ".";
-          if (!created.default_location_id) created.default_location_id = directory.id;
-        } else directory.external_path = locationPath;
-        fixture.projectDetails[created.id].directories.push(directory);
-        locationRequests.push({ projectId: created.id, path: locationPath, isGit });
-      }
-      fixture.projectDetails[created.id].default_location_id = created.default_location_id;
-      sendJson(response, 201, created);
-      return;
-    }
-
-    if (request.method === "POST" && pathname === "/api/projects/inspect-path") {
-      const input = await readJson<{ path: string }>(request);
-      const cleanPath = input.path.replace(/\/+$/, "");
-      if (cleanPath.endsWith("/additional-locations")) {
-        sendJson(response, 200, { path: cleanPath, candidates: ["new-api-repository", "reference-context", "unused-repository"].map((name) => ({
-          path: `/tmp/treefold-ui-fixture/${name}`, repository_root: name.includes("context") ? null : `/tmp/treefold-ui-fixture/${name}`, is_git: !name.includes("context"),
-        })) });
-        return;
-      }
-      const candidates = cleanPath.endsWith("/multi-repo")
-        ? ["backend", "docs", "frontend"].map((name) => ({
-            path: `${cleanPath}/${name}`,
-            repository_root: name === "docs" ? null : `${cleanPath}/${name}`,
-            is_git: name !== "docs",
-          }))
-        : [{ path: cleanPath, repository_root: cleanPath, is_git: true }];
-      sendJson(response, 200, { path: cleanPath, candidates });
-      return;
-    }
-
     const projectMatch = pathname.match(/^\/api\/projects\/([^/]+)$/);
     const projectDeletePrecheckMatch = pathname.match(
       /^\/api\/projects\/([^/]+)\/delete-precheck$/,
@@ -1179,6 +1112,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
       nextBulkSyncResults = results;
     },
     locationRequests,
+    projectCreation: projectCreationRoutes,
     logsRevealRequests,
     setNextLocationError(error: { status: number; code: string; message: string }) {
       nextLocationError = error;
@@ -1318,6 +1252,7 @@ export async function startUiHarness(configure?: (fixture: SidebarFixture) => vo
     syncRequests: fixtureApi.syncRequests,
     setNextBulkSyncResults: fixtureApi.setNextBulkSyncResults,
     locationRequests: fixtureApi.locationRequests,
+    projectCreation: fixtureApi.projectCreation,
     logsRevealRequests: fixtureApi.logsRevealRequests,
     setNextLocationError: fixtureApi.setNextLocationError,
     repositoryUpdateRequests: fixtureApi.repositoryUpdateRequests,

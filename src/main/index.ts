@@ -6,12 +6,14 @@ import { Backend } from './backend';
 import { createLog } from './log';
 import { listOpenInApps, openInApp } from './open-in/service';
 import { installNavigation } from './navigation';
+import { createDirectoryPicker } from './directory-picker';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
 mkdirSync(path.join(home, 'data', 'electron'), { recursive: true });
 app.setPath('userData', path.join(home, 'data', 'electron'));
 protocol.registerSchemesAsPrivileged([{ scheme: 'treefold', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 const log = createLog(home, { debug: !app.isPackaged });
+const openDirectory = createDirectoryPicker(app.getPath('userData'), app.getPath('home'), message => log('warn', message));
 const root = app.getAppPath();
 const devUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
 const pageUrl = devUrl || 'treefold://app/index.html';
@@ -66,8 +68,7 @@ async function start() {
   ipcMain.handle('treefold:app-version', event => { trusted(event); return app.getVersion(); });
   ipcMain.handle('treefold:open-directory', async (event, options) => {
     trusted(event);
-    const result = await dialog.showOpenDialog(window, { title: typeof options?.title === 'string' ? options.title : 'Choose a directory', properties: ['openDirectory'] });
-    return result.canceled ? null : result.filePaths[0] ?? null;
+    return openDirectory(window, options);
   });
   ipcMain.handle('treefold:log', (event, level, message) => { trusted(event); log(level, message, 'renderer'); });
   window = new BrowserWindow({ title: 'Treefold', width: 1440, height: 900, minWidth: 960, minHeight: 640, show: false,

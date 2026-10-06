@@ -56,7 +56,7 @@ just app-dev
 
 以开发一项需要前后端配合的 feature 为例：
 
-1. **创建 Project**：添加本地 Git 仓库，以及需要提供给 Agent 的上下文目录。
+1. **创建 Project**：选择本地目录、Git URL 克隆，或从空目录创建（自动执行 `git init`）。本地目录可发现多个仓库和上下文目录，再勾选需要添加的内容。
 2. **创建 Workspace**：为这项 feature 创建独立的分支和 worktree，保留原有工作现场。
 3. **启动 Session**：运行 Codex 编写代码，使用 Shell 启动服务、执行测试或检查结果。
 4. **按需创建 Fork**：将可以并行完成的子任务拆出去，例如接口实现和页面开发，各自在独立的 worktree 中推进。
