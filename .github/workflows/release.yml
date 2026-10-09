@@ -56,11 +56,19 @@ jobs:
           else
             echo 'prerelease=false' >> "$GITHUB_OUTPUT"
           fi
+      - name: Select pinned Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: |
+            xtask
+            src/backend
+            src/cli
+          cache-on-failure: true
       - name: Install dependencies
         run: |
           npm ci
           node --input-type=module -e 'import { valid } from "semver"; if (valid(process.env.TREEFOLD_BUILD_VERSION) !== process.env.TREEFOLD_BUILD_VERSION) process.exit(1)'
-          rustup show
           brew install just
           cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,rustls
       - name: Check types, database metadata, and Rust
