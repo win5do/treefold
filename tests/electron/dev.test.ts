@@ -42,6 +42,7 @@ test('electron-vite watches main, preload, backend and selected amux while relea
   const externalLog = path.join(home, 'external-open.jsonl');
   const externalHook = path.join(home, 'external-boundary.cjs');
   const externalReady = path.join(home, 'external-ready');
+  const electronPidFile = path.join(home, 'electron.pid');
   // Guard the OS boundary even if navigation regresses: record, never launch a browser.
   await writeFile(externalHook, `
 if (process.versions.electron) {
@@ -51,6 +52,7 @@ if (process.versions.electron) {
     const value = load.call(this, request, ...args);
     if (request === 'electron' && value.shell) {
       require('node:fs').writeFileSync(${JSON.stringify(externalReady)}, 'ready');
+      require('node:fs').writeFileSync(${JSON.stringify(electronPidFile)}, String(process.pid));
       value.shell.openExternal = async url => require('node:fs').appendFileSync(${JSON.stringify(externalLog)}, JSON.stringify(url) + '\\n');
     }
     return value;
@@ -121,7 +123,16 @@ if (process.versions.electron) {
   } finally {
     let stopped = false;
     try {
-      try { process.kill(-child.pid!, 'SIGTERM'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      // Let Electron stop its backend before Vite exits. Signalling the entire
+      // group at once races Chromium shutdown against the App's quit handler.
+      const electronPid = Number(await readFile(electronPidFile, 'utf8').catch(() => ''));
+      const { stdout: ownedProcesses } = await promisify(execFile)('ps', ['-axo', 'pid=,pgid=']);
+      const ownsElectron = electronPid > 0 && ownedProcesses.split('\n').some(line => {
+        const [pid, group] = line.trim().split(/\s+/).map(Number);
+        return pid === electronPid && group === child.pid;
+      });
+      try { process.kill(ownsElectron ? electronPid : -child.pid!, 'SIGTERM'); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
       await until(async () => {
         if (child.exitCode === null && child.signalCode === null) return false;
         try { await readFile(path.join(home, 'runtime/api-url')); return false; }
@@ -132,6 +143,11 @@ if (process.versions.electron) {
         }
       }, 'dev process and backend cleanup', 15000);
       stopped = true;
+    } catch (error) {
+      console.error(output);
+      const { stdout } = await promisify(execFile)('ps', ['-axo', 'pid=,ppid=,pgid=,stat=,command=']);
+      console.error(stdout.split('\n').filter(line => Number(line.trim().split(/\s+/)[2]) === child.pid).join('\n'));
+      throw error;
     } finally {
       try {
         // Escalate only when graceful shutdown failed, never after a completed exit.

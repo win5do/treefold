@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdirSync } from 'node:fs';
 import { Backend } from './backend';
+import { waitForPreviousDevInstance } from './dev-instance';
 import { createLog } from './log';
 import { listOpenInApps, openInApp } from './open-in/service';
 import { installNavigation } from './navigation';
@@ -108,15 +109,10 @@ async function start() {
   log('info', `Treefold ${app.getVersion()} ready; API ${apiUrl}`);
 }
 async function acquireInstance() {
-  const deadline = Date.now() + (devUrl ? 15000 : 0);
-  do {
-    if (app.requestSingleInstanceLock()) return true;
-    if (!devUrl) break;
-    await new Promise(resolve => setTimeout(resolve, 100));
-  } while (Date.now() < deadline);
-  return false;
+  if (devUrl && !await waitForPreviousDevInstance(app.getPath('userData'))) return false;
+  return app.requestSingleInstanceLock();
 }
-// electron-vite restarts main before the previous Rust child has finished stopping.
+// A dev restart must wait for the previous native instance before asking Chromium for its lock.
 void acquireInstance().then(acquired => {
   if (!acquired) { app.quit(); return; }
   app.on('second-instance', () => { if (!devUrl) showWindow(); });
