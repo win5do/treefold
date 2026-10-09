@@ -1,0 +1,181 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build (for example v0.1.0-alpha.2)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 120
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Resolve existing tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          git show-ref --verify "refs/tags/$RELEASE_TAG"
+          commit=$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")
+          git checkout --detach "$commit"
+          {
+            echo "tag=$RELEASE_TAG"
+            echo "version=${RELEASE_TAG#v}"
+            echo "commit=$commit"
+          } >> "$GITHUB_OUTPUT"
+          echo "TREEFOLD_BUILD_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            echo 'prerelease=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'prerelease=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Install dependencies
+        run: |
+          npm ci
+          node --input-type=module -e 'import { valid } from "semver"; if (valid(process.env.TREEFOLD_BUILD_VERSION) !== process.env.TREEFOLD_BUILD_VERSION) process.exit(1)'
+          rustup show
+          brew install just
+          cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,rustls
+      - name: Check and test
+        run: |
+          just check
+          just test
+      - name: Build ad-hoc signed packages
+        run: |
+          test "$(uname -m)" = arm64
+          just build
+      - name: Verify Electron lifecycle and signature
+        run: |
+          just test-electron
+          codesign --verify --deep --strict release/mac-arm64/Treefold.app
+          codesign -dv release/mac-arm64/Treefold.app 2>&1 | grep 'Signature=adhoc'
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' release/mac-arm64/Treefold.app/Contents/Info.plist)" = "$TREEFOLD_BUILD_VERSION"
+      - name: Generate checksums
+        working-directory: release
+        run: |
+          shasum -a 256 "Treefold-${TREEFOLD_BUILD_VERSION}-arm64.dmg" "Treefold-${TREEFOLD_BUILD_VERSION}-arm64.zip" > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-packages
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/SHA256SUMS
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.build.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
+      PRERELEASE: ${{ needs.build.outputs.prerelease }}
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-packages
+          path: release
+      - name: Publish complete release or resume draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum --check SHA256SUMS
+          # Refuse a tag moved while this build was running.
+          remote_commit=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)
+          test "$remote_commit" = "$RELEASE_COMMIT"
+          releases=$(gh release list --limit 1000 --json tagName,isDraft)
+          state=$(jq -r --arg tag "$RELEASE_TAG" '.[] | select(.tagName == $tag) | .isDraft' <<< "$releases")
+          if [[ "$state" == false ]]; then
+            # A published version is never silently overwritten on a rerun.
+            mkdir existing
+            gh release download "$RELEASE_TAG" --dir existing
+            (cd existing && sha256sum --check SHA256SUMS)
+            cmp SHA256SUMS existing/SHA256SUMS
+            exit 0
+          fi
+          if [[ -z "$state" ]]; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes \
+              --title "Treefold $RELEASE_TAG" --prerelease="$PRERELEASE"
+          fi
+          gh release upload "$RELEASE_TAG" ./*.dmg ./*.zip SHA256SUMS --clobber
+          mkdir uploaded
+          gh release download "$RELEASE_TAG" --dir uploaded
+          (cd uploaded && sha256sum --check SHA256SUMS)
+          cmp SHA256SUMS uploaded/SHA256SUMS
+          if [[ "$PRERELEASE" == true ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --latest
+          fi
+          gh release view "$RELEASE_TAG" --json url,assets,isDraft
+
+  verify-brew:
+    needs: [build, publish]
+    runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.build.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - name: Download public release through Homebrew and verify installed App
+        run: |
+          set -euo pipefail
+          gh release download "$RELEASE_TAG" --pattern SHA256SUMS --dir "$RUNNER_TEMP"
+          checksum=$(awk -v name="Treefold-${RELEASE_VERSION}-arm64.dmg" '$2 == name { print $1 }' "$RUNNER_TEMP/SHA256SUMS")
+          test "${#checksum}" = 64
+          brew tap-new treefold/release-test
+          tap=$(brew --repository treefold/release-test)
+          mkdir -p "$tap/Casks"
+          cat > "$tap/Casks/treefold.rb" <<CASK
+          cask "treefold" do
+            version "$RELEASE_VERSION"
+            sha256 "$checksum"
+            url "https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/Treefold-$RELEASE_VERSION-arm64.dmg"
+            name "Treefold"
+            desc "Local-first workspace for parallel coding agents"
+            homepage "https://github.com/$GH_REPO"
+            depends_on arch: :arm64
+            depends_on macos: :sonoma
+            app "Treefold.app"
+          end
+          CASK
+          mkdir -p "$RUNNER_TEMP/Applications"
+          brew install --cask --require-sha --appdir="$RUNNER_TEMP/Applications" treefold/release-test/treefold
+          app="$RUNNER_TEMP/Applications/Treefold.app"
+          codesign --verify --deep --strict "$app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$RELEASE_VERSION"
+          brew uninstall --cask treefold/release-test/treefold
