@@ -103,6 +103,17 @@ jobs:
             release/*.zip
             release/SHA256SUMS
 
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-test-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            /tmp/treefold-playwright-results
+            /tmp/treefold-electron-*.png
+
   publish:
     needs: build
     runs-on: ubuntu-latest

@@ -28,6 +28,7 @@ test("sidebar navigation preserves hierarchy and excludes archived records", asy
     const menu = page.getByTestId("directory-session-context-menu");
     await expect(menu.getByTestId("archive-project-action")).toHaveCount(0);
     await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
     await sidebar.getByRole("button", { name: FIXTURE_NAMES.fork, exact: true }).click();
     await expect(page.getByTestId("breadcrumb-fork")).toHaveAttribute("aria-current", "page");
     await expect(page.getByTestId("breadcrumb-workspace")).toHaveText(FIXTURE_NAMES.workspace);
@@ -36,8 +37,10 @@ test("sidebar navigation preserves hierarchy and excludes archived records", asy
     await expect(menu.getByTestId("sidebar-pull-menu")).toHaveCount(0);
     await expect(menu.getByTestId("archive-project-action")).toHaveCount(0);
     await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
     await page.getByTestId("breadcrumb-workspace").click();
     await expect(page).toHaveURL(new RegExp(`/workspaces/${FIXTURE_IDS.workspace}$`));
+    await expect(page.getByTestId("breadcrumb-workspace")).toHaveAttribute("aria-current", "page");
     await page.getByRole("button", { name: `Collapse Workspace ${FIXTURE_NAMES.workspace}`, exact: true }).click();
     await expect(sidebar.getByTestId("sidebar-fork-node")).toHaveCount(0);
     await page.getByRole("button", { name: `Expand Workspace ${FIXTURE_NAMES.workspace}`, exact: true }).click();
