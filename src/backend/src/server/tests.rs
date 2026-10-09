@@ -1381,6 +1381,20 @@ mod current_workspace_tests {
         );
         assert_eq!(state.runtime.revision(), first_revision + 1);
 
+        // An event may have read the running row before Stop committed.
+        // Persisting that stale snapshot must preserve the newer explicit Stop.
+        for observed in ["exited", "failed"] {
+            let mut stale = sessions[0].clone();
+            stale.status = observed.into();
+            super::persist_amux_process(&state.store, &stale.id, &stale)
+                .await
+                .unwrap();
+            assert_eq!(
+                state.store.session(&stale.id).await.unwrap().status,
+                "stopped"
+            );
+        }
+
         let mut late_exit = process.clone();
         late_exit.state = "exited".into();
         late_exit.exit_signal = "TERM".into();
@@ -1405,6 +1419,16 @@ mod current_workspace_tests {
             state.store.session(&sessions[0].id).await.unwrap().status,
             "running"
         );
+        reconcile_process(&state, &late_exit, false)
+            .await
+            .expect("record a natural exit after Restart");
+        assert_eq!(
+            state.store.session(&sessions[0].id).await.unwrap().status,
+            "exited"
+        );
+        reconcile_process(&state, &process, false)
+            .await
+            .expect("restart after a natural exit");
         let before_daemon_stop = state.runtime.revision();
         let mut runtime_changes = state.runtime.subscribe();
         stop_amux(State(state.clone()))

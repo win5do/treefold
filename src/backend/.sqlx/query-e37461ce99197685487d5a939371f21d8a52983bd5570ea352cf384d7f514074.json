@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sessions SET\n                status=CASE WHEN status='stopped' AND ?1 IN ('exited','failed') THEN status ELSE ?1 END,\n                exit_code=?2,exit_signal=?3,argv=?4,updated_at=?5\n             WHERE id=?6 AND (\n                status IS NOT CASE WHEN status='stopped' AND ?1 IN ('exited','failed') THEN status ELSE ?1 END\n                OR exit_code IS NOT ?2 OR exit_signal IS NOT ?3 OR argv IS NOT ?4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "e37461ce99197685487d5a939371f21d8a52983bd5570ea352cf384d7f514074"
+}

@@ -846,7 +846,7 @@ pub(super) async fn reconcile_process(
         .session_by_amux_identity(&process.workspace_name, &process.name)
         .await?
     {
-        session.status = reconciled_status(&session.status, status).into();
+        session.status = status.into();
         session.exit_code = process.exit_code.map(Into::into);
         session.exit_signal = process.exit_signal.clone();
         session.argv = process.command.clone();
@@ -871,7 +871,7 @@ pub(super) async fn reconcile_process(
             && let Ok(mut session) = state.store.session(session_id).await
             && session.amux_process_name == process.name
         {
-            session.status = reconciled_status(&session.status, status).into();
+            session.status = status.into();
             session.exit_code = process.exit_code.map(Into::into);
             session.exit_signal = process.exit_signal.clone();
             session.argv = process.command.clone();
@@ -945,7 +945,7 @@ pub(super) async fn reconcile_process(
                 .session_by_amux_identity(&process.workspace_name, &process.name)
                 .await?
             {
-                existing.status = reconciled_status(&existing.status, status).into();
+                existing.status = status.into();
                 existing.argv = process.command.clone();
                 existing.exit_code = process.exit_code.map(Into::into);
                 existing.exit_signal = process.exit_signal.clone();
@@ -960,18 +960,6 @@ pub(super) async fn reconcile_process(
                 ))
             }
         }
-    }
-}
-
-pub(super) fn reconciled_status<'a>(current: &'a str, observed: &'a str) -> &'a str {
-    // Stop is an explicit user action. The daemon may emit its terminal event
-    // after the handler persisted `stopped`; that late event must not turn the
-    // Session into a natural exit. A later running observation (Restart) still
-    // transitions it back to running.
-    if current == "stopped" && matches!(observed, "exited" | "failed") {
-        "stopped"
-    } else {
-        observed
     }
 }
 
@@ -1008,7 +996,7 @@ pub(super) async fn persist_amux_process(
     session: &Session,
 ) -> Result<bool> {
     store
-        .set_session_runtime(
+        .reconcile_session_runtime(
             id,
             &session.status,
             session.exit_code,

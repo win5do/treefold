@@ -138,6 +138,30 @@ impl Store {
         Ok(sqlx::query("UPDATE sessions SET status=?,exit_code=?,exit_signal=?,argv=?,updated_at=? WHERE id=? AND (status IS NOT ? OR exit_code IS NOT ? OR exit_signal IS NOT ? OR argv IS NOT ?)")
             .bind(status).bind(exit_code).bind(exit_signal).bind(&argv).bind(now()).bind(id).bind(status).bind(exit_code).bind(exit_signal).bind(&argv).execute(&self.pool).await?.rows_affected()!=0)
     }
+    pub async fn reconcile_session_runtime(
+        &self,
+        id: &str,
+        status: &str,
+        exit_code: Option<i64>,
+        exit_signal: &str,
+        argv: &[String],
+    ) -> Result<bool> {
+        let argv = serde_json::to_string(argv).unwrap_or_default();
+        let timestamp = now();
+        // Compare against the row at write time: an event snapshot can predate Stop.
+        Ok(sqlx::query!(
+            "UPDATE sessions SET
+                status=CASE WHEN status='stopped' AND ?1 IN ('exited','failed') THEN status ELSE ?1 END,
+                exit_code=?2,exit_signal=?3,argv=?4,updated_at=?5
+             WHERE id=?6 AND (
+                status IS NOT CASE WHEN status='stopped' AND ?1 IN ('exited','failed') THEN status ELSE ?1 END
+                OR exit_code IS NOT ?2 OR exit_signal IS NOT ?3 OR argv IS NOT ?4)",
+            status, exit_code, exit_signal, argv, timestamp, id
+        )
+        .execute(&self.pool)
+        .await?
+        .rows_affected() != 0)
+    }
     pub async fn set_session_visibility(&self, id: &str, visibility: &str) -> Result<()> {
         let timestamp = now();
         let hidden = if visibility == "visible" {
