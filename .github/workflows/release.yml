@@ -63,10 +63,14 @@ jobs:
           rustup show
           brew install just
           cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,rustls
-      - name: Check and test
-        run: |
-          just check
-          just test
+      - name: Check types, database metadata, and Rust
+        run: just check
+      - name: Test backend
+        run: just test-backend
+      - name: Test backend lifecycle and installation
+        run: just test-integration
+      - name: Test deterministic Electron UI
+        run: just test-ui
       - name: Build ad-hoc signed packages
         run: |
           test "$(uname -m)" = arm64

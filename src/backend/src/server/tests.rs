@@ -3212,6 +3212,20 @@ mod current_workspace_tests {
             workspace.checkout_path,
             ready.checkout_path.as_deref().unwrap()
         );
+        // This case tests checkout selection, not an installed Agent CLI.
+        use std::os::unix::fs::PermissionsExt;
+        let codex_fixture = root.join("codex-fixture");
+        std::fs::write(&codex_fixture, "#!/bin/sh\nexec /bin/cat\n").unwrap();
+        std::fs::set_permissions(&codex_fixture, std::fs::Permissions::from_mode(0o755)).unwrap();
+        state
+            .settings
+            .update(
+                serde_json::from_value(serde_json::json!({
+                    "agents": { "codex": { "command": format!("\"{}\"", codex_fixture.display()) } }
+                }))
+                .unwrap(),
+            )
+            .unwrap();
         let (_, Json(codex)) = create_session(
             State(state.clone()),
             axum::extract::Path(workspace.id.clone()),
