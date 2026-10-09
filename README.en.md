@@ -153,7 +153,7 @@ Scan the QR code with Feishu to join the “Treefold开源项目” group and ch
 
 <img src="docs/images/feishu-community.png" alt="QR code for the Treefold Feishu community group" width="420" />
 
-The group currently only accepts members of the same organization. If you cannot join, you can also reach me through [GitHub Issues](https://github.com/win5do/treefold/issues).
+This is a Feishu personal-edition group. You can join with a personal Feishu account, or reach me through [GitHub Issues](https://github.com/win5do/treefold/issues).
 
 If Treefold helps you, consider [giving it a star on GitHub](https://github.com/win5do/treefold) to support the project.
 

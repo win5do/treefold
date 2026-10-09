@@ -153,7 +153,7 @@ just app-dev
 
 <img src="docs/images/feishu-community.png" alt="Treefold开源项目飞书群二维码" width="420" />
 
-二维码当前仅允许企业内部成员加入；如果无法入群，也欢迎通过 [GitHub Issues](https://github.com/win5do/treefold/issues) 交流。
+这是飞书个人版交流群，使用飞书个人账号即可加入。也欢迎通过 [GitHub Issues](https://github.com/win5do/treefold/issues) 交流。
 
 如果 Treefold 对你有帮助，欢迎在 [GitHub 上点个 Star](https://github.com/win5do/treefold)，支持这个开源项目。
 
