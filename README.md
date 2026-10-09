@@ -147,6 +147,14 @@ just app-dev
 - [Agent Skill、CLI 与 App API](docs/agent-skill-cli-api-architecture.md)
 - [报告问题或提出建议](https://github.com/win5do/treefold/issues)
 
+### 飞书交流群
+
+想交流使用体验、讨论功能或反馈问题，欢迎用飞书扫描下方二维码，加入「Treefold开源项目」群，与我直接沟通。
+
+<img src="docs/images/feishu-community.png" alt="Treefold开源项目飞书群二维码" width="420" />
+
+二维码当前仅允许企业内部成员加入；如果无法入群，也欢迎通过 [GitHub Issues](https://github.com/win5do/treefold/issues) 交流。
+
 如果 Treefold 对你有帮助，欢迎在 [GitHub 上点个 Star](https://github.com/win5do/treefold)，支持这个开源项目。
 
 ## 许可证
