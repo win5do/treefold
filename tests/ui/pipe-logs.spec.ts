@@ -72,13 +72,11 @@ test("pipe Command Session replays logs, follows new output, and keeps logs afte
     await expect(logs).not.toContainText("\u001b");
     const link = logs.getByRole("link", { name: "http://127.0.0.1:3001/api/status" });
     await link.click();
-    expect(await page.evaluate(() => (window as typeof window & { __openedUrls: string[] }).__openedUrls)).toEqual([]);
-    await link.click({ modifiers: ["Control"] });
     expect(await page.evaluate(() => (window as typeof window & { __openedUrls: string[] }).__openedUrls)).toEqual(["http://127.0.0.1:3001/api/status"]);
+    await link.click({ modifiers: ["Control"] });
+    expect(await page.evaluate(() => (window as typeof window & { __openedUrls: string[] }).__openedUrls)).toEqual(Array(2).fill("http://127.0.0.1:3001/api/status"));
     await link.click({ modifiers: ["Meta"] });
-    expect(await page.evaluate(() => (window as typeof window & { __openedUrls: string[] }).__openedUrls)).toEqual([
-      "http://127.0.0.1:3001/api/status", "http://127.0.0.1:3001/api/status",
-    ]);
+    expect(await page.evaluate(() => (window as typeof window & { __openedUrls: string[] }).__openedUrls)).toEqual(Array(3).fill("http://127.0.0.1:3001/api/status"));
 
     harness.setProcessState(FIXTURE_IDS.workspaceShell, "exited");
     await page.reload();

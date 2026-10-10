@@ -9,8 +9,7 @@ function externalUrl(value: string): string | null {
   }
 }
 
-export function openSessionLink(event: Pick<MouseEvent, "ctrlKey" | "metaKey">, value: string): void {
-  if (!event.ctrlKey && !event.metaKey) return;
+export function openSessionLink(_event: MouseEvent, value: string): void {
   const url = externalUrl(value);
   if (url) window.open(url, "_blank", "noopener,noreferrer");
 }

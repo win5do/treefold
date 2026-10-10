@@ -87,6 +87,7 @@ function WebTerminal({ session, onExit }: { session: Session; onExit: () => void
     const terminal = cached?.terminal ?? new Terminal({
       cursorBlink: true,
       convertEol: false,
+      linkHandler: { activate: openSessionLink },
       fontFamily: terminalFontFamily,
       fontSize: 13,
       lineHeight: 1.2,
