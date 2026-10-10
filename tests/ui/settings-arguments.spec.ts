@@ -194,11 +194,9 @@ test("Session keyboard navigation returns to directories without changing select
     const selectedDirectory = directories.getByRole("button", { pressed: true });
     await expect(shellType).toBeFocused();
     await page.screenshot({ path: "/tmp/treefold-new-session-shell.png", animations: "disabled" });
-    for (const key of ["ArrowDown", "ArrowUp", "ArrowLeft"]) {
-      await page.keyboard.press(key);
-      await expect(shellType).toBeFocused();
-      await expect(shellType).toHaveAttribute("aria-pressed", "true");
-    }
+    await page.keyboard.press("ArrowLeft");
+    await expect(shellType).toBeFocused();
+    await expect(shellType).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("Tab");
     await expect(agentType).toHaveAttribute("aria-pressed", "true");
     await expect(selectedDirectory).toBeFocused();

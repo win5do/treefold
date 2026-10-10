@@ -95,7 +95,7 @@ export function NewSessionDialog({
       return;
     }
     const step = event.key === "ArrowDown" ? 1 : -1;
-    if (group === "directory" && available.length) {
+    if ((group === "type" || group === "directory") && available.length) {
       const index = available.findIndex(item => item.id === active?.id);
       directoryRefs.current.get(available[(index + step + available.length) % available.length].id)?.focus();
     } else if (group === "agent" && availableAgents.length) {

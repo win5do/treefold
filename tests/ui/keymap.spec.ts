@@ -180,6 +180,15 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     const agentType = dialog.getByRole("button", { name: "Agent", exact: true });
     const directories = dialog.getByRole("group", { name: "Available directories" });
     await expect(shellType).toBeFocused();
+    const initialDirectory = await directories.getByRole("button", { pressed: true }).innerText();
+    await page.keyboard.press("ArrowDown");
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
+    expect(await directories.getByRole("button", { pressed: true }).innerText()).not.toBe(initialDirectory);
+    await shellType.focus();
+    await page.keyboard.press("ArrowUp");
+    await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
+    await expect(directories.getByRole("button", { pressed: true })).toHaveText(initialDirectory, { useInnerText: true });
+    await expect(shellType).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("Tab");
     await expect(agentType).toHaveAttribute("aria-pressed", "true");
     await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
