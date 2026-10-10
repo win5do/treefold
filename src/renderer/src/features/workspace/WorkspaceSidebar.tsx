@@ -15,6 +15,7 @@ import {
   Ellipsis,
   Folder,
   FolderGit2,
+  FolderOpen,
   GitBranch,
   GitPullRequestArrow,
   PanelsTopLeft,
@@ -746,7 +747,28 @@ function SidebarOwnerContextMenu({
         )}
         <ContextMenuSeparator />
         <ContextMenuGroup>
-          <OpenInMenu project={project} workspaceId={stream?.id} directoryName={stream?.name} disabled={busy} />
+          <ContextMenuSub>
+            <ContextMenuSubTrigger data-testid="open-in-menu" disabled={busy || !window.treefoldDesktop}>
+              <FolderOpen />{t("sidebar.openIn")}
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent data-testid="open-in-directories" className="w-52">
+              {directoryGroups.map((group) => (
+                <ContextMenuGroup key={group.id}>
+                  <ContextMenuLabel>{group.name ?? t("sidebar.otherDirectories")}</ContextMenuLabel>
+                  {group.directories.map((directory) => (
+                    <OpenInMenu
+                      key={directory.id}
+                      directoryPath={directory.path}
+                      directoryName={directory.name}
+                      triggerTestId={`open-in-directory-${directory.id}`}
+                      trigger={<>{directory.is_git ? <FolderGit2 /> : <Folder />}{directory.name}</>}
+                      disabled={busy}
+                    />
+                  ))}
+                </ContextMenuGroup>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
           <ContextMenuItem data-testid="rename-node-action" onClick={onRename}>
             <Pencil />
             {t("sidebar.rename")}

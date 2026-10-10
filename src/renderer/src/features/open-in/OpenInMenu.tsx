@@ -1,9 +1,7 @@
-import { Fragment, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Fragment, useState, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Code, Copy, FolderOpen, Terminal } from 'lucide-react';
-import type { ProjectDetail } from '@/domain/types';
-import { workspaceDetailQuery } from '@/features/workspace/queries';
 import { toast } from '@/lib/toast';
 import {
   ContextMenuGroup, ContextMenuItem, ContextMenuSeparator,
@@ -14,12 +12,11 @@ import {
   DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export function OpenInMenu({ project, workspaceId, directoryPath, directoryName, disabled, surface = 'context' }: {
-  project?: ProjectDetail; workspaceId?: string; directoryPath?: string; directoryName?: string; disabled?: boolean;
+export function OpenInMenu({ directoryPath, directoryName, trigger, triggerTestId = 'open-in-menu', disabled, surface = 'context' }: {
+  directoryPath: string; directoryName?: string; trigger?: ReactNode; triggerTestId?: string; disabled?: boolean;
   surface?: 'context' | 'dropdown';
 }) {
   const { t } = useTranslation();
-  const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
   const desktop = window.treefoldDesktop;
@@ -36,26 +33,19 @@ export function OpenInMenu({ project, workspaceId, directoryPath, directoryName,
     staleTime: 0,
     retry: false,
   });
-  async function resolveDirectory() {
-    const directory = directoryPath ?? (workspaceId
-      ? (await client.fetchQuery(workspaceDetailQuery(workspaceId))).checkout_path
-      : project?.directories.find(item => item.id === project.default_directory_id)?.path);
-    if (!directory) throw new Error(t('sidebar.openDirectoryUnavailable'));
-    return directory;
-  }
   async function select(id: string) {
     if (!desktop || opening) return;
     setOpening(true);
     try {
-      await desktop.openInApp(id, await resolveDirectory());
+      await desktop.openInApp(id, directoryPath);
     } catch (cause) {
       toast.errorFrom(cause, t('sidebar.openInFailed'));
     } finally { setOpening(false); }
   }
   async function copyPath() {
     try {
-      await navigator.clipboard.writeText(await resolveDirectory());
-      toast.success(t('sidebar.absolutePathCopied', { name: directoryName ?? project?.name ?? '' }));
+      await navigator.clipboard.writeText(directoryPath);
+      toast.success(t('sidebar.absolutePathCopied', { name: directoryName ?? '' }));
     } catch (cause) {
       console.error('Could not copy absolute path', cause);
       toast.error(t('sidebar.copyAbsolutePathFailed'));
@@ -66,8 +56,8 @@ export function OpenInMenu({ project, workspaceId, directoryPath, directoryName,
     .filter(group => group.apps.length > 0);
   return (
     <Sub onOpenChange={setOpen}>
-      <SubTrigger data-testid="open-in-menu" disabled={disabled || opening || !desktop}>
-        <FolderOpen />{t('sidebar.openIn')}
+      <SubTrigger data-testid={triggerTestId} disabled={disabled || opening || !desktop}>
+        {trigger ?? <><FolderOpen />{t('sidebar.openIn')}</>}
       </SubTrigger>
       <SubContent data-testid="open-in-submenu" className="w-52">
         <Group>

@@ -10,9 +10,10 @@ const apps = [
   { id: 'goland', label: 'GoLand', group: 'editor' as const },
   { id: 'ghostty', label: 'Ghostty', group: 'terminal' as const },
 ];
-async function openMenu(page: Page, owner: string) {
+async function openMenu(page: Page, owner: string, directoryId: string = FIXTURE_IDS.primaryDirectory) {
   await page.getByTestId(owner).first().click({ button: 'right' });
   await moveUiPointerTo(page, page.getByTestId('open-in-menu').filter({ visible: true }));
+  await moveUiPointerTo(page, page.getByTestId(`open-in-directory-${directoryId}`));
   await expect(page.getByRole('menuitem', { name: 'Finder', exact: true })).toBeVisible();
 }
 
@@ -23,25 +24,38 @@ test('Open With sends the selected app and the Project, Workspace or Fork direct
     page = await createUiSession({ apiUrl: harness.apiUrl, openInApps: apps });
     await page.goto(harness.baseUrl);
     await expect(page.getByTestId('open-settings')).toHaveAccessibleName('Settings', { timeout: 15_000 });
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async (path: string) => { window.__treefoldCopiedPath = path; } },
+      });
+    });
     const scenarios = [
-      ['sidebar-project-node', 'VS Code', 'vscode', '/tmp/treefold-ui-fixture/repository-with-a-long-readable-path'],
-      ['sidebar-workspace-node', 'GoLand', 'goland', '/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture'],
-      ['sidebar-fork-node', 'Ghostty', 'ghostty', '/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture'],
+      ['sidebar-project-node', 'VS Code', 'vscode', '/tmp/treefold-ui-fixture/repository-with-a-long-readable-path/apps/web', FIXTURE_IDS.monorepoDirectory],
+      ['sidebar-workspace-node', 'GoLand', 'goland', '/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture/apps/web', FIXTURE_IDS.monorepoDirectory],
+      ['sidebar-fork-node', 'Ghostty', 'ghostty', '/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture/apps/web', FIXTURE_IDS.monorepoDirectory],
+      ['sidebar-fork-node', 'Finder', 'finder', '/tmp/treefold-ui-fixture/attached-documentation', FIXTURE_IDS.attachedDirectory],
     ];
     const expected = [];
-    for (const [owner, label, id, directory] of scenarios) {
+    for (const [owner, label, id, directory, directoryId] of scenarios) {
       // Sidebar expansion is persistent UI state, so expand only when needed.
       for (const parent of ['sidebar-project-node', 'sidebar-workspace-node']) {
         const toggle = page.getByTestId(parent).first().getByTestId('sidebar-tree-toggle').first();
         if (await toggle.count() && await toggle.getAttribute('aria-expanded') === 'false') await toggle.click();
       }
-      await openMenu(page, owner);
+      await openMenu(page, owner, directoryId);
       const submenu = page.getByTestId('open-in-submenu').filter({ visible: true });
       const labels = ['Copy Absolute Path', ...apps.map(app => app.label)];
       await expect(submenu.getByRole('menuitem')).toHaveCount(labels.length);
       for (const name of labels) {
         await expect(submenu.getByRole('menuitem', { name, exact: true })).toBeVisible();
       }
+      if (expected.length === 0) {
+        await page.screenshot({ path: '/tmp/treefold-open-in-directory-selection.png' });
+      }
+      await submenu.getByRole('menuitem', { name: 'Copy Absolute Path', exact: true }).click();
+      await expect.poll(() => page!.evaluate(() => window.__treefoldCopiedPath)).toBe(directory);
+      await openMenu(page, owner, directoryId);
       await page.getByRole('menuitem', { name: label, exact: true }).click();
       await page.getByTestId('open-in-submenu').waitFor({ state: 'hidden' });
       await page.getByTestId('directory-session-context-menu').waitFor({ state: 'hidden' });
@@ -55,8 +69,10 @@ test('Open With sends the selected app and the Project, Workspace or Fork direct
   } finally { try { await closeUiSession(page); } finally { await harness.close(); } }
 });
 
-test('Open With reports a desktop launch error', async () => {
-  const harness = await startUiHarness();
+test('Open With keeps directory selection for a single directory and reports a launch error', async () => {
+  const harness = await startUiHarness(fixture => {
+    fixture.projectDetails[FIXTURE_IDS.project].directories = fixture.projectDetails[FIXTURE_IDS.project].directories.filter(directory => directory.id === FIXTURE_IDS.primaryDirectory);
+  });
   let page: Page | undefined;
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, openInApps: apps, openInError: 'Application was removed' });
