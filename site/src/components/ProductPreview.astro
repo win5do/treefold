@@ -1,195 +1,111 @@
 ---
 import AgentIcon from './AgentIcon.astro';
-import Icon from './PreviewIcon.astro';
 import { normalizeLocale } from '../i18n/config';
 import { productPreviewCopy } from '../i18n/productPreview';
 const copy = productPreviewCopy[normalizeLocale(Astro.currentLocale)];
-const scenes = ['Project', 'Workspace', 'Session'];
-const worktrees = [
-  { branch: 'main', path: '~/code/atlas', badge: copy.mainCheckout, hash: 'a61c209' },
-  { branch: 'feature/auth-flow', path: '~/.treefold/git/w/auth-flow/atlas', badge: 'Workspace · auth-flow', hash: '8f3ab21' },
-  { branch: 'fork/validation', path: '~/.treefold/git/w/validation/atlas', badge: 'Fork · validation', hash: '62bd908' },
-];
 ---
 <section class="product-stage" aria-label={copy.label}>
-  <fieldset class="preview-scenes">
-    <legend>{copy.views}</legend>
-    {scenes.map((scene, index) => <div><input type="radio" name="product-scene" id={`scene-${index}`} value={scene} checked={index === 0} /><label for={`scene-${index}`}>{scene}</label></div>)}
+  <fieldset class="workflow-switch">
+    <legend class="sr-only">{copy.views}</legend>
+    {copy.scenes.map((scene, index) => <label><input type="radio" name="workflow-scene" value={index} checked={index === 0} /><span><b>0{index + 1}</b>{scene}</span></label>)}
   </fieldset>
-  <div class="preview-viewport" tabindex="0" role="region" aria-label={copy.label}>
-    <div class="product-window">
-      <div class="preview-titlebar"><div class="window-dots" aria-hidden="true"><span></span><span></span><span></span></div><strong>Treefold</strong></div>
-      <div class="preview-toolbar"><Icon name="panel" /><span>atlas <span class="preview-context">/ auth-flow</span><span class="preview-session-context"> / Codex</span></span><Icon name="panel" /></div>
-      <div class="preview-body">
-        <aside class="preview-sidebar" aria-label="Project / Workspace / Fork / Session">
-          <div class="preview-section-label">Project <Icon name="plus" /></div>
-          <div class="preview-tree project-node"><Icon name="chevron" /><Icon name="folder" /><strong>atlas</strong></div>
-          <div class="preview-nested">
-            <div class="preview-section-label">Workspace</div>
-            <div class="preview-tree workspace-node"><Icon name="workspace" /><strong>auth-flow</strong></div>
-            <div class="preview-tree session-node"><Icon name="terminal" /><span>Shell</span><i></i></div>
-            <div class="preview-tree session-node codex-node"><AgentIcon kind="codex" /><span>Codex</span><i></i></div>
-            <div class="preview-nested fork-group">
-              <div class="preview-section-label">Fork</div>
-              <div class="preview-tree"><Icon name="branch" /><strong>validation</strong></div>
-              <div class="preview-tree session-node"><AgentIcon kind="claude_code" /><span>Claude Code</span><i></i></div>
-            </div>
-            <div class="preview-tree quiet"><Icon name="workspace" /><span>api-cache</span></div>
-          </div>
-          <div class="preview-sidebar-footer">Treefold <span>⌘ K</span></div>
-        </aside>
-        <div class="preview-center">
-          <div class="preview-scene scene-worktrees">
-            <div class="preview-page-heading"><small>Project</small><h3>atlas</h3></div>
-            <div class="preview-section-title"><strong>{copy.repositories}</strong><span>2</span></div>
-            <div class="preview-repository">
-              <div class="preview-repo-heading"><Icon name="folder" /><strong>atlas</strong><span class="preview-badge success">{copy.ready}</span></div>
-              <div class="preview-repo-meta">main · github.com/acme/atlas</div>
-              <div class="preview-repo-content">
-                <div class="preview-directory"><Icon name="folder" />{copy.directories}<span>src / api</span></div>
-                <div class="preview-worktree-title"><Icon name="branch" />{copy.worktrees}<span>3</span></div>
-                {worktrees.map((item) => <div class="preview-worktree"><Icon name="branch" /><div><strong>{item.branch}</strong><code>{item.hash} · {item.path}</code><span class="preview-badge">{item.badge}</span>{item.branch !== 'main' && <small>{copy.ahead}</small>}</div></div>)}
-              </div>
-            </div>
-            <div class="preview-repo-heading secondary-repo"><Icon name="chevron" /><Icon name="folder" /><strong>atlas-web</strong><span class="preview-badge success">{copy.ready}</span></div>
-          </div>
-          <div class="preview-scene scene-workspace">
-            <div class="preview-page-heading"><small>Workspace</small><h3>auth-flow</h3><code>feature/auth-flow</code></div>
-            <div class="preview-section-title"><strong>Fork</strong><span>2</span></div>
-            <p class="preview-description">{copy.forkDescription}</p>
-            {['validation', 'api-tests'].map((name) => <div class="preview-fork-card"><Icon name="branch" /><div><strong>{name}</strong><code>fork/{name}</code><span class="preview-badge success">{copy.active}</span></div><span>↗</span></div>)}
-            <div class="preview-section-title"><strong>Todo</strong><span>3</span></div>
-            
-            {copy.tasks.map((task, index) => <div class="preview-task"><span class:list={['preview-checkbox', { completed: index === 2 }]}>{index === 2 && <Icon name="check" />}</span><div><strong>{task}</strong><small>{[copy.active, copy.pending, copy.done][index]}</small>{index === 0 && <span class="preview-badge">Fork · validation</span>}</div></div>)}
-          </div>
-          <div class="preview-scene scene-terminal">
-            <div class="preview-terminal-tabs"><span><AgentIcon kind="codex" />Codex</span><span><Icon name="terminal" />Shell</span></div>
-            <div class="preview-cli"><strong>› {copy.tasks[0]}</strong><p>• Inspecting src/auth/session.ts<br />• Updating validation checks<br />• Running npm test</p><pre><span> PASS </span> auth/session.test.ts
-<span> PASS </span> auth/token.test.ts
-
-Test Files  2 passed (2)
-     Tests  12 passed (12)</pre><p class="preview-cli-diff">+86 −14 <span>src/auth/session.ts</span></p><div class="preview-prompt">› <span>▌</span></div><footer>Codex · atlas · feature/auth-flow</footer></div>
-          </div>
+  <div class="workflow-window">
+    <div class="workflow-titlebar"><span aria-hidden="true">● ● ●</span><strong>Treefold</strong><small>{copy.illustration}</small></div>
+    <div class="workflow-body">
+      <aside class="workflow-tree" aria-label="Project / Workspace / Fork">
+        <small>Project</small><strong>atlas</strong>
+        <div class="tree-indent"><small>Workspace</small><strong class="tree-selected">auth-flow</strong><span>Codex · Shell</span>
+          <div class="tree-indent"><small>Fork</small><strong>validation</strong><span>Codex</span><strong>api-tests</strong><span>Claude Code</span></div>
         </div>
-        <aside class="preview-history" aria-label="Git History">
-          <div class="preview-history-tabs"><strong>Git History</strong></div>
-          <div class="preview-history-repo"><Icon name="folder" />atlas</div>
-          <div class="preview-history-branch"><Icon name="branch" /><span class="history-main">main</span><span class="history-feature">feature/auth-flow</span></div>
-          <div class="preview-commits">
-            {[
-              ['8f3ab21', 'Validate auth edge cases', 'Mina · 09:42'],
-              ['62bd908', 'Add session checks', 'Mina · 09:18'],
-              ['a61c209', 'Merge API updates', 'Leo · 08:56'],
-              ['17d8e40', 'Update auth module', 'Leo · 08:30'],
-              ['ce219b6', 'Add token refresh', 'Mina · 08:12'],
-              ['b03a4d7', 'Set up project', 'Leo · 07:45'],
-            ].map(([hash, subject, author], index) => <div class:list={['preview-commit', { 'feature-commit': index < 2 }]}><i></i><div><strong>{subject}</strong><small>{author}</small><code>{hash}</code></div></div>)}
-          </div>
-        </aside>
+      </aside>
+      <div class="workflow-main">
+        <header><small>Workspace / auth-flow</small><h3>{copy.task}</h3></header>
+        <section class="workflow-scene workflow-split" aria-label={copy.scenes[0]}>
+          <div class="scene-heading"><strong>Todo</strong><span>02</span></div>
+          <div class="task-card"><i aria-hidden="true">○</i><strong>{copy.validation}</strong><span class="task-action">{copy.create} ↗</span></div>
+          <div class="fork-connector" aria-hidden="true">↓</div>
+          <div class="execution-card"><small>Fork</small><strong>validation</strong><code>fork/validation</code><p>{copy.isolation}</p></div>
+          <div class="task-secondary"><i aria-hidden="true">○</i> {copy.tests}<span>→ api-tests</span></div>
+        </section>
+        <section class="workflow-scene workflow-parallel" aria-label={copy.scenes[1]}>
+          <div class="scene-heading"><strong>Fork</strong><span>02 · {copy.running}</span></div>
+          {[['validation', 'codex', 'Codex', copy.validation], ['api-tests', 'claude_code', 'Claude Code', copy.tests]].map(([name, kind, agent, task]) => <div class="execution-card"><div class="agent-line"><AgentIcon kind={kind as 'codex' | 'claude_code'} /><strong>{agent}</strong><span class="running-dot">{copy.running}</span></div><code>Fork / {name}</code><p>{task}</p><div class="code-trace">{name === 'validation' ? 'src/auth/session.ts  +24 −6' : 'tests/auth/api.test.ts  +48'}</div></div>)}
+          <p class="scene-footnote">{copy.shared}</p>
+        </section>
+        <section class="workflow-scene workflow-deliver" aria-label={copy.scenes[2]}>
+          <div class="scene-heading"><strong>{copy.review}</strong><span>validation</span></div>
+          <div class="diff-preview"><code>src/auth/session.ts</code><pre><span>− return session.user</span><b>+ validateSession(session)</b><b>+ return session.user</b></pre></div>
+          <p class="test-result">✓ {copy.passed}</p>
+          <div class="delivery-route"><span>Fork<strong>validation</strong></span><b aria-hidden="true">→</b><span>Workspace<strong>auth-flow</strong></span></div>
+          <div class="delivery-action">{copy.merge} ↗</div>
+          <p class="scene-footnote">{copy.retained}</p>
+        </section>
       </div>
     </div>
   </div>
-  <div class="preview-captions" aria-live="polite">{copy.captions.map((caption, index) => <p class={`preview-caption caption-${index}`}>{caption}</p>)}</div>
-  <p class="preview-scroll-hint">↔ {copy.scrollHint}</p>
+  <div class="workflow-captions" aria-live="polite">{copy.captions.map((caption, index) => <p class={`workflow-caption caption-${index}`}>{caption}</p>)}</div>
 </section>
-
-<style is:global>
-  .product-stage { position: relative; min-width: 0; --preview-bg: #0a0a0a; --preview-panel: #171717; --preview-card: #202020; --preview-selected: #292929; }
-  .preview-scenes { display: flex; justify-content: center; gap: 4px; margin: 0 0 16px; padding: 0; border: 0; }
-  .preview-scenes legend, .preview-scenes input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .preview-scenes label { display: block; padding: 7px 13px; border: 1px solid transparent; border-radius: 7px; color: var(--muted); font-size: 12px; cursor: pointer; }
-  .preview-scenes input:checked + label { border-color: var(--border-strong); background: var(--surface-bright); color: var(--text); }
-  .preview-scenes input:focus-visible + label { outline: 2px solid var(--accent-bright); outline-offset: 3px; }
-  .preview-viewport { overflow-x: auto; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--preview-bg); box-shadow: 0 32px 80px rgb(0 0 0 / .4); }
-  .preview-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-  .product-window { min-width: 640px; color: var(--text); font-size: 10px; line-height: 1.5; }
-  .product-window svg { flex: 0 0 auto; }
-  .preview-titlebar { display: flex; align-items: center; gap: 12px; height: 30px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--preview-selected); color: var(--muted); }
-  .window-dots { display: flex; gap: 5px; }
-  .window-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--subtle); }
-  .preview-toolbar { display: flex; align-items: center; gap: 12px; height: 35px; padding: 0 12px; border-bottom: 1px solid var(--border); background: var(--preview-panel); }
-  .preview-toolbar > span { flex: 1; padding-left: 120px; }
-  .preview-body { display: grid; grid-template-columns: 145px minmax(0, 1fr) 145px; min-height: 430px; }
-  .preview-sidebar { display: flex; flex-direction: column; padding: 12px 7px 0; border-right: 1px solid var(--border); background: var(--preview-panel); }
-  .preview-section-label { display: flex; align-items: center; justify-content: space-between; padding: 0 6px; margin: 5px 0 8px; color: var(--muted); font-size: 9px; }
-  .preview-tree { display: flex; align-items: center; gap: 5px; min-height: 29px; padding: 5px; border: 1px solid transparent; border-radius: 5px; white-space: nowrap; }
-  .preview-tree svg { width: 12px; height: 12px; color: var(--muted); }
-  .project-node > svg:first-child { width: 9px; transform: rotate(90deg); }
-  .preview-nested { margin-left: 7px; padding-left: 6px; border-left: 1px solid var(--border); }
-  .session-node { padding-left: 12px; color: var(--muted); font-size: 9px; }
-  .session-node i { width: 4px; height: 4px; margin-left: auto; border-radius: 50%; background: var(--green); }
-  .fork-group { margin-block: 9px; }
-  .quiet { color: var(--muted); }
-  .preview-sidebar-footer { display: flex; justify-content: space-between; margin-top: auto; padding: 12px 5px; border-top: 1px solid var(--border); color: var(--muted); font-size: 9px; }
-  .preview-center { display: grid; min-width: 0; }
-  .preview-scene { grid-area: 1 / 1; visibility: hidden; padding: 20px 15px; }
-  .preview-page-heading { margin-bottom: 19px; }
-  .preview-page-heading small { color: var(--muted); font-size: 9px; }
-  .preview-page-heading h3 { margin: 4px 0; font-size: 23px; font-weight: 600; letter-spacing: -.04em; }
-  .preview-page-heading code { color: var(--muted); font-size: 9px; }
-  .preview-section-title { display: flex; justify-content: space-between; align-items: center; margin: 16px 0 10px; }
-  .preview-section-title > span { color: var(--muted); font-size: 9px; }
-  .preview-repository { overflow: hidden; border: 1px solid var(--border); border-radius: 7px; background: var(--preview-panel); }
-  .preview-repo-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 12px 10px 3px; }
-  .preview-badge { display: inline-block; width: fit-content; padding: 1px 5px; border: 1px solid var(--border-strong); border-radius: 10px; font-size: 7px; white-space: nowrap; }
-  .success { border-color: transparent; background: color-mix(in srgb, var(--green) 10%, transparent); color: var(--green); }
-  .preview-repo-meta { padding: 2px 10px 10px; color: var(--muted); font-size: 8px; }
-  .preview-repo-content { padding: 0 10px; border-top: 1px solid var(--border); background: var(--preview-card); }
-  .preview-directory, .preview-worktree-title { display: flex; align-items: center; gap: 6px; padding: 9px 0; }
-  .preview-directory { border-bottom: 1px solid var(--border); }
-  .preview-directory span, .preview-worktree-title span { margin-left: auto; color: var(--muted); font-size: 8px; }
-  .preview-worktree { display: flex; align-items: start; gap: 7px; margin-left: 5px; padding: 8px 0 8px 9px; border-left: 1px solid var(--border-strong); }
-  .preview-worktree + .preview-worktree { border-top: 1px solid var(--border); }
-  .preview-worktree > div { min-width: 0; }
-  .preview-worktree strong { font-size: 9px; overflow-wrap: anywhere; }
-  .preview-worktree code { display: block; overflow: hidden; margin: 4px 0; color: var(--muted); font-size: 7px; white-space: nowrap; text-overflow: ellipsis; }
-  .preview-worktree small { display: inline-block; margin-left: 4px; color: var(--muted); font-size: 7px; }
-  .secondary-repo { margin-top: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--preview-panel); }
-  .preview-description { margin: 0 0 12px; color: var(--muted); font-size: 9px; line-height: 1.7; }
-  .preview-fork-card { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--preview-panel); }
-  .preview-fork-card > div { flex: 1; }
-  .preview-fork-card code { display: block; margin: 4px 0 7px; color: var(--muted); font-size: 8px; }
-  .preview-task { display: flex; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--border); }
-  .preview-task strong { display: block; font-size: 9px; }
-  .preview-task small { display: inline-block; margin: 4px 6px 0 0; color: var(--muted); font-size: 9px; }
-  .preview-checkbox { width: 13px; height: 13px; flex-shrink: 0; margin-top: 2px; border: 1px solid var(--border-strong); border-radius: 3px; }
-  .completed { color: var(--green); }
-  .completed svg { width: 11px; height: 11px; }
-  .scene-terminal { padding: 0; }
-  .preview-terminal-tabs { display: flex; gap: 20px; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--muted); }
-  .preview-terminal-tabs span { display: flex; align-items: center; gap: 6px; }
-  .preview-terminal-tabs span:first-child { color: var(--text); }
-  .preview-terminal-tabs svg { width: 12px; height: 12px; }
-  .preview-cli { padding: 20px 14px; font-family: var(--font-mono); font-size: 9px; line-height: 2; }
-  .preview-cli p { margin: 20px 0; color: var(--muted); }
-  .preview-cli pre { font-size: 8px; line-height: 2; }
-  .preview-cli pre span, .preview-cli .preview-cli-diff { color: var(--green); }
-  .preview-cli-diff span { color: var(--muted); font-size: 8px; }
-  .preview-prompt { padding: 7px; border-block: 1px solid var(--border); }
-  .preview-cli footer { padding-top: 7px; color: var(--muted); font-size: 7px; overflow-wrap: anywhere; }
-  .preview-history { border-left: 1px solid var(--border); background: var(--preview-panel); }
-  .preview-history-tabs { display: flex; justify-content: space-between; padding: 11px 10px; border-bottom: 1px solid var(--border); font-size: 9px; }
-  .preview-history-tabs > span { color: var(--muted); font-size: 8px; }
-  .preview-history-repo, .preview-history-branch { display: flex; align-items: center; gap: 6px; margin: 10px; font-size: 9px; }
-  .preview-history-branch { padding-bottom: 10px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 8px; }
-  .preview-commits { padding: 2px 10px; }
-  .preview-commit { position: relative; display: flex; gap: 8px; padding-bottom: 15px; }
-  .preview-commit::before { position: absolute; top: 8px; bottom: -4px; left: 3px; width: 1px; background: var(--subtle); content: ''; }
-  .preview-commit:last-child::before { display: none; }
-  .preview-commit i { position: relative; z-index: 1; width: 7px; height: 7px; flex-shrink: 0; margin-top: 4px; border: 1px solid var(--muted); border-radius: 50%; background: var(--preview-panel); }
-  .preview-commit strong { display: block; font-size: 9px; font-weight: 500; }
-  .preview-commit small, .preview-commit code { display: block; margin-top: 3px; color: var(--muted); font-size: 7px; }
-  .preview-caption { display: none; margin: 16px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; text-align: center; }
-  .preview-captions { min-height: 57px; }
-  .preview-scroll-hint { display: none; color: var(--muted); font-size: 10px; text-align: center; }
-  .product-stage:has(#scene-0:checked) :is(.scene-worktrees, .caption-0),
-  .product-stage:has(#scene-1:checked) :is(.scene-workspace, .caption-1),
-  .product-stage:has(#scene-2:checked) :is(.scene-terminal, .caption-2) { display: block; visibility: visible; }
-  .product-stage:not(:has(#scene-2:checked)) .preview-session-context { display: none; }
-  .product-stage:has(#scene-0:checked) :is(.preview-context, .feature-commit, .history-feature),
-  .product-stage:not(:has(#scene-0:checked)) .history-main { display: none; }
-  .product-stage:has(#scene-0:checked) .project-node,
-  .product-stage:has(#scene-1:checked) .workspace-node,
-  .product-stage:has(#scene-2:checked) .codex-node { border-color: var(--border-strong); background: var(--preview-selected); }
-  @media (max-width: 700px) { .preview-scroll-hint { display: block; } .preview-scenes label { padding: 7px 10px; font-size: 11px; } }
+<style>
+  .product-stage { min-width: 0; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .workflow-switch { display: flex; gap: 6px; padding: 0; margin: 0 0 16px; border: 0; }
+  .workflow-switch label { flex: 1; min-width: 0; cursor: pointer; }
+  .workflow-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .workflow-switch label > span { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 5px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-size: 12px; }
+  .workflow-switch b { font: 10px var(--font-mono); color: var(--accent-bright); }
+  .workflow-switch input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+  .workflow-switch input:focus-visible + span { outline: 2px solid var(--accent-bright); outline-offset: 3px; }
+  .workflow-window { border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--surface); box-shadow: 0 30px 80px rgb(0 0 0 / .35); }
+  .workflow-titlebar { display: flex; align-items: center; gap: 14px; padding: 14px 16px; background: var(--surface-bright); border-bottom: 1px solid var(--border); font-size: 12px; }
+  .workflow-titlebar > span { color: var(--subtle); font-size: 9px; letter-spacing: 3px; }
+  .workflow-titlebar small { margin-left: auto; color: var(--muted); font-size: 10px; }
+  .workflow-body { display: grid; grid-template-columns: 155px minmax(0, 1fr); }
+  .workflow-tree { padding: 22px 12px; border-right: 1px solid var(--border); background: var(--surface-raised); font-size: 12px; }
+  .workflow-tree small { display: block; margin: 0 0 8px; color: var(--muted); font-size: 10px; }
+  .workflow-tree strong, .workflow-tree span { display: block; padding: 6px 4px; }
+  .workflow-tree span { color: var(--muted); font-size: 10px; }
+  .tree-indent { border-left: 1px solid var(--border-strong); margin: 14px 0 0 4px; padding-left: 9px; }
+  .tree-selected { background: var(--accent-soft); border-radius: 4px; color: var(--accent-bright); }
+  .workflow-main { padding: 24px; min-width: 0; }
+  .workflow-main header small { color: var(--muted); font-size: 11px; }
+  .workflow-main h3 { margin: 8px 0 24px; font-size: 21px; line-height: 1.3; letter-spacing: -.03em; }
+  .workflow-scene { display: none; min-height: 305px; font-size: 12px; }
+  .scene-heading { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 14px; }
+  .scene-heading > span { color: var(--muted); font-size: 10px; }
+  .task-card, .execution-card { padding: 14px; border: 1px solid var(--border-strong); border-radius: 8px; background: var(--surface-raised); }
+  .task-card i, .task-secondary i { color: var(--accent-bright); font-style: normal; margin-right: 6px; }
+  .task-action { display: block; color: var(--accent-bright); margin: 12px 0 0 20px; }
+  .fork-connector { padding: 5px 20px; color: var(--accent); }
+  .execution-card > small { color: var(--accent-bright); margin-right: 10px; }
+  .execution-card code { display: block; color: var(--muted); margin-top: 9px; font-size: 10px; }
+  .execution-card p { margin: 10px 0 0; color: var(--muted); line-height: 1.5; }
+  .execution-card + .execution-card { margin-top: 12px; }
+  .task-secondary { margin-top: 18px; color: var(--muted); line-height: 1.7; }
+  .task-secondary > span { display: block; padding-left: 20px; font-size: 10px; }
+  .agent-line { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .agent-line :global(svg) { width: 18px; height: 18px; }
+  .running-dot { color: var(--green); font-size: 10px; margin-left: auto; }
+  .code-trace { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font: 10px var(--font-mono); color: var(--green); overflow-wrap: anywhere; }
+  .scene-footnote { color: var(--muted); font-size: 10px; line-height: 1.7; margin: 16px 0 0; }
+  .diff-preview { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 10px; }
+  .diff-preview > code { display: block; padding: 12px; background: var(--surface-bright); }
+  .diff-preview pre { margin: 0; padding: 12px; line-height: 1.9; overflow-x: auto; }
+  .diff-preview pre > * { display: block; font-weight: 400; }
+  .diff-preview pre span { color: var(--red); }
+  .diff-preview pre b, .test-result { color: var(--green); }
+  .test-result { font-size: 11px; margin: 16px 0; }
+  .delivery-route { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px 0; color: var(--muted); font-size: 10px; }
+  .delivery-route strong { display: block; margin-top: 4px; color: var(--text); font-size: 12px; }
+  .delivery-route > b { color: var(--accent-bright); font-size: 20px; }
+  .delivery-action { padding: 12px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); color: var(--accent-bright); text-align: center; }
+  .workflow-caption { display: none; color: var(--muted); font-size: 12px; line-height: 1.8; margin: 16px 0 0; min-height: 44px; }
+  .product-stage:has(input[value="0"]:checked) :is(.workflow-split, .caption-0), .product-stage:has(input[value="1"]:checked) :is(.workflow-parallel, .caption-1), .product-stage:has(input[value="2"]:checked) :is(.workflow-deliver, .caption-2) { display: block; }
+  @media(max-width: 600px) {
+    .workflow-body { grid-template-columns: 1fr; }
+    .workflow-tree { display: none; }
+    .workflow-main { padding: 20px; }
+    .workflow-switch label > span { flex-direction: column; gap: 5px; font-size: 11px; min-height: 58px; }
+    .workflow-titlebar { gap: 8px; padding-inline: 12px; }
+    .workflow-titlebar small { font-size: 9px; }
+  }
 </style>

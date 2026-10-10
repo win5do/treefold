@@ -1,44 +1,30 @@
 import type { Locale } from './config';
-
 interface PreviewCopy {
-  label: string;
-  views: string;
+  label: string; views: string; scenes: readonly [string, string, string];
   captions: readonly [string, string, string];
-  scrollHint: string;
-  repositories: string;
-  directories: string;
-  worktrees: string;
-  ready: string;
-  mainCheckout: string;
-  ahead: string;
-  active: string;
-  pending: string;
-  done: string;
-  forkDescription: string;
-  tasks: readonly [string, string, string];
+  task: string; create: string; isolation: string; running: string;
+  validation: string; tests: string; review: string; passed: string;
+  merge: string; retained: string; illustration: string; shared: string;
 }
-
 export const productPreviewCopy = {
   'zh-cn': {
-    label: 'Treefold 交互示意',
-    views: '切换展示场景',
-    captions: ['一个 Project，多个仓库；每项改动都有独立的 worktree。', '用 Todo 跟进任务，在独立的 Fork 中推进子任务。', '在各自的开发环境中运行 Shell、Codex 和 Claude Code。'],
-    scrollHint: '左右滑动查看完整 App 布局',
-    repositories: '仓库', directories: '目录', worktrees: '工作树',
-    ready: '就绪', mainCheckout: '主检出目录', ahead: '领先 2 · 落后 0',
-    active: '进行中', pending: '待处理', done: '已完成',
-    forkDescription: '将子任务放进独立的分支与工作树。',
-    tasks: ['处理认证流程边界情况', '补充 API 集成测试', '检查登录错误提示'],
+    label: 'Treefold 工作流交互示意', views: '选择工作流阶段',
+    scenes: ['展开任务', '并行推进', '检查并收敛'],
+    captions: ['从 Todo 展开 Fork，为子任务创建独立的分支与 worktree。', '两个 Fork 各自运行 Agent，代码改动互相隔离。', '检查改动与测试结果，将 Fork 成果合回父 Workspace。'],
+    task: '完善登录功能', create: '从 Todo 创建 Fork', isolation: '独立分支 · 独立 worktree',
+    running: '进行中', validation: '处理认证边界情况', tests: '补充 API 集成测试',
+    review: '检查改动', passed: '测试通过 · 等待检查', merge: '合回父 Workspace',
+    retained: '完成后归档，保留 worktree 与工作记录', illustration: '工作流示意 · 示例数据',
+    shared: '同一 Fork 中的 Session 共享 checkout',
   },
   en: {
-    label: 'Interactive Treefold illustration',
-    views: 'Choose a preview scene',
-    captions: ['One Project, multiple repositories. An isolated worktree for every change.', 'Track work with Todos and move subtasks forward in isolated Forks.', 'Run Shell, Codex, and Claude Code in their own development environments.'],
-    scrollHint: 'Scroll sideways to explore the full app layout',
-    repositories: 'Repositories', directories: 'Directories', worktrees: 'Worktrees',
-    ready: 'Ready', mainCheckout: 'Main checkout', ahead: 'Ahead 2 · Behind 0',
-    active: 'Active', pending: 'Pending', done: 'Completed',
-    forkDescription: 'Give each subtask its own branch and worktree.',
-    tasks: ['Validate auth edge cases', 'Add API integration tests', 'Review sign-in errors'],
+    label: 'Interactive Treefold workflow illustration', views: 'Choose a workflow stage',
+    scenes: ['Split the work', 'Run in parallel', 'Review & deliver'],
+    captions: ['Turn a Todo into a Fork with its own branch and worktree.', 'Run an agent in each Fork, with code changes isolated from one another.', 'Review changes and test results, then merge the Fork into its parent Workspace.'],
+    task: 'Complete the sign-in feature', create: 'Create a Fork from a Todo', isolation: 'Own branch · Own worktree',
+    running: 'Running', validation: 'Validate auth edge cases', tests: 'Add API integration tests',
+    review: 'Review changes', passed: 'Tests passed · Awaiting review', merge: 'Merge into parent Workspace',
+    retained: 'Archive when finished; keep the worktree and work records', illustration: 'Workflow illustration · Sample data',
+    shared: 'Sessions in the same Fork share a checkout',
   },
 } satisfies Record<Locale, PreviewCopy>;

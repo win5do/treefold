@@ -1,6 +1,7 @@
 ---
 import LinkIcon from './LinkIcon.astro';
 import ProductPreview from './ProductPreview.astro';
+import ProductArchitecture from './ProductArchitecture.astro';
 import ContinuousWorkSection from './ContinuousWorkSection.astro';
 import AgentSupportSection from './AgentSupportSection.astro';
 import BaseLayout from '../layouts/BaseLayout.astro';
@@ -43,9 +44,7 @@ const download = getLocalizedPath(locale, 'download');
     <section id="model" class="content-section section-grid">
       <div class="site-container">
         <header class="section-heading"><div class="kicker">01 / {copy.modelKicker}</div><h2>{copy.modelTitle}</h2><p>{copy.modelBody}</p></header>
-        <div class="model-grid">
-          {copy.model.map(([number, name, summary, detail]) => <article class="feature-card"><span class="card-number">{number}</span><div class="model-icon" aria-hidden="true"><span></span><span></span><span></span></div><h3>{name}</h3><strong>{summary}</strong><p>{detail}</p></article>)}
-        </div>
+        <ProductArchitecture />
         <div class="inline-note"><span class="pulse-dot"></span>{copy.sessionNote}</div>
         <div id="workflow" class="task-journey"><header class="journey-heading"><h3>{copy.workflowTitle}</h3><p>{copy.workflowBody}</p></header>
         <div class="steps-grid">{copy.steps.map(([number, title, detail]) => <article><span>{number}</span><h3>{title}</h3><p>{detail}</p></article>)}</div>

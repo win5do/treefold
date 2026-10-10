@@ -1,0 +1,25 @@
+---
+import { normalizeLocale } from '../i18n/config';
+const locale = normalizeLocale(Astro.currentLocale);
+const copy = locale === 'en' ? {
+  alt: 'Treefold product architecture: a Project organizes repositories; a Workspace owns a feature, with isolated Forks for subtasks. Agent and Shell Sessions execute the work. Review Fork changes and merge into the parent Workspace, then deliver and archive the feature.',
+  open: 'View full product architecture',
+} : {
+  alt: 'Treefold 产品架构：Project 组织仓库，Workspace 承载 feature，Fork 隔离并行子任务，Agent 与 Shell Session 执行工作。检查 Fork 改动后合回父 Workspace，再交付整项 feature 并归档。',
+  open: '查看完整产品架构图',
+};
+const source = `/diagrams/product-architecture-${locale}.svg`;
+---
+<figure class="product-architecture">
+  <picture>
+    <source media="(max-width: 600px)" srcset={`/diagrams/product-architecture-${locale}-mobile.svg`} width="440" height="1230" />
+    <img src={source} alt={copy.alt} width="1120" height="790" loading="lazy" />
+  </picture>
+  <figcaption><a href={source} target="_blank" rel="noopener noreferrer">{copy.open} ↗</a></figcaption>
+</figure>
+<style>
+  .product-architecture { margin: 0; }
+  img { display: block; width: 100%; height: auto; border-radius: 14px; }
+  figcaption { margin-top: 14px; text-align: right; color: var(--accent-bright); font-size: 13px; }
+  a:hover { text-decoration: underline; }
+</style>

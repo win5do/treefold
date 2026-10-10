@@ -22,6 +22,14 @@ Develop with **Codex, Claude Code, OpenCode, or Pi**, and use Shell Sessions to 
 - **Review and deliver.** Inspect diffs and Git history, handle synchronization and conflicts, choose a local merge or branch push, then archive and clean up when ready.
 - **Organize multiple repositories.** Group frontend and backend repositories with reference documents in one Project, with explicit read/write roles for directories.
 
+## Product architecture
+
+Projects organize repositories, Workspaces own features, and Forks isolate subtasks in dedicated worktrees. Agent and Shell Sessions execute the work. Review and merge Fork results into the parent Workspace, then deliver the feature.
+
+![Product architecture](site/public/diagrams/product-architecture-en.svg)
+
+Isolation belongs to the Workspace / Fork. Sessions within the same work share a checkout. Code, Todos, and delivery records survive Session changes.
+
 ## Install
 
 You need an **Apple Silicon Mac running macOS Sonoma 14 or newer, plus Git**.

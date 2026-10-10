@@ -22,6 +22,14 @@ Treefold 是一个本地优先的 macOS App，让你在独立的 Git worktree �
 - **检查并交付成果**：查看 diff 和 Git 历史，处理同步与冲突，选择本地合并或推送分支，完成后归档，按需清理。
 - **组织多个仓库**：在一个 Project 中放入前后端仓库及参考文档，明确各目录的读写用途。
 
+## 产品架构
+
+Project 组织相关仓库，Workspace 承载一项 feature，Fork 将子任务放进独立 worktree。Agent 与 Shell Session 执行工作；检查 Fork 成果后合回父 Workspace，再交付整项 feature。
+
+![产品架构](site/public/diagrams/product-architecture-zh-cn.svg)
+
+隔离发生在 Workspace / Fork 层级；同一项工作中的 Session 共享 checkout。更换 Session 后，代码、Todo 与交付记录仍然保留。
+
 ## 安装
 
 需要 **Apple Silicon Mac、macOS Sonoma 14 或更新版本，以及 Git**。

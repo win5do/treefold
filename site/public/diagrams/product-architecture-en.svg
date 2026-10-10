@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="790" viewBox="0 0 1120 790" role="img" aria-labelledby="title description"><title id="title">Treefold product architecture</title><desc id="description">Organize repositories and reference directories. Own a feature. Split Todos into parallel subtasks. Own branch and worktree. Sessions within the same Workspace / Fork share a checkout. Review, then merge into the parent Workspace. Code, Todos, and delivery records belong to the work and survive Session changes.. Local-first · Remote review and CI stay on your Git host · Archive keeps worktrees; deletion handles cleanup</desc><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#a5a6ff"/></marker></defs><g font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"><rect x="0.5" y="0.5" width="1119" height="789" rx="14" fill="#0d0e12" stroke="#343747"/>
+<text x="28" y="44" font-size="28" fill="#f4f4f5" font-weight="650">Treefold product architecture</text>
+<text x="28" y="74" font-size="16" fill="#acafbf" font-weight="400">Run agents in parallel. Fold the work back cleanly.</text>
+<rect x="24" y="98" width="1072" height="94" rx="14" fill="#15171e" stroke="#343747"/>
+<text x="44" y="128" font-size="19" fill="#b9baff" font-weight="650">Project</text>
+<text x="152" y="128" font-size="16" fill="#f4f4f5" font-weight="400">Organize repositories and reference directories</text>
+<text x="44" y="163" font-size="15" fill="#acafbf" font-weight="400">Frontend repo · Backend repo · Read-only Context</text>
+<path d="M560 192 L560 214" fill="none" stroke="#a5a6ff" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="24" y="220" width="1072" height="344" rx="14" fill="#141420" stroke="#6263a0"/>
+<text x="44" y="252" font-size="20" fill="#c0c1ff" font-weight="650">Workspace</text>
+<text x="198" y="252" font-size="15" fill="#f4f4f5" font-weight="400">Own a feature</text>
+<text x="44" y="281" font-size="15" fill="#acafbf" font-weight="400">Dedicated branch and worktree per repository</text>
+<text x="44" y="309" font-size="15" fill="#acafbf" font-weight="400">Agent / Shell Sessions · Execute and resume</text>
+<text x="44" y="342" font-size="15" fill="#c0c1ff" font-weight="400">Split Todos into parallel subtasks</text>
+<rect x="44" y="361" width="502" height="148" rx="14" fill="#1b1c2b" stroke="#4b4c6f"/>
+<text x="62" y="391" font-size="17" fill="#f4f4f5" font-weight="600">Fork / validation</text>
+<text x="62" y="418" font-size="14" fill="#acafbf" font-weight="400">Auth logic</text>
+<text x="62" y="446" font-size="13" fill="#b9baff" font-weight="400">Own branch and worktree</text>
+<text x="62" y="482" font-size="13" fill="#e0e1ea" font-weight="400">Session · Codex + Shell</text>
+<rect x="574" y="361" width="502" height="148" rx="14" fill="#1b1c2b" stroke="#4b4c6f"/>
+<text x="592" y="391" font-size="17" fill="#f4f4f5" font-weight="600">Fork / api-tests</text>
+<text x="592" y="418" font-size="14" fill="#acafbf" font-weight="400">API tests</text>
+<text x="592" y="446" font-size="13" fill="#b9baff" font-weight="400">Own branch and worktree</text>
+<text x="592" y="482" font-size="13" fill="#e0e1ea" font-weight="400">Session · Claude Code + Shell</text>
+<text x="44" y="538" font-size="14" fill="#8edbb7" font-weight="400">↑ Review, then merge into the parent Workspace</text>
+<text x="570" y="538" font-size="12" fill="#acafbf" font-weight="400">Sessions within the same Workspace / Fork share a checkout</text>
+<rect x="24" y="582" width="344" height="48" rx="14" fill="#15171e" stroke="#343747"/>
+<text x="42" y="612" font-size="15" fill="#e0e1ea" font-weight="400">Todo · Track tasks</text>
+<rect x="388" y="582" width="344" height="48" rx="14" fill="#15171e" stroke="#343747"/>
+<text x="406" y="612" font-size="15" fill="#e0e1ea" font-weight="400">Diff / History · Review changes</text>
+<rect x="752" y="582" width="344" height="48" rx="14" fill="#15171e" stroke="#343747"/>
+<text x="770" y="612" font-size="15" fill="#e0e1ea" font-weight="400">amux · Manage processes</text>
+<path d="M560 630 L560 643" fill="none" stroke="#a5a6ff" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="24" y="650" width="1072" height="68" rx="14" fill="#10221f" stroke="#326555"/>
+<text x="44" y="679" font-size="17" fill="#8edbb7" font-weight="600">Review and deliver</text>
+<text x="44" y="702" font-size="14" fill="#acafbf" font-weight="400">Sync / resolve conflicts → Merge locally or push branch → Archive when finished</text>
+<text x="28" y="747" font-size="15" fill="#e0e1ea" font-weight="400">Code, Todos, and delivery records belong to the work and survive Session changes.</text>
+<text x="28" y="773" font-size="12" fill="#acafbf" font-weight="400">Local-first · Remote review and CI stay on your Git host · Archive keeps worktrees; deletion handles cleanup</text></g></svg>

@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="790" viewBox="0 0 1120 790" role="img" aria-labelledby="title description"><title id="title">Treefold 产品架构</title><desc id="description">组织相关仓库与参考目录. 承载一项 feature. 从 Todo 展开并行子任务. 独立分支与 worktree. 同一 Workspace / Fork 内的 Session 共享 checkout. 检查后合回父 Workspace. 代码、Todo 与交付记录归属于工作；更换 Session 后仍然保留。. 本地优先 · 远端评审与 CI 在 Git 托管平台完成 · 归档保留 worktree，删除时显式清理</desc><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#a5a6ff"/></marker></defs><g font-family="Inter, -apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, Microsoft YaHei, sans-serif"><rect x="0.5" y="0.5" width="1119" height="789" rx="14" fill="#0d0e12" stroke="#343747"/>
+<text x="28" y="44" font-size="28" fill="#f4f4f5" font-weight="650">Treefold 产品架构</text>
+<text x="28" y="74" font-size="16" fill="#acafbf" font-weight="400">并行展开，干净收敛。</text>
+<rect x="24" y="98" width="1072" height="94" rx="14" fill="#15171e" stroke="#343747"/>
+<text x="44" y="128" font-size="19" fill="#b9baff" font-weight="650">Project</text>
+<text x="152" y="128" font-size="16" fill="#f4f4f5" font-weight="400">组织相关仓库与参考目录</text>
+<text x="44" y="163" font-size="15" fill="#acafbf" font-weight="400">前端仓库 · 后端仓库 · 只读 Context</text>
+<path d="M560 192 L560 214" fill="none" stroke="#a5a6ff" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="24" y="220" width="1072" height="344" rx="14" fill="#141420" stroke="#6263a0"/>
+<text x="44" y="252" font-size="20" fill="#c0c1ff" font-weight="650">Workspace</text>
+<text x="198" y="252" font-size="15" fill="#f4f4f5" font-weight="400">承载一项 feature</text>
+<text x="44" y="281" font-size="15" fill="#acafbf" font-weight="400">各仓库的独立分支与 worktree</text>
+<text x="44" y="309" font-size="15" fill="#acafbf" font-weight="400">Agent / Shell Session · 执行与接续</text>
+<text x="44" y="342" font-size="15" fill="#c0c1ff" font-weight="400">从 Todo 展开并行子任务</text>
+<rect x="44" y="361" width="502" height="148" rx="14" fill="#1b1c2b" stroke="#4b4c6f"/>
+<text x="62" y="391" font-size="17" fill="#f4f4f5" font-weight="600">Fork / validation</text>
+<text x="62" y="418" font-size="14" fill="#acafbf" font-weight="400">认证逻辑</text>
+<text x="62" y="446" font-size="13" fill="#b9baff" font-weight="400">独立分支与 worktree</text>
+<text x="62" y="482" font-size="13" fill="#e0e1ea" font-weight="400">Session · Codex + Shell</text>
+<rect x="574" y="361" width="502" height="148" rx="14" fill="#1b1c2b" stroke="#4b4c6f"/>
+<text x="592" y="391" font-size="17" fill="#f4f4f5" font-weight="600">Fork / api-tests</text>
+<text x="592" y="418" font-size="14" fill="#acafbf" font-weight="400">API 测试</text>
+<text x="592" y="446" font-size="13" fill="#b9baff" font-weight="400">独立分支与 worktree</text>
+<text x="592" y="482" font-size="13" fill="#e0e1ea" font-weight="400">Session · Claude Code + Shell</text>
+<text x="44" y="538" font-size="14" fill="#8edbb7" font-weight="400">↑ 检查后合回父 Workspace</text>
+<text x="570" y="538" font-size="12" fill="#acafbf" font-weight="400">同一 Workspace / Fork 内的 Session 共享 checkout</text>
+<rect x="24" y="582" width="344" height="48" rx="14" fill="#15171e" stroke="#343747"/>
+<text x="42" y="612" font-size="15" fill="#e0e1ea" font-weight="400">Todo · 跟进任务</text>
+<rect x="388" y="582" width="344" height="48" rx="14" fill="#15171e" stroke="#343747"/>
+<text x="406" y="612" font-size="15" fill="#e0e1ea" font-weight="400">Diff / History · 检查改动</text>
+<rect x="752" y="582" width="344" height="48" rx="14" fill="#15171e" stroke="#343747"/>
+<text x="770" y="612" font-size="15" fill="#e0e1ea" font-weight="400">amux · 托管进程</text>
+<path d="M560 630 L560 643" fill="none" stroke="#a5a6ff" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="24" y="650" width="1072" height="68" rx="14" fill="#10221f" stroke="#326555"/>
+<text x="44" y="679" font-size="17" fill="#8edbb7" font-weight="600">检查与交付</text>
+<text x="44" y="702" font-size="14" fill="#acafbf" font-weight="400">同步 / 冲突处理 → 本地合并或推送分支 → 完成后归档</text>
+<text x="28" y="747" font-size="15" fill="#e0e1ea" font-weight="400">代码、Todo 与交付记录归属于工作；更换 Session 后仍然保留。</text>
+<text x="28" y="773" font-size="12" fill="#acafbf" font-weight="400">本地优先 · 远端评审与 CI 在 Git 托管平台完成 · 归档保留 worktree，删除时显式清理</text></g></svg>

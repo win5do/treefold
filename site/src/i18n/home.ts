@@ -1,6 +1,5 @@
 import type { Locale } from './config';
 
-type ModelItem = readonly [number: string, name: string, summary: string, detail: string];
 type DetailItem = readonly [name: string, detail: string];
 type StepItem = readonly [number: string, title: string, detail: string];
 type DeliveryMode = readonly [name: string, detail: string, badge: string];
@@ -18,7 +17,6 @@ interface HomeCopy {
   modelKicker: string;
   modelTitle: string;
   modelBody: string;
-  model: readonly ModelItem[];
   sessionNote: string;
   gitKicker: string;
   gitTitle: string;
@@ -91,11 +89,6 @@ export const homeCopy = {
     modelKicker: 'THE OPERATING MODEL',
     modelTitle: '每项工作，都有自己的位置。',
     modelBody: '例如开发一项登录功能：把前后端仓库放进同一个 Project，为整项 feature 创建 Workspace，再用 Fork 并行处理验证与测试。',
-    model: [
-      ['01', 'Project', '组织相关仓库', '把前后端仓库、工作目录和参考资料组织在一起，查看已有 worktree。'],
-      ['02', 'Workspace', '推进一项 feature', '为参与开发的仓库创建独立分支与 worktree，集中管理这项工作的 Session、Todo 和交付。'],
-      ['03', 'Fork', '拆出并行子任务', '从 Todo 创建 Fork，在独立 worktree 中处理子任务，再把成果合回父 Workspace。'],
-    ],
     sessionNote: '隔离发生在 Workspace / Fork 层级。同一 Workspace 或 Fork 中的多个 Session 可以共享 checkout。',
     gitKicker: 'REVIEW AND DELIVER',
     gitTitle: '看清改动，再决定如何交付。',
@@ -189,11 +182,6 @@ export const homeCopy = {
     modelKicker: 'THE OPERATING MODEL',
     modelTitle: 'A place for every piece of work.',
     modelBody: 'Building a sign-in feature? Put the frontend and backend repositories in one Project, create a Workspace for the feature, and use Forks for parallel validation and testing.',
-    model: [
-      ['01', 'Project', 'Organize related repositories', 'Group frontend and backend repositories, working directories, and reference material. Browse existing worktrees.'],
-      ['02', 'Workspace', 'Develop a feature', 'Create isolated branches and worktrees for the repositories involved. Keep the feature’s Sessions, Todos, and delivery together.'],
-      ['03', 'Fork', 'Work on parallel subtasks', 'Create a Fork from a Todo, work in its isolated worktree, and deliver the result back to the parent Workspace.'],
-    ],
     sessionNote: 'Isolation belongs to Workspaces and Forks. Multiple Sessions in the same Workspace or Fork can share a checkout.',
     gitKicker: 'REVIEW AND DELIVER',
     gitTitle: 'Review the changes. Choose how to deliver.',

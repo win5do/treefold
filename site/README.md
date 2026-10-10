@@ -45,3 +45,20 @@ worktree and Agent Session manager, not a complete Git GUI or a replacement for
 Git hosting, code review, CI, or native Agent conversation history. Project state
 and orchestration data stay local; Agent network access depends on its provider
 and configuration, so do not claim that code never leaves the machine.
+
+## Product illustrations
+
+The Hero follows one task through splitting, parallel execution, and review /
+delivery. Its radio controls support pointer and keyboard navigation without
+autoplay. The illustration uses sample data, not a live App session.
+
+The operating-model section embeds the bilingual product architecture. Both
+READMEs reference the same SVG assets in `public/diagrams/`. Narrow screens use
+vertically arranged diagrams. To edit and regenerate all four assets:
+
+```bash
+node site/scripts/generate-product-architecture.ts
+```
+
+Run the generator from the repository root. Diagram text and layout are owned by
+that script; commit regenerated SVGs together with source changes.
