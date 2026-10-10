@@ -69,6 +69,7 @@ jobs:
         run: |
           npm ci
           node --input-type=module -e 'import { valid } from "semver"; if (valid(process.env.TREEFOLD_BUILD_VERSION) !== process.env.TREEFOLD_BUILD_VERSION) process.exit(1)'
+          node scripts/release.ts --check "$TREEFOLD_BUILD_VERSION"
           brew install just
           cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,rustls
       - name: Check types, database metadata, and Rust

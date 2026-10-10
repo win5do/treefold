@@ -63,6 +63,10 @@ prepare-sidecars mode="dev":
 build:
     node scripts/bundle-app.ts
 
+# Update release versions, commit, tag, and push main + tag to trigger publication.
+release version:
+    node scripts/release.ts {{ quote(version) }}
+
 # Build an ad-hoc signed, timestamped App + DMG and install the App in /Applications.
 install-app-local:
     node scripts/install-app-local.ts

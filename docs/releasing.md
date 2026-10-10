@@ -4,16 +4,31 @@ The Release workflow builds macOS arm64 DMG and ZIP packages with ad-hoc signing
 It checks the repository, runs tests, builds through `just build`, verifies the
 packaged Electron lifecycle and signature, and generates `SHA256SUMS`.
 
-Push an existing main commit as an annotated SemVer tag to publish it:
+From a clean `main` checkout with dependencies installed, publish a new version:
 
 ```sh
-git tag -a v0.1.0-alpha.2 -m 'Treefold v0.1.0-alpha.2'
-git push origin v0.1.0-alpha.2
+just release 0.1.0-alpha.3
 ```
 
-The tag supplies `TREEFOLD_BUILD_VERSION`; it overrides the development version
-without changing manifests. Prerelease versions are marked as prereleases and do
-not replace Latest. This workflow uses ordinary, mutable GitHub Releases.
+The script fetches origin's main and tags, rejects a checkout behind or diverged
+from origin/main, and requires a SemVer version newer than both `package.json`
+and every existing version tag. Local main commits ahead of origin are included.
+It updates npm and Rust package versions and lockfiles plus the Treefold bundle
+and CLI integration versions, creates a release commit and annotated tag, then
+atomically pushes main and the tag. Dependencies, amux, and Skill versions remain
+independently managed. Use `node scripts/release.ts --dry-run 0.1.0-alpha.3` to
+check preconditions and preview the operation without editing files or publishing.
+
+CI checks the committed versions against the tag before building. The tag also
+supplies `TREEFOLD_BUILD_VERSION` to the existing build pipeline. Local builds
+still support that override without modifying source files. Prerelease versions
+are marked as prereleases and do not replace Latest. This workflow uses ordinary,
+mutable GitHub Releases.
+
+If local preparation or pushing fails, the script retains its changes for
+inspection. It never resets commits, replaces tags, or force-pushes. If only the
+push failed, inspect the release commit/tag and retry the printed atomic push
+command from that same commit; resolve remote main changes before retrying.
 
 The publisher creates a draft, uploads and downloads all packages to verify their
 checksums, then publishes. Failed draft uploads can be retried. Already published
