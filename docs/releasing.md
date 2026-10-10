@@ -39,11 +39,13 @@ Use Actions **Re-run failed jobs** for a failed run. If no run was created, use
 **Run workflow** with the existing tag, or:
 
 ```sh
-gh workflow run release.yml --ref main -f tag=v0.1.0-alpha.2
+gh workflow run release.yml --ref main -f tag=v0.1.0-alpha.3
 ```
 
 The manual workflow resolves and builds the specified tag, not main's source.
 Publishing checks that the remote tag still points to the built commit.
+To retry the legacy `v0.1.0-alpha.2` workflow, rerun its original Actions run;
+its source predates the release script and current manifest-version checks.
 
 After publication, a fresh macOS job installs the public DMG through a temporary
 Homebrew tap with the exact release checksum and verifies the installed App.
