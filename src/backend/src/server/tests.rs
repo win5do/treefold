@@ -101,6 +101,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Fresh worktrees".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -188,6 +189,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Prune".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -339,6 +341,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Import".into()),
                 description: None,
                 path: None,
@@ -633,6 +636,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Existing branch".into()),
                 description: None,
                 path: Some(first.to_string_lossy().into_owned()),
@@ -871,6 +875,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Multi repo".into()),
                 description: None,
                 path: None,
@@ -947,6 +952,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Stale worktree".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -1147,6 +1153,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Monorepo scopes".into()),
                 description: None,
                 path: Some(web.to_string_lossy().into_owned()),
@@ -1290,6 +1297,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Command Project".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -1504,6 +1512,7 @@ mod current_workspace_tests {
         let error = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Invalid context Project".into()),
                 description: None,
                 path: Some(context.to_string_lossy().into_owned()),
@@ -1531,6 +1540,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Primary repository Project".into()),
                 description: None,
                 path: None,
@@ -1674,6 +1684,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Managed Project Sessions".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -1917,6 +1928,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Fork lifecycle".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -2180,6 +2192,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Parent operations".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -2434,6 +2447,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Finish conflict".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -2559,6 +2573,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Dirty Finish".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -2658,6 +2673,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Push Finish".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),
@@ -2753,6 +2769,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Multi location".into()),
                 description: None,
                 path: None,
@@ -2997,6 +3014,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Setup shell".into()),
                 description: None,
                 path: Some(first.to_string_lossy().into_owned()),
@@ -3136,6 +3154,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Partial Workspace".into()),
                 description: None,
                 path: Some(first.to_string_lossy().into_owned()),
@@ -3386,6 +3405,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Managed source".into()),
                 description: None,
                 path: None,
@@ -3552,6 +3572,7 @@ mod current_workspace_tests {
         let (_, Json(project)) = create_project(
             State(state.clone()),
             ApiJson(CreateProject {
+                open_path: None,
                 name: Some("Agent API".into()),
                 description: None,
                 path: Some(repository.to_string_lossy().into_owned()),

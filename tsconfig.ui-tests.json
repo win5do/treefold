@@ -16,6 +16,7 @@
     "tests/ui/**/*.ts",
     "src/renderer/src/features/actions/model/**/*.ts",
     "src/preload/bridge.d.ts",
+    "src/main/open-project.ts",
     "src/renderer/src/vite-env.d.ts",
     "src/renderer/src/domain/types.ts",
     "src/renderer/src/i18n/**/*.ts",

@@ -56,6 +56,10 @@ async fn empty_source_validates_without_writes_then_initializes_an_unborn_reposi
     assert!(crate::git::output(&repo, &["rev-parse", "--verify", "HEAD"]).is_err());
     let project_id = created["id"].as_str().unwrap();
     let project = state.store.project(project_id).await.unwrap();
+    assert_eq!(
+        project.open_path.as_deref(),
+        repo.canonicalize().unwrap().to_str()
+    );
     assert!(project.default_location_id.is_some());
     let repositories = state.store.repositories(project_id).await.unwrap();
     assert_eq!(repositories.len(), 1);
@@ -134,6 +138,7 @@ async fn git_url_source_validates_and_clones_into_a_managed_project() {
         .unwrap();
     assert_eq!(repositories.len(), 1);
     assert_eq!(repositories[0].source_ownership, "managed");
+    assert_eq!(body["open_path"], repositories[0].source_root);
     assert!(
         Path::new(&repositories[0].source_root)
             .join(".git")

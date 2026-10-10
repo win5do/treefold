@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { appCatalog, type AppDefinition } from './catalog.ts';
+import { ghosttyLaunchCommand } from './ghostty.ts';
 import type { OpenInApp } from '../../preload/bridge.d.ts';
 
 const execute = promisify(execFile);
@@ -56,7 +57,7 @@ export async function listOpenInApps(): Promise<OpenInApp[]> {
 export function launchCommand(app: DetectedApp, directory: string): LaunchCommand {
   const open = (...args: string[]) => ({ command: '/usr/bin/open', args });
   switch (app.id) {
-    case 'ghostty': return open('-na', app.appPath, '--args', `--working-directory=${directory}`);
+    case 'ghostty': return ghosttyLaunchCommand(app.appPath, directory);
     case 'kitty': return open('-na', app.appPath, '--args', '--directory', directory);
     case 'warp': return open('-a', app.appPath, `warp://action/new_window?path=${encodeURIComponent(directory)}`);
     case 'cmux': return { command: app.cli!, args: ['new-workspace', '--cwd', directory] };

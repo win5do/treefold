@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO projects(id,name,created_at,updated_at) VALUES('legacy','Legacy','before','before')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "1f1c93402e96dd9a92e8f9f92111f760aaf02104e5a110cef6781a0285013755"
+}

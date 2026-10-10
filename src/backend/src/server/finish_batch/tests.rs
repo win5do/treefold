@@ -55,6 +55,7 @@ async fn fixture() -> Fixture {
     let (_, Json(project)) = create_project(
         State(state.clone()),
         ApiJson(CreateProject {
+            open_path: None,
             name: Some("Batch".into()),
             description: None,
             path: None,

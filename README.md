@@ -122,6 +122,8 @@ treefold todo list --json
 treefold doctor
 ```
 
+运行 `treefold open .`：已添加的目录直接进入对应 Project；未添加的目录打开本地添加对话框。省略路径时只打开或聚焦 App。
+
 持久进程与终端由配套的 `amux` 管理。Treefold 创建 CLI 与 Skill 链接时，会保留已有的用户自管路径。
 
 ## 本地数据与偏好设置

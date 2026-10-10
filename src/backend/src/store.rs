@@ -285,6 +285,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn project_open_path_migrates_existing_projects_without_guessing_an_entry() {
+        let data = tempfile::tempdir().unwrap();
+        let old_migrations = tempfile::tempdir().unwrap();
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g2/20261004013417_initial.sql"),
+            old_migrations.path().join("20261004013417_initial.sql"),
+        )
+        .unwrap();
+        let options = SqliteConnectOptions::new()
+            .filename(data.path().join(CURRENT_DATABASE_FILENAME))
+            .create_if_missing(true);
+        let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
+        sqlx::migrate::Migrator::new(old_migrations.path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        sqlx::query!("INSERT INTO projects(id,name,created_at,updated_at) VALUES('legacy','Legacy','before','before')").execute(&mut connection).await.unwrap();
+        connection.close().await.unwrap();
+        let store = Store::open(data.path()).await.unwrap();
+        let project = store.project("legacy").await.unwrap();
+        assert_eq!(project.name, "Legacy");
+        assert_eq!(project.created_at, "before");
+        assert_eq!(project.open_path, None);
+        store
+            .set_project_open_path("legacy", "/saved/entry")
+            .await
+            .unwrap();
+        assert_eq!(
+            store.project("legacy").await.unwrap().open_path.as_deref(),
+            Some("/saved/entry")
+        );
+        store.pool.close().await;
+    }
+
+    #[tokio::test]
     async fn changing_an_executed_migration_is_rejected_by_checksum() {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::open(directory.path()).await.unwrap();
@@ -327,6 +364,7 @@ mod tests {
         let timestamp = now();
         store
             .create_empty_project(&Project {
+                open_path: None,
                 id: "project".into(),
                 name: "Project".into(),
                 description: String::new(),

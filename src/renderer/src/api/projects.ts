@@ -25,6 +25,10 @@ import type {
 } from "@/domain/types";
 
 export const projectsApi = {
+  resolvePath: (path: string, signal?: AbortSignal) =>
+    request<{ path: string; project_id: string | null }>("/api/projects/resolve-path", {
+      method: "POST", json: { path }, signal,
+    }),
   summaries: (signal?: AbortSignal) =>
     request<ProjectSummary[]>("/api/projects/summary", { signal }),
   sidebar: (signal?: AbortSignal) =>

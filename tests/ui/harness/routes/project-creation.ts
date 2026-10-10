@@ -13,6 +13,14 @@ export function createProjectCreationRoutes({ fixture, readJson, sendJson }: Rou
     createRequests, validationRequests,
     failNextCreation(error: ApiFailure) { nextCreateError = error; },
     async handle(request: IncomingMessage, response: ServerResponse, pathname: string) {
+      if (request.method === "POST" && pathname === "/api/projects/resolve-path") {
+        const input = await readJson<{ path: string }>(request);
+        const projects = Object.values(fixture.projectDetails);
+        const project = projects.find(project => project.open_path === input.path) ?? projects.find(project => project.directories.some(directory =>
+          input.path === directory.path || input.path.startsWith(`${directory.path}/`)));
+        sendJson(response, 200, { path: input.path, project_id: project?.id ?? null });
+        return true;
+      }
       if (request.method === "POST" && pathname === "/api/projects/validate-source") {
         const input = await readJson<{ name: string; source: ProjectSource }>(request);
         validationRequests.push(input);
@@ -37,6 +45,7 @@ export function createProjectCreationRoutes({ fixture, readJson, sendJson }: Rou
         const requestedLocations = "locations" in input ? input.locations : [input.source.kind === "empty"
           ? `${input.source.parent_path}/${input.name}` : `/tmp/treefold-ui-fixture/managed/${input.name}`];
         const created: FixtureProject = {
+          open_path: "locations" in input ? input.open_path : requestedLocations[0],
           id: "project-created-primary-requirement",
           name: input.name,
           description: input.description ?? "",

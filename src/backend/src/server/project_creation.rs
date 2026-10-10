@@ -191,7 +191,10 @@ async fn create_project_impl(
         return workspace::create_project(State(state), ApiJson(input.project)).await;
     };
     validate_name(input.project.name.as_deref().unwrap_or(""))?;
-    if input.project.path.is_some() || input.project.locations.is_some() {
+    if input.project.path.is_some()
+        || input.project.locations.is_some()
+        || input.project.open_path.is_some()
+    {
         return Err(invalid(
             "CONFLICTING_PROJECT_SOURCE",
             "Choose one Project source",
@@ -201,16 +204,23 @@ async fn create_project_impl(
         ProjectSource::GitUrl { url } => {
             let url = validate_url(&url)?.to_owned();
             let project = workspace::create_project_impl(state.clone(), input.project).await?;
-            let result = workspace::clone_project_repository_impl(
-                state.clone(),
-                project.id.clone(),
-                CloneProjectRepository {
-                    url,
-                    name: None,
-                    preferred_remote_name: None,
-                    setup_command: None,
-                },
-            )
+            let result = async {
+                let (_, Json(directory)) = workspace::clone_project_repository_impl(
+                    state.clone(),
+                    project.id.clone(),
+                    CloneProjectRepository {
+                        url,
+                        name: None,
+                        preferred_remote_name: None,
+                        setup_command: None,
+                    },
+                )
+                .await?;
+                state
+                    .store
+                    .set_project_open_path(&project.id, &directory.path)
+                    .await
+            }
             .await;
             if let Err(error) = result {
                 // The Project and its managed source belong exclusively to this creation attempt.

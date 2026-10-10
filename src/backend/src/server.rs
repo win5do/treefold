@@ -292,6 +292,7 @@ fn app(state: AppState) -> Router {
             post(project_creation::validate_source),
         )
         .route("/api/projects/inspect-path", post(inspect_project_path))
+        .route("/api/projects/resolve-path", post(project_open::resolve))
         .route("/api/projects/summary", get(list_project_summaries))
         .route("/api/sidebar", get(get_sidebar))
         .route(
@@ -646,6 +647,7 @@ mod reopen;
 mod workspace_delete;
 use workspace_delete::delete_workspace;
 mod project_creation;
+mod project_open;
 mod session;
 mod squash;
 mod squash_delivery;

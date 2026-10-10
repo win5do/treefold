@@ -1,4 +1,5 @@
 import { CreateProjectDialog } from "@/features/projects/CreateProjectDialog";
+import { useProjectOpening } from "@/features/projects/useProjectOpening";
 import { useNewAgentSession } from "@/features/terminal/useNewAgentSession";
 import { isAgentKind } from "@/features/agents/model";
 import type { AgentKind } from "@/domain/types";
@@ -254,7 +255,7 @@ function Workspace() {
   const [resizingSidebar, setResizingSidebar] = useState(false);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const { open: createProjectOpen, setOpen: setCreateProjectOpen, initialPath: openProjectPath, requestId: openProjectRequestId } = useProjectOpening();
   const [addDirectoryProject, setAddDirectoryProject] =
     useState<ProjectDetail | null>(null);
   const [editDirectory, setEditDirectory] = useState<Directory | null>(null);
@@ -1493,6 +1494,8 @@ function Workspace() {
       </div>
 
       <CreateProjectDialog
+        key={openProjectRequestId}
+        initialPath={openProjectPath}
         open={createProjectOpen}
         onOpenChange={setCreateProjectOpen}
         onCreated={(project) => navigate(`/projects/${project.id}`)}

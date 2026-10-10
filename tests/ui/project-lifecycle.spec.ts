@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 import { startUiHarness } from "./ui-harness.ts";
-import { closeUiSession, createUiSession, openUiContextMenu } from "./harness/session.ts";
+import { closeUiSession, createUiSession, openUiContextMenu, openProjectPath } from "./harness/session.ts";
 
 test("Project creation imports only the selected discovered locations", async () => {
   const harness = await startUiHarness();
@@ -27,6 +27,12 @@ test("Project creation imports only the selected discovered locations", async ()
       { path: "/tmp/treefold-ui-fixture/multi-repo/backend", isGit: true },
       { path: "/tmp/treefold-ui-fixture/multi-repo/docs", isGit: false },
     ]);
+    expect(harness.projectCreation.createRequests[0]).toMatchObject({ open_path: "/tmp/treefold-ui-fixture/multi-repo" });
+    await page.goto(harness.baseUrl);
+    await page.getByTestId("open-settings").waitFor();
+    await openProjectPath(page, "/tmp/treefold-ui-fixture/multi-repo");
+    await expect(page).toHaveURL(/#\/projects\/project-created-primary-requirement$/);
+    expect(harness.projectCreation.createRequests).toHaveLength(1);
     harness.assertNoUnexpectedRequests();
   } finally {
     try { await closeUiSession(page); } finally { await harness.close(); }

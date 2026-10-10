@@ -9,7 +9,7 @@ import path from 'node:path';
 export type UiElement = Locator;
 const sessions = new Map<Page, { app: ElectronApplication; directory: string }>();
 
-export async function createUiSession({ apiUrl, windowSize = '1400,900', sessionName = 'ui', openInApps = [], openInError }: { apiUrl: string; windowSize?: string; sessionName?: string; openInApps?: OpenInApp[]; openInError?: string }) {
+export async function createUiSession({ apiUrl, windowSize = '1400,900', sessionName = 'ui', openInApps = [], openInError, openProjectPath }: { apiUrl: string; windowSize?: string; sessionName?: string; openInApps?: OpenInApp[]; openInError?: string; openProjectPath?: string }) {
   const directory = await mkdtemp(path.join(tmpdir(), `treefold-${sessionName}-`));
   let app: ElectronApplication | undefined;
   try {
@@ -18,7 +18,7 @@ export async function createUiSession({ apiUrl, windowSize = '1400,900', session
       lib: { entry: { main: path.resolve('tests/ui/harness/electron-main.ts'), preload: path.resolve('src/preload/index.ts') }, formats: ['cjs'], fileName: (_format, name) => `${name}.cjs` },
       rollupOptions: { external: ['electron', 'node:path'] },
     } });
-    const env: NodeJS.ProcessEnv = { ...process.env, TREEFOLD_TEST_HOME: path.join(directory, 'home'), TREEFOLD_TEST_API_URL: apiUrl, TREEFOLD_TEST_WINDOW_SIZE: windowSize, TREEFOLD_TEST_OPEN_IN_APPS: JSON.stringify(openInApps), TREEFOLD_TEST_OPEN_IN_ERROR: openInError };
+    const env: NodeJS.ProcessEnv = { ...process.env, TREEFOLD_TEST_HOME: path.join(directory, 'home'), TREEFOLD_TEST_API_URL: apiUrl, TREEFOLD_TEST_WINDOW_SIZE: windowSize, TREEFOLD_TEST_OPEN_IN_APPS: JSON.stringify(openInApps), TREEFOLD_TEST_OPEN_IN_ERROR: openInError, TREEFOLD_TEST_OPEN_PROJECT: openProjectPath };
     delete env.ELECTRON_RUN_AS_NODE;
     app = await _electron.launch({ args: [path.join(directory, 'main.cjs')], env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
     const page = await app.firstWindow();
@@ -76,4 +76,10 @@ export async function closeUiSession(page: Page | undefined) {
 
 export async function openInRequests(page: Page): Promise<OpenInRequest[]> {
   return sessions.get(page)!.app.evaluate(() => (globalThis as typeof globalThis & { treefoldOpenInRequests: OpenInRequest[] }).treefoldOpenInRequests);
+}
+
+export async function openProjectPath(page: Page, path: string) {
+  await sessions.get(page)!.app.evaluate((_electron, path) => {
+    (globalThis as typeof globalThis & { treefoldOpenProject: (path: string) => void }).treefoldOpenProject(path);
+  }, path);
 }

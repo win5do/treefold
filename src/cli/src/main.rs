@@ -25,7 +25,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum CliCommand {
-    /// Open or focus the Treefold desktop App.
+    /// Open a directory's Project or its local import dialog; omit the path to focus the App.
     Open { path: Option<PathBuf> },
     /// Show the current Treefold-managed Session context.
     Current,
@@ -266,7 +266,7 @@ fn open_app(path: Option<PathBuf>) -> Result<(), CliError> {
         let mut command = Command::new("open");
         command.args(["-a", "Treefold"]);
         if let Some(path) = path {
-            command.arg(path);
+            command.arg(open_directory_path(path)?);
         }
         if command
             .status()
@@ -285,6 +285,16 @@ fn open_app(path: Option<PathBuf>) -> Result<(), CliError> {
             "treefold open is currently supported on macOS",
         ))
     }
+}
+
+fn open_directory_path(path: PathBuf) -> Result<PathBuf, CliError> {
+    let path = path
+        .canonicalize()
+        .map_err(|error| CliError::invalid(format!("cannot open directory: {error}")))?;
+    if !path.is_dir() {
+        return Err(CliError::invalid("treefold open requires a directory"));
+    }
+    Ok(path)
 }
 
 struct ApiClient {
@@ -412,5 +422,14 @@ mod tests {
                 .command,
             Some(CliCommand::Open { .. })
         ));
+    }
+    #[test]
+    fn open_resolves_relative_directories_and_rejects_files() {
+        assert_eq!(
+            open_directory_path(PathBuf::from(".")).unwrap(),
+            std::env::current_dir().unwrap().canonicalize().unwrap()
+        );
+        assert!(open_directory_path(PathBuf::from("Cargo.toml")).is_err());
+        assert!(open_directory_path(PathBuf::from("missing-treefold-directory")).is_err());
     }
 }

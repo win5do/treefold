@@ -34,7 +34,13 @@ test('validates desktop requests and preserves special directory characters in l
   try {
     for (const id of ['finder', 'terminal', 'iterm2', 'vscode', 'goland', 'rustrover', 'ghostty', 'kitty', 'warp', 'cmux']) await openInApp(id, directory, dependencies);
     expect(calls.find(call => call.args.includes('/Applications/VS Code.app'))!.args).toEqual(['-a', '/Applications/VS Code.app', directory]);
-    expect(calls.find(call => call.args.includes('/Applications/Ghostty.app'))!.args).toEqual(['-na', '/Applications/Ghostty.app', '--args', `--working-directory=${directory}`]);
+    const ghostty = calls.find(call => call.command === '/usr/bin/osascript')!;
+    expect(ghostty.args[0]).toBe('-e');
+    expect(ghostty.args[1]).toContain('tell application "/Applications/Ghostty.app"');
+    expect(ghostty.args[1]).toContain('set initial working directory of cfg to item 1 of argv');
+    expect(ghostty.args[1]).toContain('new window with configuration cfg');
+    expect(ghostty.args[1]).not.toContain(directory);
+    expect(ghostty.args.slice(2)).toEqual([directory]);
     expect(calls.find(call => call.args.includes('/Applications/Warp.app'))!.args.at(-1)).toBe(`warp://action/new_window?path=${encodeURIComponent(directory)}`);
     expect(calls.slice(-3).map(call => call.args)).toEqual([['-a', '/Applications/cmux.app'], ['ping'], ['new-workspace', '--cwd', directory]]);
     const count = calls.length;
@@ -43,6 +49,21 @@ test('validates desktop requests and preserves special directory characters in l
     expect(calls).toHaveLength(count);
     await expect(openInApp('finder', directory, { ...dependencies, run: async () => { throw new Error('launch failed'); } })).rejects.toThrow('launch failed');
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Ghostty automation failures surface without launching a second instance', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'treefold-ghostty-'));
+  const calls: string[] = [];
+  try {
+    await expect(openInApp('ghostty', directory, {
+      detect: async () => [{ ...appCatalog.find(app => app.id === 'ghostty')!, appPath: '/Applications/Ghostty.app' }],
+      run: async (command) => {
+        calls.push(command);
+        throw new Error('Not authorized to send Apple events (-1743)');
+      },
+    })).rejects.toThrow('Not authorized to send Apple events');
+    expect(calls).toEqual(['/usr/bin/osascript']);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
 

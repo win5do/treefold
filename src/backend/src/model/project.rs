@@ -4,6 +4,8 @@ use super::{GitWorktree, Session, Workspace};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Project {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open_path: Option<String>,
     pub name: String,
     pub description: String,
     pub status: String,

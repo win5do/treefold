@@ -30,6 +30,7 @@
     "src/preload/bridge.d.ts",
     "src/main/backend.ts",
     "src/main/open-in/**/*.ts",
+    "src/main/open-project.ts",
     "playwright.config.ts"
   ],
   "exclude": [

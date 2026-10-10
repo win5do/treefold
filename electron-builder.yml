@@ -30,6 +30,8 @@ mac:
     - zip
     - dir
   hardenedRuntime: true
+  extendInfo:
+    NSAppleEventsUsageDescription: Treefold opens directories in new windows of your running Ghostty application.
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   binaries:

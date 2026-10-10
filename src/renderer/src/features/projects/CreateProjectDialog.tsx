@@ -16,22 +16,23 @@ import { projectKeys } from "./queries";
 
 type SourceKind = "local" | "git_url" | "empty";
 
-export function CreateProjectDialog({ open, onOpenChange, onCreated }: {
+export function CreateProjectDialog({ open, onOpenChange, onCreated, initialPath }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (project: Project) => void;
+  initialPath?: string;
 }) {
   // Unmount drafts on close so an old validation can never reach a reopened dialog.
-  return open ? <ProjectCreationForm onOpenChange={onOpenChange} onCreated={onCreated} /> : null;
+  return open ? <ProjectCreationForm onOpenChange={onOpenChange} onCreated={onCreated} initialPath={initialPath} /> : null;
 }
 
-function ProjectCreationForm({ onOpenChange, onCreated }: Omit<Parameters<typeof CreateProjectDialog>[0], "open">) {
+function ProjectCreationForm({ onOpenChange, onCreated, initialPath }: Omit<Parameters<typeof CreateProjectDialog>[0], "open">) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [source, setSource] = useState<SourceKind | null>(null);
-  const [step, setStep] = useState<"source" | "input" | "review">("source");
+  const [source, setSource] = useState<SourceKind | null>(initialPath ? "local" : null);
+  const [step, setStep] = useState<"source" | "input" | "review">(initialPath ? "input" : "source");
   const [name, setName] = useState("");
-  const [path, setPath] = useState("");
+  const [path, setPath] = useState(initialPath ?? "");
   const [url, setUrl] = useState("");
   const [parent, setParent] = useState("");
   const [error, setError] = useState("");
@@ -79,7 +80,7 @@ function ProjectCreationForm({ onOpenChange, onCreated }: Omit<Parameters<typeof
     if (busy || !name.trim() || !source) return;
     setError("");
     if (source === "local") {
-      if (discovery.ready) { setReview({ input: { name: name.trim(), locations: discovery.locations } }); setStep("review"); }
+      if (discovery.ready) { setReview({ input: { name: name.trim(), locations: discovery.locations, open_path: discovery.resolvedPath } }); setStep("review"); }
       return;
     }
     const input = { name: name.trim(), source: source === "git_url"
@@ -111,7 +112,7 @@ function ProjectCreationForm({ onOpenChange, onCreated }: Omit<Parameters<typeof
   const directoryValue = source === "empty" ? parent : path;
   return <Dialog open onOpenChange={next => { if (!creating) onOpenChange(next); }}>
     <DialogContent className="max-w-[min(94vw,40rem)] overflow-x-hidden sm:max-w-[min(94vw,40rem)]"
-      showCloseButton={!creating} initialFocus={sourceList}>
+      showCloseButton={!creating} initialFocus={initialPath ? firstInput : sourceList}>
     <DialogHeader>
       <DialogTitle>{t("projectsUi.newProject")}{source && step !== "source" && ` · ${labels[source]}`}</DialogTitle>
       <DialogDescription>{step === "source" ? t("projectsUi.creation.chooseSource") : step === "review" ? t("projectsUi.creation.reviewDescription") : source === "local" ? t("projectsUi.projectDescription") : descriptions[source!]}</DialogDescription>

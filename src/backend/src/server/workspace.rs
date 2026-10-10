@@ -16,6 +16,7 @@ pub(super) async fn get_sidebar(State(state): State<AppState>) -> Result<Json<Si
 
 #[derive(Deserialize)]
 pub(super) struct CreateProject {
+    pub(super) open_path: Option<String>,
     pub(super) name: Option<String>,
     pub(super) description: Option<String>,
     pub(super) path: Option<String>,
@@ -106,6 +107,12 @@ pub(super) async fn create_project(
 }
 
 pub(super) async fn create_project_impl(state: AppState, input: CreateProject) -> Result<Project> {
+    let open_path = input
+        .open_path
+        .as_deref()
+        .or(input.path.as_deref())
+        .map(|value| inspect_path(value).map(|(path, _)| path))
+        .transpose()?;
     let locations = input
         .locations
         .as_ref()
@@ -154,6 +161,7 @@ pub(super) async fn create_project_impl(state: AppState, input: CreateProject) -
         })
         .transpose()?;
     let project = Project {
+        open_path,
         id: project_id.clone(),
         name,
         description: trimmed(input.description).unwrap_or_default(),

@@ -8,6 +8,7 @@ import { createLog } from './log';
 import { listOpenInApps, openInApp } from './open-in/service';
 import { installNavigation } from './navigation';
 import { createDirectoryPicker } from './directory-picker';
+import { createProjectOpenRequests } from './open-project';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
 mkdirSync(path.join(home, 'data', 'electron'), { recursive: true });
@@ -23,6 +24,14 @@ let tray: Tray;
 let backend: Backend | undefined;
 let apiUrl: string;
 let quitting = false, stopped = false, ready = false;
+const projectOpenRequests = createProjectOpenRequests(request => {
+  if (window && !window.isDestroyed() && !window.webContents.isLoadingMainFrame()) {
+    window.webContents.send('treefold:open-project', request);
+  }
+  showWindow();
+});
+// macOS may deliver this before app.ready or before the renderer subscribes.
+app.on('open-file', (event, file) => { event.preventDefault(); projectOpenRequests.receive(file); });
 
 function showWindow() {
   if (!window || window.isDestroyed()) return;
@@ -67,6 +76,11 @@ async function start() {
   ipcMain.handle('treefold:open-in-app', (event, id, directory) => { trusted(event); return openInApp(id, directory); });
   ipcMain.handle('treefold:api-url', event => { trusted(event); return apiUrl; });
   ipcMain.handle('treefold:app-version', event => { trusted(event); return app.getVersion(); });
+  ipcMain.handle('treefold:pending-open-project', event => { trusted(event); return projectOpenRequests.pending(); });
+  ipcMain.handle('treefold:acknowledge-open-project', (event, id) => {
+    trusted(event);
+    if (!window.webContents.isLoadingMainFrame()) projectOpenRequests.acknowledge(id);
+  });
   ipcMain.handle('treefold:open-directory', async (event, options) => {
     trusted(event);
     return openDirectory(window, options);

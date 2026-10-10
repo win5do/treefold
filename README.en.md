@@ -122,6 +122,8 @@ treefold todo list --json
 treefold doctor
 ```
 
+Run `treefold open .` to go directly to the corresponding Project if the directory has already been added, or open the local import dialog otherwise. Omit the path to open or focus the app.
+
 The companion `amux` runtime manages persistent processes and terminals. When creating CLI and Skill links, Treefold preserves existing user-managed paths.
 
 ## Local data and preferences
