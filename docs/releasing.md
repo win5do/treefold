@@ -49,6 +49,29 @@ its source predates the release script and current manifest-version checks.
 
 After publication, a fresh macOS job installs the public DMG through a temporary
 Homebrew tap with the exact release checksum and verifies the installed App.
-Update `win5do/homebrew-tap`'s `Casks/treefold.rb` version and SHA-256 to promote
-that package to the public tap. Cross-repository tap updates are not performed by
-the workflow and need no additional credential stored in this repository.
+After that verification succeeds, `update-tap` updates the version and SHA-256 in
+`win5do/homebrew-tap`'s `Casks/treefold.rb`, commits, and pushes to its `main` branch.
+The checksum comes from the public DMG that Homebrew just verified. The download
+URL continues to select a fixed version; all other Cask fields are preserved.
+Both prerelease and stable tags are promoted, preserving the tap's existing alpha
+release policy. The App's stable-only update check is independent of this policy.
+
+The sync skips older versions and treats a matching version/checksum as a no-op.
+A different checksum for the same version fails instead of replacing a published
+package. Concurrent remote changes reject the push rather than overwrite history.
+If synchronization fails, the GitHub Release remains published. Fix the cause and
+use **Re-run failed jobs** to retry the tap job with a fresh checkout. Run this
+workflow only for tags containing `scripts/update-homebrew-tap.ts`; legacy tags
+need their original workflow and a separate manual tap update.
+
+### One-time tap credential
+
+Create a dedicated SSH deploy key with write access on `win5do/homebrew-tap`, and
+store its private key in the Treefold repository's Actions secret named
+`HOMEBREW_TAP_DEPLOY_KEY`. The default `GITHUB_TOKEN` only covers the Treefold
+repository and cannot push to the tap. The deploy key is scoped to the tap and is
+used only by its checkout in `update-tap`; `actions/checkout` removes its temporary
+SSH configuration during job cleanup. No personal access token is required.
+A missing secret fails the tap job explicitly; publication is not silently marked
+as fully synchronized. Remove the deploy key and Actions secret together when
+retiring this automation.

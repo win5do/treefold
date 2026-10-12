@@ -169,6 +169,8 @@ jobs:
   verify-brew:
     needs: [build, publish]
     runs-on: macos-15
+    outputs:
+      dmg-sha256: ${{ steps.install.outputs.dmg-sha256 }}
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -176,6 +178,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.build.outputs.version }}
     steps:
       - name: Download public release through Homebrew and verify installed App
+        id: install
         run: |
           set -euo pipefail
           gh release download "$RELEASE_TAG" --pattern SHA256SUMS --dir "$RUNNER_TEMP"
@@ -203,3 +206,43 @@ jobs:
           codesign --verify --deep --strict "$app"
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$RELEASE_VERSION"
           brew uninstall --cask treefold/release-test/treefold
+          echo "dmg-sha256=$checksum" >> "$GITHUB_OUTPUT"
+
+  update-tap:
+    needs: [build, verify-brew]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require tap write credential
+        env:
+          TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          if [[ -z "$TAP_DEPLOY_KEY" ]]; then
+            echo '::error::Configure HOMEBREW_TAP_DEPLOY_KEY with a write-enabled deploy key for win5do/homebrew-tap.'
+            exit 1
+          fi
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          path: treefold
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          repository: win5do/homebrew-tap
+          ref: main
+          path: homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: treefold/package-lock.json
+      - name: Install release tooling dependencies
+        working-directory: treefold
+        run: npm ci --ignore-scripts
+      - name: Sync verified release to Homebrew tap
+        working-directory: treefold
+        env:
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          DMG_SHA256: ${{ needs.verify-brew.outputs.dmg-sha256 }}
+        run: node scripts/update-homebrew-tap.ts ../homebrew-tap "$RELEASE_VERSION" "$DMG_SHA256"
