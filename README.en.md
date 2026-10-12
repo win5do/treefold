@@ -51,7 +51,7 @@ brew upgrade --cask treefold
 
 Visit [GitHub Releases](https://github.com/win5do/treefold/releases), download the Apple Silicon `.dmg`, open it, and drag Treefold into Applications. Release pages also provide a ZIP archive, SHA-256 checksums, and release notes.
 
-The current release is **0.1.0-alpha.1**. It is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, choose Open Anyway in System Settings → Privacy & Security, then confirm when prompted.
+Treefold is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, choose Open Anyway in System Settings → Privacy & Security, then confirm when prompted.
 
 ### Set up your agents
 
