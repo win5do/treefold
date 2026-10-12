@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to build (for example v0.1.0-alpha.2)
+        description: Existing version tag to build (for example v0.1.0)
         required: true
         type: string
 
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 120
+    timeout-minutes: 60
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
@@ -74,19 +74,12 @@ jobs:
           cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,rustls
       - name: Check types, database metadata, and Rust
         run: just check
-      - name: Test backend
-        run: just test-backend
-      - name: Test backend lifecycle and installation
-        run: just test-integration
-      - name: Test deterministic Electron UI
-        run: just test-ui
       - name: Build ad-hoc signed packages
         run: |
           test "$(uname -m)" = arm64
           just build
-      - name: Verify Electron lifecycle and signature
+      - name: Verify package signature and version
         run: |
-          just test-electron
           codesign --verify --deep --strict release/mac-arm64/Treefold.app
           codesign -dv release/mac-arm64/Treefold.app 2>&1 | grep 'Signature=adhoc'
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' release/mac-arm64/Treefold.app/Contents/Info.plist)" = "$TREEFOLD_BUILD_VERSION"
@@ -103,17 +96,6 @@ jobs:
             release/*.dmg
             release/*.zip
             release/SHA256SUMS
-
-      - name: Upload failure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: release-test-diagnostics
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            /tmp/treefold-playwright-results
-            /tmp/treefold-electron-*.png
 
   publish:
     needs: build

@@ -1,0 +1,48 @@
+name: Check
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Select pinned Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: |
+            xtask
+            src/backend
+            src/cli
+          cache-on-failure: true
+      - name: Install dependencies
+        run: |
+          npm ci
+          brew install just
+          cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,rustls
+      - name: Check types, database metadata, and Rust
+        run: just check
+      - name: Build Electron assets and Rust sidecars
+        run: |
+          npm run build
+          just prepare-sidecars

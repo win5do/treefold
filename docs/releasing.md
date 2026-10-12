@@ -1,8 +1,35 @@
 # Releasing Treefold
 
-The Release workflow builds macOS arm64 DMG and ZIP packages with ad-hoc signing.
-It checks the repository, runs tests, builds through `just build`, verifies the
-packaged Electron lifecycle and signature, and generates `SHA256SUMS`.
+## CI workflows
+
+| Workflow | Trigger | Scope |
+| --- | --- | --- |
+| **Check** (`check.yml`) | Pull requests targeting `main`, pushes to `main`, or manual dispatch | `just check`, Electron asset build, and debug Rust sidecar build. No test suites or DMG packaging. |
+| **Test** (`test.yml`) | Manual dispatch only | Rust, backend lifecycle/install, deterministic UI, and packaged/development Electron tests. Builds the App required by the Electron tests. |
+| **Release** (`release.yml`) | Version tags or manual dispatch with an existing tag | `just check`, signed App/DMG/ZIP build, signature/version/checksum verification, publication, Homebrew installation verification, and tap sync. No full test suites. |
+
+Run the full test suite when needed from Actions **Test → Run workflow**, select
+its branch or tag, or use:
+
+```sh
+gh workflow run test.yml --ref main
+```
+
+Manual workflows must first exist on the default branch. For a tag predating
+`test.yml`, select a branch containing the workflow. Re-running an old Actions
+run uses its original workflow; to use a newer release workflow with an existing
+tag, dispatch `release.yml` from `main` and supply that tag.
+
+Check and Release both run the repository's `just check` entrypoint before their
+builds. Release validates its tagged source independently; it does not wait for
+or require a successful manual Test run. A release tag's source stays unchanged
+when dispatching a newer workflow from `main`.
+
+## Publish a version
+
+The Release workflow builds macOS arm64 DMG and ZIP packages with ad-hoc signing
+through `just build`, verifies their signature and version, and generates
+`SHA256SUMS`.
 
 From a clean `main` checkout with dependencies installed, publish a new version:
 
