@@ -1,6 +1,15 @@
 import type { LocaleMessages } from "./en-US";
 
 export const zhCN = {
+  about: {
+    title: "关于 Treefold",
+    description: "让多个编程 Agent 并行工作的本地应用。",
+    version: "版本",
+    commit: "Git 提交",
+    repository: "仓库",
+    website: "官网",
+    author: "作者",
+  },
   common: {
     cancel: "取消",
     save: "保存",

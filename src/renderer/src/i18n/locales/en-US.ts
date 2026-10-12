@@ -1,4 +1,13 @@
 export const enUS = {
+  about: {
+    title: "About Treefold",
+    description: "A local workspace for parallel coding agents.",
+    version: "Version",
+    commit: "Git commit",
+    repository: "Repository",
+    website: "Website",
+    author: "Author",
+  },
   common: {
     cancel: "Cancel",
     save: "Save",

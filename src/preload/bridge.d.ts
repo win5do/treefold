@@ -2,6 +2,7 @@ export type OpenInApp = { id: string; label: string; group: "fileManager" | "edi
 export type DirectoryOptions = { title?: string; directory: true; multiple: false };
 export type OpenProjectRequest = { id: number; path: string };
 export interface DesktopBridge {
+  onOpenAbout(listener: () => void): () => void;
   pendingOpenProject(): Promise<OpenProjectRequest | null>;
   acknowledgeOpenProject(id: number): Promise<void>;
   onOpenProject(listener: (request: OpenProjectRequest) => void): () => void;

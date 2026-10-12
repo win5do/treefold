@@ -69,6 +69,10 @@
   "main": "out/main/index.cjs",
   "description": "Local-first macOS workspace for parallel coding agents in isolated Git worktrees",
   "homepage": "https://treefold.fffeng566.workers.dev/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/win5do/treefold"
+  },
   "author": {
     "name": "win5do",
     "url": "https://github.com/win5do"

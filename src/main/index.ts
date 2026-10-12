@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, dialog, protocol, net, shell, type IpcMainInvokeEvent, type WebContents, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, Menu, MenuItem, Tray, nativeImage, ipcMain, dialog, protocol, net, shell, type IpcMainInvokeEvent, type WebContents, type MenuItemConstructorOptions } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdirSync } from 'node:fs';
@@ -39,6 +39,13 @@ function showWindow() {
   app.dock?.show();
   if (window.isMinimized()) window.restore();
   window.show(); window.focus();
+}
+function showAbout() {
+  showWindow();
+  const contents = window.webContents;
+  const notify = () => contents.send('treefold:open-about');
+  if (contents.isLoadingMainFrame()) contents.once('did-finish-load', notify);
+  else notify();
 }
 function trusted(event: IpcMainInvokeEvent) {
   const url = event.senderFrame?.url;
@@ -112,7 +119,7 @@ async function start() {
   window.webContents.on('render-process-gone', (_event, details) => log('error', `Renderer stopped: ${details.reason}`));
   window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide(); app.dock?.hide(); } });
   const menu: MenuItemConstructorOptions[] = [
-    ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
+    ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ id: 'about', label: new MenuItem({ role: 'about' }).label, click: showAbout }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
     ...(process.platform !== 'darwin' ? [{ label: 'File', submenu: [{ role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
   ];

@@ -1,6 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopBridge, OpenProjectRequest } from './bridge';
+// Register before the renderer loads so menu clicks survive lazy mounting.
+let aboutPending = false;
+let aboutListener: (() => void) | undefined;
+function deliverAbout() {
+  if (!aboutPending || !aboutListener) return;
+  aboutPending = false;
+  aboutListener();
+}
+ipcRenderer.on('treefold:open-about', () => { aboutPending = true; deliverAbout(); });
 const bridge: DesktopBridge = {
+  onOpenAbout: listener => {
+    aboutListener = listener;
+    deliverAbout();
+    return () => { if (aboutListener === listener) aboutListener = undefined; };
+  },
   pendingOpenProject: () => ipcRenderer.invoke('treefold:pending-open-project'),
   acknowledgeOpenProject: id => ipcRenderer.invoke('treefold:acknowledge-open-project', id),
   onOpenProject: listener => {
