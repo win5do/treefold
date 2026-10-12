@@ -6,20 +6,20 @@ import { closeUiSession, createUiSession, openUiContextMenu } from "./harness/se
 
 for (const mode of ["continue", "abandon"] as const) {
   test(`Fork-wide delivery: ${mode}`, async () => {
-    const harness = await startUiHarness();
+    const harness = await startUiHarness(fixture => {
+      const fork = fixture.workspaceDetails[FIXTURE_IDS.fork];
+      fork.repositories = fork.repositories.filter(repository => repository.access_mode === "read_write");
+      for (const repository of fork.repositories) {
+        repository.delivery_status = "active";
+        repository.git_status = "ready";
+      }
+    });
     let page: Page | undefined;
     let batch: FinishBatch | null = null;
     const submissions: { repositories: FinishPlanItem[]; continue_work: boolean }[] = [];
     try {
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "fork-delivery" });
       await page.setViewportSize({ width: 1000, height: 740 });
-      await page.route(`**/api/workspaces/${FIXTURE_IDS.fork}`, async route => {
-        const response = await route.fetch();
-        const data = await response.json();
-        data.repositories = data.repositories.filter((r: { access_mode: string }) => r.access_mode === "read_write");
-        for (const repository of data.repositories) { repository.delivery_status = "active"; repository.git_status = "ready"; }
-        await route.fulfill({ response, json: data });
-      });
       await page.route(`**/api/workspaces/${FIXTURE_IDS.fork}/finish-batch`, async route => {
         if (route.request().method() === "POST") {
           const input = route.request().postDataJSON();
@@ -63,11 +63,16 @@ for (const mode of ["continue", "abandon"] as const) {
         await dialog.getByTestId("finish-confirm-action").click();
         await expect.poll(() => submissions.length).toBe(2);
         expect(submissions[1].continue_work).toBe(false);
+        await expect(dialog.getByRole("button", { name: "Done", exact: true })).toBeVisible();
       }
       harness.assertNoUnexpectedRequests();
     } catch (error) {
       await page?.screenshot({ path: `/tmp/treefold-fork-delivery-${mode}.png` });
       throw error;
-    } finally { try { await closeUiSession(page); } finally { await harness.close(); } }
+    } finally {
+      // Drain route handlers before disposing the request context they use.
+      try { await page?.unrouteAll({ behavior: "wait" }); }
+      finally { try { await closeUiSession(page); } finally { await harness.close(); } }
+    }
   });
 }
