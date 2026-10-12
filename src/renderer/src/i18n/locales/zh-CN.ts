@@ -3,7 +3,7 @@ import type { LocaleMessages } from "./en-US";
 export const zhCN = {
   updates: {
     check: "检查更新",
-    checking: "正在检查正式版更新…",
+    checking: "检查更新中...",
     available: "Treefold {{version}} 已发布。",
     upToDate: "当前已是最新版本。",
     noStableRelease: "当前已是最新版本。",

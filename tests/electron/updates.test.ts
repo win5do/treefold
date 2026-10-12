@@ -87,7 +87,7 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
     });
     const about = page.getByRole('dialog', { name: 'About Treefold', exact: true });
     await about.getByRole('button', { name: 'Check for Updates', exact: true }).click();
-    await expect(about.getByRole('button', { name: 'Checking for a stable release…', exact: true })).toBeDisabled();
+    await expect(about.getByRole('button', { name: 'Checking for updates...', exact: true })).toBeDisabled();
     await expect.poll(() => desktop!.evaluate(() => Boolean((globalThis as UpdateGlobal).releaseUpdate))).toBe(true);
     await desktop.evaluate(() => { (globalThis as UpdateGlobal).releaseUpdate!(); });
     await expect(dialog).toBeVisible();
@@ -98,7 +98,7 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
     // Closing About while the request is pending must cancel the later UI transition.
     await desktop.evaluate(() => { (globalThis as UpdateGlobal).releaseUpdate = undefined; });
     await checkMenu();
-    await expect(about.getByRole('button', { name: 'Checking for a stable release…', exact: true })).toBeDisabled();
+    await expect(about.getByRole('button', { name: 'Checking for updates...', exact: true })).toBeDisabled();
     await expect.poll(() => desktop!.evaluate(() => Boolean((globalThis as UpdateGlobal).releaseUpdate))).toBe(true);
     await page.keyboard.press('Escape');
     await desktop.evaluate(() => {

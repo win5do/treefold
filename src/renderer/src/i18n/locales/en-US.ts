@@ -1,7 +1,7 @@
 export const enUS = {
   updates: {
     check: "Check for Updates",
-    checking: "Checking for a stable release…",
+    checking: "Checking for updates...",
     available: "Treefold {{version}} is available.",
     upToDate: "You’re up to date.",
     noStableRelease: "You’re up to date.",
