@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, MenuItem, Tray, nativeImage, ipcMain, dialog, protocol, net, shell, type IpcMainInvokeEvent, type WebContents, type MenuItemConstructorOptions } from 'electron';
+import { app, BrowserWindow, Menu, MenuItem, Tray, nativeImage, ipcMain, dialog, protocol, net, shell, type IpcMainInvokeEvent, type IpcMainEvent, type WebContents, type MenuItemConstructorOptions } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdirSync } from 'node:fs';
@@ -10,6 +10,7 @@ import { installNavigation } from './navigation';
 import { createDirectoryPicker } from './directory-picker';
 import { createProjectOpenRequests } from './open-project';
 import { readShellPath } from './shell-path';
+import { createUpdateChecker, scheduleStartupUpdate } from './updates';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
 mkdirSync(path.join(home, 'data', 'electron'), { recursive: true });
@@ -47,7 +48,16 @@ function showAbout() {
   if (contents.isLoadingMainFrame()) contents.once('did-finish-load', notify);
   else notify();
 }
-function trusted(event: IpcMainInvokeEvent) {
+const checkForUpdates = createUpdateChecker(app.getVersion(), (...args) => net.fetch(...args));
+let cancelStartupUpdate = () => {};
+function showUpdates() {
+  showWindow();
+  const contents = window.webContents;
+  const notify = () => contents.send('treefold:check-for-updates', { source: 'manual' });
+  if (contents.isLoadingMainFrame()) contents.once('did-finish-load', notify);
+  else notify();
+}
+function trusted(event: IpcMainInvokeEvent | IpcMainEvent) {
   const url = event.senderFrame?.url;
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || !url) {
     throw new Error('Untrusted desktop request');
@@ -86,6 +96,13 @@ async function start() {
   ipcMain.handle('treefold:open-in-apps', event => { trusted(event); return listOpenInApps(); });
   ipcMain.handle('treefold:open-in-app', (event, id, directory) => { trusted(event); return openInApp(id, directory); });
   ipcMain.handle('treefold:api-url', event => { trusted(event); return apiUrl; });
+  ipcMain.handle('treefold:check-for-updates', event => { trusted(event); return checkForUpdates(); });
+  ipcMain.on('treefold:update-menu-label', (event, label: unknown) => {
+    trusted(event);
+    if (typeof label !== 'string' || label.length > 80) return;
+    const item = Menu.getApplicationMenu()?.getMenuItemById('check-for-updates');
+    if (item) item.label = label;
+  });
   ipcMain.handle('treefold:app-version', event => { trusted(event); return app.getVersion(); });
   ipcMain.handle('treefold:pending-open-project', event => { trusted(event); return projectOpenRequests.pending(); });
   ipcMain.handle('treefold:acknowledge-open-project', (event, id) => {
@@ -119,7 +136,7 @@ async function start() {
   window.webContents.on('render-process-gone', (_event, details) => log('error', `Renderer stopped: ${details.reason}`));
   window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide(); app.dock?.hide(); } });
   const menu: MenuItemConstructorOptions[] = [
-    ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ id: 'about', label: new MenuItem({ role: 'about' }).label, click: showAbout }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
+    ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ id: 'about', label: new MenuItem({ role: 'about' }).label, click: showAbout }, { id: 'check-for-updates', label: 'Check for Updates…', click: showUpdates }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
     ...(process.platform !== 'darwin' ? [{ label: 'File', submenu: [{ role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
   ];
@@ -131,6 +148,9 @@ async function start() {
   tray.on('double-click', showWindow);
   await window.loadURL(pageUrl);
   ready = true; showWindow();
+  cancelStartupUpdate = scheduleStartupUpdate(app.isPackaged, checkForUpdates, result => {
+    if (!quitting && !window.isDestroyed()) window.webContents.send('treefold:check-for-updates', { source: 'startup', result });
+  });
   log('info', `Treefold ${app.getVersion()} ready; API ${apiUrl}`);
 }
 async function acquireInstance() {
@@ -144,6 +164,7 @@ void acquireInstance().then(acquired => {
   app.on('activate', showWindow);
   app.on('before-quit', event => {
     quitting = true;
+    cancelStartupUpdate();
     if (stopped) return;
     event.preventDefault();
     if (!backend) { stopped = true; app.quit(); return; }

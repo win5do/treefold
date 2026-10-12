@@ -1,4 +1,16 @@
 export const enUS = {
+  updates: {
+    check: "Check for Updates…",
+    checking: "Checking for a stable release…",
+    available: "Treefold {{version}} is available.",
+    upToDate: "No newer stable version is available.",
+    noStableRelease: "No stable release has been published yet.",
+    failed: "Could not check for updates. Please try again later.",
+    view: "View update",
+    brewInstructions: "If you installed Treefold with Homebrew, quit Treefold and run this command in your terminal:",
+    downloadInstructions: "Or open the release page to download and install the new version. If Homebrew has not received this version yet, use the release page.",
+    openRelease: "Open release page",
+  },
   about: {
     title: "About Treefold",
     description: "A local workspace for parallel coding agents.",

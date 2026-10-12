@@ -1,6 +1,18 @@
 import type { LocaleMessages } from "./en-US";
 
 export const zhCN = {
+  updates: {
+    check: "检查更新…",
+    checking: "正在检查正式版更新…",
+    available: "Treefold {{version}} 已发布。",
+    upToDate: "暂无更新的正式版。",
+    noStableRelease: "目前尚未发布正式版。",
+    failed: "检查更新失败，请稍后重试。",
+    view: "查看更新",
+    brewInstructions: "如果通过 Homebrew 安装，请退出 Treefold 后在终端运行：",
+    downloadInstructions: "也可以前往发布页面下载并安装新版。如果 Homebrew 尚未提供此版本，请从发布页面下载。",
+    openRelease: "前往发布页面",
+  },
   about: {
     title: "关于 Treefold",
     description: "让多个编程 Agent 并行工作的本地应用。",

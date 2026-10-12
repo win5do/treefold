@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { DesktopBridge, OpenProjectRequest } from './bridge';
+import type { DesktopBridge, OpenProjectRequest, UpdateNotice } from './bridge';
 // Register before the renderer loads so menu clicks survive lazy mounting.
 let aboutPending = false;
 let aboutListener: (() => void) | undefined;
@@ -9,7 +9,26 @@ function deliverAbout() {
   aboutListener();
 }
 ipcRenderer.on('treefold:open-about', () => { aboutPending = true; deliverAbout(); });
+let updatePending: UpdateNotice | undefined;
+let updateListener: ((notice: UpdateNotice) => void) | undefined;
+function deliverUpdate() {
+  if (!updatePending || !updateListener) return;
+  const notice = updatePending;
+  updatePending = undefined;
+  updateListener(notice);
+}
+ipcRenderer.on('treefold:check-for-updates', (_event, notice: UpdateNotice) => {
+  updatePending = notice;
+  deliverUpdate();
+});
 const bridge: DesktopBridge = {
+  checkForUpdates: () => ipcRenderer.invoke('treefold:check-for-updates'),
+  setUpdateMenuLabel: label => ipcRenderer.send('treefold:update-menu-label', label),
+  onCheckForUpdates: listener => {
+    updateListener = listener;
+    deliverUpdate();
+    return () => { if (updateListener === listener) updateListener = undefined; };
+  },
   onOpenAbout: listener => {
     aboutListener = listener;
     deliverAbout();

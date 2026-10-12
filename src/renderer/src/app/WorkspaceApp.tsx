@@ -88,6 +88,7 @@ import { DeleteProjectDialog } from "@/features/projects/DeleteProjectDialog";
 import { Overview } from "@/features/projects/Overview";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { AboutDialog } from "@/features/about/AboutDialog";
+import { UpdateDialog } from "@/features/updates/UpdateDialog";
 import {
   ConfigureWorkspaceRepositoryDialog,
   CreateWorkspaceDialog,
@@ -1790,6 +1791,7 @@ function Workspace() {
         onSave={settingsSave.save}
       />
       <AboutDialog />
+      <UpdateDialog />
     </div>
   );
 }
