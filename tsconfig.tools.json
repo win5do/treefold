@@ -29,6 +29,7 @@
     "tests/electron/**/*.ts",
     "src/preload/bridge.d.ts",
     "src/main/backend.ts",
+    "src/main/shell-path.ts",
     "src/main/open-in/**/*.ts",
     "src/main/open-project.ts",
     "playwright.config.ts"

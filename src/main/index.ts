@@ -9,6 +9,7 @@ import { listOpenInApps, openInApp } from './open-in/service';
 import { installNavigation } from './navigation';
 import { createDirectoryPicker } from './directory-picker';
 import { createProjectOpenRequests } from './open-project';
+import { readShellPath } from './shell-path';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
 mkdirSync(path.join(home, 'data', 'electron'), { recursive: true });
@@ -48,6 +49,9 @@ function trusted(event: IpcMainInvokeEvent) {
   if (actual.protocol !== expected.protocol || actual.host !== expected.host) throw new Error('Untrusted desktop origin');
 }
 async function start() {
+  const shellPath = await readShellPath({ onWarning: message => log('warn', message) });
+  if (quitting) return;
+  if (shellPath !== undefined) process.env.PATH = shellPath;
   const resources = app.isPackaged ? process.resourcesPath : path.join(root, 'src/backend/bundle-staging/dev-sidecars');
   const bin = path.join(resources, 'bin');
   backend = new Backend({
