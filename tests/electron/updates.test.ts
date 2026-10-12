@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test, expect, _electron, type ElectronApplication } from '@playwright/test';
 
-type Fixture = { status: number; tag: string; prerelease: boolean; calls: number; links: string[] };
-type UpdateGlobal = typeof globalThis & { updateFixture: Fixture };
+type Fixture = { status: number; tag: string; prerelease: boolean; calls: number; links: string[]; hold: boolean };
+type UpdateGlobal = typeof globalThis & { updateFixture: Fixture; releaseUpdate?: () => void };
 
 test('stable updates: startup notice, menu checks, release link, errors, reload and localization', async () => {
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-updates-'));
@@ -18,12 +18,13 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
     desktop = await _electron.launch({ executablePath, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
     // Intercept only the update endpoint; keep production asset and backend transport.
     await desktop.evaluate(({ net, shell }) => {
-      const state: Fixture = { status: 200, tag: 'v99.0.0', prerelease: false, calls: 0, links: [] };
+      const state: Fixture = { status: 200, tag: 'v99.0.0', prerelease: false, calls: 0, links: [], hold: false };
       (globalThis as UpdateGlobal).updateFixture = state;
       const original = net.fetch.bind(net);
       net.fetch = async (url, options) => {
         if (url !== 'https://api.github.com/repos/win5do/treefold/releases/latest') return original(url, options);
         state.calls++;
+        if (state.hold) await new Promise<void>(resolve => { (globalThis as UpdateGlobal).releaseUpdate = resolve; });
         return new Response(JSON.stringify({ tag_name: state.tag, draft: false, prerelease: state.prerelease }), {
           status: state.status, headers: { 'Content-Type': 'application/json' },
         });
@@ -37,9 +38,19 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
     expect(await desktop.evaluate(() => (globalThis as UpdateGlobal).updateFixture.calls)).toBe(0);
     // The packaged App uses the real 30-second startup timer.
     await page.getByRole('button', { name: 'View update', exact: true }).click({ timeout: 45_000 });
-    const dialog = page.getByRole('dialog', { name: 'Check for Updates…', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Treefold 99.0.0 is available.', exact: true });
     await expect(dialog).toContainText('Treefold 99.0.0 is available.');
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+    await expect(dialog.getByRole('heading')).toBeFocused();
     await expect(dialog).toContainText('brew update && brew upgrade --cask win5do/tap/treefold');
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+        writeText: async (text: string) => { (window as typeof window & { copiedCommand: string }).copiedCommand = text; },
+      } });
+    });
+    await dialog.getByRole('button', { name: 'Copy upgrade command', exact: true }).click();
+    expect(await page.evaluate(() => (window as typeof window & { copiedCommand: string }).copiedCommand)).toBe('brew update && brew upgrade --cask win5do/tap/treefold');
+    await expect(dialog.getByRole('status')).toHaveText('Command copied');
     await dialog.getByRole('link', { name: 'Open release page' }).click();
     expect(await desktop.evaluate(() => (globalThis as UpdateGlobal).updateFixture.links)).toEqual(['https://github.com/win5do/treefold/releases/tag/v99.0.0']);
     await page.keyboard.press('Escape');
@@ -65,10 +76,38 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
         Object.assign((globalThis as UpdateGlobal).updateFixture, values);
       }, { status, tag, prerelease });
       await checkMenu();
-      await expect(dialog).toContainText(message);
+      const about = page.getByRole('dialog', { name: 'About Treefold', exact: true });
+      await expect(about.getByRole('status')).toHaveText(message);
+      await expect(about.getByRole('button', { name: 'Check for Updates…', exact: true })).toBeEnabled();
       await page.keyboard.press('Escape');
     }
-    await desktop.evaluate(() => { Object.assign((globalThis as UpdateGlobal).updateFixture, { status: 200, tag: 'v99.0.0', prerelease: false }); });
+    await desktop.evaluate(({ Menu }) => {
+      Object.assign((globalThis as UpdateGlobal).updateFixture, { status: 200, tag: 'v99.0.0', prerelease: false, hold: true });
+      Menu.getApplicationMenu()!.getMenuItemById('about')!.click();
+    });
+    const about = page.getByRole('dialog', { name: 'About Treefold', exact: true });
+    await about.getByRole('button', { name: 'Check for Updates…', exact: true }).click();
+    await expect(about.getByRole('button', { name: 'Checking for a stable release…', exact: true })).toBeDisabled();
+    await expect.poll(() => desktop!.evaluate(() => Boolean((globalThis as UpdateGlobal).releaseUpdate))).toBe(true);
+    await desktop.evaluate(() => { (globalThis as UpdateGlobal).releaseUpdate!(); });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+    await expect(dialog.getByRole('heading')).toBeFocused();
+    await page.keyboard.press('Escape');
+
+    // Closing About while the request is pending must cancel the later UI transition.
+    await desktop.evaluate(() => { (globalThis as UpdateGlobal).releaseUpdate = undefined; });
+    await checkMenu();
+    await expect(about.getByRole('button', { name: 'Checking for a stable release…', exact: true })).toBeDisabled();
+    await expect.poll(() => desktop!.evaluate(() => Boolean((globalThis as UpdateGlobal).releaseUpdate))).toBe(true);
+    await page.keyboard.press('Escape');
+    await desktop.evaluate(() => {
+      (globalThis as UpdateGlobal).updateFixture.hold = false;
+      (globalThis as UpdateGlobal).releaseUpdate!();
+    });
+    // Await the shared request through the bridge so its earlier UI callback has completed.
+    await page.evaluate(() => window.treefoldDesktop!.checkForUpdates());
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     await Promise.all([
       page.waitForEvent('domcontentloaded'),
       desktop.evaluate(({ BrowserWindow, Menu }) => {
@@ -85,7 +124,7 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
     await page.keyboard.press('Escape');
     await expect.poll(() => desktop!.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('check-for-updates')!.label)).toBe('检查更新…');
     await checkMenu();
-    await expect(page.getByRole('dialog', { name: '检查更新…', exact: true })).toContainText('Treefold 99.0.0 已发布。');
+    await expect(page.getByRole('dialog', { name: 'Treefold 99.0.0 已发布。', exact: true })).toContainText('Treefold 99.0.0 已发布。');
     expect(errors).toEqual([]);
   } catch (error) {
     console.error(await readFile(path.join(home, 'logs/desktop.log'), 'utf8').catch(() => 'No desktop log'));

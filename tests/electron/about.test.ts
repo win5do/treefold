@@ -29,7 +29,15 @@ test('About menu opens the shared dialog, restores the window, and survives relo
     const dialog = page.getByRole('dialog', { name: 'About Treefold', exact: true });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(await desktop.evaluate(({ app }) => app.getVersion()));
-    await expect(dialog).toContainText(execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim());
+    const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    await expect(dialog).toContainText(commit.slice(0, 7));
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+        writeText: async (text: string) => { (window as typeof window & { copiedCommit: string }).copiedCommit = text; },
+      } });
+    });
+    await dialog.getByRole('button', { name: 'Copy full Git commit', exact: true }).click();
+    expect(await page.evaluate(() => (window as typeof window & { copiedCommit: string }).copiedCommit)).toBe(commit);
     // Exercise the production external-link boundary without opening a browser.
     await desktop.evaluate(({ shell }) => {
       (globalThis as typeof globalThis & { aboutLinks: string[] }).aboutLinks = [];
