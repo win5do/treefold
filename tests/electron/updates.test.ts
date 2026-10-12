@@ -66,10 +66,10 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
     await expect(dialog).toContainText('Treefold 99.0.0 is available.');
     await page.keyboard.press('Escape');
     for (const [status, tag, prerelease, message] of [
-      [200, 'v0.0.1', false, 'No newer stable version is available.'],
-      [200, 'v99.0.0-alpha.1', false, 'No stable release has been published yet.'],
-      [200, 'v99.0.0', true, 'No stable release has been published yet.'],
-      [404, '', false, 'No stable release has been published yet.'],
+      [200, 'v0.0.1', false, 'You’re up to date.'],
+      [200, 'v99.0.0-alpha.1', false, 'You’re up to date.'],
+      [200, 'v99.0.0', true, 'You’re up to date.'],
+      [404, '', false, 'You’re up to date.'],
       [403, '', false, 'Could not check for updates. Please try again later.'],
     ] as const) {
       await desktop.evaluate((_electron, values) => {
@@ -78,7 +78,7 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
       await checkMenu();
       const about = page.getByRole('dialog', { name: 'About Treefold', exact: true });
       await expect(about.getByRole('status')).toHaveText(message);
-      await expect(about.getByRole('button', { name: 'Check for Updates…', exact: true })).toBeEnabled();
+      await expect(about.getByRole('button', { name: 'Check for Updates', exact: true })).toBeEnabled();
       await page.keyboard.press('Escape');
     }
     await desktop.evaluate(({ Menu }) => {
@@ -86,7 +86,7 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
       Menu.getApplicationMenu()!.getMenuItemById('about')!.click();
     });
     const about = page.getByRole('dialog', { name: 'About Treefold', exact: true });
-    await about.getByRole('button', { name: 'Check for Updates…', exact: true }).click();
+    await about.getByRole('button', { name: 'Check for Updates', exact: true }).click();
     await expect(about.getByRole('button', { name: 'Checking for a stable release…', exact: true })).toBeDisabled();
     await expect.poll(() => desktop!.evaluate(() => Boolean((globalThis as UpdateGlobal).releaseUpdate))).toBe(true);
     await desktop.evaluate(() => { (globalThis as UpdateGlobal).releaseUpdate!(); });
@@ -122,7 +122,7 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
     await page.getByTestId('settings-save').click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');
     await page.keyboard.press('Escape');
-    await expect.poll(() => desktop!.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('check-for-updates')!.label)).toBe('检查更新…');
+    await expect.poll(() => desktop!.evaluate(({ Menu }) => Menu.getApplicationMenu()!.getMenuItemById('check-for-updates')!.label)).toBe('检查更新');
     await checkMenu();
     await expect(page.getByRole('dialog', { name: 'Treefold 99.0.0 已发布。', exact: true })).toContainText('Treefold 99.0.0 已发布。');
     expect(errors).toEqual([]);

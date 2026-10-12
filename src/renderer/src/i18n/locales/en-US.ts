@@ -1,10 +1,10 @@
 export const enUS = {
   updates: {
-    check: "Check for Updates…",
+    check: "Check for Updates",
     checking: "Checking for a stable release…",
     available: "Treefold {{version}} is available.",
-    upToDate: "No newer stable version is available.",
-    noStableRelease: "No stable release has been published yet.",
+    upToDate: "You’re up to date.",
+    noStableRelease: "You’re up to date.",
     failed: "Could not check for updates. Please try again later.",
     versionChange: "{{current}} → {{next}}",
     copyCommand: "Copy upgrade command",

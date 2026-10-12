@@ -136,7 +136,7 @@ async function start() {
   window.webContents.on('render-process-gone', (_event, details) => log('error', `Renderer stopped: ${details.reason}`));
   window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide(); app.dock?.hide(); } });
   const menu: MenuItemConstructorOptions[] = [
-    ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ id: 'about', label: new MenuItem({ role: 'about' }).label, click: showAbout }, { id: 'check-for-updates', label: 'Check for Updates…', click: showUpdates }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
+    ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ id: 'about', label: new MenuItem({ role: 'about' }).label, click: showAbout }, { id: 'check-for-updates', label: 'Check for Updates', click: showUpdates }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
     ...(process.platform !== 'darwin' ? [{ label: 'File', submenu: [{ role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
   ];
