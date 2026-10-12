@@ -4,7 +4,7 @@
 
 | Workflow | Trigger | Scope |
 | --- | --- | --- |
-| **Check** (`check.yml`) | Pull requests targeting `main`, pushes to `main`, or manual dispatch | `just check`, Electron asset build, and debug Rust sidecar build. No test suites or DMG packaging. |
+| **Check** (`check.yml`) | Pull requests targeting `main`, pushes to `main`, or manual dispatch | `just check`: action metadata, TypeScript types, SQLx metadata, Rust formatting, and `cargo check`. No Electron/sidecar builds, packaging, or test suites. |
 | **Test** (`test.yml`) | Manual dispatch only | Rust, backend lifecycle/install, deterministic UI, and packaged/development Electron tests. Builds the App required by the Electron tests. |
 | **Release** (`release.yml`) | Version tags or manual dispatch with an existing tag | `just check`, signed App/DMG/ZIP build, signature/version/checksum verification, publication, Homebrew installation verification, and tap sync. No full test suites. |
 
@@ -20,8 +20,10 @@ Manual workflows must first exist on the default branch. For a tag predating
 run uses its original workflow; to use a newer release workflow with an existing
 tag, dispatch `release.yml` from `main` and supply that tag.
 
-Check and Release both run the repository's `just check` entrypoint before their
-builds. Release validates its tagged source independently; it does not wait for
+Check and Release both run the repository's `just check` entrypoint. Check stops
+there; Release then builds the packages. The checks still compile Rust tooling
+and run Cargo/SQLx checks, so a cold dependency cache can take time.
+Release validates its tagged source independently; it does not wait for
 or require a successful manual Test run. A release tag's source stays unchanged
 when dispatching a newer workflow from `main`.
 

@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   check-build:
+    name: Check
     runs-on: macos-15
     timeout-minutes: 45
     steps:
@@ -42,7 +43,3 @@ jobs:
           cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,rustls
       - name: Check types, database metadata, and Rust
         run: just check
-      - name: Build Electron assets and Rust sidecars
-        run: |
-          npm run build
-          just prepare-sidecars
