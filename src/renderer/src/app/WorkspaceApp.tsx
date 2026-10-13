@@ -999,25 +999,6 @@ function Workspace() {
     }
   }
 
-  async function openHistorySession(stream: WorkspaceDetail, session: Session) {
-    if (session.visibility !== "visible") {
-      const ok = await act(() => sessionsApi.open(session.id));
-      if (!ok) return;
-    }
-    navigate(`/workspaces/${stream.id}/sessions/${session.id}`);
-  }
-
-  async function openProjectHistorySession(
-    project: ProjectDetail,
-    session: Session,
-  ) {
-    if (session.visibility !== "visible") {
-      const ok = await act(() => sessionsApi.open(session.id));
-      if (!ok) return;
-    }
-    navigate(`/projects/${project.id}/sessions/${session.id}`);
-  }
-
   function toggle(
     setter: React.Dispatch<React.SetStateAction<Set<string>>>,
     id: string,
@@ -1375,9 +1356,6 @@ function Workspace() {
                     finish: () => void openFinishWorkspace(workspace),
                   }}
                   busy={busy}
-                  onOpen={(session) =>
-                    void openHistorySession(workspace, session)
-                  }
                   onOpenFork={(fork) => navigate(`/workspaces/${fork.id}`)}
                   onDeleteFork={(fork) =>
                     setDeleteTarget({ kind: "fork", value: fork })
@@ -1416,9 +1394,6 @@ function Workspace() {
                         name: stream.name,
                       }),
                     )
-                  }
-                  onOpenSession={(session) =>
-                    void openProjectHistorySession(selectedProject, session)
                   }
                   onAddDirectory={() => setAddDirectoryProject(selectedProject)}
                   onEditDirectory={setEditDirectory}

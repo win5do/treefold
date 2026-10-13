@@ -808,6 +808,7 @@ export const zhCN = {
     "commandCopied": "已复制命令",
     "couldNotCopyCommand": "无法复制命令",
     "resume": "恢复",
+    "view": "查看",
     "command": "命令",
     "copyCommand": "复制命令",
     "workingDirectory": "工作目录",

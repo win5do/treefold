@@ -5,7 +5,7 @@ import { ReopenForkButton } from "./ReopenForkButton";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { NewSessionDialog } from "@/features/terminal/NewSessionDialog";
 import { useTranslation } from "react-i18next";
-import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
+import { SessionListActions } from "@/features/terminal/SessionListActions";
 import { useEffect, useState } from "react";
 import {
   Bot,
@@ -61,7 +61,6 @@ export function WorkspaceHome({
   detail,
   creation,
   busy,
-  onOpen,
   onOpenFork,
   onDeleteFork,
   onDeleteForkBlocked,
@@ -81,7 +80,6 @@ export function WorkspaceHome({
     finish: () => void;
   };
   busy: boolean;
-  onOpen: (session: Session) => void;
   onOpenFork: (fork: Workspace) => void;
   onDeleteFork: (fork: Workspace) => void;
   onDeleteForkBlocked: (fork: Workspace) => void;
@@ -216,7 +214,7 @@ export function WorkspaceHome({
         <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card">
           <div className={cn(detail.sessions.length > 0 && "md:min-w-[56rem]")}>
             {detail.sessions.length > 0 && (
-            <div className="hidden grid-cols-[minmax(180px,1.4fr)_72px_90px_110px_110px_minmax(110px,1fr)_96px] gap-3 border-b border-border/60 bg-muted px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
+            <div className="hidden grid-cols-[minmax(180px,1.4fr)_72px_90px_110px_110px_minmax(110px,1fr)_160px] gap-3 border-b border-border/60 bg-muted px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
               <span>Session</span>
               <span>{t("workspaceUi.type")}</span>
               <span>{t("workspaceUi.status")}</span>
@@ -231,7 +229,7 @@ export function WorkspaceHome({
                 <div
                   key={session.id}
                   data-testid={`workspace-session-${session.id}`}
-                  className="grid gap-3 border-b border-border/60 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_72px_90px_110px_110px_minmax(110px,1fr)_96px] md:items-center"
+                  className="grid gap-3 border-b border-border/60 px-4 py-3.5 last:border-b-0 md:grid-cols-[minmax(180px,1.4fr)_72px_90px_110px_110px_minmax(110px,1fr)_160px] md:items-center"
                 >
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted">
@@ -283,15 +281,7 @@ export function WorkspaceHome({
                     {session.cwd}
                   </code>
                   <div className="flex items-center justify-end gap-1 md:sticky md:right-0 md:z-10 md:-my-3.5 md:-mr-4 md:self-stretch md:border-l md:border-border/60 md:bg-card md:py-3.5 md:pr-4 md:pl-3">
-                    {detail.status === "active" && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={busy}
-                        onClick={() => onOpen(session)}
-                      >{t("workspaceUi.open")}</Button>
-                    )}
-                    <RemoveSessionButton session={session} disabled={busy} />
+                    <SessionListActions session={session} path={`/workspaces/${detail.id}/sessions/${session.id}`} available={detail.status === "active"} busy={busy} />
                   </div>
                 </div>
               );

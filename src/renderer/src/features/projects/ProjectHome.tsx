@@ -2,7 +2,7 @@ import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName
 import { AGENT_NAMES, isAgentKind } from "@/features/agents/model";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { useTranslation } from "react-i18next";
-import { RemoveSessionButton } from "@/features/terminal/RemoveSessionButton";
+import { SessionListActions } from "@/features/terminal/SessionListActions";
 import {
   Bot,
   ArrowUpRight,
@@ -23,7 +23,6 @@ import type {
   GitWorktree,
   ProjectDetail,
   ProjectRepository,
-  Session,
   Workspace,
   WorktreeDeleteOperation,
 } from "@/domain/types";
@@ -35,7 +34,6 @@ export function ProjectHome({
   onCreateWorkspace,
   onDeleteWorkspace,
   onDeleteWorkspaceBlocked,
-  onOpenSession,
   onAddDirectory,
   onEditDirectory,
   onEditRepository,
@@ -54,7 +52,6 @@ export function ProjectHome({
   onCreateWorkspace: () => void;
   onDeleteWorkspace: (stream: Workspace) => void;
   onDeleteWorkspaceBlocked: (stream: Workspace) => void;
-  onOpenSession: (session: Session) => void;
   onAddDirectory: () => void;
   onEditDirectory: (directory: Directory) => void;
   onEditRepository: (repository: ProjectRepository) => void;
@@ -291,15 +288,7 @@ export function ProjectHome({
                   </code>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  {project.status === "active" && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy}
-                      onClick={() => onOpenSession(session)}
-                    >{t("projectsUi.open")}</Button>
-                  )}
-                  <RemoveSessionButton session={session} disabled={busy} />
+                  <SessionListActions session={session} path={`/projects/${project.id}/sessions/${session.id}`} available={project.status === "active"} busy={busy} />
                 </div>
               </div>
             ))}

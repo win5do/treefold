@@ -806,6 +806,7 @@ export const enUS = {
     "commandCopied": "Command copied",
     "couldNotCopyCommand": "Could not copy command",
     "resume": "Resume",
+    "view": "View",
     "command": "Command",
     "copyCommand": "Copy command",
     "workingDirectory": "Working directory",

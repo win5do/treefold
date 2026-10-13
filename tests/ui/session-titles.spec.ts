@@ -41,11 +41,15 @@ test("Session labels restore saved terminal titles and keep custom names; Resume
     await page.reload();
     await expect(row).toContainText(title);
     await expect(page.getByTestId(`sidebar-session-${id}`)).toContainText(title);
-    await row.getByRole('button',{name:'Open',exact:true}).click();
+    await row.getByRole('button',{name:'Resume',exact:true}).click();
+    await expect.poll(()=>attempts).toBe(1);
+    await expect(page.getByText(/Hook or extension has not reported a Session ID/)).toBeVisible();
+    await expect(row).toBeVisible();
+    await row.getByRole('button',{name:'View',exact:true}).click();
     const resume = page.getByRole('button',{name:'Resume',exact:true});
     await expect(resume).toBeEnabled();
     await resume.click();
-    await expect.poll(()=>attempts).toBe(1);
+    await expect.poll(()=>attempts).toBe(2);
     await expect(page.getByText(/Hook or extension has not reported a Session ID/)).toBeVisible();
     custom = true;
     await page.goto(home);
