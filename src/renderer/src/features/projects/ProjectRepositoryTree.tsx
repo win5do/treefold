@@ -1,5 +1,5 @@
 import { PruneWorktreesDialog } from "@/features/projects/PruneWorktreesDialog";
-import { WorktreeStatusBadges } from "@/features/projects/WorktreeStatusBadges";
+import { WorktreeStatusBadges } from "@/features/git/WorktreeStatusBadges";
 import { WorktreeWorkspaceButton } from "@/features/workspace/WorktreeWorkspaceButton";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n";

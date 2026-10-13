@@ -1,3 +1,4 @@
+import { WorkspaceRepositories } from "./WorkspaceRepositories";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { DelegateTodoDialog } from "./DelegateTodoDialog";
 import { isAgentKind } from "@/features/agents/model";
@@ -14,21 +15,17 @@ import {
   Folder,
   GitBranch,
   PanelsTopLeft,
-  RefreshCw,
   TerminalSquare,
-  X,
   GitFork,
   Pencil,
   Plus,
   Trash2,
 } from "lucide-react";
 import { todosApi } from "@/api/todos";
-import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
 import { DirectoryActionsMenu } from "@/features/open-in/DirectoryActionsMenu";
 import { StatusDot } from "@/components/app/StatusDot";
 import { RecordActionMenu } from "@/features/app/RecordActions";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { MetadataList, MetadataListItem } from "@/components/ui/metadata-list";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -51,10 +48,8 @@ import type {
   Session,
   Workspace,
   WorkspaceDetail,
-  WorkspaceDirectory,
   WorkspaceRepository,
 } from "@/domain/types";
-import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 import { cn } from "@/lib/utils";
 
 export function WorkspaceHome({
@@ -561,47 +556,13 @@ export function WorkspaceHome({
             </div>
           </section>
         )}
-        <section data-testid="workspace-repositories-section" className="mt-8">
-          <div className="flex items-start justify-between gap-4 pr-[calc(1rem+1px)]">
-            <div>
-              <h2 className="text-sm font-semibold">{t("workspaceUi.workspaceRepositories")}</h2>
-              <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.repositoryLifecycleDescription")}</p>
-            </div>
-            {detail.status === "active" && (
-              <ActionMenu
-                label={t("workspaceUi.actions")}
-                testId="workspace-repositories-actions"
-                disabled={busy}
-              >
-                <ActionMenuItem
-                  icon={<RefreshCw className="size-3.5" />}
-                  disabled={busy}
-                  onClick={onResync}
-                >
-                  {t("workspaceUi.resync")}
-                </ActionMenuItem>
-              </ActionMenu>
-            )}
-          </div>
-          <div className="mt-3 grid gap-3">
-            {detail.repositories.map((location) => (
-              <WorkspaceRepositoryRow
-                key={location.id}
-                location={location}
-                scopes={detail.workspace_directories.filter(
-                  (directory) =>
-                    directory.workspace_repository_id === location.id,
-                )}
-                busy={busy}
-                actionsEnabled={
-                  detail.kind === "workspace" && detail.status === "active"
-                }
-                onConfigureUpstream={() => onConfigureUpstream(location)}
-                onClearUpstream={() => onClearUpstream(location)}
-              />
-            ))}
-          </div>
-        </section>
+        <WorkspaceRepositories
+          detail={detail}
+          busy={busy}
+          onResync={onResync}
+          onConfigureUpstream={onConfigureUpstream}
+          onClearUpstream={onClearUpstream}
+        />
         {detail.workspace_directories.some(
           (directory) => !directory.workspace_repository_id,
         ) && (
@@ -697,147 +658,5 @@ export function WorkspaceHome({
 
       </div>
     </div>
-  );
-}
-
-function WorkspaceRepositoryRow({
-  location,
-  scopes,
-  busy,
-  actionsEnabled,
-  onConfigureUpstream,
-  onClearUpstream,
-}: {
-  location: WorkspaceRepository;
-  scopes: WorkspaceDirectory[];
-  busy: boolean;
-  actionsEnabled: boolean;
-  onConfigureUpstream: () => void;
-  onClearUpstream: () => void;
-}) {
-  const { t } = useTranslation();
-  const writableGit =
-    location.access_mode === "read_write" && location.git_status === "ready";
-  const upstream =
-    location.remote_name && location.remote_branch
-      ? `${location.remote_name}/${location.remote_branch}`
-      : "";
-  return (
-    <article
-      data-testid={`workspace-location-${location.id}`}
-      data-workspace-repository-id={location.id}
-      className="rounded-xl border border-border bg-card p-4"
-    >
-      <div className="flex min-w-0 items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
-              {location.repository_name}
-            </h3>
-            <Badge
-              variant={
-                location.git_status === "ready"
-                  ? "success"
-                  : location.git_status === "not_git"
-                    ? "secondary"
-                    : "destructive"
-              }
-            >
-              {t(`states.${location.git_status}`, { defaultValue: location.git_status })}
-            </Badge>
-            <Badge>{t(`states.${location.access_mode}`, { defaultValue: location.access_mode })}</Badge>
-            <Badge>{location.close_outcome === "skipped" ? t("deliveryUi.batchStates.skipped") : t(`states.${location.delivery_status}`, { defaultValue: location.delivery_status })}</Badge>
-          </div>
-          <code
-            className="mt-2 block truncate text-[10px] text-muted-foreground"
-            title={location.checkout_path ?? location.source_root}
-          >
-            {location.checkout_path ?? location.source_root}
-          </code>
-          {location.creation_error && (
-            <Alert
-              role="alert"
-              data-testid={`workspace-location-error-${location.id}`}
-              variant="destructive"
-              className="mt-3"
-            >
-              <CircleAlert />
-              <AlertDescription className="font-mono text-[11px]">
-                {location.creation_error}
-              </AlertDescription>
-            </Alert>
-          )}
-          {location.access_mode === "read_write" && (
-            <MetadataList className="mt-2">
-              <MetadataListItem label={t("labels.branch")}>
-                <code>{location.branch}</code>
-              </MetadataListItem>
-              <MetadataListItem label={t("labels.base")}>
-                <code>{location.base_branch}</code>
-              </MetadataListItem>
-              <MetadataListItem label={t("labels.upstream")}>
-                <code>{upstream || "—"}</code>
-              </MetadataListItem>
-            </MetadataList>
-          )}
-        </div>
-        {actionsEnabled && writableGit && (
-          <div className="-mt-2 self-start">
-            <ActionMenu
-              label={t("workspaceUi.actionsFor", { name: location.repository_name })}
-              testId={`workspace-location-actions-${location.id}`}
-              disabled={busy}
-            >
-              <ActionMenuItem
-                icon={<GitBranch className="size-3.5" />}
-                disabled={busy}
-                testId={`workspace-location-upstream-${location.id}`}
-                onClick={onConfigureUpstream}
-              >
-                {upstream ? t("workspaceUi.changeUpstream") : t("workspaceUi.setUpstream")}
-              </ActionMenuItem>
-              {upstream && (
-                <ActionMenuItem
-                  icon={<X className="size-3.5" />}
-                  disabled={busy}
-                  testId={`workspace-location-clear-upstream-${location.id}`}
-                  onClick={onClearUpstream}
-                >{t("workspaceUi.clearUpstream")}</ActionMenuItem>
-              )}
-            </ActionMenu>
-          </div>
-        )}
-      </div>
-      {scopes.length > 0 && (
-        <div
-          className="mt-3 border-t border-border/60 pt-2"
-          data-testid={`workspace-repository-scopes-${location.id}`}
-        >
-          {scopes.map((scope) => (
-            <div
-              key={scope.id}
-              data-testid={`workspace-directory-${scope.project_directory_id}`}
-              className="flex min-w-0 items-center gap-2 py-1.5"
-            >
-              <Folder className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate text-xs font-medium">
-                {scope.name}
-              </span>
-              <code
-                className="ml-auto max-w-1/2 truncate text-[10px] text-muted-foreground"
-                title={scope.path}
-              >
-                {formatRepositoryRelativePath(scope.relative_path)}
-              </code>
-              <DirectoryActionsMenu
-                path={scope.path}
-                name={scope.name}
-                testId={`workspace-directory-actions-${scope.project_directory_id}`}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-    </article>
   );
 }
