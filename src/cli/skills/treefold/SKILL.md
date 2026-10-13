@@ -51,9 +51,13 @@ treefold todo remove <todo-id>
 - Remove a Todo only on explicit user intent because removal is permanent.
 - Do not send periodic progress updates or per-turn summaries to Treefold.
 
-## Manage processes with amux
+## Choose how to run commands
 
-Use the independent `$amux` skill and `amux` CLI for processes, TTYs, logs, signals, and restarts. Treefold injects `AMUX_SOCKET`, `AMUX_STATE_DIR`, and `AMUX_WORKSPACE` so amux connects to the Treefold-owned runtime for the current physical workspace.
+Run one-shot commands directly with the Agent's normal execution tool, including tests, builds, lint/type checks, scripts, and temporary diagnostics. A command taking a long time, needing a TTY, or running inside Treefold does not by itself require amux.
+
+Use amux for persistent services or watchers that should keep running across Agent turns, or when the user needs to follow or retain a process's logs independently of the Agent's command output. For example, a dev server or an ongoing test watch session belongs in amux; a normal test run does not unless the user needs that independent log access.
+
+For those managed processes, use the independent `$amux` skill and `amux` CLI for TTYs, logs, signals, and restarts. Treefold injects `AMUX_SOCKET`, `AMUX_STATE_DIR`, and `AMUX_WORKSPACE` so amux connects to the Treefold-owned runtime for the current physical workspace.
 
 Do not look for `treefold service`, `treefold logs`, or Treefold child-Agent commands; they do not exist. Do not stop, restart, or remove the current Session process identified by `AMUX_PROCESS_ID`.
 

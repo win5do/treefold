@@ -198,13 +198,13 @@ Treefold Skill：
 2. 按需 list/show/add/edit/remove Todo；
 3. 只在真实阻塞时 block；Todo 的 Fork 绑定与完成状态由 Treefold 生命周期管理；
 4. 不逐轮上报 progress，不生成 report 或 handoff；
-5. 进程操作切换到 `$amux` Skill；
+5. 一次性测试、构建、检查、脚本和临时诊断直接通过 Agent 的执行工具运行；仅常驻服务、跨轮次持续运行的 watcher，或用户需要独立查看、保留日志的进程切换到 `$amux` Skill。耗时长、需要 TTY 或处于 Treefold Session 中本身不构成托管理由；
 6. 不自行执行 Treefold 生命周期操作；
 7. App 不可用时继续安全的本地工作，并明确 Todo 同步失败。
 
 amux Skill：
 
-- 管理长期服务、watcher、测试进程和 TTY；
+- 管理上述需要托管的进程及其 TTY、日志和生命周期；持续 test watch 可托管，普通单次测试默认直接执行；
 - 使用当前 Treefold 注入的 runtime 和 workspace；
 - 不停止、重启、kill 或删除当前 `AMUX_PROCESS_ID`；
 - 不作为第二套子 Agent orchestration。
