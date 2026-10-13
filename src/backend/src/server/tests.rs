@@ -1673,6 +1673,106 @@ mod current_workspace_tests {
     }
 
     #[tokio::test]
+    async fn retained_tty_logs_remain_readable_after_exit() {
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("repository");
+        initialize_repository(&repository);
+        let state = test_state(root.path()).await;
+        let result = async {
+            let (_, Json(project)) = create_project(
+                State(state.clone()),
+                ApiJson(CreateProject {
+                    open_path: None,
+                    name: Some("Retained output".into()),
+                    description: None,
+                    path: Some(repository.to_string_lossy().into_owned()),
+                    locations: None,
+                    preferred_remote: None,
+                    directory_description: None,
+                    directory_worktree_setup_command: None,
+                }),
+            )
+            .await?;
+            let workspace = super::sync_project_session_workspace(&state, &project.id).await?;
+            let timestamp = now();
+            let session = Session {
+                id: "retained-output-command".into(),
+                workspace_id: workspace.id,
+                name: "Failing command".into(),
+                kind: "command".into(),
+                cwd: repository.to_string_lossy().into_owned(),
+                original_cwd: repository.to_string_lossy().into_owned(),
+                initial_prompt: String::new(),
+                name_is_custom: false,
+                terminal_title: None,
+                agent_session_id: None,
+                visibility: "visible".into(),
+                hidden_at: None,
+                evicted_at: None,
+                amux_workspace_name: TerminalManager::workspace_name(&repository.to_string_lossy()),
+                amux_process_name: "retained-output-command".into(),
+                status: "running".into(),
+                exit_code: None,
+                exit_signal: String::new(),
+                argv: vec![
+                    "/bin/sh".into(),
+                    "-c".into(),
+                    "printf 'retained-startup-error\\n'; exit 7".into(),
+                ],
+                io_mode: "tty".into(),
+                launch_started_at: timestamp.clone(),
+                last_attached_at: None,
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+                additional_directories: vec![],
+            };
+            state.store.create_session(&session).await?;
+            state
+                .terminals
+                .spawn(&session, &project.id, None, &state.settings.load()?.agents)
+                .await?;
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                while state.terminals.is_running(&session.id).await {
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            })
+            .await?;
+            anyhow::ensure!(
+                state.terminals.inspect(&session.id).await?.exit_code == Some(7),
+                "expected command exit code 7"
+            );
+            let router = app(state.clone());
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!(
+                            "/api/sessions/{}/logs?after=0&follow=false",
+                            session.id
+                        ))
+                        .body(Body::empty())?,
+                )
+                .await?;
+            anyhow::ensure!(response.status() == StatusCode::OK);
+            let body = to_bytes(response.into_body(), 1024 * 1024).await?;
+            let logs = String::from_utf8(body.to_vec())?;
+            anyhow::ensure!(logs.contains("retained-startup-error"), "{logs}");
+            let response = router
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/api/sessions/{}/logs?follow=true", session.id))
+                        .body(Body::empty())?,
+                )
+                .await?;
+            anyhow::ensure!(response.status() == StatusCode::BAD_REQUEST);
+            anyhow::Ok(())
+        }
+        .await;
+        stop_amux(State(state)).await.expect("stop test daemon");
+        result.unwrap();
+    }
+
+    #[tokio::test]
     async fn project_shell_is_managed_but_deleted_on_close_while_codex_is_retained() {
         let root = std::env::temp_dir().join(format!(
             "treefold-project-session-test-{}",

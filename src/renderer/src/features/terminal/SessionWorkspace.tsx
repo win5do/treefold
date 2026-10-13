@@ -19,6 +19,8 @@ import { setupXtermIme229Workaround } from "@/features/terminal/xtermIme229Worka
 import { setupTerminalScrollbar } from "@/features/terminal/terminalScrollbar";
 import { PipeLogSession } from "@/features/terminal/PipeLogSession";
 import { openSessionLink } from "@/features/terminal/sessionLinks";
+import { SessionExitDetails } from "@/features/terminal/SessionExitDetails";
+import { StoppedSessionOutput } from "@/features/terminal/StoppedSessionOutput";
 
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
@@ -48,12 +50,16 @@ function StoppedSession({ session, busy, onRestart }: { session: Session; busy: 
     }
   };
   return (
-    <div data-testid="session-terminal-state" className="grid min-h-0 flex-1 overflow-y-auto place-items-center p-8 text-terminal-muted">
-      <div className="w-full min-w-0 max-w-2xl rounded-lg border border-terminal-accent bg-terminal-accent p-5">
+    <div data-testid="session-terminal-state" className="flex min-h-0 flex-1 overflow-y-auto p-8 text-terminal-muted">
+      <div className="m-auto w-full min-w-0 max-w-2xl shrink-0 rounded-lg border border-terminal-accent bg-terminal-accent p-5">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-medium">{t("terminalUi.sessionState", { status: t(`states.${session.status}`, { defaultValue: session.status }) })}</p>
           <Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}>
             <RotateCcw data-icon="inline-start" />{t("terminalUi.resume")}</Button>
+        </div>
+        <div className="mt-4 flex min-w-0 flex-col gap-4">
+          <SessionExitDetails session={session} />
+          <StoppedSessionOutput session={session} />
         </div>
         <dl className="mt-4 grid min-w-0 gap-3 text-xs">
           <div className="min-w-0">

@@ -10,9 +10,9 @@ export function createSessionLogRoutes({ fixture }: Pick<RouteDependencies, "fix
       const match = pathname.match(/^\/api\/sessions\/([^/]+)\/logs$/);
       if (request.method !== "GET" || !match) return false;
       const session = fixtureSessions(fixture).find(item => item.id === match[1]);
-      // Unconfigured Sessions and TTY log requests must still be recorded as unexpected.
-      if (!session || session.io_mode !== "pipe") return false;
+      if (!session) return false;
       const url = new URL(request.url!, "http://fixture.test");
+      if (session.io_mode !== "pipe" && url.searchParams.get("follow") === "true") return false;
       const cursor = url.searchParams.get("after") ?? "0";
       if (!/^\d+$/.test(cursor)) return false;
       const after = BigInt(cursor);
@@ -21,7 +21,7 @@ export function createSessionLogRoutes({ fixture }: Pick<RouteDependencies, "fix
         "Content-Type": "application/x-ndjson",
       });
       response.end(after < 1n ? JSON.stringify({
-        sequence: 1, execution: 1, stream: "stdout",
+        sequence: 1, execution: 1, stream: session.io_mode === "tty" ? "tty" : "stdout",
         data: { encoding: "utf8", text: `${session.name} ready\n` },
       }) + "\n" : "");
       return true;

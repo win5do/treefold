@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { apiUrl } from "@/api/client";
 import type { Session } from "@/domain/types";
 import { linkifySessionOutput } from "@/features/terminal/sessionLinks";
+import { SessionExitDetails } from "@/features/terminal/SessionExitDetails";
 
 type LogRecord = {
   type?: string;
@@ -97,6 +98,7 @@ export function PipeLogSession({ session, busy, onRestart }: { session: Session;
         <RotateCcw data-icon="inline-start" />{t("terminalUi.resume")}
       </Button>}
     </div>
+    {session.status !== "running" && <div className="px-4 py-2"><SessionExitDetails session={session} /></div>}
     <pre ref={logRef} role="log" aria-label={t("terminalUi.processOutput")} onScroll={(event) => {
       const element = event.currentTarget;
       followBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24;

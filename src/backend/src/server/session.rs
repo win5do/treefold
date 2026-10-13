@@ -713,8 +713,10 @@ pub(super) async fn session_logs(
     Query(query): Query<SessionLogsQuery>,
 ) -> Result<impl IntoResponse> {
     let session = state.store.session(&id).await?;
-    if session.io_mode != "pipe" {
-        return Err(AppError::BadRequest("session has no pipe logs".into()));
+    if session.io_mode != "pipe" && query.follow {
+        return Err(AppError::BadRequest(
+            "TTY logs support retained output only".into(),
+        ));
     }
     let body = state
         .terminals
