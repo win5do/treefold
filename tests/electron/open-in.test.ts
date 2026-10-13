@@ -38,10 +38,10 @@ test('validates desktop requests and preserves special directory characters in l
     expect(ghostty.args[0]).toBe('-e');
     expect(ghostty.args[1]).toContain('tell application "/Applications/Ghostty.app"');
     expect(ghostty.args[1]).toContain('set initial working directory of cfg to item 1 of argv');
-    expect(ghostty.args[1]).toContain('new window with configuration cfg');
+    expect(ghostty.args[1]).toMatch(/if \(count of windows\) > 0 then\s+new tab in front window with configuration cfg\s+else\s+new window with configuration cfg\s+end if/);
     expect(ghostty.args[1]).not.toContain(directory);
     expect(ghostty.args.slice(2)).toEqual([directory]);
-    expect(calls.find(call => call.args.includes('/Applications/Warp.app'))!.args.at(-1)).toBe(`warp://action/new_window?path=${encodeURIComponent(directory)}`);
+    expect(calls.find(call => call.args.includes('/Applications/Warp.app'))!.args).toEqual(['-a', '/Applications/Warp.app', `warp://action/new_tab?path=${encodeURIComponent(directory)}`]);
     expect(calls.slice(-3).map(call => call.args)).toEqual([['-a', '/Applications/cmux.app'], ['ping'], ['new-workspace', '--cwd', directory]]);
     const count = calls.length;
     for (const [id, dir] of [['arbitrary-command', directory], ['finder', 'relative'], ['finder', root + '/missing'], ['finder', '\0']]) await expect(openInApp(id, dir, dependencies)).rejects.toThrow();

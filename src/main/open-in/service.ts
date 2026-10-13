@@ -58,8 +58,11 @@ export function launchCommand(app: DetectedApp, directory: string): LaunchComman
   const open = (...args: string[]) => ({ command: '/usr/bin/open', args });
   switch (app.id) {
     case 'ghostty': return ghosttyLaunchCommand(app.appPath, directory);
+    // Kitty tabs require an explicitly configured remote-control endpoint.
+    // Preserve normal launching rather than changing the user's Kitty configuration.
     case 'kitty': return open('-na', app.appPath, '--args', '--directory', directory);
-    case 'warp': return open('-a', app.appPath, `warp://action/new_window?path=${encodeURIComponent(directory)}`);
+    // Let Warp handle tab creation and the no-window case through its native URI.
+    case 'warp': return open('-a', app.appPath, `warp://action/new_tab?path=${encodeURIComponent(directory)}`);
     case 'cmux': return { command: app.cli!, args: ['new-workspace', '--cwd', directory] };
     default: return open('-a', app.appPath, directory);
   }

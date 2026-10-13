@@ -7,7 +7,11 @@ export function ghosttyLaunchCommand(appPath: string, directory: string): Launch
   tell application ${application}
     set cfg to new surface configuration
     set initial working directory of cfg to item 1 of argv
-    new window with configuration cfg
+    if (count of windows) > 0 then
+      new tab in front window with configuration cfg
+    else
+      new window with configuration cfg
+    end if
     activate
   end tell
 end run`;
