@@ -60,6 +60,14 @@ pub struct AmuxSettings {
     pub keep_daemon_running_on_exit: bool,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+pub struct UpdateSettings {
+    pub skipped_version: Option<String>,
+    /// Unix timestamp in milliseconds; automatic notices stay quiet until then.
+    pub remind_after: Option<i64>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct Settings {
     pub schema_version: u32,
@@ -71,6 +79,8 @@ pub struct Settings {
     pub agents: AgentsSettings,
     #[serde(default)]
     pub amux: AmuxSettings,
+    #[serde(default)]
+    pub updates: UpdateSettings,
 }
 
 impl Default for Settings {
@@ -81,6 +91,7 @@ impl Default for Settings {
             theme: default_theme(),
             agents: AgentsSettings::default(),
             amux: AmuxSettings::default(),
+            updates: UpdateSettings::default(),
         }
     }
 }
@@ -96,6 +107,7 @@ impl Settings {
         }
         validate_language(&self.language)?;
         validate_theme(&self.theme)?;
+        validate_remind_after(self.updates.remind_after)?;
         validate_order(&self.agents.order)?;
         for kind in AGENT_KINDS {
             let config = self.agents.get(kind).unwrap();
@@ -119,6 +131,14 @@ pub struct SettingsPatch {
     pub theme: Option<String>,
     pub agents: Option<AgentsSettingsPatch>,
     pub amux: Option<AmuxSettingsPatch>,
+    pub updates: Option<UpdateSettingsPatch>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateSettingsPatch {
+    pub skipped_version: Option<String>,
+    pub remind_after: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -155,6 +175,8 @@ impl SettingsPatch {
                     "theme",
                     "agents.order",
                     "amux.keep_daemon_running_on_exit",
+                    "updates.skipped_version",
+                    "updates.remind_after",
                 ]
                 .contains(&key.as_str())
             {
@@ -166,6 +188,9 @@ impl SettingsPatch {
         }
         if let Some(theme) = &self.theme {
             validate_theme(theme)?;
+        }
+        if let Some(updates) = &self.updates {
+            validate_remind_after(updates.remind_after)?;
         }
         if let Some(agents) = &self.agents {
             if let Some(order) = &agents.order {
@@ -186,6 +211,13 @@ impl SettingsPatch {
         }
         Ok(())
     }
+}
+
+fn validate_remind_after(timestamp: Option<i64>) -> anyhow::Result<()> {
+    if timestamp.is_some_and(|value| !(0..=8_640_000_000_000_000).contains(&value)) {
+        bail!("updates.remind_after must be a nonnegative Unix timestamp in milliseconds");
+    }
+    Ok(())
 }
 
 fn validate_order(order: &[String]) -> anyhow::Result<()> {
@@ -303,6 +335,20 @@ impl SettingsStore {
         if let Some(keep_running) = patch.amux.and_then(|amux| amux.keep_daemon_running_on_exit) {
             settings.amux.keep_daemon_running_on_exit = keep_running;
             set_amux_settings(&mut document, keep_running)?;
+        }
+        if let Some(updates) = patch.updates {
+            if document.get("updates").is_none() {
+                document["updates"] = Item::Table(Table::new());
+            }
+            let table = document["updates"]
+                .as_table_like_mut()
+                .context("updates must be a table")?;
+            if let Some(version) = updates.skipped_version {
+                table.insert("skipped_version", value(version));
+            }
+            if let Some(timestamp) = updates.remind_after {
+                table.insert("remind_after", value(timestamp));
+            }
         }
         settings = self.parse(&document.to_string())?;
         self.atomic_write(&document.to_string())?;
@@ -474,6 +520,70 @@ mod tests {
         SETTINGS_SCHEMA_VERSION, SettingsPatch, SettingsStore,
     };
 
+    #[test]
+    fn update_reminders_persist_and_preserve_unrelated_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SettingsStore::open(dir.path()).unwrap();
+        std::fs::write(
+            &store.path,
+            "schema_version = 3\n# keep\ntheme = \"dark\"\n[updates]\nfuture = true\n",
+        )
+        .unwrap();
+        let later = store
+            .update(
+                serde_json::from_value(serde_json::json!({
+                    "updates": {"remind_after": 1_800_000_000_000_i64}
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(later.updates.remind_after, Some(1_800_000_000_000));
+        assert_eq!(
+            SettingsStore::open(dir.path()).unwrap().load().unwrap(),
+            later
+        );
+        let skip = store
+            .update(
+                serde_json::from_value(serde_json::json!({
+                    "reset": ["updates.remind_after"],
+                    "updates": {"skipped_version": "1.2.3"}
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(skip.updates.skipped_version.as_deref(), Some("1.2.3"));
+        assert_eq!(skip.updates.remind_after, None);
+        let contents = std::fs::read_to_string(&store.path).unwrap();
+        assert!(contents.contains("# keep"));
+        assert!(contents.contains("future = true"));
+        assert_eq!(skip.theme, "dark");
+        let settings = store
+            .update(
+                serde_json::from_value(serde_json::json!({
+                    "reset": ["updates.skipped_version"],
+                    "updates": {"remind_after": 1_900_000_000_000_i64}
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(settings.updates.skipped_version, None);
+        assert_eq!(settings.updates.remind_after, Some(1_900_000_000_000));
+        let before = std::fs::read_to_string(&store.path).unwrap();
+        for timestamp in [-1_i64, 8_640_000_000_000_001] {
+            assert!(
+                store
+                    .update(
+                        serde_json::from_value(serde_json::json!({
+                            "updates": {"remind_after": timestamp}
+                        }))
+                        .unwrap()
+                    )
+                    .is_err()
+            );
+            assert_eq!(std::fs::read_to_string(&store.path).unwrap(), before);
+        }
+    }
+
     fn fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "treefold-settings-{label}-{}",
@@ -498,6 +608,7 @@ mod tests {
                 theme: "system".into(),
                 agents: AgentsSettings::default(),
                 amux: AmuxSettings::default(),
+                updates: super::UpdateSettings::default(),
             }
         );
         let settings_file = treefold_home.join("config/settings.toml");
@@ -541,6 +652,7 @@ mod tests {
                 amux: Some(AmuxSettingsPatch {
                     keep_daemon_running_on_exit: Some(true),
                 }),
+                ..Default::default()
             })
             .expect("update settings");
         assert_eq!(updated.language, "zh-CN");

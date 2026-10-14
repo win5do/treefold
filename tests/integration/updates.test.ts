@@ -2,11 +2,29 @@ import { test, expect } from '@playwright/test';
 import { mock } from 'node:test';
 import { createUpdateChecker, scheduleStartupUpdate, stableReleaseEndpoint } from '../../src/main/updates.ts';
 import type { UpdateCheckResult } from '../../src/preload/bridge.d.ts';
+import { shouldNotifyUpdate, updateReminderDelay, updateReminderPatch } from '../../src/renderer/src/features/updates/reminders.ts';
+
+test('update reminders silence every version for seven days or skip only the selected version', () => {
+  const now = Date.UTC(2026, 9, 14);
+  const defaults = { skipped_version: null, remind_after: null };
+  expect(shouldNotifyUpdate('1.0.0', defaults, now)).toBe(true);
+  const later = updateReminderPatch('later', '1.0.0', now);
+  expect(later.updates.remind_after).toBe(now + 7 * 24 * 60 * 60 * 1_000);
+  const snoozed = { ...defaults, ...later.updates };
+  expect(shouldNotifyUpdate('1.0.0', snoozed, now + updateReminderDelay - 1)).toBe(false);
+  expect(shouldNotifyUpdate('2.0.0', snoozed, now + updateReminderDelay - 1)).toBe(false);
+  expect(shouldNotifyUpdate('1.0.0', snoozed, now + updateReminderDelay)).toBe(true);
+  const skipped = { ...defaults, ...updateReminderPatch('skip', '1.0.0', now).updates };
+  expect(shouldNotifyUpdate('1.0.0', skipped, now + 30 * updateReminderDelay)).toBe(false);
+  expect(shouldNotifyUpdate('1.0.1', skipped, now)).toBe(true);
+  expect(updateReminderPatch('later', '1.0.0', now + 1_000).updates.remind_after).toBe(now + 1_000 + updateReminderDelay);
+});
 
 const release = (tag_name: string, extra = {}) => ({ tag_name, draft: false, prerelease: false, ...extra });
 
 for (const [current, tag, extra, status] of [
   ['0.1.0-alpha.3', 'v0.1.0', {}, 'available'],
+  ['0.1.0-dev.20261014010203', 'v0.1.0', {}, 'available'],
   ['0.1.9', 'v0.1.10', {}, 'available'],
   ['0.2.0', 'v0.1.0', {}, 'up-to-date'],
   ['0.1.0', 'v0.1.0', {}, 'up-to-date'],

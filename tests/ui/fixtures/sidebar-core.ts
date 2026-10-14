@@ -677,6 +677,7 @@ export function createSidebarCoreFixture(): SidebarFixture {
       language: "en-US",
       theme: "system",
       agents: createAgentSettings(),
+      updates: { skipped_version: null, remind_after: null },
       amux: {
         keep_daemon_running_on_exit: false,
       },

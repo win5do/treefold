@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { build, Platform } from 'electron-builder';
-import { valid } from 'semver';
+import { resolveBuildVersion } from './build-version.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
 
@@ -11,11 +11,7 @@ type BundleOptions = { localInstall?: boolean; directoryOnly?: boolean };
 export async function bundleApp({ localInstall = false, directoryOnly = false }: BundleOptions = {}) {
   if (process.platform !== 'darwin') throw new Error('Treefold currently supports macOS desktop packaging.');
   const metadata = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as { version: string };
-  const timestamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14);
-  const version = process.env.TREEFOLD_BUILD_VERSION ?? (localInstall
-    ? `${metadata.version.split(/[+-]/, 1)[0]}-alpha.${timestamp}`
-    : metadata.version);
-  if (valid(version) !== version) throw new Error(`TREEFOLD_BUILD_VERSION must be valid SemVer, received: ${version}`);
+  const version = resolveBuildVersion(metadata.version, { localInstall, override: process.env.TREEFOLD_BUILD_VERSION });
 
   const env = {
     ...process.env,

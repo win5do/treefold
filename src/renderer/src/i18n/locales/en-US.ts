@@ -14,6 +14,9 @@ export const enUS = {
     brewInstructions: "If you installed Treefold with Homebrew, quit Treefold and run this command in your terminal:",
     downloadInstructions: "Or open the release page to download and install the new version. If Homebrew has not received this version yet, use the release page.",
     openRelease: "Open release page",
+    later: "Remind me in 7 days",
+    skip: "Skip this version",
+    saveReminderFailed: "Could not save your update reminder choice. Please try again.",
   },
   about: {
     title: "About Treefold",

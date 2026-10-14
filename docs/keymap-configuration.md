@@ -12,6 +12,14 @@ Missing preference keys and command bindings inherit application defaults.
 to empty (using `codex`, `claude`, `opencode`, or `pi`), and daemon retention defaults to `false`. Agent order defaults to
 Codex, Claude Code, OpenCode, Pi.
 
+The update dialog also saves `updates.remind_after` (Unix milliseconds) or
+`updates.skipped_version`. **Remind me in 7 days** suppresses all automatic
+update notices for seven days from the click; **Skip this version** suppresses
+notices for that version until a different release is available. Choosing either
+replaces the previous choice. Manual checks always show the latest result and
+leave these preferences untouched. Closing the dialog does not change them.
+Both keys default to unset and can be removed through `reset`.
+
 ```toml
 schema_version = 3
 theme = "dark"

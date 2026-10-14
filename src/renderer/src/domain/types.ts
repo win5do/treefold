@@ -6,6 +6,7 @@ export type AgentsSettingsPatch = Partial<Record<AgentKind, Partial<AgentConfig>
 export type AgentInstallation = { kind: AgentKind; name: string; available: boolean; executable?: string | null; version?: string | null };
 
 import type { LanguagePreference } from "@/i18n";
+import type { UpdateReminderSettings } from "../features/updates/reminders";
 
 export type ProjectSource = { kind: "git_url"; url: string } | { kind: "empty"; parent_path: string };
 export type ProjectCreation = { name: string } & ({ locations: string[]; open_path: string } | { source: ProjectSource });
@@ -504,6 +505,7 @@ export type AppSettings = {
   amux: {
     keep_daemon_running_on_exit: boolean;
   };
+  updates: UpdateReminderSettings;
 };
 
 export type AmuxStatus = {

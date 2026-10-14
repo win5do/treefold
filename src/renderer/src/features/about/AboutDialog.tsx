@@ -25,7 +25,7 @@ export function AboutDialog() {
     <Dialog open={state.open} onOpenChange={open => { if (!open) state.close(); }}>
       <DialogContent className="gap-6 sm:max-w-sm">
         {state.result?.status === "available"
-          ? <UpdateDetails release={state.result} currentVersion={version} />
+          ? <UpdateDetails release={state.result} currentVersion={version} reminders={state.reminders} />
           : <>
             <DialogHeader className="items-center gap-2 pt-2 text-center">
               <img src={appIcon} alt="" className="size-20" />

@@ -5,6 +5,22 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { installApp } from '../../scripts/install-app-local.ts';
+import { resolveBuildVersion } from '../../scripts/build-version.ts';
+
+test('local build versions follow the package version, preserve suffixes, and honor overrides', () => {
+  const now = new Date('2026-10-14T01:02:03.456Z');
+  for (const [version, expected] of [
+    ['0.1.0', '0.1.0-dev.20261014010203'],
+    ['2.3.4', '2.3.4-dev.20261014010203'],
+    ['2.3.4-beta.2', '2.3.4-beta.2.dev.20261014010203'],
+    ['2.3.4+local', '2.3.4-dev.20261014010203+local'],
+  ]) {
+    assert.equal(resolveBuildVersion(version, { localInstall: true, now }), expected);
+    assert.equal(resolveBuildVersion(version), version);
+  }
+  assert.equal(resolveBuildVersion('0.1.0', { localInstall: true, override: '3.0.0-dev.1', now }), '3.0.0-dev.1');
+  assert.throws(() => resolveBuildVersion('0.1.0', { override: 'invalid' }), /valid SemVer/);
+});
 
 for (const failure of ['missing source', 'invalid signature']) {
   test(`local installation preserves the existing App on ${failure}`, () => {

@@ -16,6 +16,9 @@ export const zhCN = {
     brewInstructions: "如果通过 Homebrew 安装，请退出 Treefold 后在终端运行：",
     downloadInstructions: "也可以前往发布页面下载并安装新版。如果 Homebrew 尚未提供此版本，请从发布页面下载。",
     openRelease: "前往发布页面",
+    later: "7 天后提醒",
+    skip: "跳过此版本",
+    saveReminderFailed: "无法保存更新提醒选择，请重试。",
   },
   about: {
     title: "关于 Treefold",

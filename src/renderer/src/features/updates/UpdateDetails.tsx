@@ -5,12 +5,14 @@ import type { UpdateCheckResult } from "../../../../preload/bridge";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/lib/toast";
+import type { UpdateReminderChoice } from "./reminders";
 
 const upgradeCommand = "brew update && brew upgrade --cask win5do/tap/treefold";
 
-export function UpdateDetails({ release, currentVersion }: {
+export function UpdateDetails({ release, currentVersion, reminders }: {
   release: Extract<UpdateCheckResult, { status: "available" }>;
   currentVersion: string;
+  reminders: { choose: (choice: UpdateReminderChoice) => Promise<void>; saving: boolean };
 }) {
   const { t } = useTranslation();
   const title = useRef<HTMLHeadingElement>(null);
@@ -37,10 +39,18 @@ export function UpdateDetails({ release, currentVersion }: {
       <span role="status" className="sr-only">{copied ? t("updates.commandCopied") : ""}</span>
       <p className="text-muted-foreground">{t("updates.downloadInstructions")}</p>
     </div>
-    <DialogFooter>
+    <DialogFooter className="flex-col sm:flex-col">
       <Button nativeButton={false} role="link" render={<a href={release.url} target="_blank" rel="noopener noreferrer" />}>
         {t("updates.openRelease")}<ExternalLinkIcon data-icon="inline-end" />
       </Button>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="ghost" disabled={reminders.saving} onClick={() => void reminders.choose("skip")}>
+          {t("updates.skip")}
+        </Button>
+        <Button variant="outline" disabled={reminders.saving} onClick={() => void reminders.choose("later")}>
+          {t("updates.later")}
+        </Button>
+      </div>
     </DialogFooter>
   </>;
 }

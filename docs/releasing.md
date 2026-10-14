@@ -29,6 +29,12 @@ when dispatching a newer workflow from `main`.
 
 ## Publish a version
 
+For a local installation, `just install-app-local` uses the current `package.json`
+version with a UTC `dev.YYYYMMDDHHMMSS` prerelease suffix, for example
+`0.1.0-dev.20261014010203`. Existing prerelease identifiers and build metadata are
+preserved. `TREEFOLD_BUILD_VERSION` overrides the generated version. The same
+version is passed to the Treefold CLI/backend, Electron App, and DMG.
+
 The Release workflow builds macOS arm64 DMG and ZIP packages with ad-hoc signing
 through `just build`, verifies their signature and version, and generates
 `SHA256SUMS`.

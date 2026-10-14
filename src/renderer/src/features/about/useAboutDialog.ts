@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UpdateCheckResult } from "../../../../preload/bridge";
 import { desktop } from "@/lib/desktop";
-import { toast } from "@/lib/toast";
+import { useUpdateReminders } from "@/features/updates/useUpdateReminders";
+import type { UpdateReminderChoice } from "@/features/updates/reminders";
 
 export function useAboutDialog() {
   const { t } = useTranslation();
@@ -28,7 +29,10 @@ export function useAboutDialog() {
     setResult(available);
     setOpen(true);
   }, []);
+  const reminders = useUpdateReminders(showUpdate);
+  const { clearNotice, notify } = reminders;
   const check = useCallback(async () => {
+    clearNotice();
     const current = ++request.current;
     setOpen(true);
     setResult(null);
@@ -43,21 +47,22 @@ export function useAboutDialog() {
     if (request.current !== current) return;
     setChecking(false);
     setResult(next);
-  }, []);
+  }, [clearNotice]);
+
+  const chooseReminder = async (choice: UpdateReminderChoice) => {
+    if (result?.status !== "available") return;
+    const current = request.current;
+    if (await reminders.save(choice, result.version) && request.current === current) close();
+  };
 
   useEffect(() => desktop?.onOpenAbout(openAbout), [openAbout]);
   useEffect(() => { desktop?.setUpdateMenuLabel(t("updates.check")); }, [t]);
   useEffect(() => desktop?.onCheckForUpdates(notice => {
     if (notice.source === "manual") {
       void check();
-      return;
-    }
-    toast.info(t("updates.available", { version: notice.result.version }), {
-      timeout: 0,
-      actionProps: { children: t("updates.view"), onClick: () => showUpdate(notice.result) },
-    });
-  }), [check, showUpdate, t]);
+    } else notify(notice.result);
+  }), [check, notify]);
   useEffect(() => () => { request.current++; }, []);
 
-  return { open, result, checking, check, close };
+  return { open, result, checking, check, close, reminders: { choose: chooseReminder, saving: reminders.saving } };
 }
