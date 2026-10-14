@@ -43,8 +43,8 @@ export function UpdateDetails({ release, currentVersion, reminders }: {
       <Button nativeButton={false} role="link" render={<a href={release.url} target="_blank" rel="noopener noreferrer" />}>
         {t("updates.openRelease")}<ExternalLinkIcon data-icon="inline-end" />
       </Button>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="ghost" disabled={reminders.saving} onClick={() => void reminders.choose("skip")}>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Button variant="outline" disabled={reminders.saving} onClick={() => void reminders.choose("skip")}>
           {t("updates.skip")}
         </Button>
         <Button variant="outline" disabled={reminders.saving} onClick={() => void reminders.choose("later")}>
