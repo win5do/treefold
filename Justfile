@@ -94,3 +94,7 @@ test-ui:
 # Test packaged and development Electron lifecycles; run build first.
 test-electron:
     npm run test:electron
+
+# Refresh the dark README showcase screenshots (both languages by default).
+screenshots *args:
+    npm run screenshots -- {{args}}

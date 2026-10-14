@@ -1,38 +1,44 @@
 # Treefold for macOS
 
-**简体中文** | [English](README.en.md)
+**English** | [简体中文](README.zh-CN.md)
 
-**并行展开，干净收敛。**
+**Run agents in parallel. Fold the work back cleanly.**
 
-Treefold 是一个本地优先的 macOS App，让你在独立的 Git worktree 中并行运行 AI Agent，集中管理代码、终端和任务，再把成果合回主线。
+Treefold is a local-first macOS app for running AI agents in isolated Git worktrees. Keep code, terminals, and tasks together, then merge the results back into your main line of work.
 
-用你熟悉的 **Codex、Claude Code、OpenCode 或 Pi** 开发，用 Shell 启动服务和运行测试。每项 feature 有自己的 Workspace，不必在几个任务之间反复切分支、找终端、回忆进度。
+Develop with **Codex, Claude Code, OpenCode, or Pi**, and use Shell Sessions to run services and tests. Each feature gets its own Workspace, so you can switch tasks without repeatedly switching branches, finding terminals, or reconstructing your progress.
 
-[安装](#安装) · [开始第一个任务](#开始第一个任务) · [常见使用场景](#常见使用场景) · [官网](https://treefold.fffeng566.workers.dev/) · [GitHub Releases](https://github.com/win5do/treefold/releases)
+[Install](#install) · [Start your first task](#start-your-first-task) · [Common workflows](#common-workflows) · [Website](https://treefold.fffeng566.workers.dev/) · [GitHub Releases](https://github.com/win5do/treefold/releases)
 
-![Treefold Workspace：在同一处查看 Session、Todo 和 Fork](docs/images/workspace-zh-CN.png)
+## A look inside
 
-*当前源码的 App 界面，使用示例数据；发布版界面可能有所不同。*
+| Explore Treefold |
+| --- |
+| **One repository, several worktrees**<br>See each feature and Fork alongside its branch, checkout, and worktree status.<br><br>![One repository, several worktrees](docs/images/project-en-US.png) |
+| **One place for the whole feature**<br>Keep Todos, Forks, and Sessions together from planning through delivery.<br><br>![One place for the whole feature](docs/images/workspace-en-US.png) |
+| **Choose the Agent for the task**<br>Start a Session with Codex, Claude Code, OpenCode, or Pi in the right working directory.<br><br>![Choose the Agent for the task](docs/images/agents-en-US.png) |
+| **Review changes and history together**<br>Inspect working changes while selecting multiple commits and opening Git history actions.<br><br>![Review changes and history together](docs/images/git-en-US.png) |
+| **Agents and processes stay with their Fork**<br>Switch between Codex, Claude Code, Pi, and two process tabs; keep the development server’s TTY output in view.<br><br>![Agents and processes stay with their Fork](docs/images/terminal-en-US.png) |
 
-## Treefold 能帮你做什么
+## What you can do with Treefold
 
-- **同时推进多项 feature**：每个 Workspace 使用独立分支和 worktree，保留原有工作现场。
-- **拆分并行子任务**：在 Workspace 下创建 Fork，让不同 Agent 分别负责 API、页面或测试，再合回父 Workspace。
-- **找回工作上下文**：代码、Agent 和 Shell Session、Todo 都跟着任务走。切换页面不会停止进程；已关联原生历史的 Agent Session 可以恢复。
-- **检查并交付成果**：查看 diff 和 Git 历史，处理同步与冲突，选择本地合并或推送分支，完成后归档，按需清理。
-- **组织多个仓库**：在一个 Project 中放入前后端仓库及参考文档，明确各目录的读写用途。
+- **Work on several features at once.** Each Workspace gets its own branches and worktrees, preserving your existing checkout.
+- **Delegate parallel subtasks.** Create Forks within a Workspace so different agents can work on the API, UI, or tests, then merge into the parent Workspace.
+- **Keep your context.** Code, Agent and Shell Sessions, and Todos stay attached to their task. Page navigation does not stop processes; Agent Sessions linked to native history can be resumed.
+- **Review and deliver.** Inspect diffs and Git history, handle synchronization and conflicts, choose a local merge or branch push, then archive and clean up when ready.
+- **Organize multiple repositories.** Group frontend and backend repositories with reference documents in one Project, with explicit read/write roles for directories.
 
-## 产品架构
+## Product architecture
 
-Project 组织相关仓库，Workspace 承载一项 feature，Fork 将子任务放进独立 worktree。Agent 与 Shell Session 执行工作；检查 Fork 成果后合回父 Workspace，再交付整项 feature。
+Projects organize repositories, Workspaces own features, and Forks isolate subtasks in dedicated worktrees. Agent and Shell Sessions execute the work. Review and merge Fork results into the parent Workspace, then deliver the feature.
 
-![产品架构](site/public/diagrams/product-architecture-zh-cn.svg)
+![Product architecture](site/public/diagrams/product-architecture-en.svg)
 
-隔离发生在 Workspace / Fork 层级；同一项工作中的 Session 共享 checkout。更换 Session 后，代码、Todo 与交付记录仍然保留。
+Isolation belongs to the Workspace / Fork. Sessions within the same work share a checkout. Code, Todos, and delivery records survive Session changes.
 
-## 安装
+## Install
 
-需要 **Apple Silicon Mac、macOS Sonoma 14 或更新版本，以及 Git**。
+You need an **Apple Silicon Mac running macOS Sonoma 14 or newer, plus Git**.
 
 ### Homebrew
 
@@ -40,80 +46,78 @@ Project 组织相关仓库，Workspace 承载一项 feature，Fork 将子任务�
 brew install --cask win5do/tap/treefold
 ```
 
-安装后从“应用程序”打开 Treefold。后续更新：
+Open Treefold from Applications. To update later:
 
 ```bash
 brew update
 brew upgrade --cask treefold
 ```
 
-### 下载安装包
+### Download the app
 
-前往 [GitHub Releases](https://github.com/win5do/treefold/releases)，下载 Apple Silicon 的 `.dmg`，打开后将 Treefold 拖入“应用程序”。Release 页面同时提供 ZIP、SHA-256 校验文件和版本说明。
+Visit [GitHub Releases](https://github.com/win5do/treefold/releases), download the Apple Silicon `.dmg`, open it, and drag Treefold into Applications. Release pages also provide a ZIP archive, SHA-256 checksums, and release notes.
 
-Treefold 使用 ad-hoc 签名，尚未经过 Apple 公证。首次打开如果被 macOS 阻止，请在“系统设置 → 隐私与安全性”中选择“仍要打开”，然后按提示确认。
+Treefold is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, choose Open Anyway in System Settings → Privacy & Security, then confirm when prompted.
 
-### 准备你要使用的 Agent
+### Set up your agents
 
-Treefold 调用本机的 Agent CLI。先安装并完成相应 CLI 的登录或模型配置，确认它能在终端中正常运行；只安装你要用的 Agent 即可。
+Treefold runs locally installed Agent CLIs. Install the ones you want to use, complete their login or model configuration, and confirm they work in your terminal.
 
-| Agent | 默认命令 |
+| Agent | Default command |
 | --- | --- |
 | Codex | `codex` |
 | Claude Code | `claude` |
 | OpenCode | `opencode` |
 | Pi | `pi` |
 
-在 **设置 → Agent** 中检查检测结果、调整 Agent 顺序，或指定启动命令。安装后未显示时，点击重新检测；自定义安装路径可填写可执行文件的绝对路径。没有配置 Agent 时，也可以独立使用 Shell Session。
+Open **Settings → Agents** to check detection, reorder agents, or customize launch commands. Use Recheck Agents if a newly installed CLI does not appear; for a custom installation location, enter the executable's absolute path. Shell Sessions work independently without an Agent configured.
 
-四种 Agent 均支持新建 Session 和恢复已关联的原生 Session。恢复依赖已记录的原生 Session ID 及保留的历史；更多集成细节见 [Agent Session 文档](docs/agent-session-metadata.md)。
+All four agents support new Sessions and resuming linked native Sessions. Resume requires a recorded native Session ID and retained history; see [Agent Session details](docs/agent-session-metadata.md) for integration requirements.
 
-![新建 Session 时选择 Codex、Claude Code、OpenCode 或 Pi](docs/images/agents-zh-CN.png)
+## Start your first task
 
-## 开始第一个任务
+Start with **one Project → one Workspace → one Agent Session**. You can add Forks later.
 
-第一次使用，先走完 **一个 Project → 一个 Workspace → 一个 Agent Session**，不必马上拆 Fork。
+1. **Add a Project.** Choose New Project and select an existing local repository, clone a Git URL, or create an empty repository. For a directory containing multiple repositories, select the repositories and reference directories to include.
+2. **Create a Workspace.** Name the task, such as “Product search.” Treefold prepares separate branches and worktrees for development.
+3. **Start an Agent.** Create a Session in the Workspace, select Agent, choose a CLI and working directory, then describe the task in its terminal. For example: “Add search to the product list. Inspect the existing API and tests first, then implement and verify it.”
+4. **Run and review.** Open a Shell Session to install project dependencies, start services, or run tests. Review diffs and Git history in Treefold to check the changes.
+5. **Deliver and archive.** Open the delivery flow and choose to merge into the Project checkout's current branch or push the feature branch for remote review. Use intermediate delivery to keep developing, or finish and archive when the task is complete.
 
-1. **添加 Project**：点击新建 Project，选择已有本地仓库，也可以通过 Git URL 克隆或创建空仓库。选择包含多个仓库的目录时，勾选要加入的仓库和参考目录。
-2. **创建 Workspace**：为任务取一个名字，例如“商品搜索”。Treefold 为它准备独立的分支和 worktree，后续开发在这里进行。
-3. **启动 Agent**：在 Workspace 中新建 Session，选择 Agent、具体的 CLI 和工作目录，创建后在终端中描述任务。例如：“为商品列表添加搜索，先检查现有接口和测试，再实现并验证。”
-4. **运行与检查**：再开一个 Shell Session，按项目需要安装依赖、启动服务或运行测试。在 Treefold 中查看 diff 和 Git 历史，确认改动符合预期。
-5. **交付并归档**：打开交付流程，选择合并到 Project 原目录的当前分支，或推送 feature 分支交给远端评审。需要继续开发时使用中间交付；任务结束时选择完成并归档。
+Finishing and archiving stops the associated Sessions while retaining worktrees, branches, and records. When you no longer need them, the deletion flow lets you clean up or retain working directories and local branches. PR creation, remote review, and PR merging happen on your Git hosting platform.
 
-完成并归档会停止所属 Session，保留 worktree、分支和工作记录。确认不再需要后，可在删除流程中选择清理或保留工作目录与本地分支。PR 创建、远端评审和 PR 合并在你的 Git 托管平台完成。
+## Common workflows
 
-## 常见使用场景
+### Develop two features at once
 
-### 两项 feature 同时开发
+Create “Product search” and “Order export” Workspaces in the same Project and start an Agent in each. Separate code directories and branches let you implement, test, and deliver each task independently.
 
-在同一个 Project 下创建“商品搜索”和“订单导出”两个 Workspace，分别启动 Agent。两边使用独立的代码目录和分支，可以各自修改、测试和交付。
+Multiple Sessions in the **same Workspace share code directories**. Create another Workspace or Fork when changes need isolation. If you run several development servers, configure different ports for them too.
 
-同一 Workspace 中的多个 Session **共享代码目录**。需要隔离改动时，创建新的 Workspace 或 Fork；同时运行多个开发服务时，也需要为它们配置不同端口。
+### Split one feature into parallel subtasks
 
-### 一项 feature 拆成并行子任务
+List API, UI, and test work as Todos in the “Product search” Workspace, then delegate independent subtasks to Forks. For example, use Claude Code for the search API and Codex for the UI.
 
-在“商品搜索”Workspace 中用 Todo 列出 API、页面、测试等工作，将可独立完成的子任务交给 Fork。例如用 Claude Code 实现搜索 API，用 Codex 实现页面。
+Each Fork starts from its parent Workspace and works in its own worktrees. Review and merge its results into the parent, test the combined feature, then deliver it. Finish all active Forks before finishing their parent Workspace.
 
-Fork 从父 Workspace 展开，各自在独立 worktree 中工作。完成后先检查并合回父 Workspace，再联调、运行测试，最后交付整项 feature。先完成所有活跃 Fork，才能完成父 Workspace。
+### Continue tomorrow, or hand off to another Agent
 
-### 隔天继续，或换一个 Agent 接手
+Return to the Workspace to find its Sessions and Todos. Open a running Session directly, or use Resume for a stopped Agent Session when its native history is available.
 
-回到对应 Workspace 即可找到 Session 和 Todo。运行中的 Session 可以直接打开；停止的 Agent Session 在原生历史可用时通过 Resume 继续。
+You can also create a Session with another Agent in the same Workspace and ask it to continue from the code and Todos. Chat history is not automatically converted between agents.
 
-也可以在同一 Workspace 新建另一个 Agent Session，让它读取现有代码和 Todo 接手。不同 Agent 的聊天历史不会自动互相转换。
+## Core concepts
 
-## 核心概念
-
-| 概念 | 用途 |
+| Concept | Purpose |
 | --- | --- |
-| **Project** | 组织相关仓库、参考目录和上下文。 |
-| **Workspace** | 承担一项独立的 feature，拥有自己的 worktree、分支、Session 和 Todo。 |
-| **Fork** | 承担 Workspace 下的并行子任务，成果合回父 Workspace；不支持嵌套 Fork。 |
-| **Session** | 在对应目录中运行 Agent 或 Shell；同一 Workspace 或 Fork 可以拥有多个 Session。 |
+| **Project** | Groups related repositories, reference directories, and context. |
+| **Workspace** | Owns one feature, with its own worktrees, branches, Sessions, and Todos. |
+| **Fork** | Handles a parallel subtask within a Workspace and merges into its parent. Forks cannot nest. |
+| **Session** | Runs an Agent or Shell in the relevant directory. A Workspace or Fork can own multiple Sessions. |
 
-## CLI 与 Agent 协作
+## CLI and agent collaboration
 
-桌面 App 附带 `treefold` CLI 和 Treefold Skill。受管理的 Agent Session 会获得当前 Project、Workspace、目录和 Todo 的上下文，可以查看任务、领取任务、更新进度并完成 Todo。
+The desktop app includes the `treefold` CLI and Treefold Skill. Managed Agent Sessions receive their current Project, Workspace, directory, and Todo context. Agents can inspect and claim tasks, update progress, and mark Todos complete.
 
 ```bash
 treefold open /path/to/project
@@ -122,24 +126,24 @@ treefold todo list --json
 treefold doctor
 ```
 
-运行 `treefold open .`：已添加的目录直接进入对应 Project；未添加的目录打开本地添加对话框。省略路径时只打开或聚焦 App。
+Run `treefold open .` to go directly to the corresponding Project if the directory has already been added, or open the local import dialog otherwise. Omit the path to open or focus the app.
 
-持久进程与终端由配套的 `amux` 管理。Treefold 创建 CLI 与 Skill 链接时，会保留已有的用户自管路径。
+The companion `amux` runtime manages persistent processes and terminals. When creating CLI and Skill links, Treefold preserves existing user-managed paths.
 
-## 本地数据与偏好设置
+## Local data and preferences
 
-Project 状态、Session 元数据、Todo 和配置保存在本机，核心管理流程无需托管控制服务。Agent 的模型调用、网络访问和费用取决于对应服务及你的配置。
+Project state, Session metadata, Todos, and configuration stay on your Mac. The core management workflow does not require a hosted control service. Agent model calls, network access, and costs depend on the corresponding services and your configuration.
 
-在设置中可以调整语言、主题、Agent 和快捷键。配置位于 `$TREEFOLD_HOME`（默认 `~/.treefold`）：
+Use Settings to adjust language, theme, agents, and key bindings. Configuration lives under `$TREEFOLD_HOME`, which defaults to `~/.treefold`:
 
-- `config/settings.toml`：语言、主题与 Agent 默认设置。
-- `config/keymap.toml`：快捷键覆盖；省略的绑定使用默认值，`false` 表示禁用。
+- `config/settings.toml`: language, theme, and agent defaults.
+- `config/keymap.toml`: key binding overrides. Omitted bindings follow defaults; `false` disables a binding.
 
-详见 [配置与快捷键](docs/keymap-configuration.md)。
+See [configuration and key bindings](docs/keymap-configuration.md) for details.
 
-## 从源码运行
+## Run from source
 
-希望体验当前源码中的功能，或参与开发时，准备 stable Rust、Node.js 24.12 或更新版本、Git 和 `just`：
+To try features in the current source or contribute, install stable Rust, Node.js 24.12 or newer, Git, and `just`:
 
 ```bash
 git clone https://github.com/win5do/treefold.git
@@ -148,27 +152,27 @@ npm install
 just app-dev
 ```
 
-开发数据默认存放在仓库的 `.treefold-dev/`，与日常使用的 `~/.treefold` 分开。运行 `just` 查看可用任务，`just build` 生成 macOS App、DMG 与 ZIP。环境配置、构建和验证细节见 [开发指南](AGENTS.md#development-environment-and-commands)。
+Development data defaults to `.treefold-dev/` inside the repository, separate from the usual `~/.treefold` home. Run `just` to list tasks or `just build` to generate the macOS app, DMG, and ZIP. See the [development guide](AGENTS.md#development-environment-and-commands) for environment, build, and validation details.
 
-## 了解更多与反馈
+## Learn more and give feedback
 
-- [Project、Workspace 与 Fork 模型](docs/project-workspace-model.md)
-- [Git worktree 生命周期与交付](docs/git-worktree-lifecycle.md)
-- [Agent Skill、CLI 与 App API](docs/agent-skill-cli-api-architecture.md)
-- [报告问题或提出建议](https://github.com/win5do/treefold/issues)
+- [Project, Workspace, and Fork model](docs/project-workspace-model.md)
+- [Git worktree lifecycle and delivery](docs/git-worktree-lifecycle.md)
+- [Agent Skills, CLI, and App API](docs/agent-skill-cli-api-architecture.md)
+- [Report an issue or suggest an improvement](https://github.com/win5do/treefold/issues)
 
-### 飞书交流群
+### Feishu community
 
-想交流使用体验、讨论功能或反馈问题，欢迎用飞书扫描下方二维码，加入「Treefold开源项目」群，与我直接沟通。
+Scan the QR code with Feishu to join the “Treefold开源项目” group and chat with me about your experience, feature ideas, or issues.
 
-<img src="docs/images/feishu-community.png" alt="Treefold开源项目飞书群二维码" width="420" />
+<img src="docs/images/feishu-community.png" alt="QR code for the Treefold Feishu community group" width="420" />
 
-这是飞书个人版交流群，使用飞书个人账号即可加入。也欢迎通过 [GitHub Issues](https://github.com/win5do/treefold/issues) 交流。
+This is a Feishu personal-edition group. You can join with a personal Feishu account, or reach me through [GitHub Issues](https://github.com/win5do/treefold/issues).
 
-如果 Treefold 对你有帮助，欢迎在 [GitHub 上点个 Star](https://github.com/win5do/treefold)，支持这个开源项目。
+If Treefold helps you, consider [giving it a star on GitHub](https://github.com/win5do/treefold) to support the project.
 
-## 许可证
+## License
 
 Copyright (C) 2026 [win5do](https://github.com/win5do).
 
-Treefold 使用 [GNU Affero General Public License v3.0 only](LICENSE)（AGPL-3.0-only）。
+Treefold is licensed under the [GNU Affero General Public License v3.0 only](LICENSE) (AGPL-3.0-only).

@@ -15,6 +15,7 @@
     "dev:watch": "electron-vite dev --watch",
     "build": "npm run typecheck && electron-vite build",
     "test:ui": "playwright test --project=ui",
+    "screenshots": "node tests/ui/showcase/capture.ts",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run typecheck:tools",
     "test:integration": "playwright test --project=integration",
     "test:electron": "playwright test --project=electron",
