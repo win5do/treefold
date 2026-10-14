@@ -197,6 +197,9 @@ fn source_from_metadata(metadata: &Value, expected: Option<&Path>) -> Result<Amu
             .context("amux manifest is missing")?,
     )?;
     let source = package["source"].as_str().map(str::to_owned);
+    let version = package["version"]
+        .as_str()
+        .context("amux version is missing")?;
     if let Some(expected) = expected {
         ensure!(
             manifest == expected && source.is_none(),
@@ -205,12 +208,12 @@ fn source_from_metadata(metadata: &Value, expected: Option<&Path>) -> Result<Amu
             expected.display()
         );
     } else {
-        let prefix = format!("git+{GIT_URL}?branch=main#");
+        let prefix = format!("git+{GIT_URL}?tag=v{version}#");
         ensure!(
             source
                 .as_ref()
                 .is_some_and(|source| source.starts_with(&prefix)),
-            "backend amux must resolve to GitHub main; use TREEFOLD_AMUX_MANIFEST for local development"
+            "backend amux must resolve to its matching GitHub release tag; use TREEFOLD_AMUX_MANIFEST for local development"
         );
     }
     let skill = manifest
@@ -226,10 +229,7 @@ fn source_from_metadata(metadata: &Value, expected: Option<&Path>) -> Result<Amu
         manifest,
         skill,
         source,
-        version: package["version"]
-            .as_str()
-            .context("amux version is missing")?
-            .to_owned(),
+        version: version.to_owned(),
     })
 }
 
@@ -293,7 +293,7 @@ mod tests {
             "resolve": {"root": "backend", "nodes": [{"id": "backend", "deps": [{"name": "amux", "pkg": "selected"}]}]},
             "packages": [
                 {"id": "unrelated", "name": "amux-runtime", "manifest_path": "/wrong/Cargo.toml"},
-                {"id": "selected", "name": "amux-runtime", "version": "0.1.0-alpha.1", "source": null, "manifest_path": manifest}
+                {"id": "selected", "name": "amux-runtime", "version": "0.1.0", "source": null, "manifest_path": manifest}
             ]
         });
         (root, manifest, metadata)
@@ -315,11 +315,17 @@ mod tests {
         let (_root, manifest, mut metadata) = fixture();
         assert!(source_from_metadata(&metadata, Some(Path::new("/another/Cargo.toml"))).is_err());
         assert!(source_from_metadata(&metadata, None).is_err());
-        metadata["packages"][1]["source"] = format!("git+{GIT_URL}?branch=main#1234").into();
+        metadata["packages"][1]["source"] = format!("git+{GIT_URL}?tag=v0.1.0#1234").into();
         assert!(source_from_metadata(&metadata, Some(&manifest)).is_err());
         assert!(source_from_metadata(&metadata, None).is_ok());
-        metadata["packages"][1]["source"] = format!("git+{GIT_URL}?branch=other#1234").into();
-        assert!(source_from_metadata(&metadata, None).is_err());
+        for source in [
+            format!("git+{GIT_URL}?branch=main#1234"),
+            format!("git+{GIT_URL}?tag=v0.2.0#1234"),
+            "git+https://github.com/other/amux.git?tag=v0.1.0#1234".into(),
+        ] {
+            metadata["packages"][1]["source"] = source.into();
+            assert!(source_from_metadata(&metadata, None).is_err());
+        }
     }
 
     #[test]
