@@ -148,7 +148,7 @@ export function useAppActions(scope: Scope) {
           invocation={palette}
           keymap={query.error ? undefined : query.data}
           onClose={() => setPalette(null)}
-          onOpenMenu={(entry, anchor) => setMenu({ entry, anchor, returnFocus: palette.returnFocus })}
+          onOpenMenu={(entry) => setMenu({ entry, returnFocus: palette.returnFocus })}
         />
       )}
       {menu && <ActionMenu request={menu} onClose={() => setMenu(null)} />}

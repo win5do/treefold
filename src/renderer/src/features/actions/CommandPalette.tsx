@@ -8,17 +8,15 @@ import { displayedChord } from "@/features/keymap/keyboard";
 import type { Keymap } from "@/features/keymap/api";
 import { actionScopes, type ActionInvocation, type PaletteEntry } from "./model";
 import { searchPalette } from "./paletteSearch";
-import type { ActionMenuRequest } from "./ActionMenu";
 
 export function CommandPalette({ invocation, keymap, onClose, onOpenMenu }: {
   invocation: ActionInvocation;
   keymap?: Keymap;
   onClose: () => void;
-  onOpenMenu: (entry: PaletteEntry, anchor: ActionMenuRequest["anchor"]) => void;
+  onOpenMenu: (entry: PaletteEntry) => void;
 }) {
   const { t } = useTranslation();
   const executed = useRef(false);
-  const items = useRef(new Map<string, HTMLDivElement>());
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState("");
   const roots: PaletteEntry[] = invocation.actions
@@ -40,10 +38,9 @@ export function CommandPalette({ invocation, keymap, onClose, onOpenMenu }: {
   function select(entry: PaletteEntry) {
     if (executed.current) return;
     executed.current = true;
-    const rect = items.current.get(entry.id)?.getBoundingClientRect();
     onClose();
     if (entry.children) {
-      onOpenMenu(entry, { x: rect?.left ?? innerWidth / 2, y: rect?.bottom ?? innerHeight / 2 });
+      onOpenMenu(entry);
     } else {
       entry.run();
     }
@@ -74,7 +71,6 @@ export function CommandPalette({ invocation, keymap, onClose, onOpenMenu }: {
                     return (
                       <CommandItem
                         key={entry.id}
-                        ref={(element) => { if (element) items.current.set(entry.id, element); else items.current.delete(entry.id); }}
                         value={entry.id}
                         aria-label={entry.label}
                         aria-description={entry.actionId}

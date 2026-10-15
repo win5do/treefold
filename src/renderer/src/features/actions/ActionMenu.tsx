@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
@@ -8,7 +8,6 @@ import type { PaletteEntry } from "./model";
 
 export type ActionMenuRequest = {
   entry: PaletteEntry;
-  anchor: { x: number; y: number };
   returnFocus: HTMLElement | null;
 };
 
@@ -96,9 +95,6 @@ function NestedChoice({ entry, firstRef, onExecute }: {
 
 export function ActionMenu({ request, onClose }: { request: ActionMenuRequest; onClose: () => void }) {
   const executed = useRef(false);
-  const anchor = useMemo(() => ({
-    getBoundingClientRect: () => new DOMRect(request.anchor.x, request.anchor.y, 0, 0),
-  }), [request.anchor]);
   function execute(entry: PaletteEntry) {
     if (!entry.run || executed.current) return;
     executed.current = true;
@@ -108,9 +104,9 @@ export function ActionMenu({ request, onClose }: { request: ActionMenuRequest; o
   return (
     <DropdownMenu open onOpenChange={(open) => { if (!open) onClose(); }}>
       {/* Base UI registers the root floating-tree node through its trigger. The
-          Palette trigger has unmounted; positioning uses its captured anchor. */}
+          Palette trigger has unmounted; this menu is centered independently. */}
       <DropdownMenuTrigger hidden tabIndex={-1} aria-hidden />
-      <DropdownMenuContent anchor={anchor} aria-label={request.entry.label}
+      <DropdownMenuContent placement="center" aria-label={request.entry.label}
         className="w-72 max-w-[calc(100vw-2rem)]" finalFocus={() => request.returnFocus}>
         <MenuChoices entry={request.entry} open focusOnLoad onExecute={execute} />
       </DropdownMenuContent>
