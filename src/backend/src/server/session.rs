@@ -14,7 +14,7 @@ pub(super) async fn create_project_session(
     ApiJson(input): ApiJson<CreateSession>,
 ) -> Result<(StatusCode, Json<Session>)> {
     let workspace = sync_project_session_workspace(&state, &project_id).await?;
-    create_session_for_workspace(&state, workspace, input).await
+    super::session_creation::create(state, workspace, input).await
 }
 
 pub(super) async fn list_project_sessions(
@@ -141,7 +141,7 @@ pub(super) async fn create_session(
     ApiJson(input): ApiJson<CreateSession>,
 ) -> Result<(StatusCode, Json<Session>)> {
     let workspace = state.store.workspace(&workspace_id).await?;
-    create_session_for_workspace(&state, workspace, input).await
+    super::session_creation::create(state, workspace, input).await
 }
 
 pub(super) async fn list_sessions(
@@ -185,6 +185,17 @@ pub(super) async fn create_session_for_workspace(
     workspace: Workspace,
     input: CreateSession,
 ) -> Result<(StatusCode, Json<Session>)> {
+    let session = prepare_session(state, &workspace, input).await?;
+    super::session_creation::launch(state, &workspace, session)
+        .await
+        .map(|session| (StatusCode::CREATED, Json(session)))
+}
+
+pub(super) async fn prepare_session(
+    state: &AppState,
+    workspace: &Workspace,
+    input: CreateSession,
+) -> Result<Session> {
     let workspace_id = workspace.id.clone();
     if workspace.status != "active" {
         return Err(AppError::BadRequest(
@@ -316,7 +327,7 @@ pub(super) async fn create_session_for_workspace(
     {
         name = format!("shell · {selected}");
     }
-    let mut session = Session {
+    let session = Session {
         id: session_id.clone(),
         workspace_id,
         name,
@@ -327,6 +338,8 @@ pub(super) async fn create_session_for_workspace(
         name_is_custom,
         terminal_title: None,
         agent_session_id: None,
+        initializing: true,
+        initialization_error: None,
         visibility: "visible".into(),
         hidden_at: None,
         evicted_at: None,
@@ -343,43 +356,16 @@ pub(super) async fn create_session_for_workspace(
         updated_at: timestamp,
         additional_directories,
     };
-    let developer_instructions =
-        treefold_developer_instructions(state, &session, &workspace).await?;
     state.store.create_session(&session).await?;
-    state
+    if let Err(error) = state
         .store
         .add_session_read_only_contexts(&session.id, &read_only_contexts)
-        .await?;
-    match state
-        .terminals
-        .spawn(
-            &session,
-            &workspace.project_id,
-            developer_instructions.as_deref(),
-            &agents,
-        )
         .await
     {
-        Ok(process) => {
-            session.argv = process.command;
-            session.status = "running".into();
-            if persist_amux_process(&state.store, &session.id, &session).await? {
-                state.runtime.publish_session(session.id.clone());
-            }
-        }
-        Err(error) => {
-            session.status = "failed".into();
-            let changed = state
-                .store
-                .set_session_runtime(&session.id, "failed", None, "", &session.argv)
-                .await?;
-            if changed {
-                state.runtime.publish_session(session.id.clone());
-            }
-            return Err(AppError::BadRequest(error.to_string()));
-        }
+        state.store.delete_session(&session.id).await?;
+        return Err(error);
     }
-    Ok((StatusCode::CREATED, Json(session)))
+    Ok(session)
 }
 
 pub(super) async fn get_session(
@@ -413,6 +399,7 @@ pub(super) async fn stop_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
     let mut session = state.store.session(&id).await?;
+    super::session_creation::ensure_settled(&session)?;
     state
         .terminals
         .stop_existing(&session.amux_workspace_name, &session.amux_process_name)
@@ -429,7 +416,11 @@ pub(super) async fn restart_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id).await?;
+    super::session_creation::ensure_settled(&session)?;
     ensure_session_owner_active(&state, &session).await?;
+    if session.initialization_error.is_some() && session.agent_session_id.is_none() {
+        return super::session_creation::retry(state, session).await;
+    }
     if let Some(agent_name) = crate::agents::name(&session.kind) {
         let settings = state.settings.load()?;
         crate::agents::detect_installation(
@@ -498,6 +489,9 @@ pub(super) async fn restart_session(
     session.argv = process.command;
     session.status = "running".into();
     persist_amux_process(&state.store, &id, &session).await?;
+    if session.initialization_error.take().is_some() {
+        state.store.finish_session_initialization(&id, None).await?;
+    }
     state.runtime.publish_session(id);
     Ok(Json(session))
 }
@@ -506,6 +500,7 @@ pub(super) async fn close_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Session>> {
     let mut session = state.store.session(&id).await?;
+    super::session_creation::ensure_settled(&session)?;
     if session.kind == "shell" || session.kind == "command" {
         let _ = state
             .terminals
@@ -548,6 +543,7 @@ pub(super) async fn delete_session(
     AxumPath(id): AxumPath<String>,
 ) -> Result<StatusCode> {
     if let Ok(session) = state.store.session(&id).await {
+        super::session_creation::ensure_settled(&session)?;
         state
             .terminals
             .remove_existing(&session.amux_workspace_name, &session.amux_process_name)
@@ -918,6 +914,8 @@ pub(super) async fn reconcile_process(
         name_is_custom: false,
         terminal_title: None,
         agent_session_id: None,
+        initializing: false,
+        initialization_error: None,
         visibility: "visible".into(),
         hidden_at: None,
         evicted_at: None,

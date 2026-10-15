@@ -41,7 +41,8 @@ for (const scenario of ["local", "mixed", "override"] as const) {
       expect(harness.repositoryUpdateRequests).toEqual([]);
       harness.assertNoUnexpectedRequests();
     } finally {
-      try { await closeUiSession(page); } finally { await harness.close(); }
+      try { await page?.unrouteAll({ behavior: "wait" }); }
+      finally { try { await closeUiSession(page); } finally { await harness.close(); } }
     }
   });
 }

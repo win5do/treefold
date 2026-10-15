@@ -130,20 +130,13 @@ pub(super) async fn create_fork(
     ApiJson(input): ApiJson<CreateFork>,
 ) -> Result<(StatusCode, Json<Workspace>)> {
     let operation_state = state.clone();
-    let created = blocking_git_operation(move || async move {
-        create_fork_impl(operation_state, parent_id, input).await
+    let prepared = blocking_git_operation(move || async move {
+        prepare_fork(operation_state, parent_id, input).await
     })
     .await?;
-    spawn_workspace_setup_shells(
-        state.clone(),
-        created.workspace.clone(),
-        created.setup_shells,
-    )
-    .await;
-    Ok((
-        StatusCode::CREATED,
-        Json(state.store.workspace(&created.workspace.id).await?),
-    ))
+    let workspace = prepared.workspace.clone();
+    super::workspace_creation::start(state, prepared);
+    Ok((StatusCode::CREATED, Json(workspace)))
 }
 
 pub(super) async fn create_fork_impl(
@@ -151,6 +144,15 @@ pub(super) async fn create_fork_impl(
     parent_id: String,
     input: CreateFork,
 ) -> Result<CreatedWorkspace> {
+    let prepared = prepare_fork(state.clone(), parent_id, input).await?;
+    super::workspace_creation::complete(&state, prepared).await
+}
+
+pub(super) async fn prepare_fork(
+    state: AppState,
+    parent_id: String,
+    input: CreateFork,
+) -> Result<super::workspace_creation::PreparedWorkspace> {
     let parent = state.store.workspace(&parent_id).await?;
     if parent.status != "active" {
         return Err(AppError::BadRequest(
@@ -174,6 +176,7 @@ pub(super) async fn create_fork_impl(
         ));
     }
     let parent_locations = state.store.workspace_repositories(&parent_id).await?;
+    super::workspace_creation::ensure_ready(&state, &parent_id).await?;
     let project = state.store.project(&parent.project_id).await?;
     if project.status != "active" {
         return Err(AppError::BadRequest(
@@ -199,7 +202,18 @@ pub(super) async fn create_fork_impl(
     let timestamp = now();
     let mut snapshots = Vec::new();
     let mut plans = Vec::new();
-    for parent_location in &parent_locations {
+    let parent_heads = crate::git_parallel::map(&parent_locations, |location| {
+        let Some(path) = location.checkout_path.as_deref() else {
+            return Ok(None);
+        };
+        ensure_checked_out_branch(
+            path,
+            location.branch.as_deref().unwrap_or(""),
+            "parent Workspace Repository",
+        )?;
+        git_head(path).map(Some)
+    });
+    for (parent_location, parent_head) in parent_locations.iter().zip(parent_heads) {
         let project_repository = state
             .store
             .repository_as_directory(&parent_location.project_repository_id)
@@ -241,19 +255,9 @@ pub(super) async fn create_fork_impl(
             snapshots.push(snapshot);
             continue;
         };
-        if let Err(error) =
-            ensure_checked_out_branch(parent_path, &base_branch, "parent Workspace Repository")
-                .and_then(|_| ensure_clean_workspace(parent_path, "parent Workspace Repository"))
-        {
-            snapshot.git_status = "failed".into();
-            snapshot.checkout_path = None;
-            snapshot.delivery_status = "discarded".into();
-            snapshot.creation_error = Some(error.to_string());
-            snapshots.push(snapshot);
-            continue;
-        }
-        let start_commit = match git_head(parent_path) {
-            Ok(value) => value,
+        let start_commit = match parent_head {
+            Ok(Some(value)) => value,
+            Ok(None) => unreachable!("parent path was checked above"),
             Err(error) => {
                 snapshot.git_status = "failed".into();
                 snapshot.checkout_path = None;
@@ -266,6 +270,7 @@ pub(super) async fn create_fork_impl(
         snapshot.forked_from_commit = Some(start_commit.clone());
         plans.push(WorkspaceWorktreePlan {
             reuse_branch: false,
+            clean_parent: Some(parent_path.into()),
             location: project_repository,
             workspace_repository_id: snapshot.id.clone(),
             checkout_path,
@@ -320,10 +325,9 @@ pub(super) async fn create_fork_impl(
         .create_workspace_with_repositories(&fork, &snapshots)
         .await?;
 
-    let outcomes = create_workspace_worktrees(plans);
-    let setup_shells = record_workspace_worktree_outcomes(&state.store, outcomes).await?;
-    Ok(CreatedWorkspace {
+    Ok(super::workspace_creation::PreparedWorkspace {
         workspace: state.store.workspace(&fork.id).await?,
-        setup_shells,
+        plans,
+        root: worktree_root,
     })
 }

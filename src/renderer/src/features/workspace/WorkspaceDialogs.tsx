@@ -1,3 +1,4 @@
+import { Spinner } from "@/components/ui/spinner";
 import { useTranslation } from "react-i18next";
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { BranchNameField } from "@/features/git/BranchNameField";
@@ -73,7 +74,7 @@ export function CreateWorkspaceDialog({ project, busy, onOpenChange, onSubmit }:
         </FieldSet>)}
         {error && <p role="alert" className="text-destructive">{error}</p>}
         </div>
-        <div className="flex shrink-0 justify-end"><Button type="submit" disabled={busy || loading || !!error || invalid}>{t("workspaceUi.createWorkspace")}</Button></div>
+        <div className="flex shrink-0 justify-end"><Button type="submit" disabled={busy || loading || !!error || invalid}>{busy && <Spinner data-icon="inline-start" />}{t(busy ? "workspaceUi.creating" : "workspaceUi.createWorkspace")}</Button></div>
       </form>
     </DialogContent>
   </Dialog>;

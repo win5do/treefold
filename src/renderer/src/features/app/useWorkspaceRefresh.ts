@@ -12,7 +12,7 @@ export function useWorkspaceRefresh() {
       await Promise.all([
         client.invalidateQueries({ predicate: ({ queryKey }) => [
           "sidebar", "project-summaries", "project", "workspace",
-          "project-sessions", "workspace-sessions",
+          "project-sessions", "workspace-sessions", "workspace-worktrees",
         ].includes(String(queryKey[0])) }, { throwOnError: true }),
         refreshGitQueries(client),
       ]);

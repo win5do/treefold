@@ -1,3 +1,4 @@
+import { Spinner } from "@/components/ui/spinner";
 import { useTranslation } from "react-i18next";
 import type { FormEvent } from "react";
 import { GitBranch } from "lucide-react";
@@ -36,7 +37,7 @@ export function CreateForkDialog({ workspace, busy, onOpenChange, onSubmit }: {
             <BranchNameField />
           </FieldGroup>
           <FieldDescription className="rounded-lg bg-muted/50 px-3 py-2">{t("forkUi.parentRequirement")}</FieldDescription>
-          <div className="flex justify-end"><Button type="submit" disabled={busy}>{t("forkUi.createFork")}</Button></div>
+          <div className="flex justify-end"><Button type="submit" disabled={busy}>{busy && <Spinner data-icon="inline-start" />}{t(busy ? "workspaceUi.creating" : "forkUi.createFork")}</Button></div>
         </form>
       </DialogContent>
     </Dialog>

@@ -8,7 +8,7 @@ fn assert_code(error: AppError, expected: &str) {
     );
 }
 async fn fork(f: &Fixture) -> Workspace {
-    let (_, Json(fork)) = crate::server::create_fork(
+    let (_, Json(fork)) = create_fork(
         State(f.state.clone()),
         AxumPath(f.workspace.id.clone()),
         ApiJson(crate::server::CreateFork {
@@ -129,6 +129,20 @@ async fn recovery_rejects_live_sessions_and_accepts_stopped_sessions() {
     )
     .await
     .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while f
+            .state
+            .store
+            .session(&session.id)
+            .await
+            .unwrap()
+            .initializing
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Session finishes launching before testing its running-process guard");
     std::fs::remove_dir_all(f.repositories[0].checkout_path.as_ref().unwrap()).unwrap();
     let rejected = verify_skip(&f.state, &f.repositories[0].id).await;
     let stopped = stop_session(State(f.state.clone()), AxumPath(session.id.clone())).await;

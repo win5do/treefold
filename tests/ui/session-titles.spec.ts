@@ -9,6 +9,7 @@ test("Session labels restore saved terminal titles and keep custom names; Resume
   const id = FIXTURE_IDS.workspaceCodex;
   let title: string | undefined;
   let custom = false;
+  let stopped = false;
   let attempts = 0;
   try {
     page = await createUiSession({apiUrl:harness.apiUrl,sessionName:'session-titles'});
@@ -27,7 +28,7 @@ test("Session labels restore saved terminal titles and keep custom names; Resume
         if (Array.isArray(value)) return value.forEach(visit);
         if (!value || typeof value !== 'object') return;
         const record = value as Record<string,unknown>;
-        if (record.id === id && 'kind' in record) Object.assign(record,{name:'Codex',name_is_custom:custom,terminal_title:title,status:'stopped',agent_session_id:null});
+        if (record.id === id && 'kind' in record) Object.assign(record,{name:'Codex',name_is_custom:custom,terminal_title:title,status:stopped?'stopped':'running',agent_session_id:null});
         Object.values(record).forEach(visit);
       };
       visit(body);
@@ -41,15 +42,13 @@ test("Session labels restore saved terminal titles and keep custom names; Resume
     await page.reload();
     await expect(row).toContainText(title);
     await expect(page.getByTestId(`sidebar-session-${id}`)).toContainText(title);
-    await row.getByRole('button',{name:'Resume',exact:true}).click();
-    await expect.poll(()=>attempts).toBe(1);
-    await expect(page.getByText(/Hook or extension has not reported a Session ID/)).toBeVisible();
-    await expect(row).toBeVisible();
-    await row.getByRole('button',{name:'View',exact:true}).click();
+    stopped = true;
+    await page.reload();
+    await page.getByTestId(`sidebar-session-${id}`).getByRole('button').first().click();
     const resume = page.getByRole('button',{name:'Resume',exact:true});
     await expect(resume).toBeEnabled();
     await resume.click();
-    await expect.poll(()=>attempts).toBe(2);
+    await expect.poll(()=>attempts).toBe(1);
     await expect(page.getByText(/Hook or extension has not reported a Session ID/)).toBeVisible();
     custom = true;
     await page.goto(home);

@@ -45,7 +45,7 @@ export function sessionActionHandlers(
       run: handlers.create,
     },
     "session.lifecycle.close": {
-      available: (context) => active(context) && !!context.session,
+      available: (context) => active(context) && !!context.session && !context.session.initializing,
       run: handlers.close,
     },
     "session.navigate.next": {

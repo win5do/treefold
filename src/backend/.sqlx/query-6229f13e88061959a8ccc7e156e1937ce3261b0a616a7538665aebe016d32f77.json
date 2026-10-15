@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE workspace_repositories SET git_status='failed',creation_error='Workspace initialization was interrupted. Inspect its working directories before creating a new Workspace.',updated_at=? WHERE git_status='creating'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "6229f13e88061959a8ccc7e156e1937ce3261b0a616a7538665aebe016d32f77"
+}

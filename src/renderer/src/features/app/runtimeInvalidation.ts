@@ -17,6 +17,7 @@ export async function invalidateHierarchyQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
     queryClient.invalidateQueries({ queryKey: ["project"] }),
     queryClient.invalidateQueries({ queryKey: ["workspace"] }),
+    queryClient.invalidateQueries({ queryKey: ["workspace-worktrees"] }),
   ]);
 }
 

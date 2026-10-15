@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE workspace_repositories SET git_status='failed',creation_error=?,updated_at=? WHERE workspace_id=? AND git_status='creating'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "f2fe3338562ce375a1eaf6519555632418d965a538daada60d7005ffc1cab02f"
+}

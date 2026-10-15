@@ -3,8 +3,8 @@ use crate::{
     keymap::KeymapStore,
     model::{Workspace, WorkspaceRepository},
     server::{
-        CreateProject, CreateWorkspace, RuntimeHub, command_output, create_project,
-        create_workspace, git_head, reconcile_parent_operation,
+        CreateProject, CreateWorkspace, RuntimeHub, command_output, create_project, git_head,
+        reconcile_parent_operation,
     },
     settings::SettingsStore,
     store::Store,
@@ -38,6 +38,46 @@ async fn state(home: &Path) -> AppState {
         integration: crate::integration::IntegrationManager::test(home),
     }
 }
+async fn await_ready(state: &AppState, id: &str) {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            if !state
+                .store
+                .workspace_repositories(id)
+                .await
+                .unwrap()
+                .iter()
+                .any(|r| r.git_status == "creating")
+            {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("repository preparation finishes");
+}
+
+async fn create_workspace(
+    state: State<AppState>,
+    id: AxumPath<String>,
+    input: ApiJson<CreateWorkspace>,
+) -> Result<(StatusCode, Json<Workspace>)> {
+    let result = crate::server::create_workspace(state.clone(), id, input).await?;
+    await_ready(&state.0, &result.1.0.id).await;
+    Ok((result.0, Json(state.store.workspace(&result.1.0.id).await?)))
+}
+
+async fn create_fork(
+    state: State<AppState>,
+    id: AxumPath<String>,
+    input: ApiJson<crate::server::CreateFork>,
+) -> Result<(StatusCode, Json<Workspace>)> {
+    let result = crate::server::create_fork(state.clone(), id, input).await?;
+    await_ready(&state.0, &result.1.0.id).await;
+    Ok((result.0, Json(state.store.workspace(&result.1.0.id).await?)))
+}
+
 async fn fixture() -> Fixture {
     let directory = tempfile::tempdir().unwrap();
     let roots: Vec<_> = ["backend", "frontend"]
@@ -369,7 +409,7 @@ async fn finish_batch_runs_in_background_and_duplicate_start_cannot_execute_twic
 #[tokio::test]
 async fn finish_batch_fork_merges_all_repositories_into_parent_and_completes_todo() {
     use crate::model::Todo;
-    use crate::server::{CreateFork, create_fork};
+    use crate::server::CreateFork;
     let mut f = fixture().await;
     let parent = f.workspace.clone();
     let parent_repositories = f.repositories.clone();
@@ -783,7 +823,7 @@ async fn squash_api_enforces_workspace_ownership_and_delivery_boundary() {
 #[tokio::test]
 async fn finish_batch_squash_fork_targets_parent_and_preserves_fork_history() {
     let f = fixture().await;
-    let (_, Json(fork)) = crate::server::create_fork(
+    let (_, Json(fork)) = create_fork(
         State(f.state.clone()),
         AxumPath(f.workspace.id.clone()),
         ApiJson(crate::server::CreateFork {
@@ -1387,3 +1427,119 @@ async fn finish_retained_fork_reopens_and_delivers_new_work_without_reusing_old_
 mod deletion;
 
 mod intermediate;
+
+#[tokio::test]
+async fn keep_delivery_does_not_need_a_parent_branch_and_rejects_changed_source() {
+    let f = fixture().await;
+    // A detached parent has no delivery target; keeping source work must still work.
+    for root in &f.roots {
+        git(root, &["checkout", "--detach"]);
+    }
+    let mut plans = Vec::new();
+    for repository in &f.repositories {
+        let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
+            f.state.clone(),
+            repository.id.clone(),
+            CreateDeliveryPreflight {
+                code_action: "keep".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(preflight.blockers.is_empty());
+        assert!(preflight.target_head.is_empty());
+        plans.push(FinishPlanItem {
+            repository_id: repository.id.clone(),
+            code_action: "keep".into(),
+            delete_worktree: false,
+            delete_branch: false,
+            preflight_id: preflight.id,
+        });
+    }
+    let confirmed = prepare_batch(&f.state, &f.workspace.id, plans.clone())
+        .await
+        .unwrap();
+    let source = Path::new(f.repositories[0].checkout_path.as_ref().unwrap());
+    commit(source, "new.txt", "after confirmation");
+    assert!(
+        prepare_batch(&f.state, &f.workspace.id, plans)
+            .await
+            .is_err()
+    );
+    run_batch(&f.state, confirmed, false).await.unwrap();
+    assert_eq!(saved(&f).await.status, "paused");
+    assert!(source.join("new.txt").exists());
+    let mut fresh_plans = Vec::new();
+    for repository in &f.repositories {
+        let (_, Json(preflight)) = create_workspace_repository_preflight_impl(
+            f.state.clone(),
+            repository.id.clone(),
+            CreateDeliveryPreflight {
+                code_action: "keep".into(),
+            },
+        )
+        .await
+        .unwrap();
+        fresh_plans.push(FinishPlanItem {
+            repository_id: repository.id.clone(),
+            code_action: "keep".into(),
+            delete_worktree: false,
+            delete_branch: false,
+            preflight_id: preflight.id,
+        });
+    }
+    run_batch(
+        &f.state,
+        prepare_batch(&f.state, &f.workspace.id, fresh_plans)
+            .await
+            .unwrap(),
+        false,
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved(&f).await.status, "completed");
+    assert!(source.join("new.txt").exists());
+}
+
+#[tokio::test]
+async fn workspace_status_is_scoped_to_owned_checkouts() {
+    let f = fixture().await;
+    for root in &f.roots {
+        git(
+            root,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "unrelated",
+                root.with_extension("peer").to_str().unwrap(),
+            ],
+        );
+    }
+    let source = Path::new(f.repositories[0].checkout_path.as_ref().unwrap());
+    std::fs::write(source.join("untracked.txt"), "current changes").unwrap();
+    let Json(items) = crate::server::workspace_status::get_worktrees(
+        State(f.state.clone()),
+        AxumPath(f.workspace.id.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(items.len(), 2);
+    for item in &items {
+        assert!(
+            f.repositories
+                .iter()
+                .any(|r| r.project_repository_id == item.project_repository_id
+                    && r.checkout_path.as_deref() == Some(item.path.as_str()))
+        );
+        assert_eq!(item.workspace_id.as_deref(), Some(f.workspace.id.as_str()));
+    }
+    assert!(
+        items
+            .iter()
+            .find(|item| item.path == source.to_str().unwrap())
+            .unwrap()
+            .status
+            .dirty
+    );
+}

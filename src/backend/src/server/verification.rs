@@ -41,6 +41,37 @@ pub(super) async fn create_workspace_repository_preflight_impl(
         &["status", "--porcelain", "--untracked-files=all"],
     )
     .map_err(AppError::BadRequest)?;
+    if input.code_action == "keep" {
+        // Abandoning delivery never touches a target. Only verify the source
+        // that will be retained (or explicitly cleaned up by the finish plan).
+        let source_dirty = !source_status.is_empty();
+        let preflight = DeliveryPreflight {
+            id: new_id(),
+            workspace_repository_id: location.id,
+            workspace_id: workspace.id,
+            code_action: input.code_action,
+            source_head,
+            source_status,
+            source_dirty,
+            target_head: String::new(),
+            target_branch: String::new(),
+            target_dirty: false,
+            ahead: 0,
+            behind: 0,
+            changed_files: Vec::new(),
+            commits: Vec::new(),
+            diff_stat: String::new(),
+            blockers: if source_dirty {
+                vec!["Workspace has uncommitted changes; commit or discard them in Shell before finishing".into()]
+            } else {
+                Vec::new()
+            },
+            warnings: Vec::new(),
+            created_at: now(),
+        };
+        state.store.create_delivery_preflight(&preflight).await?;
+        return Ok((StatusCode::CREATED, Json(preflight)));
+    }
     let (target_path, local_target_branch) =
         workspace_repository_delivery_target(&state, &workspace, &location).await?;
     let local_target_head = command_output(

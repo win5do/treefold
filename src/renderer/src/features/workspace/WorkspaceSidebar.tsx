@@ -1421,7 +1421,7 @@ function SidebarSessions({
               <SessionKindIcon kind={session.kind} />
               <span className="min-w-0 flex-1 truncate">{sessionDisplayName(session)}</span>
               <StatusDot status={session.status} />
-              <span className="shrink-0 text-[10px]">{t(`states.${session.status}`, { defaultValue: session.status })}</span>
+              <span className="shrink-0 text-[10px]">{t(session.initializing ? "terminalUi.initializing" : `states.${session.status}`, { defaultValue: session.status })}</span>
             </button>
             <Button
               data-session-close="true"
@@ -1438,6 +1438,7 @@ function SidebarSessions({
                   ? t("workspaceUi.removeFromSidebar")
                   : t("workspaceUi.closeSession")
               }
+              disabled={session.initializing}
               onClick={(event) => {
                 event.stopPropagation();
                 onCloseSession(stream, session);
@@ -1507,7 +1508,7 @@ function SidebarProjectSessions({
               <SessionKindIcon kind={session.kind} />
               <span className="min-w-0 flex-1 truncate">{sessionDisplayName(session)}</span>
               <StatusDot status={session.status} />
-              <span className="shrink-0 text-[10px]">{t(`states.${session.status}`, { defaultValue: session.status })}</span>
+              <span className="shrink-0 text-[10px]">{t(session.initializing ? "terminalUi.initializing" : `states.${session.status}`, { defaultValue: session.status })}</span>
             </button>
             <Button
               size="icon-sm"
@@ -1523,6 +1524,7 @@ function SidebarProjectSessions({
                   ? t("workspaceUi.removeFromSidebar")
                   : t("workspaceUi.closeSession")
               }
+              disabled={session.initializing}
               onClick={(event) => {
                 event.stopPropagation();
                 onCloseSession(project, session);

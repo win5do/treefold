@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sessions SET initializing=0,\n                initialization_error=CASE WHEN status='running' THEN NULL ELSE 'Session initialization was interrupted. Retry startup.' END,\n                status=CASE WHEN status='running' THEN status ELSE 'failed' END,updated_at=? WHERE initializing=1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "466811bac6d989d76cc302d3a36e9d14abab0859c6fe92921b069ec36e0950f8"
+}

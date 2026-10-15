@@ -85,4 +85,5 @@ export const projectSessionsQuery = (id: string) =>
   queryOptions({
     queryKey: projectKeys.sessions(id),
     queryFn: ({ signal }) => projectsApi.sessions(id, signal),
+    refetchInterval: query => query.state.data?.some(session => session.initializing) ? 1000 : false,
   });

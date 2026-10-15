@@ -1,6 +1,7 @@
 mod agents;
 mod error;
 mod git;
+mod git_parallel;
 mod ids;
 mod integration;
 mod keymap;

@@ -111,6 +111,8 @@ export type Session = {
   original_cwd: string;
   initial_prompt: string;
   agent_session_id?: string;
+  initializing?: boolean;
+  initialization_error?: string;
   visibility: "visible" | "hidden";
   hidden_at?: string;
   evicted_at?: string;

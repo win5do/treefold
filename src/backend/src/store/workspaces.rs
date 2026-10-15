@@ -543,3 +543,23 @@ mod deletion_tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+impl Store {
+    pub async fn fail_workspace_creation(&self, id: &str, error: &str) -> Result<()> {
+        let timestamp = now();
+        sqlx::query!(
+            "UPDATE workspace_repositories SET git_status='failed',creation_error=?,updated_at=? WHERE workspace_id=? AND git_status='creating'",
+            error, timestamp, id
+        ).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn recover_workspace_creation(&self) -> Result<()> {
+        let timestamp = now();
+        sqlx::query!(
+            "UPDATE workspace_repositories SET git_status='failed',creation_error='Workspace initialization was interrupted. Inspect its working directories before creating a new Workspace.',updated_at=? WHERE git_status='creating'",
+            timestamp
+        ).execute(&self.pool).await?;
+        Ok(())
+    }
+}

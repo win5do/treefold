@@ -162,6 +162,10 @@ pub struct Session {
     pub initial_prompt: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
+    #[serde(default)]
+    pub initializing: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initialization_error: Option<String>,
     pub visibility: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hidden_at: Option<String>,

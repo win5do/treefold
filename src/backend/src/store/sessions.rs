@@ -6,7 +6,7 @@ use crate::{
     model::Session,
 };
 
-const SESSION_COLUMNS: &str = "id,workspace_id,name,name_is_custom,terminal_title,kind,cwd,original_cwd,initial_prompt,agent_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
+const SESSION_COLUMNS: &str = "id,workspace_id,name,name_is_custom,terminal_title,kind,cwd,original_cwd,initial_prompt,agent_session_id,initializing,initialization_error,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at";
 
 #[derive(sqlx::FromRow)]
 struct SessionRow {
@@ -20,6 +20,8 @@ struct SessionRow {
     original_cwd: String,
     initial_prompt: String,
     agent_session_id: Option<String>,
+    initializing: bool,
+    initialization_error: Option<String>,
     visibility: String,
     hidden_at: Option<String>,
     evicted_at: Option<String>,
@@ -48,6 +50,8 @@ impl From<SessionRow> for Session {
             original_cwd: r.original_cwd,
             initial_prompt: r.initial_prompt,
             agent_session_id: r.agent_session_id,
+            initializing: r.initializing,
+            initialization_error: r.initialization_error,
             visibility: r.visibility,
             hidden_at: r.hidden_at,
             evicted_at: r.evicted_at,
@@ -110,12 +114,15 @@ impl Store {
     pub async fn create_session(&self, s: &Session) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         let title_handled = s.name_is_custom;
-        sqlx::query("INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,agent_session_id,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at,name_is_custom) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
-            .bind(&s.id).bind(&s.workspace_id).bind(&s.name).bind(&s.kind).bind(&s.cwd).bind(&s.original_cwd)
-            .bind(&s.initial_prompt).bind(&s.agent_session_id).bind(&s.visibility).bind(&s.hidden_at).bind(&s.evicted_at)
-            .bind(&s.amux_workspace_name).bind(&s.amux_process_name).bind(&s.status).bind(s.exit_code).bind(&s.exit_signal)
-            .bind(serde_json::to_string(&s.argv).unwrap_or_default()).bind(&s.io_mode).bind(&s.launch_started_at)
-            .bind(&s.last_attached_at).bind(&s.created_at).bind(&s.updated_at).bind(title_handled).execute(&mut *tx).await?;
+        let argv = serde_json::to_string(&s.argv).unwrap_or_default();
+        sqlx::query!(
+            "INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,agent_session_id,initializing,initialization_error,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at,name_is_custom) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            s.id, s.workspace_id, s.name, s.kind, s.cwd, s.original_cwd,
+            s.initial_prompt, s.agent_session_id, s.initializing, s.initialization_error,
+            s.visibility, s.hidden_at, s.evicted_at, s.amux_workspace_name, s.amux_process_name,
+            s.status, s.exit_code, s.exit_signal, argv, s.io_mode, s.launch_started_at,
+            s.last_attached_at, s.created_at, s.updated_at, title_handled
+        ).execute(&mut *tx).await?;
         for path in &s.additional_directories {
             sqlx::query("INSERT INTO session_additional_directories(session_id,path) VALUES(?,?)")
                 .bind(&s.id)
@@ -126,6 +133,34 @@ impl Store {
         tx.commit().await?;
         Ok(())
     }
+    pub async fn finish_session_initialization(&self, id: &str, error: Option<&str>) -> Result<()> {
+        let timestamp = now();
+        sqlx::query!(
+            "UPDATE sessions SET initializing=0,initialization_error=?1,
+                status=CASE WHEN ?1 IS NOT NULL THEN 'failed' ELSE status END,updated_at=?2 WHERE id=?3",
+            error, timestamp, id
+        ).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    pub async fn recover_session_initialization(&self) -> Result<()> {
+        let timestamp = now();
+        sqlx::query!(
+            "UPDATE sessions SET initializing=0,
+                initialization_error=CASE WHEN status='running' THEN NULL ELSE 'Session initialization was interrupted. Retry startup.' END,
+                status=CASE WHEN status='running' THEN status ELSE 'failed' END,updated_at=? WHERE initializing=1",
+            timestamp
+        ).execute(&self.pool).await?;
+        Ok(())
+    }
+    pub async fn begin_session_initialization(&self, id: &str) -> Result<bool> {
+        let timestamp = now();
+        Ok(sqlx::query!(
+            "UPDATE sessions SET initializing=1,initialization_error=NULL,status='stopped',argv='[]',exit_code=NULL,exit_signal='',launch_started_at=?1,updated_at=?1 WHERE id=?2 AND initializing=0 AND initialization_error IS NOT NULL",
+            timestamp, id
+        ).execute(&self.pool).await?.rows_affected() != 0)
+    }
+
     pub async fn set_session_runtime(
         &self,
         id: &str,

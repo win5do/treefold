@@ -1,3 +1,5 @@
+import { Spinner } from "@/components/ui/spinner";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { agentShiftEnter } from "@/features/agents/terminal";
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
@@ -25,12 +27,15 @@ import { StoppedSessionOutput } from "@/features/terminal/StoppedSessionOutput";
 const terminalFontFamily = '"SFMono-Regular", "JetBrains Mono", Menlo, "Pure Nerd Font", monospace';
 
 export function SessionWorkspace({ session, busy, onRestart, onExit }: { session: Session; busy: boolean; onRestart: () => void; onExit: () => void }) {
-  const running = session.status === "running";
+  const { t } = useTranslation();
+  const running = !session.initializing && session.status === "running";
   useEffect(() => {
     if (!running) discardTerminalSession(session.id);
   }, [running, session.id]);
   return <div data-testid="session-workspace" data-session-id={session.id} className="flex h-full min-h-0 flex-col bg-[#111315]">
-    {session.io_mode === "pipe"
+    {session.initializing
+      ? <div data-testid="session-initializing" role="status" className="flex min-h-0 flex-1 items-center justify-center gap-3 p-8 text-terminal-muted"><Spinner aria-hidden="true" />{t("terminalUi.initializing")}</div>
+      : session.io_mode === "pipe"
       ? <PipeLogSession key={`${session.id}:${session.launch_started_at}:${session.status}`} session={session} busy={busy} onRestart={onRestart} />
       : running
         ? <WebTerminal key={session.id} session={session} onExit={onExit} />
@@ -55,9 +60,10 @@ function StoppedSession({ session, busy, onRestart }: { session: Session; busy: 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-medium">{t("terminalUi.sessionState", { status: t(`states.${session.status}`, { defaultValue: session.status }) })}</p>
           <Button size="sm" variant="terminal" disabled={busy} onClick={onRestart}>
-            <RotateCcw data-icon="inline-start" />{t("terminalUi.resume")}</Button>
+            <RotateCcw data-icon="inline-start" />{t(session.initialization_error ? "terminalUi.retryInitialization" : "terminalUi.resume")}</Button>
         </div>
         <div className="mt-4 flex min-w-0 flex-col gap-4">
+          {session.initialization_error && <Alert variant="destructive"><AlertDescription>{session.initialization_error}</AlertDescription></Alert>}
           <SessionExitDetails session={session} />
           <StoppedSessionOutput session={session} />
         </div>

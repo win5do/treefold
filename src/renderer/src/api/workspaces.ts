@@ -5,6 +5,7 @@ import type {
   FinishBatch,
   FinishPlanItem,
   GitHistory,
+  GitWorktree,
   GitDiffComparison,
   GitDiffRequest,
   GitCommitResult,
@@ -25,6 +26,8 @@ import type {
 export const workspacesApi = {
   detail: (id: string, signal?: AbortSignal) =>
     request<WorkspaceDetail>(`/api/workspaces/${id}`, { signal }),
+  worktrees: (id: string, signal?: AbortSignal) =>
+    request<GitWorktree[]>(`/api/workspaces/${id}/worktrees`, { signal }),
   update: (id: string, json: unknown) =>
     request<Workspace>(`/api/workspaces/${id}`, { method: "PATCH", json }),
   reopen: (id: string, confirmSquash = false) =>

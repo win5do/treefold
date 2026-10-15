@@ -1,3 +1,5 @@
+import { Spinner } from "@/components/ui/spinner";
+import { isSessionListed } from "@/features/terminal/model/sessionListVisibility";
 import { WorkspaceRepositories } from "./WorkspaceRepositories";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { DelegateTodoDialog } from "./DelegateTodoDialog";
@@ -90,7 +92,9 @@ export function WorkspaceHome({
   const [filter, setFilter] = useState<"all" | "agent" | "shell" | "command">(
     "all",
   );
-  const sessions = detail.sessions.filter(
+  const listedSessions = detail.sessions.filter(isSessionListed);
+  const initializing = detail.repositories.some(repository => repository.git_status === "creating");
+  const sessions = listedSessions.filter(
     (session) => filter === "all" || (filter === "agent" ? isAgentKind(session.kind) : session.kind === filter),
   );
   const [todoDialog, setTodoDialog] = useState<{
@@ -117,6 +121,7 @@ export function WorkspaceHome({
     }
   };
   const displayStatus = (session: Session) => {
+    if (session.initializing) return t("terminalUi.initializing");
     if (
       session.visibility !== "visible" &&
       isAgentKind(session.kind) &&
@@ -171,12 +176,13 @@ export function WorkspaceHome({
             </AlertDescription>
           </Alert>
         )}
+        {initializing && <Alert role="status" className="mt-6" data-testid="workspace-initializing"><Spinner aria-hidden="true" /><AlertDescription>{t("workspaceUi.initializing")}</AlertDescription></Alert>}
         <section data-testid="workspace-sessions-section" className="mt-8">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold">Session</h2>
-            {creation.available && <Button size="sm" disabled={busy} onClick={() => setCreatingSession(true)}><Plus data-icon="inline-start" />{t("terminalUi.newSession")}</Button>}
+            {creation.available && <Button size="sm" disabled={busy || initializing} onClick={() => setCreatingSession(true)}><Plus data-icon="inline-start" />{t("terminalUi.newSession")}</Button>}
           </div>
-        {detail.sessions.length > 0 && (
+        {listedSessions.length > 0 && (
         <div className="mt-8 flex items-center justify-between border-b border-border">
           <div className="flex gap-5">
             {(
@@ -207,8 +213,8 @@ export function WorkspaceHome({
         </div>
         )}
         <div className="mt-4 overflow-x-auto rounded-xl border border-border bg-card">
-          <div className={cn(detail.sessions.length > 0 && "md:min-w-[56rem]")}>
-            {detail.sessions.length > 0 && (
+          <div className={cn(listedSessions.length > 0 && "md:min-w-[56rem]")}>
+            {listedSessions.length > 0 && (
             <div className="hidden grid-cols-[minmax(180px,1.4fr)_72px_90px_110px_110px_minmax(110px,1fr)_160px] gap-3 border-b border-border/60 bg-muted px-4 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground md:grid">
               <span>Session</span>
               <span>{t("workspaceUi.type")}</span>
@@ -283,8 +289,8 @@ export function WorkspaceHome({
             })}
             {sessions.length === 0 && (
               <Empty className="py-12"><EmptyHeader>
-                <EmptyTitle>{t(detail.sessions.length > 0 ? "workspaceUi.noSessionsMatchTheFilter" : !creation.available ? "projectsUi.noSessions" : detail.kind === "fork" ? "workspaceUi.startSubtask" : "workspaceUi.startFeature")}</EmptyTitle>
-                {detail.sessions.length === 0 && creation.available && <EmptyDescription>{t(detail.kind === "fork" ? "workspaceUi.startSubtaskDescription" : "workspaceUi.startFeatureDescription")}</EmptyDescription>}
+                <EmptyTitle>{t(listedSessions.length > 0 ? "workspaceUi.noSessionsMatchTheFilter" : !creation.available ? "projectsUi.noSessions" : detail.kind === "fork" ? "workspaceUi.startSubtask" : "workspaceUi.startFeature")}</EmptyTitle>
+                {listedSessions.length === 0 && creation.available && <EmptyDescription>{t(detail.kind === "fork" ? "workspaceUi.startSubtaskDescription" : "workspaceUi.startFeatureDescription")}</EmptyDescription>}
               </EmptyHeader></Empty>
             )}
           </div>
@@ -501,7 +507,7 @@ export function WorkspaceHome({
               <h2 className="text-sm font-semibold">{t("workspaceUi.forks")}</h2>
               <div className="flex items-center gap-3">
                 <span className="text-[11px] text-muted-foreground">{detail.forks.length}</span>
-                {creation.available && <Button size="sm" disabled={busy} onClick={creation.fork}><Plus data-icon="inline-start" />{t("sidebar.newFork")}</Button>}
+                {creation.available && <Button size="sm" disabled={busy || initializing} onClick={creation.fork}><Plus data-icon="inline-start" />{t("sidebar.newFork")}</Button>}
               </div>
             </div>
             <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">

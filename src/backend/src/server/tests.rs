@@ -17,16 +17,16 @@ mod current_workspace_tests {
         CreateFork, CreateProject, CreateSession, CreateWorkspace, DeleteProject, FinishWorkspace,
         ParsedGitWorktree, RuntimeDomain, RuntimeHub, UpdateProject, UpdateWorkspaceRepository,
         abort_parent_operation_impl, app, clone_project_repository_impl, close_session,
-        command_output, create_delivery_preflight_impl, create_directory, create_fork,
-        create_project, create_project_session, create_session, create_workspace,
-        create_workspace_repository_preflight_impl, delete_project, delete_project_directory,
-        ensure_checked_out_branch, finish_workspace_impl, finish_workspace_repository_impl,
-        get_project, git_head, git_is_ancestor, git_worktrees, inspect_project_path_value,
-        managed_repository_source_path, normalized_path, parse_git_history, parse_git_worktrees,
-        pull_workspace, push_workspace, rebase_in_progress, reconcile_parent_operation,
-        reconcile_process, refresh_project_directory, repository_name_from_url, repository_slug,
-        reveal_in_file_manager, slug, start_parent_operation_impl, stop_amux, stop_session,
-        update_project, update_workspace_repository,
+        command_output, create_delivery_preflight_impl, create_directory, create_project,
+        create_project_session, create_session, create_workspace_repository_preflight_impl,
+        delete_project, delete_project_directory, ensure_checked_out_branch, finish_workspace_impl,
+        finish_workspace_repository_impl, get_project, git_head, git_is_ancestor, git_worktrees,
+        inspect_project_path_value, managed_repository_source_path, normalized_path,
+        parse_git_history, parse_git_worktrees, pull_workspace, push_workspace, rebase_in_progress,
+        reconcile_parent_operation, reconcile_process, refresh_project_directory,
+        repository_name_from_url, repository_slug, reveal_in_file_manager, slug,
+        start_parent_operation_impl, stop_amux, stop_session, update_project,
+        update_workspace_repository,
     };
     use crate::{
         model::{Session, Todo},
@@ -47,6 +47,362 @@ mod current_workspace_tests {
             runtime: RuntimeHub::default(),
             integration: crate::integration::IntegrationManager::test(&home),
         }
+    }
+
+    // Most lifecycle tests need a completed checkout. These helpers exercise the
+    // HTTP creation path, then wait for its persisted preparation state to settle.
+    async fn await_workspace(state: &AppState, id: &str) {
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            loop {
+                if state
+                    .store
+                    .workspace_repositories(id)
+                    .await
+                    .unwrap()
+                    .iter()
+                    .all(|repository| repository.git_status != "creating")
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("Workspace initialization completes");
+    }
+
+    async fn create_workspace(
+        state: State<AppState>,
+        id: axum::extract::Path<String>,
+        input: ApiJson<CreateWorkspace>,
+    ) -> super::Result<(StatusCode, Json<crate::model::Workspace>)> {
+        let result = super::create_workspace(state.clone(), id, input).await?;
+        await_workspace(&state.0, &result.1.0.id).await;
+        Ok((result.0, Json(state.store.workspace(&result.1.0.id).await?)))
+    }
+
+    async fn create_fork(
+        state: State<AppState>,
+        id: axum::extract::Path<String>,
+        input: ApiJson<CreateFork>,
+    ) -> super::Result<(StatusCode, Json<crate::model::Workspace>)> {
+        let result = super::create_fork(state.clone(), id, input).await?;
+        await_workspace(&state.0, &result.1.0.id).await;
+        Ok((result.0, Json(state.store.workspace(&result.1.0.id).await?)))
+    }
+
+    #[tokio::test]
+    async fn workspace_initialization_returns_before_checkout_and_reports_failure() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("repository");
+        initialize_repository(&repository);
+        let second = root.path().join("repository-fast");
+        initialize_repository(&second);
+        let state = test_state(root.path()).await;
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                open_path: None,
+                name: Some("Async creation".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                locations: Some(vec![
+                    repository.to_string_lossy().into_owned(),
+                    second.to_string_lossy().into_owned(),
+                ]),
+                preferred_remote: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let release = root.path().join("release");
+        let hook = repository.join(".git/hooks/post-checkout");
+        command_output(
+            &repository,
+            "git",
+            &[
+                "config",
+                "core.hooksPath",
+                hook.parent().unwrap().to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        std::fs::write(&hook, format!("#!/bin/sh\ni=0\nwhile [ ! -f '{}' ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done\n", release.display())).unwrap();
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            super::create_workspace(
+                State(state.clone()),
+                axum::extract::Path(project.id),
+                ApiJson(CreateWorkspace {
+                    repository_remotes: None,
+                    expected_base_branches: None,
+                    generated_branch: None,
+                    description: None,
+                    branch: None,
+                    remote_name: None,
+                    remote_branch: None,
+                }),
+            ),
+        )
+        .await;
+        let pending_status = if let Ok(Ok((_, Json(workspace)))) = &result {
+            let Json(detail) = super::get_workspace(
+                State(state.clone()),
+                axum::extract::Path(workspace.id.clone()),
+            )
+            .await
+            .unwrap();
+            Some(
+                detail
+                    .repositories
+                    .iter()
+                    .find(|r| r.repository_name == "repository")
+                    .unwrap()
+                    .git_status
+                    .clone(),
+            )
+        } else {
+            None
+        };
+        let fast_completed = if let Ok(Ok((_, Json(workspace)))) = &result {
+            tokio::time::timeout(std::time::Duration::from_secs(4), async {
+                loop {
+                    let locations = state
+                        .store
+                        .workspace_repositories(&workspace.id)
+                        .await
+                        .unwrap();
+                    if locations
+                        .iter()
+                        .any(|r| r.repository_name == "repository-fast" && r.git_status == "ready")
+                    {
+                        break locations.iter().any(|r| {
+                            r.repository_name == "repository" && r.git_status == "creating"
+                        });
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            })
+            .await
+            .unwrap_or(false)
+        } else {
+            false
+        };
+        // Always release the checkout, even when the response unexpectedly blocks.
+        std::fs::write(&release, "ready").unwrap();
+        let (_, Json(workspace)) = result
+            .expect("response does not wait for checkout hook")
+            .unwrap();
+        assert_eq!(pending_status.as_deref(), Some("creating"));
+        assert!(
+            fast_completed,
+            "fast repository is published while the slow checkout is still blocked"
+        );
+        // Completion may now race this read; the prepared response itself has a stable identity.
+        assert!(state.store.workspace(&workspace.id).await.is_ok());
+        await_workspace(&state, &workspace.id).await;
+        let ready = state
+            .store
+            .workspace_repositories(&workspace.id)
+            .await
+            .unwrap();
+        let slow = ready
+            .iter()
+            .find(|r| r.repository_name == "repository")
+            .unwrap();
+        assert_eq!(slow.git_status, "ready");
+        let checkout = slow.checkout_path.as_ref().unwrap();
+        assert!(Path::new(checkout).join("README.md").is_file());
+        std::fs::write(Path::new(checkout).join("uncommitted.txt"), "dirty").unwrap();
+        let (_, Json(fork)) = super::create_fork(
+            State(state.clone()),
+            axum::extract::Path(workspace.id),
+            ApiJson(CreateFork {
+                description: None,
+                branch: None,
+                generated_branch: None,
+            }),
+        )
+        .await
+        .unwrap();
+        await_workspace(&state, &fork.id).await;
+        let failed = state.store.workspace_repositories(&fork.id).await.unwrap();
+        let failed = failed
+            .iter()
+            .find(|r| r.repository_name == "repository")
+            .unwrap();
+        assert_eq!(failed.git_status, "failed");
+        assert!(
+            failed
+                .creation_error
+                .as_ref()
+                .is_some_and(|error| !error.is_empty())
+        );
+        let pending = super::super::workspace::prepare_workspace(
+            state.clone(),
+            workspace.project_id.clone(),
+            CreateWorkspace {
+                repository_remotes: None,
+                expected_base_branches: None,
+                generated_branch: None,
+                description: None,
+                branch: None,
+                remote_name: None,
+                remote_branch: None,
+            },
+            vec![],
+        )
+        .await
+        .unwrap();
+        assert!(
+            super::super::workspace_creation::ensure_ready(&state, &pending.workspace.id)
+                .await
+                .is_err()
+        );
+        super::super::workspace_creation::recover(&state)
+            .await
+            .unwrap();
+        let Json(recovered) = super::get_workspace(
+            State(state.clone()),
+            axum::extract::Path(pending.workspace.id.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(recovered.repositories[0].git_status, "failed");
+        assert!(
+            recovered.repositories[0]
+                .creation_error
+                .as_ref()
+                .unwrap()
+                .contains("interrupted")
+        );
+    }
+
+    #[tokio::test]
+    async fn session_initialization_is_visible_before_launch_and_supports_failure_retry_and_recovery()
+     {
+        let root = tempfile::tempdir().unwrap();
+        let repository = root.path().join("repository");
+        initialize_repository(&repository);
+        let state = test_state(root.path()).await;
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                open_path: None,
+                name: Some("Async Session".into()),
+                description: None,
+                path: Some(repository.to_string_lossy().into_owned()),
+                locations: None,
+                preferred_remote: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let configure = |command: &str| {
+            state
+                .settings
+                .update(
+                    serde_json::from_value(serde_json::json!({
+                        "agents": {"codex": {"command": command}}
+                    }))
+                    .unwrap(),
+                )
+                .unwrap()
+        };
+        configure("/bin/cat");
+        let gate = super::super::finish_recovery::mutation_gate().write().await;
+        let (_, Json(pending)) = create_project_session(
+            State(state.clone()),
+            axum::extract::Path(project.id),
+            ApiJson(CreateSession {
+                name: None,
+                kind: Some("codex".into()),
+                project_directory_id: None,
+                initial_prompt: None,
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(pending.initializing);
+        assert!(state.store.session(&pending.id).await.unwrap().initializing);
+        assert!(
+            stop_session(
+                State(state.clone()),
+                axum::extract::Path(pending.id.clone())
+            )
+            .await
+            .is_err()
+        );
+        configure("/nonexistent/treefold-test-codex");
+        drop(gate);
+        let failed = await_session(&state, &pending.id).await;
+        assert_eq!(failed.status, "failed");
+        assert!(failed.initialization_error.is_some());
+        configure("/bin/cat");
+        let Json(retrying) = super::restart_session(
+            State(state.clone()),
+            axum::extract::Path(pending.id.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(retrying.initializing);
+        let started = await_session(&state, &pending.id).await;
+        assert!(started.initialization_error.is_none());
+        assert!(!started.argv.is_empty());
+        assert!(matches!(started.status.as_str(), "running" | "exited"));
+        stop_session(
+            State(state.clone()),
+            axum::extract::Path(pending.id.clone()),
+        )
+        .await
+        .unwrap();
+        state.terminals.stop_daemon().await.unwrap();
+        // A persisted pending row without a launched command must not spin forever after restart.
+        let interrupted_id = crate::ids::new_id();
+        state
+            .store
+            .create_session(&Session {
+                id: interrupted_id.clone(),
+                amux_process_name: interrupted_id.clone(),
+                initializing: true,
+                status: "stopped".into(),
+                argv: vec![],
+                ..started
+            })
+            .await
+            .unwrap();
+        super::super::session_creation::recover(&state)
+            .await
+            .unwrap();
+        let interrupted = state.store.session(&interrupted_id).await.unwrap();
+        assert!(!interrupted.initializing);
+        assert_eq!(interrupted.status, "failed");
+        assert!(
+            interrupted
+                .initialization_error
+                .unwrap()
+                .contains("interrupted")
+        );
+    }
+
+    async fn await_session(state: &AppState, id: &str) -> Session {
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            loop {
+                let session = state.store.session(id).await.unwrap();
+                if !session.initializing {
+                    return session;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("Session initialization completes")
     }
 
     #[tokio::test]
@@ -1706,6 +2062,8 @@ mod current_workspace_tests {
                 name_is_custom: false,
                 terminal_title: None,
                 agent_session_id: None,
+                initializing: false,
+                initialization_error: None,
                 visibility: "visible".into(),
                 hidden_at: None,
                 evicted_at: None,
@@ -1826,6 +2184,7 @@ mod current_workspace_tests {
                 .len(),
             1
         );
+        await_session(&state, &shell.id).await;
         assert!(state.terminals.is_running(&shell.id).await);
 
         let _ = close_session(State(state.clone()), axum::extract::Path(shell.id.clone()))
@@ -1846,6 +2205,8 @@ mod current_workspace_tests {
             name_is_custom: false,
             terminal_title: None,
             agent_session_id: Some("codex-session-id".into()),
+            initializing: false,
+            initialization_error: None,
             visibility: "visible".into(),
             hidden_at: None,
             evicted_at: None,
@@ -1864,7 +2225,7 @@ mod current_workspace_tests {
         };
         state.store.create_session(&codex).await.unwrap();
         // Every Agent gets the same managed context and Close retains its record.
-        for kind in ["claude_code", "opencode", "pi"] {
+        for kind in ["codex", "claude_code", "opencode", "pi"] {
             let mut other = codex.clone();
             other.id = format!("saved-{kind}");
             other.kind = kind.into();
@@ -1880,6 +2241,39 @@ mod current_workspace_tests {
             assert!(instructions.contains("<treefold_runtime_context>"));
             assert!(instructions.contains(&other.id));
             assert!(instructions.contains("read_only"));
+            let context: serde_json::Value = serde_json::from_str(
+                instructions
+                    .split_once("<treefold_runtime_context>\n")
+                    .unwrap()
+                    .1
+                    .split_once("\n</treefold_runtime_context>")
+                    .unwrap()
+                    .0,
+            )
+            .unwrap();
+            assert_eq!(context["session"]["cwd"], other.cwd);
+            assert!(context["session"].get("git").is_none());
+            assert!(context["working_directory"].get("git").is_none());
+            for locations in [&context["locations"], &context["workspace"]["locations"]] {
+                let locations = locations.as_array().unwrap();
+                assert!(!locations.is_empty());
+                for location in locations {
+                    assert!(location["path"].is_string());
+                    assert!(location["access_mode"].is_string());
+                    assert!(location.get("git").is_none());
+                }
+            }
+            // Explicit CLI context requests retain their live Git snapshot contract.
+            let current = crate::server::treefold_runtime_snapshot(&state, &other, &workspace)
+                .await
+                .unwrap();
+            assert_eq!(current["session"]["git"]["is_git"], true);
+            assert_eq!(
+                current["session"]["git"],
+                current["working_directory"]["git"]
+            );
+            assert_eq!(current["locations"], current["workspace"]["locations"]);
+            assert_eq!(current["locations"][0]["git"]["is_git"], true);
             let _ = close_session(State(state.clone()), axum::extract::Path(other.id.clone()))
                 .await
                 .unwrap();
@@ -1905,7 +2299,7 @@ mod current_workspace_tests {
                 .await
                 .unwrap()
                 .len(),
-            4
+            5
         );
 
         let mut finalized_shell = codex.clone();
@@ -3381,6 +3775,7 @@ mod current_workspace_tests {
         )
         .await
         .expect("fall back to the successful non-default worktree");
+        let codex = await_session(&state, &codex.id).await;
         assert_eq!(codex.cwd, ready.checkout_path.as_deref().unwrap());
         let _ = close_session(State(state.clone()), axum::extract::Path(codex.id))
             .await
@@ -3712,6 +4107,8 @@ mod current_workspace_tests {
                 name_is_custom: false,
                 terminal_title: None,
                 agent_session_id: None,
+                initializing: false,
+                initialization_error: None,
                 visibility: "visible".into(),
                 hidden_at: None,
                 evicted_at: None,

@@ -52,6 +52,7 @@ test('Agents receive context, capture identity and title, and resume their nativ
       expect(await readFile(settingsPath, 'utf8')).toBe(savedSettings);
     }
     const attach = async (id: string) => {
+      await expect.poll(async () => (await (await fetch(`${url}/api/sessions/${id}`)).json()).initializing).toBe(false);
       const socket = new WebSocket(`${url!.replace("http:", "ws:")}/api/sessions/${id}/terminal?controller_client_id=fixture-${id}&input_client_id=fixture-${id}`);
       sockets.push(socket);
       socket.addEventListener("message", event => {

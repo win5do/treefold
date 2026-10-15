@@ -18,7 +18,7 @@ export function SessionListActions({ session, path, available, busy }: {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [pending, setPending] = useState(false);
-  const canResume = ["exited", "stopped", "failed"].includes(session.status);
+  const canResume = !session.initializing && !session.initialization_error && ["exited", "stopped", "failed"].includes(session.status);
   const open = async (resume: boolean) => {
     if (!resume && session.visibility === "visible") {
       navigate(path);
@@ -46,6 +46,6 @@ export function SessionListActions({ session, path, available, busy }: {
       <Button size="sm" variant="secondary" disabled={busy || pending} onClick={() => void open(false)}>{t("terminalUi.view")}</Button>
       {canResume && <Button size="sm" variant="secondary" disabled={busy || pending} onClick={() => void open(true)}>{t("terminalUi.resume")}</Button>}
     </>}
-    <RemoveSessionButton session={session} disabled={busy || pending} />
+    <RemoveSessionButton session={session} disabled={busy || pending || Boolean(session.initializing)} />
   </>;
 }

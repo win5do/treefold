@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,initial_prompt,agent_session_id,initializing,initialization_error,visibility,hidden_at,evicted_at,amux_workspace_name,amux_process_name,status,exit_code,exit_signal,argv,io_mode,launch_started_at,last_attached_at,created_at,updated_at,name_is_custom) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 25
+    },
+    "nullable": []
+  },
+  "hash": "f0bcecbc5731820bf18528de96c2aa3f5c0b23915b8034eefaa9c83552fea518"
+}

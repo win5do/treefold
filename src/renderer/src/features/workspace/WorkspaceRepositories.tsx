@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MetadataList, MetadataListItem } from "@/components/ui/metadata-list";
 import { WorktreeStatusBadges } from "@/features/git/WorktreeStatusBadges";
 import { DirectoryActionsMenu } from "@/features/open-in/DirectoryActionsMenu";
-import { projectDetailQuery } from "@/features/projects/queries";
+import { workspaceWorktreesQuery } from "./queries";
 import type { GitWorktree, WorkspaceDetail, WorkspaceDirectory, WorkspaceRepository } from "@/domain/types";
 import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 
@@ -23,9 +23,8 @@ export function WorkspaceRepositories({
 }) {
   const { t } = useTranslation();
   const worktrees = useQuery({
-    ...projectDetailQuery(detail.project.id),
-    enabled: detail.repositories.some((repository) => Boolean(repository.checkout_path)),
-    select: (project) => project.worktrees,
+    ...workspaceWorktreesQuery(detail.id, detail.repositories),
+    enabled: detail.repositories.some((repository) => repository.git_status !== "creating" && Boolean(repository.checkout_path)),
   });
   return (
     <section data-testid="workspace-repositories-section" className="mt-8">
@@ -130,7 +129,7 @@ function WorkspaceRepositoryRow({
               variant={
                 location.git_status === "ready"
                   ? "success"
-                  : location.git_status === "not_git"
+                  : ["not_git", "creating"].includes(location.git_status)
                     ? "secondary"
                     : "destructive"
               }

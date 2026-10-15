@@ -322,6 +322,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_initialization_migrates_existing_history_as_settled() {
+        let data = tempfile::tempdir().unwrap();
+        let old_migrations = tempfile::tempdir().unwrap();
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g2/20261004013417_initial.sql"),
+            old_migrations.path().join("20261004013417_initial.sql"),
+        )
+        .unwrap();
+        let options = SqliteConnectOptions::new()
+            .filename(data.path().join(CURRENT_DATABASE_FILENAME))
+            .create_if_missing(true);
+        let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
+        sqlx::migrate::Migrator::new(old_migrations.path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        sqlx::raw_sql("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','before','before');
+            INSERT INTO workspaces(id,project_id,name,status,created_at,updated_at) VALUES('w','p','W','active','before','before');
+            INSERT INTO sessions(id,workspace_id,name,kind,cwd,original_cwd,agent_session_id,status,launch_started_at,created_at,updated_at)
+                VALUES('s','w','Saved Session','codex','/repo','/repo','native-id','stopped','before','before','before');")
+            .execute(&mut connection).await.unwrap();
+        connection.close().await.unwrap();
+        let store = Store::open(data.path()).await.unwrap();
+        let session = store.session("s").await.unwrap();
+        assert!(!session.initializing);
+        assert!(session.initialization_error.is_none());
+        assert_eq!(session.agent_session_id.as_deref(), Some("native-id"));
+        assert_eq!(session.status, "stopped");
+        assert_eq!(session.created_at, "before");
+        store.pool.close().await;
+    }
+
+    #[tokio::test]
     async fn changing_an_executed_migration_is_rejected_by_checksum() {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::open(directory.path()).await.unwrap();

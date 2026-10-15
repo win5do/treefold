@@ -452,7 +452,7 @@ function Workspace() {
       try {
         await action();
       } finally {
-        await Promise.all([
+        void Promise.allSettled([
           invalidateHierarchyQueries(queryClient),
           refreshGitQueries(queryClient),
           params.projectId
@@ -1584,9 +1584,8 @@ function Workspace() {
           event.preventDefault();
           if (!createWorkspaceProject) return;
           const form = new FormData(event.currentTarget);
-          let created: Workspace | null = null;
-          const ok = await act(async () => {
-            created = await projectsApi.createWorkspace(
+          await act(async () => {
+            const created = await projectsApi.createWorkspace(
               createWorkspaceProject.id,
               {
                 expected_base_branches: Object.fromEntries(createWorkspaceProject.repositories.map(repository => [repository.id, String(form.get(`expected_base:${repository.id}`) || "")])),
@@ -1596,11 +1595,9 @@ function Workspace() {
                 repository_remotes: Object.fromEntries(createWorkspaceProject.repositories.map(repository => [repository.id, String(form.get(`remote:${repository.id}`) || "")])),
               },
             );
-          });
-          if (ok && created) {
             setCreateWorkspaceProject(null);
-            navigate(`/workspaces/${(created as Workspace).id}`);
-          }
+            navigate(`/workspaces/${created.id}`);
+          });
         }}
       />
       <CreateForkDialog
@@ -1613,18 +1610,15 @@ function Workspace() {
           event.preventDefault();
           if (!createForkWorkspace) return;
           const form = new FormData(event.currentTarget);
-          let created: Workspace | null = null;
-          const ok = await act(async () => {
-            created = await workspacesApi.createFork(createForkWorkspace.id, {
+          await act(async () => {
+            const created = await workspacesApi.createFork(createForkWorkspace.id, {
               branch: form.get("branch"),
               generated_branch: form.get("generated_branch"),
               description: form.get("description"),
             });
-          });
-          if (ok && created) {
             setCreateForkWorkspace(null);
-            navigate(`/workspaces/${(created as Workspace).id}`);
-          }
+            navigate(`/workspaces/${created.id}`);
+          });
         }}
       />
       <ConfigureWorkspaceRepositoryDialog

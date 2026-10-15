@@ -85,7 +85,12 @@ setTimeout(() => finish(false), 100);
     };
     const project = await post("/api/projects", { name: "Terminal startup", path: repository });
     const session = await post(`/api/projects/${project.id}/sessions`, { kind: "codex" });
-    expect(session.argv[0]).toBe(path.join(bin, "codex"));
+    expect(session.initializing).toBe(true);
+    const waitForStartup = async (id: string) => {
+      await expect.poll(async () => (await (await fetch(`${api}/api/sessions/${id}`)).json()).initializing).toBe(false);
+      return (await fetch(`${api}/api/sessions/${id}`)).json();
+    };
+    expect((await waitForStartup(session.id)).argv[0]).toBe(path.join(bin, "codex"));
     const exists = (file: string) => access(file).then(() => true, () => false);
     // Deliberately exceed Codex's probe deadline before attaching any terminal.
     await new Promise(resolve => setTimeout(resolve, 250));
@@ -137,6 +142,7 @@ setTimeout(() => finish(false), 100);
     // Stopping a still-waiting Session must not launch the target afterward.
     await rm(started);
     const cancelled = await post(`/api/projects/${project.id}/sessions`, { kind: "codex" });
+    await waitForStartup(cancelled.id);
     await post(`/api/sessions/${cancelled.id}/stop`);
     expect(await exists(started)).toBe(false);
     const restart = await fetch(`${api}/api/sessions/${cancelled.id}/restart`, {method: "POST"});

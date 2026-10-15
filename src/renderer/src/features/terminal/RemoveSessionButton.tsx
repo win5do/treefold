@@ -29,7 +29,7 @@ export function RemoveSessionButton({ session, disabled }: { session: Session; d
     }
   };
   return <>
-    <Button size="icon-sm" variant="destructive-ghost" disabled={disabled || removing} title={t("terminalUi.removeFromTreefold")} aria-label={t("terminalUi.removeFromTreefold")} onClick={() => setOpen(true)}><Trash2 data-icon="inline-start" /></Button>
+    <Button size="icon-sm" variant="destructive-ghost" disabled={disabled || removing || session.initializing} title={t("terminalUi.removeFromTreefold")} aria-label={t("terminalUi.removeFromTreefold")} onClick={() => setOpen(true)}><Trash2 data-icon="inline-start" /></Button>
     <AlertDialog open={open} onOpenChange={(value) => { if (!removing) setOpen(value); }}>
       <AlertDialogContent>
         <AlertDialogTitle>{t("terminalUi.removeSessionFromTreefold")}</AlertDialogTitle>

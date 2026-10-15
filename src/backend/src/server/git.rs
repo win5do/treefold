@@ -1071,6 +1071,10 @@ pub(super) async fn archive_workspace(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Workspace>> {
     let workspace = state.store.workspace(&id).await?;
+    super::workspace_creation::ensure_ready(&state, &id).await?;
+    for session in state.store.sessions(&id).await? {
+        super::session_creation::ensure_settled(&session)?;
+    }
     state.store.archive_workspace(&id).await?;
     if workspace.kind == "fork"
         && let Some(todo) = state.store.todo_for_fork(&id).await?
@@ -1923,11 +1927,11 @@ pub(super) fn choose_shared_branch(
                     &random[..4]
                 )
             });
-        let mut conflict = false;
-        for location in locations
+        let repositories = locations
             .iter()
             .filter(|location| location.git_status == "ready" || location.git_common_dir.is_some())
-        {
+            .collect::<Vec<_>>();
+        let checks = crate::git_parallel::map(&repositories, |location| -> Result<bool> {
             command_output(
                 Path::new(&location.path),
                 "git",
@@ -1957,10 +1961,14 @@ pub(super) fn choose_shared_branch(
                         )));
                     }
                 } else {
-                    conflict = true;
-                    break;
+                    return Ok(true);
                 }
             }
+            Ok(false)
+        });
+        let mut conflict = false;
+        for check in checks {
+            conflict |= check?;
         }
         if !conflict {
             return Ok(candidate);

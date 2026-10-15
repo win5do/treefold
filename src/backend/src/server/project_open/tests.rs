@@ -81,6 +81,20 @@ async fn resolves_registered_directories_without_importing_unknown_paths() {
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{workspace}");
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while state
+            .store
+            .workspace_repositories(workspace["id"].as_str().unwrap())
+            .await
+            .unwrap()
+            .iter()
+            .any(|repository| repository.git_status == "creating")
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("Workspace checkout is ready before resolving its filesystem path");
     let workspace_path = state
         .store
         .workspace_directories(workspace["id"].as_str().unwrap())

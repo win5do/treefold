@@ -4,7 +4,7 @@ import { closeUiSession, createUiSession } from "./harness/session.ts";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 
 for (const owner of ["project", "workspace"] as const) {
-  test(`${owner} Codex history without an identity can be removed from Treefold`, async () => {
+  test(`${owner} Codex history can be removed from Treefold`, async () => {
     const harness = await startUiHarness();
     let page: Page | undefined;
     const id = owner === "project" ? FIXTURE_IDS.projectCodex : FIXTURE_IDS.workspaceCodex;
@@ -37,7 +37,7 @@ for (const owner of ["project", "workspace"] as const) {
             if (record.id === id) {
               record.visibility = "hidden";
               record.status = "stopped";
-              record.agent_session_id = null;
+              record.agent_session_id = "retained-agent-session";
             }
             Object.values(record).forEach(visit);
           }
@@ -47,7 +47,6 @@ for (const owner of ["project", "workspace"] as const) {
       });
       await page.goto(`${harness.baseUrl}/#/${owner === "project" ? "projects" : "workspaces"}/${owner === "project" ? FIXTURE_IDS.project : FIXTURE_IDS.workspace}`);
       const row = page.getByTestId(`${owner}-session-${id}`);
-      // The action remains available even when Resume has no conversation ID.
       await row.getByRole("button", { name: "Remove from Treefold", exact: true }).click();
       const dialog = page.getByRole("alertdialog");
       await expect(dialog).toContainText("Session history saved by the CLI is kept.");

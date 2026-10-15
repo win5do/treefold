@@ -29,6 +29,10 @@ test("Workspace and Fork show only their current repository worktree and refresh
   let page: Page | undefined;
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "workspace-worktrees" });
+    const projectRequests: string[] = [];
+    page.on("request", request => {
+      if (new URL(request.url()).pathname === `/api/projects/${FIXTURE_IDS.project}`) projectRequests.push(request.url());
+    });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
     const card = page.getByTestId(`workspace-location-${FIXTURE_IDS.workspacePrimaryLocation}`);
     await expect(card.getByText("Uncommitted changes", { exact: true })).toBeVisible();
@@ -52,6 +56,7 @@ test("Workspace and Fork show only their current repository worktree and refresh
     await expect(forkCard.getByText("Conflicts", { exact: true })).toBeVisible();
     await expect(forkCard.getByText("Locked", { exact: true })).toHaveCount(0);
     await expect(forkCard.getByText("Ahead 3 · Behind 2", { exact: true })).toHaveCount(0);
+    expect(projectRequests).toHaveLength(0);
     harness.assertNoUnexpectedRequests();
   } catch (error) {
     await page?.screenshot({ path: "/tmp/treefold-workspace-worktrees-failure.png" });
@@ -70,7 +75,7 @@ test("worktree status failure can be retried without hiding repository directori
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "worktree-status-retry" });
     let fail = true;
-    await page.route(`**/api/projects/${FIXTURE_IDS.project}`, async (route) => {
+    await page.route(`**/api/workspaces/${FIXTURE_IDS.workspace}/worktrees`, async (route) => {
       if (!fail) return route.continue();
       await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { code: "INTERNAL", message: "Fixture unavailable" } }) });
     });
@@ -87,5 +92,38 @@ test("worktree status failure can be retried without hiding repository directori
     throw error;
   } finally {
     try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});
+
+test("background worktree refresh does not keep Workspace actions busy", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let pending = false;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "workspace-refresh-busy" });
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    const create = page.getByTestId("workspace-sessions-section").getByRole("button", { name: "New Session", exact: true });
+    await expect(create).toBeEnabled();
+    await page.route(`**/api/workspaces/${FIXTURE_IDS.workspace}/worktrees`, async route => {
+      pending = true;
+      await gate;
+      await route.continue();
+    });
+    const detail = await (await page.request.get(`${harness.apiUrl}/api/workspaces/${FIXTURE_IDS.workspace}`)).json();
+    await page.route(`**/api/workspaces/${FIXTURE_IDS.workspace}/resync`, route => route.fulfill({ json: detail }));
+    await page.getByTestId("workspace-repositories-actions-trigger").focus();
+    await page.getByTestId("workspace-repositories-actions-trigger").press("ArrowDown");
+    await page.getByRole("menuitem", { name: "Check and repair worktrees", exact: true }).click();
+    await expect.poll(() => pending).toBe(true);
+    await expect(create).toBeEnabled();
+    await create.click();
+    await expect(page.getByRole("dialog", { name: "New Session", exact: true })).toBeVisible();
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    release();
+    try { await page?.unrouteAll({ behavior: "wait" }); }
+    finally { try { await closeUiSession(page); } finally { await harness.close(); } }
   }
 });

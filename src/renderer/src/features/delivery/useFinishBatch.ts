@@ -108,20 +108,26 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     const controller = new AbortController();
     setPreflights({});
     setChecks({});
-    for (const [id, draft] of Object.entries(drafts)) {
-      if (batch?.items.find((item) => item.repository_id === id)?.cleaned)
-        continue;
-      void workspacesApi
-        .preflight(id, draft.code_action, controller.signal)
-        .then((value) => {
+    const pending = Object.entries(drafts).filter(([id]) =>
+      !batch?.items.find((item) => item.repository_id === id)?.cleaned,
+    );
+    const checkNext = async () => {
+      while (!controller.signal.aborted) {
+        const entry = pending.shift();
+        if (!entry) return;
+        const [id, draft] = entry;
+        try {
+          const value = await workspacesApi.preflight(id, draft.code_action, controller.signal);
           if (!controller.signal.aborted)
             setPreflights((current) => ({ ...current, [id]: value }));
-        })
-        .catch((cause) => {
+        } catch (cause) {
           if (!controller.signal.aborted)
             setChecks((current) => ({ ...current, [id]: finishError(cause) }));
-        });
-    }
+        }
+      }
+    };
+    const workers = Math.min(4, pending.length);
+    for (let worker = 0; worker < workers; worker++) void checkNext();
     return () => controller.abort();
   }, [workspace?.id, loaded, batch?.status, drafts]);
 
@@ -206,7 +212,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
           );
       setBatch(next);
       setRevision((value) => value + 1);
-      await invalidateHierarchyQueries(client);
+      void invalidateHierarchyQueries(client);
       return true;
     } catch (cause) {
       setError(finishErrorText(finishError(cause), t));
@@ -215,7 +221,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
         const current = await workspacesApi.finishBatch(workspace.id);
         if (current && (current.status !== "paused" || !batch)) {
           setRevision((value) => value + 1);
-          await invalidateHierarchyQueries(client);
+          void invalidateHierarchyQueries(client);
         }
       } catch {
         /* Keep the original error until the operation can be reopened. */

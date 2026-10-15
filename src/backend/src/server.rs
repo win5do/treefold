@@ -185,6 +185,8 @@ pub async fn serve(listener: tokio::net::TcpListener, state: AppState) -> anyhow
     let mut snapshot_events = state.terminals.subscribe_snapshot_events();
     state.terminals.connect_existing().await;
     reconcile_daemon_sessions(&state).await?;
+    session_creation::recover(&state).await?;
+    workspace_creation::recover(&state).await?;
     let bridge_state = state.clone();
     tokio::spawn(async move {
         let mut fallback = tokio::time::interval(Duration::from_secs(30));
@@ -436,6 +438,10 @@ fn app(state: AppState) -> Router {
                 .patch(update_workspace)
                 .delete(delete_workspace),
         )
+        .route(
+            "/api/workspaces/{id}/worktrees",
+            get(workspace_status::get_worktrees),
+        )
         .route("/api/workspaces/{id}/resync", post(resync_workspace))
         .route(
             "/api/workspaces/{id}/git/pull-all",
@@ -649,12 +655,15 @@ use workspace_delete::delete_workspace;
 mod project_creation;
 mod project_open;
 mod session;
+mod session_creation;
 mod squash;
 mod squash_delivery;
 #[cfg(test)]
 mod tests;
 mod verification;
 mod workspace;
+mod workspace_creation;
+mod workspace_status;
 mod worktree_names;
 mod worktree_prune;
 mod worktree_status;

@@ -38,6 +38,7 @@ pub(super) async fn ensure_stopped(state: &AppState, id: &str) -> Result<()> {
         }
     }
     for session in sessions {
+        super::session_creation::ensure_settled(&session)?;
         if state
             .terminals
             .inspect_existing(&session.amux_workspace_name, &session.amux_process_name)

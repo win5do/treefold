@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sessions SET initializing=1,initialization_error=NULL,status='stopped',argv='[]',exit_code=NULL,exit_signal='',launch_started_at=?1,updated_at=?1 WHERE id=?2 AND initializing=0 AND initialization_error IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "bf2aa3d97883018ba25427dfc71cb2550d4b222c0b2558dfe68c77018df4c35a"
+}

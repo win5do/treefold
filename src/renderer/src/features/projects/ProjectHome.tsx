@@ -1,3 +1,4 @@
+import { isSessionListed } from "@/features/terminal/model/sessionListVisibility";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { AGENT_NAMES, isAgentKind } from "@/features/agents/model";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
@@ -65,6 +66,7 @@ export function ProjectHome({
   worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
   const { t } = useTranslation();
+  const sessions = project.sessions.filter(isSessionListed);
   const rootWorkspaces = project.workspaces.filter(
     (stream) => !stream.parent_workspace_id,
   );
@@ -235,11 +237,11 @@ export function ProjectHome({
               <p className="mt-1 text-xs text-muted-foreground">{t("projectsUi.projectSessionsDescription")}</p>
             </div>
             <span className="text-[11px] text-muted-foreground">
-              {project.sessions.length}
+              {sessions.length}
             </span>
           </div>
           <div className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">
-            {project.sessions.map((session) => (
+            {sessions.map((session) => (
               <div
                 key={session.id}
                 data-testid={`project-session-${session.id}`}
@@ -276,7 +278,7 @@ export function ProjectHome({
                       }
                     >
                       {session.visibility === "visible"
-                        ? t(`states.${session.status}`, { defaultValue: session.status })
+                        ? t(session.initializing ? "terminalUi.initializing" : `states.${session.status}`, { defaultValue: session.status })
                         : t("projectsUi.history")}
                     </Badge>
                   </div>
@@ -292,7 +294,7 @@ export function ProjectHome({
                 </div>
               </div>
             ))}
-            {project.sessions.length === 0 && (
+            {sessions.length === 0 && (
               <div className="py-10 text-center text-xs text-muted-foreground">{t("projectsUi.noSessions")}</div>
             )}
           </div>

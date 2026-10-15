@@ -227,7 +227,7 @@ export function FinishWorkspaceDialog({
                                     : "states.checking",
                               )}
                             </p>
-                            {check && (
+                            {check && draft.code_action !== "keep" && (
                               <>
                                 <p className="break-words">
                                   {t("deliveryUi.batchTarget", {

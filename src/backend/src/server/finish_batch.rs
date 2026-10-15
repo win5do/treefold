@@ -4,6 +4,7 @@ use super::{
     blocking_git_operation_for, cleanup_finished_repository,
     create_workspace_repository_preflight_impl, finish_workspace_repository_impl,
 };
+use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 use std::{collections::HashSet, sync::OnceLock};
 use tokio::sync::Mutex;
@@ -119,6 +120,10 @@ pub(super) async fn prepare_batch_with_mode(
     plans: Vec<FinishPlanItem>,
     continue_work: bool,
 ) -> Result<FinishBatch> {
+    super::workspace_creation::ensure_ready(state, id).await?;
+    for session in state.store.sessions(id).await? {
+        super::session_creation::ensure_settled(&session)?;
+    }
     let workspace = state.store.workspace(id).await?;
     if !matches!(workspace.kind.as_str(), "workspace" | "fork")
         || workspace.status != "active"
@@ -181,19 +186,43 @@ pub(super) async fn prepare_batch_with_mode(
             "confirm every unfinished Repository exactly once".into(),
         ));
     }
+    let checks = stream::iter(plans.clone().into_iter().map(|plan| {
+        let state = state.clone();
+        async move {
+            let repository = state
+                .store
+                .workspace_repository(&plan.repository_id)
+                .await?;
+            let common = state
+                .store
+                .repository(&repository.project_repository_id)
+                .await?
+                .git_common_dir;
+            blocking_git_operation_for(common, move || async move {
+                if plan.code_action == "skip" {
+                    verify_skip(&state, &plan.repository_id).await?;
+                    if plan.delete_worktree || plan.delete_branch {
+                        return Err(AppError::BadRequest(
+                            "Skipped repositories cannot be cleaned up".into(),
+                        ));
+                    }
+                } else {
+                    super::delivery::validate_delivery_input(&input(&plan, true))?;
+                    verify_plan(&state, &plan, false).await?;
+                }
+                Ok(())
+            })
+            .await
+        }
+    }))
+    .buffered(crate::git_parallel::REPOSITORY_CONCURRENCY)
+    .collect::<Vec<Result<()>>>()
+    .await;
+    for check in checks {
+        check?;
+    }
     let mut items = Vec::new();
     for plan in plans {
-        if plan.code_action == "skip" {
-            verify_skip(state, &plan.repository_id).await?;
-            if plan.delete_worktree || plan.delete_branch {
-                return Err(AppError::BadRequest(
-                    "Skipped repositories cannot be cleaned up".into(),
-                ));
-            }
-        } else {
-            super::delivery::validate_delivery_input(&input(&plan, true))?;
-            verify_plan(state, &plan, false).await?;
-        }
         let repository = repositories
             .iter()
             .find(|r| r.id == plan.repository_id)
@@ -323,8 +352,9 @@ async fn verify_plan(state: &AppState, plan: &FinishPlanItem, retry: bool) -> Re
     .await?;
     if old.source_head != fresh.source_head
         || old.source_status != fresh.source_status
-        || old.target_branch != fresh.target_branch
-        || (!retry && old.target_head != fresh.target_head)
+        || (plan.code_action != "keep"
+            && (old.target_branch != fresh.target_branch
+                || (!retry && old.target_head != fresh.target_head)))
     {
         return Err(AppError::BadRequest("confirmed Git state changed; restore the confirmed source or review the plan before executing".into()));
     }
@@ -500,7 +530,10 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
                             return Ok(Some(operation.id));
                         }
                     }
-                    execution.preflight_id = Some(verify_plan(&task_state, &plan, retry).await?);
+                    if plan.code_action != "keep" {
+                        execution.preflight_id =
+                            Some(verify_plan(&task_state, &plan, retry).await?);
+                    }
                 }
                 let Json(progress) =
                     finish_workspace_repository_impl(task_state, plan.repository_id, execution)

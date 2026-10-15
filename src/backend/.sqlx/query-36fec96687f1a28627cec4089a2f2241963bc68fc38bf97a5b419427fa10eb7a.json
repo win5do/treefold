@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE sessions SET initializing=0,initialization_error=?1,\n                status=CASE WHEN ?1 IS NOT NULL THEN 'failed' ELSE status END,updated_at=?2 WHERE id=?3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "36fec96687f1a28627cec4089a2f2241963bc68fc38bf97a5b419427fa10eb7a"
+}

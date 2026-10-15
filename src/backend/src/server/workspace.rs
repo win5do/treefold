@@ -332,6 +332,7 @@ pub(super) async fn update_project(
         }
         for workspace in state.store.workspaces(&id).await? {
             for mut session in state.store.sessions(&workspace.id).await? {
+                super::session_creation::ensure_settled(&session)?;
                 capture_agent_session_id(&state, &mut session).await?;
                 let _ = state
                     .terminals
@@ -1922,14 +1923,15 @@ pub(super) struct WorkspaceWorktreePlan {
     pub(super) branch: String,
     pub(super) start_ref: String,
     pub(super) reuse_branch: bool,
+    pub(super) clean_parent: Option<String>,
     pub(super) setup_directory_id: String,
     pub(super) setup_workdir: String,
 }
 
 pub(super) struct WorkspaceWorktreeOutcome {
-    plan: WorkspaceWorktreePlan,
-    start_commit: Option<String>,
-    error: Option<String>,
+    pub(super) plan: WorkspaceWorktreePlan,
+    pub(super) start_commit: Option<String>,
+    pub(super) error: Option<String>,
 }
 
 pub(super) struct WorkspaceSetupShell {
@@ -1950,28 +1952,13 @@ pub(super) async fn create_workspace(
     ApiJson(input): ApiJson<CreateWorkspace>,
 ) -> Result<(StatusCode, Json<Workspace>)> {
     let operation_state = state.clone();
-    let created = blocking_git_operation(move || async move {
-        create_workspace_impl(operation_state, project_id, input).await
+    let prepared = blocking_git_operation(move || async move {
+        prepare_workspace(operation_state, project_id, input, Vec::new()).await
     })
     .await?;
-    spawn_workspace_setup_shells(
-        state.clone(),
-        created.workspace.clone(),
-        created.setup_shells,
-    )
-    .await;
-    Ok((
-        StatusCode::CREATED,
-        Json(state.store.workspace(&created.workspace.id).await?),
-    ))
-}
-
-pub(super) async fn create_workspace_impl(
-    state: AppState,
-    project_id: String,
-    input: CreateWorkspace,
-) -> Result<CreatedWorkspace> {
-    create_workspace_with_existing_worktree(state, project_id, input, Vec::new()).await
+    let workspace = prepared.workspace.clone();
+    super::workspace_creation::start(state, prepared);
+    Ok((StatusCode::CREATED, Json(workspace)))
 }
 
 pub(super) struct ExistingWorkspaceWorktree {
@@ -1986,6 +1973,16 @@ pub(super) async fn create_workspace_with_existing_worktree(
     input: CreateWorkspace,
     existing: Vec<ExistingWorkspaceWorktree>,
 ) -> Result<CreatedWorkspace> {
+    let prepared = prepare_workspace(state.clone(), project_id, input, existing).await?;
+    super::workspace_creation::complete(&state, prepared).await
+}
+
+pub(super) async fn prepare_workspace(
+    state: AppState,
+    project_id: String,
+    input: CreateWorkspace,
+    existing: Vec<ExistingWorkspaceWorktree>,
+) -> Result<super::workspace_creation::PreparedWorkspace> {
     let project = state.store.project(&project_id).await?;
     if project.status != "active" {
         return Err(AppError::BadRequest(
@@ -1998,9 +1995,13 @@ pub(super) async fn create_workspace_with_existing_worktree(
     for repository in &repositories {
         locations.push(state.store.repository_as_directory(&repository.id).await?);
     }
-    for location in &mut locations {
-        refresh_location_observation(location)?;
-    }
+    locations = crate::git_parallel::map(&locations, |location| {
+        let mut location = location.clone();
+        refresh_location_observation(&mut location)?;
+        Ok(location)
+    })
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
     let default_id = project
         .default_location_id
         .as_deref()
@@ -2048,133 +2049,141 @@ pub(super) async fn create_workspace_with_existing_worktree(
         true,
     )?;
     let timestamp = now();
-    let mut snapshots = Vec::new();
-    let mut plans = Vec::new();
-    for location in &locations {
-        let base_branch = current_project_branch(&location.path)?;
-        if let Some(expected) = input.expected_base_branches.as_ref() {
-            if expected.get(&location.id) != Some(&base_branch) {
-                return Err(AppError::BadRequest(format!(
-                    "Repository '{}' current branch changed; reopen Workspace creation to review its base",
-                    location.name
-                )));
+    let prepared = crate::git_parallel::map(
+        &locations,
+        |location| -> Result<(WorkspaceRepository, Option<WorkspaceWorktreePlan>)> {
+            let base_branch = current_project_branch(&location.path)?;
+            if let Some(expected) = input.expected_base_branches.as_ref() {
+                if expected.get(&location.id) != Some(&base_branch) {
+                    return Err(AppError::BadRequest(format!(
+                        "Repository '{}' current branch changed; reopen Workspace creation to review its base",
+                        location.name
+                    )));
+                }
             }
-        }
-        if let Some(worktree) = existing
-            .iter()
-            .find(|worktree| worktree.project_repository_id == location.id)
-        {
-            let options = directory_branches(&worktree.path)?;
-            let remote_branch = command_output(
-                Path::new(&worktree.path),
-                "git",
-                &[
-                    "for-each-ref",
-                    "--format=%(upstream:remoteref)",
-                    &format!("refs/heads/{}", worktree.branch),
-                ],
-            )
-            .ok()
-            .and_then(|value| value.strip_prefix("refs/heads/").map(str::to_owned));
+            if let Some(worktree) = existing
+                .iter()
+                .find(|worktree| worktree.project_repository_id == location.id)
+            {
+                let options = directory_branches(&worktree.path)?;
+                let remote_branch = command_output(
+                    Path::new(&worktree.path),
+                    "git",
+                    &[
+                        "for-each-ref",
+                        "--format=%(upstream:remoteref)",
+                        &format!("refs/heads/{}", worktree.branch),
+                    ],
+                )
+                .ok()
+                .and_then(|value| value.strip_prefix("refs/heads/").map(str::to_owned));
+                let mut snapshot = git_workspace_repository(
+                    &workspace_id,
+                    location,
+                    &timestamp,
+                    worktree.path.clone(),
+                    worktree.branch.clone(),
+                    base_branch,
+                    git_head(&worktree.path)?,
+                    None,
+                    options.current_remote,
+                    remote_branch,
+                );
+                snapshot.branch_ownership = "user".into();
+                snapshot.worktree_ownership = "external".into();
+                return Ok((snapshot, None));
+            }
+            let checkout_path = worktree_root
+                .path()
+                .join(repository_slug(&location.name))
+                .to_string_lossy()
+                .into_owned();
+            let inherited_remote = directory_branches(&location.path)?.current_remote;
+            let remote_name = input
+                .repository_remotes
+                .as_ref()
+                .and_then(|values| values.get(&location.id))
+                .cloned()
+                .or_else(|| {
+                    if location.id == default_repository_id {
+                        trimmed(input.remote_name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .or(inherited_remote)
+                .filter(|value| !value.is_empty());
+            if let Some(remote) = remote_name.as_deref() {
+                if !git_remote_names(&location.path)?
+                    .iter()
+                    .any(|name| name == remote)
+                {
+                    return Err(AppError::BadRequest(format!(
+                        "Repository '{}' remote was not found",
+                        location.name
+                    )));
+                }
+            }
+            let remote_branch = remote_name.as_ref().map(|_| {
+                if location.id == default_repository_id {
+                    trimmed(input.remote_branch.clone())
+                        .filter(|v| !v.is_empty())
+                        .unwrap_or_else(|| branch.clone())
+                } else {
+                    branch.clone()
+                }
+            });
             let mut snapshot = git_workspace_repository(
                 &workspace_id,
                 location,
                 &timestamp,
-                worktree.path.clone(),
-                worktree.branch.clone(),
-                base_branch,
-                git_head(&worktree.path)?,
+                checkout_path.clone(),
+                branch.clone(),
+                base_branch.clone(),
+                String::new(),
                 None,
-                options.current_remote,
+                remote_name,
                 remote_branch,
             );
-            snapshot.branch_ownership = "user".into();
-            snapshot.worktree_ownership = "external".into();
-            snapshots.push(snapshot);
-            continue;
-        }
-        let checkout_path = worktree_root
-            .path()
-            .join(repository_slug(&location.name))
-            .to_string_lossy()
-            .into_owned();
-        let inherited_remote = directory_branches(&location.path)?.current_remote;
-        let remote_name = input
-            .repository_remotes
-            .as_ref()
-            .and_then(|values| values.get(&location.id))
-            .cloned()
-            .or_else(|| {
-                if location.id == default_repository_id {
-                    trimmed(input.remote_name.clone())
+            let reuse_branch = explicit_branch.is_some()
+                && git_ref_names(&location.path, "refs/heads")?.contains(&branch);
+            if reuse_branch {
+                snapshot.branch_ownership = "user".into();
+            }
+            snapshot.git_status = "creating".into();
+            snapshot.start_commit = None;
+            let plan = WorkspaceWorktreePlan {
+                location: location.clone(),
+                workspace_repository_id: snapshot.id.clone(),
+                checkout_path,
+                branch: branch.clone(),
+                start_ref: if reuse_branch {
+                    format!("refs/heads/{branch}")
                 } else {
-                    None
-                }
-            })
-            .or(inherited_remote)
-            .filter(|value| !value.is_empty());
-        if let Some(remote) = remote_name.as_deref() {
-            if !git_remote_names(&location.path)?
-                .iter()
-                .any(|name| name == remote)
-            {
-                return Err(AppError::BadRequest(format!(
-                    "Repository '{}' remote was not found",
-                    location.name
-                )));
-            }
-        }
-        let remote_branch = remote_name.as_ref().map(|_| {
-            if location.id == default_repository_id {
-                trimmed(input.remote_branch.clone())
-                    .filter(|v| !v.is_empty())
-                    .unwrap_or_else(|| branch.clone())
-            } else {
-                branch.clone()
-            }
-        });
-        let mut snapshot = git_workspace_repository(
-            &workspace_id,
-            location,
-            &timestamp,
-            checkout_path.clone(),
-            branch.clone(),
-            base_branch.clone(),
-            String::new(),
-            None,
-            remote_name,
-            remote_branch,
-        );
-        let reuse_branch = explicit_branch.is_some()
-            && git_ref_names(&location.path, "refs/heads")?.contains(&branch);
-        if reuse_branch {
-            snapshot.branch_ownership = "user".into();
-        }
-        snapshot.git_status = "creating".into();
-        snapshot.start_commit = None;
-        plans.push(WorkspaceWorktreePlan {
-            location: location.clone(),
-            workspace_repository_id: snapshot.id.clone(),
-            checkout_path,
-            branch: branch.clone(),
-            start_ref: if reuse_branch {
-                format!("refs/heads/{branch}")
-            } else {
-                git_head(&location.path)?
-            },
-            reuse_branch,
-            setup_directory_id: directories
-                .iter()
-                .find(|directory| directory.repository_id.as_deref() == Some(&location.id))
-                .map(|directory| directory.id.clone())
-                .unwrap_or_default(),
-            setup_workdir: repositories
-                .iter()
-                .find(|repository| repository.id == location.id)
-                .map(|repository| repository.setup_workdir.clone())
-                .unwrap_or_else(|| ".".into()),
-        });
+                    git_head(&location.path)?
+                },
+                reuse_branch,
+                clean_parent: None,
+                setup_directory_id: directories
+                    .iter()
+                    .find(|directory| directory.repository_id.as_deref() == Some(&location.id))
+                    .map(|directory| directory.id.clone())
+                    .unwrap_or_default(),
+                setup_workdir: repositories
+                    .iter()
+                    .find(|repository| repository.id == location.id)
+                    .map(|repository| repository.setup_workdir.clone())
+                    .unwrap_or_else(|| ".".into()),
+            };
+            Ok((snapshot, Some(plan)))
+        },
+    );
+    let mut snapshots = Vec::new();
+    let mut plans = Vec::new();
+    for result in prepared {
+        let (snapshot, plan) = result?;
         snapshots.push(snapshot);
+        plans.extend(plan);
     }
     let workspace = Workspace {
         id: workspace_id.clone(),
@@ -2209,12 +2218,10 @@ pub(super) async fn create_workspace_with_existing_worktree(
         .create_workspace_with_repositories(&workspace, &snapshots)
         .await?;
 
-    let outcomes = create_workspace_worktrees(plans);
-    let setup_shells = record_workspace_worktree_outcomes(&state.store, outcomes).await?;
-
-    Ok(CreatedWorkspace {
+    Ok(super::workspace_creation::PreparedWorkspace {
         workspace: state.store.workspace(&workspace.id).await?,
-        setup_shells,
+        plans,
+        root: worktree_root,
     })
 }
 
@@ -2245,33 +2252,12 @@ pub(super) async fn repository_root_for_directory(
     Ok(state.store.repository(&repository_id).await?.source_root)
 }
 
-pub(super) fn create_workspace_worktrees(
-    plans: Vec<WorkspaceWorktreePlan>,
-) -> Vec<WorkspaceWorktreeOutcome> {
-    std::thread::scope(|scope| {
-        let handles = plans
-            .into_iter()
-            .map(|plan| {
-                let fallback = plan.clone();
-                let handle = scope.spawn(move || create_workspace_worktree(plan));
-                (fallback, handle)
-            })
-            .collect::<Vec<_>>();
-        handles
-            .into_iter()
-            .map(|(fallback, handle)| {
-                handle.join().unwrap_or_else(|_| WorkspaceWorktreeOutcome {
-                    plan: fallback,
-                    start_commit: None,
-                    error: Some("worktree creation worker stopped unexpectedly".into()),
-                })
-            })
-            .collect::<Vec<_>>()
-    })
-}
-
 pub(super) fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> WorkspaceWorktreeOutcome {
     let result = (|| {
+        if let Some(parent) = plan.clean_parent.as_deref() {
+            ensure_clean_workspace(parent, "parent Workspace Repository")
+                .map_err(|error| error.to_string())?;
+        }
         let start_commit = command_output(
             Path::new(&plan.location.path),
             "git",
@@ -2386,7 +2372,8 @@ pub(super) async fn start_workspace_setup_shells(
             let message = format!("could not start setup shell: {error}");
             let _ = state
                 .store
-                .set_workspace_repository_creation_error(&setup.workspace_repository_id, &message);
+                .set_workspace_repository_creation_error(&setup.workspace_repository_id, &message)
+                .await;
             log::error!("{message}");
         }
     }
@@ -2401,6 +2388,7 @@ pub(super) async fn spawn_workspace_setup_shells(
         return;
     }
     crate::request_context::spawn(async move {
+        let _mutation_guard = super::finish_recovery::mutation_gate().read().await;
         start_workspace_setup_shells(&state, &workspace, setup_shells).await;
     });
 }
@@ -2411,7 +2399,10 @@ pub(super) async fn get_workspace(
 ) -> Result<Json<WorkspaceDetail>> {
     let mut detail = state.store.workspace_detail(&id).await?;
     for location in &mut detail.repositories {
-        if detail.workspace.status != "active" {
+        if detail.workspace.status != "active"
+            || location.git_status == "creating"
+            || (location.git_status == "failed" && location.creation_error.is_some())
+        {
             continue;
         }
         if location.access_mode == "read_only" {
