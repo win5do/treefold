@@ -111,6 +111,21 @@ schema_version = 1
 | `session.close` | `super+w` | Current Session; same action as its close button |
 | `session.next` | `ctrl+tab` | Next visible, running Session in the current scope |
 | `session.previous` | `ctrl+shift+tab` | Previous visible, running Session in the current scope |
+| `app.palette.open` | `super+shift+p` | Open Command Palette |
+| `app.settings.open` | Unbound | Open Settings |
+| `app.projects.open` | Unbound | Open Projects |
+| `app.leftSidebar.toggle` | Unbound | Toggle the left sidebar |
+| `app.rightSidebar.toggle` | Unbound | Toggle the right sidebar in a Project context |
+| `git.sync.push` | Unbound | Open Push choices for an active Project or Workspace with eligible repositories |
+| `git.sync.pull` | Unbound | Open Pull choices for an active Project or Workspace with eligible repositories |
+| `directory.open.with` | Unbound | Open application choices for directories in the current context |
+
+All registered actions appear in Keymap with localized names. The fixed order
+puts actions with default shortcuts first; binding, disabling, or resetting a
+shortcut never reorders the list. Actions without defaults remain unbound until configured.
+Menu actions open the same keyboard-accessible chooser as Command Palette.
+The four existing `session.*` configuration IDs remain compatible; other actions
+use their action ID as the configuration key.
 
 Switching follows the sidebar order and wraps at either end. New Session opens a
 keyboard-accessible type and directory chooser within the current scope. It
@@ -145,7 +160,8 @@ invalid chords, and a set of reserved OS/window shortcuts are rejected without
 changing the file.
 
 GET `/api/keymap` returns registered commands, defaults, effective bindings and
-sources. PATCH `/api/keymap` accepts `{"bindings":{"session.close":false}}`;
+sources. An unbound default is returned as `default_binding: false`.
+PATCH `/api/keymap` accepts `{"bindings":{"session.close":false}}`;
 a JSON `null` binding removes its override. UI saves and direct file edits share
 one source of truth. The UI refreshes Keymap every two seconds while active.
 Malformed configuration is reported, not silently replaced with defaults.

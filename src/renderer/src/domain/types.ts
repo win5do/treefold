@@ -570,7 +570,7 @@ export type BackgroundProcess = {
 };
 
 export type CommandId = import("../features/actions/model/registry.ts").KeymapId;
-export type KeymapCommand = { id: CommandId; label: string; default_binding: string; binding: string | false; source: "default" | "user" };
+export type KeymapCommand = { id: CommandId; label: string; default_binding: string | false; binding: string | false; source: "default" | "user" };
 export type Keymap = { schema_version: number; commands: KeymapCommand[] };
 
 export interface WorkspaceDeleteOptions {

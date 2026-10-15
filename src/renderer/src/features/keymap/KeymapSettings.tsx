@@ -1,10 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { keymapLabel } from "@/features/actions/labels";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Keyboard, RotateCcw, X } from "lucide-react";
+import { Ellipsis, Keyboard, RotateCcw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuGroup, DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -24,6 +27,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { keymapKey, keymapQuery, updateKeymap } from "./api";
 import { keyboardChord, configuredChord, displayedChord } from "./keyboard";
+
+function KeymapActions({ label, testId, disabled, children }: {
+  label: string;
+  testId: string;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger disabled={disabled} aria-label={label} data-testid={`${testId}-trigger`}
+        render={<Button variant="ghost" size="icon" />}>
+        <Ellipsis data-icon="inline-start" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56" aria-label={label} data-testid={testId}>
+        <DropdownMenuGroup>{children}</DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 export function KeymapSettings() {
   const { t } = useTranslation();
@@ -54,16 +76,15 @@ export function KeymapSettings() {
       <Field>
         <div className="flex items-center justify-between gap-3">
           <FieldLabel htmlFor="keymap-search">{t("keymapUi.keyboardShortcuts")}</FieldLabel>
-          <ActionMenu
+          <KeymapActions
             label={t("keymapUi.keymapActions")}
             testId="keymap-actions"
             disabled={busy || !query.data}
           >
-            <ActionMenuItem
-              icon={<RotateCcw className="size-4" />}
-              onClick={() => setResetOpen(true)}
-            >{t("keymapUi.resetAllShortcuts")}</ActionMenuItem>
-          </ActionMenu>
+            <DropdownMenuItem onClick={() => setResetOpen(true)}>
+              <RotateCcw />{t("keymapUi.resetAllShortcuts")}
+            </DropdownMenuItem>
+          </KeymapActions>
         </div>
         <FieldDescription>{t("keymapUi.recordingDescription")}</FieldDescription>
         <Input
@@ -83,6 +104,8 @@ export function KeymapSettings() {
             .toLowerCase()
             .includes(search.toLowerCase()),
         )
+        // Use declared defaults so recording or disabling a binding never moves its row.
+        .sort((a, b) => Number(Boolean(b.default_binding)) - Number(Boolean(a.default_binding)))
         .map((command) => (
           <div
             key={command.id}
@@ -90,7 +113,7 @@ export function KeymapSettings() {
             className="flex items-center justify-between gap-4"
           >
             <Field className="min-w-0 flex-1">
-              <FieldLabel>{command.label}</FieldLabel>
+              <FieldLabel>{keymapLabel(t, command.id, command.label)}</FieldLabel>
               <FieldDescription>{command.id}</FieldDescription>
             </Field>
             <div className="flex shrink-0 items-center gap-2">
@@ -141,22 +164,22 @@ export function KeymapSettings() {
                   {command.binding ? displayedChord(command.binding) : t("keymapUi.unbound")}
                 </Button>
               )}
-              <ActionMenu
+              <KeymapActions
                 label={t("keymapUi.actionsFor", { name: keymapLabel(t, command.id, command.label) })}
                 testId={`keymap-${command.id}-actions`}
                 disabled={busy}
               >
                 {command.binding !== false && (
-                  <ActionMenuItem
-                    icon={<X className="size-4" />}
+                  <DropdownMenuItem
                     onClick={() => void save({ [command.id]: false })}
-                  >{t("keymapUi.disableShortcut")}</ActionMenuItem>
+                  >
+                    <X />{t("keymapUi.disableShortcut")}
+                  </DropdownMenuItem>
                 )}
-                <ActionMenuItem
-                  icon={<RotateCcw className="size-4" />}
-                  onClick={() => void save({ [command.id]: null })}
-                >{t("keymapUi.resetToDefault")}</ActionMenuItem>
-              </ActionMenu>
+                <DropdownMenuItem onClick={() => void save({ [command.id]: null })}>
+                  <RotateCcw />{t("keymapUi.resetToDefault")}
+                </DropdownMenuItem>
+              </KeymapActions>
             </div>
           </div>
         ))}

@@ -29,7 +29,7 @@ struct FileConfig {
 pub struct Command {
     id: String,
     label: String,
-    default_binding: String,
+    default_binding: Binding,
     binding: Binding,
     source: &'static str,
 }
@@ -136,11 +136,14 @@ fn parse(contents: &str) -> anyhow::Result<Keymap> {
     let mut chords = BTreeMap::new();
     let mut commands = vec![];
     for &(id, label, default_binding) in COMMANDS {
+        let default_binding = default_binding
+            .map(|chord| Binding::Shortcut(chord.into()))
+            .unwrap_or(Binding::Disabled(false));
         let binding = file
             .bindings
             .get(id)
             .cloned()
-            .unwrap_or(Binding::Shortcut(default_binding.into()));
+            .unwrap_or_else(|| default_binding.clone());
         let binding = match binding {
             Binding::Disabled(false) => Binding::Disabled(false),
             Binding::Disabled(true) => bail!("'{id}': use false to disable or a shortcut string"),
@@ -155,7 +158,7 @@ fn parse(contents: &str) -> anyhow::Result<Keymap> {
         commands.push(Command {
             id: id.into(),
             label: label.into(),
-            default_binding: default_binding.into(),
+            default_binding,
             binding,
             source: if file.bindings.contains_key(id) {
                 "user"
@@ -253,9 +256,69 @@ mod tests {
         let disabled =
             parse("schema_version = 1\n[bindings]\n\"app.palette.open\" = false\n").unwrap();
         assert_eq!(
-            disabled.commands.last().unwrap().binding,
+            disabled
+                .commands
+                .iter()
+                .find(|command| command.id == "app.palette.open")
+                .unwrap()
+                .binding,
             Binding::Disabled(false)
         );
+    }
+    #[test]
+    fn unbound_actions_can_be_configured_and_reset_without_new_defaults() {
+        let home = std::env::temp_dir().join(format!("treefold-keymap-{}", uuid::Uuid::new_v4()));
+        let store = KeymapStore::open(&home).unwrap();
+        let defaults = store.load().unwrap();
+        for id in [
+            "app.settings.open",
+            "app.projects.open",
+            "app.leftSidebar.toggle",
+            "app.rightSidebar.toggle",
+            "git.sync.push",
+            "git.sync.pull",
+            "directory.open.with",
+        ] {
+            let command = defaults
+                .commands
+                .iter()
+                .find(|command| command.id == id)
+                .unwrap();
+            assert_eq!(command.default_binding, Binding::Disabled(false));
+            assert_eq!(command.binding, Binding::Disabled(false));
+            assert_eq!(command.source, "default");
+        }
+        let update = |json| store.update(serde_json::from_str(json).unwrap());
+        update(r#"{"bindings":{"directory.open.with":"cmd+o","git.sync.push":"ctrl+p"}}"#).unwrap();
+        let reloaded = KeymapStore::open(&home).unwrap().load().unwrap();
+        let open = reloaded
+            .commands
+            .iter()
+            .find(|command| command.id == "directory.open.with")
+            .unwrap();
+        assert_eq!(open.binding, Binding::Shortcut("super+o".into()));
+        assert_eq!(
+            serde_json::to_value(open).unwrap()["default_binding"],
+            false
+        );
+        assert_eq!(open.source, "user");
+        let before = fs::read_to_string(&store.path).unwrap();
+        assert!(update(r#"{"bindings":{"session.new":"cmd+o"}}"#).is_err());
+        assert_eq!(fs::read_to_string(&store.path).unwrap(), before);
+        let reset = update(r#"{"bindings":{"directory.open.with":null}}"#).unwrap();
+        let open = reset
+            .commands
+            .iter()
+            .find(|command| command.id == "directory.open.with")
+            .unwrap();
+        assert_eq!(open.binding, Binding::Disabled(false));
+        assert_eq!(open.source, "default");
+        assert!(
+            !fs::read_to_string(&store.path)
+                .unwrap()
+                .contains("directory.open.with")
+        );
+        fs::remove_dir_all(home).unwrap();
     }
     #[test]
     fn overrides_disable_reset_and_validation() {

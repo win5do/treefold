@@ -7,11 +7,15 @@ export type AppActionId = keyof typeof appActions;
 export type SessionActionId = keyof typeof sessionActions;
 export type ContextualActionId = keyof typeof contextualActions;
 export type ActionId = AppActionId | SessionActionId | ContextualActionId;
-type Metadata =
-  (typeof appActions)[AppActionId] | (typeof sessionActions)[SessionActionId] |
-  (typeof contextualActions)[ContextualActionId];
-export type KeymapId = Extract<Metadata, { keymapId: string }>["keymapId"];
-export type ActionDefinition = Readonly<{ id: ActionId } & ActionMetadata>;
+type DomainKeymapId<Domain> = {
+  [Id in keyof Domain]: Domain[Id] extends { keymapId: infer KeymapId extends string } ? KeymapId : Id;
+}[keyof Domain];
+export type KeymapId = DomainKeymapId<typeof appActions> | DomainKeymapId<typeof sessionActions> | DomainKeymapId<typeof contextualActions>;
+export type ActionDefinition = Readonly<{
+  id: ActionId;
+  keymapId: KeymapId;
+  defaultBinding: string | false;
+} & Omit<ActionMetadata, "keymapId" | "defaultBinding">>;
 export const actionScopes: readonly ActionScope[] = [
   "session",
   "fork",
@@ -34,12 +38,15 @@ for (const domain of [appActions, sessionActions, contextualActions]) {
       throw new Error(`Invalid or duplicate action ID: ${id}`);
     }
     ids.add(id);
-    if ("keymapId" in metadata) {
-      if (bindings.has(metadata.keymapId))
-        throw new Error(`Duplicate keymap ID: ${metadata.keymapId}`);
-      bindings.add(metadata.keymapId);
-    }
-    definitions.push(Object.freeze({ id: id as ActionId, ...metadata }));
+    const keymapId = ("keymapId" in metadata ? metadata.keymapId : id) as KeymapId;
+    if (bindings.has(keymapId)) throw new Error(`Duplicate keymap ID: ${keymapId}`);
+    bindings.add(keymapId);
+    definitions.push(Object.freeze({
+      ...metadata,
+      id: id as ActionId,
+      keymapId,
+      defaultBinding: "defaultBinding" in metadata ? metadata.defaultBinding : false,
+    }));
   }
 }
 export const actionDefinitions: readonly ActionDefinition[] =
@@ -49,11 +56,11 @@ export function getActionDefinition(id: ActionId): ActionDefinition {
   if (!definition) throw new Error(`Unknown action: ${id}`);
   return definition;
 }
-// Preserve the existing HTTP/config command order independently of palette order.
-export const keymapDefaults = [sessionActions, appActions].flatMap((domain) =>
-  Object.values(domain).flatMap((action): [KeymapId, string, string][] =>
-    "keymapId" in action
-      ? [[action.keymapId, action.name, action.defaultBinding]]
-      : [],
-  ),
-);
+// Keep the existing Session config IDs; other actions use their action ID.
+export const keymapDefaults: readonly [KeymapId, string, string | false][] =
+  [sessionActions, appActions, contextualActions].flatMap((domain) =>
+    Object.keys(domain).map((id): [KeymapId, string, string | false] => {
+      const action = getActionDefinition(id as ActionId);
+      return [action.keymapId, action.name, action.defaultBinding];
+    }),
+  );

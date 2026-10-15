@@ -434,6 +434,13 @@ test("Keymap resets all bindings only after confirmation, including filtered com
         "session.next": null,
         "session.previous": null,
         "app.palette.open": null,
+        "app.settings.open": null,
+        "app.projects.open": null,
+        "app.leftSidebar.toggle": null,
+        "app.rightSidebar.toggle": null,
+        "git.sync.push": null,
+        "git.sync.pull": null,
+        "directory.open.with": null,
       },
     });
     await expect(dialog).toHaveCount(0);

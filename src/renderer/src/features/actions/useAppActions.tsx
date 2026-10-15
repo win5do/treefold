@@ -16,6 +16,7 @@ import { gitPaletteActions, type GitPaletteHandlers } from "@/features/git/palet
 import { openInPaletteActions } from "@/features/open-in/paletteActions";
 import { toast } from "@/lib/toast";
 import { CommandPalette } from "./CommandPalette";
+import { actionLabel } from "./labels";
 import { ActionMenu, type ActionMenuRequest } from "./ActionMenu";
 import {
   bindActions,
@@ -135,7 +136,23 @@ export function useAppActions(scope: Scope) {
         return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (!event.repeat) action.run?.(invocation.context);
+      if (event.repeat) return;
+      if (action.children) {
+        setMenu({
+          entry: {
+            id: action.id,
+            actionId: action.id,
+            name: action.name,
+            label: actionLabel(t, action.id),
+            scope: action.paletteScope?.(invocation.context) ?? action.scope,
+            keymapId: action.keymapId,
+            children: () => action.children(invocation.context),
+          },
+          returnFocus: invocation.returnFocus,
+        });
+      } else {
+        action.run(invocation.context);
+      }
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
