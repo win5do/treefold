@@ -1,4 +1,5 @@
 import type { ActionHandlers, AppActionId } from "@/features/actions/model";
+import { ownerScope } from "@/features/actions/model/context";
 
 export function appActionHandlers(handlers: {
   settings: () => void;
@@ -18,6 +19,7 @@ export function appActionHandlers(handlers: {
       run: handlers.toggleLeftSidebar,
     },
     "app.rightSidebar.toggle": {
+      paletteScope: ownerScope,
       available: (context) => !!context.project,
       run: handlers.toggleRightSidebar,
     },

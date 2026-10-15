@@ -3,6 +3,7 @@ export type {
   ActionId,
   AppActionId,
   SessionActionId,
+  ContextualActionId,
   KeymapId,
   ActionDefinition,
 } from "./registry.ts";
@@ -12,6 +13,7 @@ export type {
   ActionHandlers,
   AppAction,
   ActionInvocation,
+  PaletteEntry,
 } from "./types.ts";
 export {
   actionScopes,

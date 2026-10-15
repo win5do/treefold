@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import type {
   Directory,
   ProjectDetail,
@@ -11,6 +12,8 @@ import { keyboardChord, shortcutOverlayOpen } from "@/features/keymap/keyboard";
 import { NewSessionDialog } from "@/features/terminal/NewSessionDialog";
 import { sessionActionHandlers } from "@/features/terminal/sessionActions";
 import { appActionHandlers } from "@/features/app/actions";
+import { gitPaletteActions, type GitPaletteHandlers } from "@/features/git/paletteActions";
+import { openInPaletteActions } from "@/features/open-in/paletteActions";
 import { toast } from "@/lib/toast";
 import { CommandPalette } from "./CommandPalette";
 import {
@@ -26,6 +29,7 @@ type Scope = {
   pathname: string;
   busy: boolean;
   actions: {
+    git: GitPaletteHandlers;
     navigate: (path: string) => void;
     session: {
       close: () => void;
@@ -39,6 +43,7 @@ type Scope = {
   };
 };
 export function useAppActions(scope: Scope) {
+  const { t } = useTranslation();
   const query = useQuery(keymapQuery());
   const [palette, setPalette] = useState<ActionInvocation | null>(null);
   const [creating, setCreating] = useState<{
@@ -80,6 +85,8 @@ export function useAppActions(scope: Scope) {
             ? document.activeElement
             : null,
         actions: bindActions({
+          ...gitPaletteActions(actions.git, source.busy, t),
+          ...openInPaletteActions(t),
           ...appActionHandlers({
             ...actions.global,
             navigate: actions.navigate,
@@ -126,11 +133,11 @@ export function useAppActions(scope: Scope) {
         return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (!event.repeat) action.run(invocation.context);
+      if (!event.repeat) action.run?.(invocation.context);
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [query.data, query.error]);
+  }, [query.data, query.error, t]);
   const owner = creating?.context.workspace ?? creating?.context.project;
   return (
     <>

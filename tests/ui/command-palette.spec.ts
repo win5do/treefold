@@ -185,3 +185,120 @@ test("palette uses the invoking Session after navigation and includes actions wi
     }
   }
 });
+
+for (const owner of [
+  { name: "Project", path: `projects/${FIXTURE_IDS.project}`, repository: FIXTURE_IDS.primaryRepository, api: "project-repositories" },
+  { name: "Workspace", path: `workspaces/${FIXTURE_IDS.workspace}`, repository: FIXTURE_IDS.workspacePrimaryLocation, api: "workspace-repositories" },
+]) {
+  test(`palette navigates ${owner.name} sync choices with arrows and submits the captured target`, async () => {
+    const harness = await startUiHarness((fixture) => {
+      const repositories = fixture.workspaceDetails[FIXTURE_IDS.workspace].repositories;
+      repositories.push({
+        ...repositories[0],
+        id: FIXTURE_IDS.workspaceReadonlyLocation,
+        repository_name: "Read-only repository",
+        access_mode: "read_only",
+      });
+    });
+    let page: Page | undefined;
+    try {
+      page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-sync" });
+      await page.goto(`${harness.baseUrl}/#/${owner.path}`);
+      await expect(page.getByTestId("page-content")).toBeVisible();
+      await page.keyboard.press("Meta+Shift+p");
+      const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
+      const search = palette.getByRole("combobox");
+      await search.fill("push");
+      await expect(palette.getByRole("option", { name: "Push", exact: true })).toHaveAttribute("aria-selected", "true");
+      await search.press("Enter");
+      await expect(search).toHaveValue("push");
+      expect(harness.syncRequests).toEqual([]);
+      await search.press("ArrowRight");
+      await expect(search).toBeFocused();
+      await expect(search).toHaveValue("");
+      await expect(palette.getByRole("option", { name: "Push All", exact: true })).toHaveAttribute("aria-selected", "true");
+      // Failed and read-only Workspace repositories must not become sync targets.
+      await expect(palette.getByRole("option")).toHaveCount(owner.name === "Project" ? 3 : 2);
+      await search.press("ArrowLeft");
+      await expect(search).toHaveValue("push");
+      await expect(palette.getByRole("option", { name: "Push", exact: true })).toHaveAttribute("aria-selected", "true");
+      await search.press("ArrowRight");
+      await search.press("ArrowDown");
+      await expect(palette.getByRole("option", { name: "fixture-repository", exact: true })).toHaveAttribute("aria-selected", "true");
+      await page.evaluate(() => { window.location.hash = "#/projects"; });
+      await expect(page).toHaveURL(/#\/projects$/);
+      await search.press("Enter");
+      await expect(palette).toHaveCount(0);
+      await expect.poll(() => harness.syncRequests).toEqual([`/api/${owner.api}/${owner.repository}/git/push`]);
+      await expect(page.getByRole("status")).toContainText("Push succeeded");
+
+      await page.goto(`${harness.baseUrl}/#/${owner.path}`);
+      await expect(page.getByTestId("page-content")).toBeVisible();
+      await page.keyboard.press("Meta+Shift+p");
+      await palette.getByRole("option", { name: "Pull", exact: true }).click();
+      await palette.getByRole("option", { name: "Pull All", exact: true }).click();
+      await expect.poll(() => harness.syncRequests.at(-1)).toBe(`/api/${owner.path}/git/pull-all`);
+      harness.assertNoUnexpectedRequests();
+    } finally {
+      try { await closeUiSession(page); } finally { await harness.close(); }
+    }
+  });
+}
+
+test("palette searches IDs and both languages while keeping contextual actions first", async () => {
+  const harness = await startUiHarness((fixture) => { fixture.settings.language = "zh-CN"; });
+  let page: Page | undefined;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-search" });
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await expect(page.getByTestId("open-settings")).toHaveAccessibleName("设置");
+    await expect(page.getByTestId("page-content")).toBeVisible();
+    await page.keyboard.press("Meta+Shift+p");
+    const palette = page.getByRole("dialog", { name: "命令面板", exact: true });
+    const search = palette.getByRole("combobox");
+    await expect(palette.getByRole("option", { name: "新建 Session", exact: true })).toHaveAttribute("aria-selected", "true");
+    for (const query of ["SESSION.CREATE.NEW", "New Session", "新建 Session", "scrnew"]) {
+      await search.fill(query);
+      await expect(palette.getByRole("option", { name: "新建 Session", exact: true })).toHaveAttribute("aria-selected", "true");
+    }
+    await search.fill("open");
+    await expect(palette.getByRole("option", { name: "打开方式", exact: true })).toHaveAttribute("aria-selected", "true");
+    await search.press("ArrowDown");
+    await expect(palette.getByRole("option", { name: "打开设置", exact: true })).toHaveAttribute("aria-selected", "true");
+    await search.fill("⌘ T");
+    await expect(palette.getByRole("option")).toHaveCount(0);
+    await search.fill("app.settings.open");
+    await search.press("Enter");
+    await expect(page.getByRole("dialog", { name: "设置", exact: true })).toBeVisible();
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});
+
+test("palette hides sync actions in Fork and archived contexts", async () => {
+  const harness = await startUiHarness((fixture) => {
+    fixture.workspaceDetails[FIXTURE_IDS.archivedWorkspace] = {
+      ...fixture.workspaceDetails[FIXTURE_IDS.workspace],
+      id: FIXTURE_IDS.archivedWorkspace,
+      status: "archived",
+      sessions: [],
+    };
+  });
+  let page: Page | undefined;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-availability" });
+    for (const id of [FIXTURE_IDS.fork, FIXTURE_IDS.archivedWorkspace]) {
+      await page.goto(`${harness.baseUrl}/#/workspaces/${id}`);
+      await expect(page.getByTestId("page-content")).toBeVisible();
+      await page.keyboard.press("Meta+Shift+p");
+      const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
+      await expect(palette.getByRole("option", { name: "Push", exact: true })).toHaveCount(0);
+      await expect(palette.getByRole("option", { name: "Pull", exact: true })).toHaveCount(0);
+      await page.keyboard.press("Escape");
+    }
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});

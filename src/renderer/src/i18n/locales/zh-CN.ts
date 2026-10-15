@@ -298,6 +298,11 @@ export const zhCN = {
     "closeToast": "关闭通知"
   },
   "actionsUi": {
+    "back": "返回上一级",
+    "loading": "正在加载…",
+    "loadFailed": "无法加载选项，请重试。",
+    "retry": "重试",
+    "keyboardHelp": "↑↓ 选择 · → 进入子菜单 · ← 返回上一级 · Enter 执行 · Esc 关闭",
     "commandPalette": "命令面板",
     "global": "全局",
     "searchActions": "搜索操作",
@@ -1067,6 +1072,8 @@ export const zhCN = {
     "fork": "Fork"
   },
   "actionLabels": {
+    "git": { "sync": { "push": "推送", "pull": "拉取" } },
+    "directory": { "open": { "with": "打开方式" } },
     "app": {
       "settings": {
         "open": "打开设置"

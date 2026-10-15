@@ -1,26 +1,29 @@
 import { appActions } from "./app.ts";
 import { sessionActions } from "./session.ts";
+import { contextualActions } from "./contextual.ts";
 import type { ActionMetadata, ActionScope } from "./metadata.ts";
 
 export type AppActionId = keyof typeof appActions;
 export type SessionActionId = keyof typeof sessionActions;
-export type ActionId = AppActionId | SessionActionId;
+export type ContextualActionId = keyof typeof contextualActions;
+export type ActionId = AppActionId | SessionActionId | ContextualActionId;
 type Metadata =
-  (typeof appActions)[AppActionId] | (typeof sessionActions)[SessionActionId];
+  (typeof appActions)[AppActionId] | (typeof sessionActions)[SessionActionId] |
+  (typeof contextualActions)[ContextualActionId];
 export type KeymapId = Extract<Metadata, { keymapId: string }>["keymapId"];
 export type ActionDefinition = Readonly<{ id: ActionId } & ActionMetadata>;
 export const actionScopes: readonly ActionScope[] = [
-  "global",
-  "project",
-  "workspace",
-  "fork",
   "session",
+  "fork",
+  "workspace",
+  "project",
+  "global",
 ];
 
 const ids = new Set<string>();
 const bindings = new Set<string>();
 const definitions: ActionDefinition[] = [];
-for (const domain of [appActions, sessionActions]) {
+for (const domain of [appActions, sessionActions, contextualActions]) {
   for (const [id, metadata] of Object.entries(domain)) {
     if (
       !/^[a-zA-Z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*$/.test(

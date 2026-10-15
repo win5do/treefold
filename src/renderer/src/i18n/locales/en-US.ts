@@ -296,6 +296,11 @@ export const enUS = {
     "closeToast": "Close toast"
   },
   "actionsUi": {
+    "back": "Back",
+    "loading": "Loading…",
+    "loadFailed": "Could not load options. Try again.",
+    "retry": "Retry",
+    "keyboardHelp": "↑↓ Select · → Enter submenu · ← Back · Enter Run · Esc Close",
     "commandPalette": "Command Palette",
     "global": "Global",
     "searchActions": "Search actions",
@@ -1065,6 +1070,8 @@ export const enUS = {
     "fork": "Fork"
   },
   "actionLabels": {
+    "git": { "sync": { "push": "Push", "pull": "Pull" } },
+    "directory": { "open": { "with": "Open With" } },
     "app": {
       "settings": {
         "open": "Open Settings"

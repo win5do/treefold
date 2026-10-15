@@ -1016,6 +1016,18 @@ function Workspace() {
     project: selectedProject, workspace, session: selectedSession, busy,
     pathname: location.pathname,
     actions: {
+      git: {
+        sync: (context, action, repositoryId) => {
+          if (repositoryId) {
+            if (context.workspace) void gitSyncWorkspaceRepository(repositoryId, action);
+            else void gitSyncDirectory(repositoryId, action);
+          } else if (context.workspace) {
+            void gitSync("workspaces", context.workspace.id, action);
+          } else if (context.project) {
+            void gitSync("projects", context.project.id, action);
+          }
+        },
+      },
       navigate,
       global: {
         settings: () => setSettingsOpen(true),
