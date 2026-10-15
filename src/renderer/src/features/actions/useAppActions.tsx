@@ -16,6 +16,7 @@ import { gitPaletteActions, type GitPaletteHandlers } from "@/features/git/palet
 import { openInPaletteActions } from "@/features/open-in/paletteActions";
 import { toast } from "@/lib/toast";
 import { CommandPalette } from "./CommandPalette";
+import { ActionMenu, type ActionMenuRequest } from "./ActionMenu";
 import {
   bindActions,
   type ActionContext,
@@ -46,6 +47,7 @@ export function useAppActions(scope: Scope) {
   const { t } = useTranslation();
   const query = useQuery(keymapQuery());
   const [palette, setPalette] = useState<ActionInvocation | null>(null);
+  const [menu, setMenu] = useState<ActionMenuRequest | null>(null);
   const [creating, setCreating] = useState<{
     context: ActionContext;
     create: Scope["actions"]["session"]["create"];
@@ -146,8 +148,10 @@ export function useAppActions(scope: Scope) {
           invocation={palette}
           keymap={query.error ? undefined : query.data}
           onClose={() => setPalette(null)}
+          onOpenMenu={(entry, anchor) => setMenu({ entry, anchor, returnFocus: palette.returnFocus })}
         />
       )}
+      {menu && <ActionMenu request={menu} onClose={() => setMenu(null)} />}
       {creating && owner && (
         <NewSessionDialog
           key={owner.id}

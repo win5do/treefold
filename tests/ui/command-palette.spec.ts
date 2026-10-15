@@ -190,7 +190,7 @@ for (const owner of [
   { name: "Project", path: `projects/${FIXTURE_IDS.project}`, repository: FIXTURE_IDS.primaryRepository, api: "project-repositories" },
   { name: "Workspace", path: `workspaces/${FIXTURE_IDS.workspace}`, repository: FIXTURE_IDS.workspacePrimaryLocation, api: "workspace-repositories" },
 ]) {
-  test(`palette navigates ${owner.name} sync choices with arrows and submits the captured target`, async () => {
+  test(`palette opens an independent ${owner.name} sync menu and submits the captured target`, async () => {
     const harness = await startUiHarness((fixture) => {
       const repositories = fixture.workspaceDetails[FIXTURE_IDS.workspace].repositories;
       repositories.push({
@@ -211,24 +211,18 @@ for (const owner of [
       await search.fill("push");
       await expect(palette.getByRole("option", { name: "Push", exact: true })).toHaveAttribute("aria-selected", "true");
       await search.press("Enter");
-      await expect(search).toHaveValue("push");
+      await expect(palette).toHaveCount(0);
       expect(harness.syncRequests).toEqual([]);
-      await search.press("ArrowRight");
-      await expect(search).toBeFocused();
-      await expect(search).toHaveValue("");
-      await expect(palette.getByRole("option", { name: "Push All", exact: true })).toHaveAttribute("aria-selected", "true");
+      const menu = page.getByRole("menu", { name: "Push", exact: true });
+      await expect(menu.getByRole("menuitem", { name: "Push All", exact: true })).toBeFocused();
       // Failed and read-only Workspace repositories must not become sync targets.
-      await expect(palette.getByRole("option")).toHaveCount(owner.name === "Project" ? 3 : 2);
-      await search.press("ArrowLeft");
-      await expect(search).toHaveValue("push");
-      await expect(palette.getByRole("option", { name: "Push", exact: true })).toHaveAttribute("aria-selected", "true");
-      await search.press("ArrowRight");
-      await search.press("ArrowDown");
-      await expect(palette.getByRole("option", { name: "fixture-repository", exact: true })).toHaveAttribute("aria-selected", "true");
+      await expect(menu.getByRole("menuitem")).toHaveCount(owner.name === "Project" ? 3 : 2);
+      await page.keyboard.press("ArrowDown");
+      await expect(menu.getByRole("menuitem", { name: "fixture-repository", exact: true })).toBeFocused();
       await page.evaluate(() => { window.location.hash = "#/projects"; });
       await expect(page).toHaveURL(/#\/projects$/);
-      await search.press("Enter");
-      await expect(palette).toHaveCount(0);
+      await page.keyboard.press("Enter");
+      await expect(menu).toHaveCount(0);
       await expect.poll(() => harness.syncRequests).toEqual([`/api/${owner.api}/${owner.repository}/git/push`]);
       await expect(page.getByRole("status")).toContainText("Push succeeded");
 
@@ -236,7 +230,8 @@ for (const owner of [
       await expect(page.getByTestId("page-content")).toBeVisible();
       await page.keyboard.press("Meta+Shift+p");
       await palette.getByRole("option", { name: "Pull", exact: true }).click();
-      await palette.getByRole("option", { name: "Pull All", exact: true }).click();
+      await expect(palette).toHaveCount(0);
+      await page.getByRole("menuitem", { name: "Pull All", exact: true }).click();
       await expect.poll(() => harness.syncRequests.at(-1)).toBe(`/api/${owner.path}/git/pull-all`);
       harness.assertNoUnexpectedRequests();
     } finally {

@@ -3,12 +3,16 @@ import { expect, type Locator } from '@playwright/test';
 // Keep overlay geometry and hit-testing in one place. A visible popup can still
 // be detached from its trigger, outside the viewport, or behind another layer.
 export async function expectAnchoredOverlay(popup: Locator, anchor: Locator) {
+  await expectReachableOverlay(popup, anchor);
+}
+
+export async function expectReachableOverlay(popup: Locator, anchor?: Locator) {
   await expect(popup).toBeVisible();
-  const anchorElement = await anchor.elementHandle();
-  if (!anchorElement) throw new Error('Overlay anchor is not mounted');
+  const anchorElement = await anchor?.elementHandle();
+  if (anchor && !anchorElement) throw new Error('Overlay anchor is not mounted');
   await expect.poll(() => popup.evaluate((element, trigger) => {
     const rect = element.getBoundingClientRect();
-    const origin = trigger!.getBoundingClientRect();
+    const origin = trigger?.getBoundingClientRect() ?? rect;
     const horizontalGap = Math.max(0, origin.left - rect.right, rect.left - origin.right);
     const verticalGap = Math.max(0, origin.top - rect.bottom, rect.top - origin.bottom);
     const points = [
@@ -23,7 +27,7 @@ export async function expectAnchoredOverlay(popup: Locator, anchor: Locator) {
       anchored: horizontalGap <= 16 && verticalGap <= 16,
       reachable: points.every(([x, y]) => element.contains(document.elementFromPoint(x, y))),
     };
-  }, anchorElement), { message: 'Menu must stay beside its trigger, within the viewport, and above other content' })
+  }, anchorElement ?? null), { message: 'Menu must stay beside its trigger, within the viewport, and above other content' })
     .toEqual({ inViewport: true, anchored: true, reachable: true });
-  await anchorElement.dispose();
+  await anchorElement?.dispose();
 }

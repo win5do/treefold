@@ -1,23 +1,26 @@
 import { useTranslation } from "react-i18next";
-import { useRef } from "react";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { useRef, useState } from "react";
+import { ChevronRight } from "lucide-react";
 import { actionLabel } from "./labels";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandShortcut } from "@/components/ui/command";
 import { displayedChord } from "@/features/keymap/keyboard";
 import type { Keymap } from "@/features/keymap/api";
 import { actionScopes, type ActionInvocation, type PaletteEntry } from "./model";
-import { usePaletteNavigation } from "./usePaletteNavigation";
+import { searchPalette } from "./paletteSearch";
+import type { ActionMenuRequest } from "./ActionMenu";
 
-export function CommandPalette({ invocation, keymap, onClose }: {
+export function CommandPalette({ invocation, keymap, onClose, onOpenMenu }: {
   invocation: ActionInvocation;
   keymap?: Keymap;
   onClose: () => void;
+  onOpenMenu: (entry: PaletteEntry, anchor: ActionMenuRequest["anchor"]) => void;
 }) {
   const { t } = useTranslation();
   const executed = useRef(false);
-  const input = useRef<HTMLInputElement>(null);
+  const items = useRef(new Map<string, HTMLDivElement>());
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState("");
   const roots: PaletteEntry[] = invocation.actions
     .filter((action) => action.showInPalette !== false && action.available(invocation.context))
     .map((action) => ({
@@ -31,13 +34,19 @@ export function CommandPalette({ invocation, keymap, onClose }: {
         ? { children: () => action.children(invocation.context) }
         : { run: () => action.run(invocation.context) }),
     }));
-  const nav = usePaletteNavigation(roots, t("actionsUi.actions"));
+  const entries = searchPalette(roots, query);
+  const selectedEntry = entries.find((entry) => entry.id === selected) ?? entries[0];
 
-  function execute(entry: PaletteEntry) {
-    if (!entry.run || executed.current) return;
+  function select(entry: PaletteEntry) {
+    if (executed.current) return;
     executed.current = true;
+    const rect = items.current.get(entry.id)?.getBoundingClientRect();
     onClose();
-    entry.run();
+    if (entry.children) {
+      onOpenMenu(entry, { x: rect?.left ?? innerWidth / 2, y: rect?.bottom ?? innerHeight / 2 });
+    } else {
+      entry.run();
+    }
   }
 
   return (
@@ -51,57 +60,27 @@ export function CommandPalette({ invocation, keymap, onClose }: {
         <DialogDescription className="sr-only">
           {invocation.context.workspace?.name ?? invocation.context.project?.name ?? t("actionsUi.global")}
         </DialogDescription>
-        {nav.canBack && (
-          <div className="flex min-w-0 items-center gap-2 px-3 py-2">
-            <Button variant="ghost" size="icon-sm" aria-label={t("actionsUi.back")}
-              onClick={() => { nav.back(); input.current?.focus(); }}>
-              <ArrowLeft data-icon="inline-start" />
-            </Button>
-            <span className="truncate text-muted-foreground" title={nav.path}>{nav.path}</span>
-          </div>
-        )}
-        <Command
-          key={nav.frame.id}
-          loop
-          shouldFilter={false}
-          value={nav.selected?.id ?? ""}
-          onValueChange={nav.select}
-          onKeyDownCapture={(event) => {
-            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-            const modified = event.metaKey || event.ctrlKey || event.altKey || event.shiftKey;
-            if (modified && event.key !== "Enter") return;
-            if (!["ArrowRight", "ArrowLeft", "Enter"].includes(event.key)) return;
-            event.preventDefault();
-            event.stopPropagation();
-            if (event.repeat || modified) return;
-            if (event.key === "ArrowLeft") nav.back();
-            else if (nav.selected) {
-              if (event.key === "ArrowRight") nav.enter(nav.selected);
-              else execute(nav.selected);
-            }
-          }}
-        >
-          <CommandInput ref={input} autoFocus value={nav.frame.query} onValueChange={nav.search}
+        <Command loop shouldFilter={false} value={selectedEntry?.id ?? ""} onValueChange={setSelected}>
+          <CommandInput autoFocus value={query} onValueChange={(value) => { setQuery(value); setSelected(""); }}
             aria-label={t("actionsUi.searchActions")} placeholder={t("actionsUi.searchActions2")} />
-          <CommandList label={nav.frame.title} aria-busy={nav.frame.loading || undefined}>
-            <CommandEmpty>
-              {nav.frame.loading ? t("actionsUi.loading") : nav.frame.error ? t("actionsUi.loadFailed") : t("actionsUi.noActionsFound")}
-            </CommandEmpty>
+          <CommandList label={t("actionsUi.actions")}>
+            <CommandEmpty>{t("actionsUi.noActionsFound")}</CommandEmpty>
             {actionScopes.map((scope) => {
-              const entries = nav.entries.filter((entry) => entry.scope === scope);
-              return entries.length > 0 && (
-                <CommandGroup key={scope} heading={nav.canBack ? undefined : t(`actionScopes.${scope}`)}>
-                  {entries.map((entry) => {
+              const group = entries.filter((entry) => entry.scope === scope);
+              return group.length > 0 && (
+                <CommandGroup key={scope} heading={t(`actionScopes.${scope}`)}>
+                  {group.map((entry) => {
                     const binding = keymap?.commands.find((command) => command.id === entry.keymapId)?.binding;
                     return (
                       <CommandItem
                         key={entry.id}
+                        ref={(element) => { if (element) items.current.set(entry.id, element); else items.current.delete(entry.id); }}
                         value={entry.id}
                         aria-label={entry.label}
                         aria-description={entry.actionId}
-                        aria-keyshortcuts={entry.children ? "ArrowRight" : "Enter"}
+                        aria-haspopup={entry.children ? "menu" : undefined}
                         className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_5rem]"
-                        onSelect={() => entry.children ? nav.enter(entry) : execute(entry)}
+                        onSelect={() => select(entry)}
                       >
                         <span className="flex min-w-0 items-center gap-1">
                           <span className="truncate" title={entry.label}>{entry.label}</span>
@@ -117,11 +96,6 @@ export function CommandPalette({ invocation, keymap, onClose }: {
             })}
           </CommandList>
         </Command>
-        {nav.frame.error && (
-          <Button variant="ghost" onClick={() => { nav.retry(); input.current?.focus(); }}>
-            {t("actionsUi.retry")}
-          </Button>
-        )}
         <p className="px-3 py-2 text-xs text-muted-foreground">{t("actionsUi.keyboardHelp")}</p>
       </DialogContent>
     </Dialog>

@@ -296,11 +296,10 @@ export const enUS = {
     "closeToast": "Close toast"
   },
   "actionsUi": {
-    "back": "Back",
     "loading": "Loading…",
     "loadFailed": "Could not load options. Try again.",
     "retry": "Retry",
-    "keyboardHelp": "↑↓ Select · → Enter submenu · ← Back · Enter Run · Esc Close",
+    "keyboardHelp": "↑↓ Select · Enter Confirm · Esc Close",
     "commandPalette": "Command Palette",
     "global": "Global",
     "searchActions": "Search actions",
