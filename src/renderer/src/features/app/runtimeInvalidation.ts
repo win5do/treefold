@@ -1,4 +1,4 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { InvalidateOptions, QueryClient } from "@tanstack/react-query";
 import { appKeys } from "@/features/app/queries";
 import { projectKeys } from "@/features/projects/queries";
 
@@ -11,33 +11,36 @@ export const allRuntimeDomains: RuntimeDomain[] = [
   "amux",
 ];
 
+const hierarchyKeys = [projectKeys.summaries, projectKeys.sidebar, ["project"], ["workspace"], ["workspace-worktrees"]];
+
 export async function invalidateHierarchyQueries(queryClient: QueryClient) {
-  await Promise.all([
-    queryClient.invalidateQueries({ queryKey: projectKeys.summaries }),
-    queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
-    queryClient.invalidateQueries({ queryKey: ["project"] }),
-    queryClient.invalidateQueries({ queryKey: ["workspace"] }),
-    queryClient.invalidateQueries({ queryKey: ["workspace-worktrees"] }),
-  ]);
+  await Promise.all(hierarchyKeys.map(queryKey => queryClient.invalidateQueries({ queryKey })));
+}
+
+function runtimeQueryKeys(domains: readonly RuntimeDomain[]) {
+  return [
+    ...(domains.includes("sidebar") ? hierarchyKeys : []),
+    ...(domains.includes("sessions") ? [["project-sessions"], ["workspace-sessions"]] : []),
+    ...(domains.includes("processes") ? [appKeys.processes] : []),
+    ...(domains.includes("amux") ? [appKeys.amux] : []),
+  ];
 }
 
 export async function invalidateRuntimeQueries(
   queryClient: QueryClient,
   domains: readonly RuntimeDomain[] = allRuntimeDomains,
+  options: InvalidateOptions = {},
 ) {
-  const invalidations: Promise<void>[] = [];
-  if (domains.includes("sidebar")) {
-    invalidations.push(invalidateHierarchyQueries(queryClient));
-  }
-  if (domains.includes("sessions")) {
-    invalidations.push(queryClient.invalidateQueries({ queryKey: ["project-sessions"] }));
-    invalidations.push(queryClient.invalidateQueries({ queryKey: ["workspace-sessions"] }));
-  }
-  if (domains.includes("processes")) {
-    invalidations.push(queryClient.invalidateQueries({ queryKey: appKeys.processes }));
-  }
-  if (domains.includes("amux")) {
-    invalidations.push(queryClient.invalidateQueries({ queryKey: appKeys.amux }));
-  }
-  await Promise.all(invalidations);
+  await Promise.all(runtimeQueryKeys(domains).map(queryKey => queryClient.invalidateQueries({ queryKey }, options)));
+}
+
+export async function refreshRuntimeQueries(queryClient: QueryClient, domains: readonly RuntimeDomain[], signal: AbortSignal) {
+  // A focus/manual refresh may already be in flight. Let it finish, then fetch
+  // the event's state rather than cancelling it or reusing a stale response.
+  const inFlight = runtimeQueryKeys(domains).flatMap(queryKey =>
+    queryClient.getQueryCache().findAll({ queryKey, fetchStatus: "fetching" }).map(query => query.promise),
+  );
+  await Promise.allSettled(inFlight);
+  if (signal.aborted) return;
+  await invalidateRuntimeQueries(queryClient, domains, { cancelRefetch: false });
 }

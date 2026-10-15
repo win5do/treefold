@@ -2,7 +2,9 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { appApi } from "@/api/app";
 import { logStreamState, streamUrl } from "@/api/client";
-import { invalidateRuntimeQueries, type RuntimeDomain } from "@/features/app/runtimeInvalidation";
+import { allRuntimeDomains, refreshRuntimeQueries, type RuntimeDomain } from "@/features/app/runtimeInvalidation";
+import { createRuntimeRefreshScheduler } from "@/features/app/runtimeRefreshScheduler";
+import { frontendLogger } from "@/lib/logger";
 
 type RuntimeChange = {
   instance_id: string;
@@ -17,7 +19,13 @@ export function RuntimeSync() {
   const cursorRef = useRef<Pick<RuntimeChange, "instance_id" | "revision"> | null>(null);
 
   useEffect(() => {
+    let disposed = false;
+    const refresh = createRuntimeRefreshScheduler<RuntimeDomain>(
+      (domains, signal) => refreshRuntimeQueries(queryClient, domains, signal),
+      cause => frontendLogger.error("Runtime refresh failed", cause),
+    );
     const accept = (change: RuntimeChange, sync: boolean) => {
+      if (disposed) return;
       const previous = cursorRef.current;
       if (previous === null) {
         cursorRef.current = change;
@@ -25,16 +33,16 @@ export function RuntimeSync() {
       }
       if (change.instance_id !== previous.instance_id) {
         cursorRef.current = change;
-        void invalidateRuntimeQueries(queryClient);
+        refresh.request(allRuntimeDomains);
         return;
       }
       if (change.revision <= previous.revision) return;
       cursorRef.current = change;
       if (sync || change.revision !== previous.revision + 1) {
-        void invalidateRuntimeQueries(queryClient);
+        refresh.request(allRuntimeDomains);
         return;
       }
-      void invalidateRuntimeQueries(queryClient, change.domains);
+      refresh.request(change.domains ?? allRuntimeDomains);
     };
 
     const events = new EventSource(streamUrl("/api/events"));
@@ -64,6 +72,8 @@ export function RuntimeSync() {
     }, FALLBACK_INTERVAL_MS);
 
     return () => {
+      disposed = true;
+      refresh.dispose();
       window.clearInterval(fallback);
       events.close();
     };

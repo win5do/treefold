@@ -111,3 +111,33 @@ test("error-feedback", async () => {
 
 });
 
+
+test("automatic query failures only log, while an explicit refresh reports the error", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "background-query-errors" });
+    const logs: string[] = [];
+    let streamOpen = false;
+    page.on("console", message => {
+      if (["warn", "error"].includes(message.type())) logs.push(message.text());
+      if (message.text().includes("Stream open /api/events")) streamOpen = true;
+    });
+    await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+    await expect(page.getByTestId(`workspace-list-row-${FIXTURE_IDS.workspace}`)).toBeVisible();
+    await expect.poll(() => streamOpen).toBe(true);
+    await page.route("**/api/sidebar", route => route.abort("failed"));
+    harness.setProcessState(FIXTURE_IDS.workspaceShell, "exited");
+    await expect.poll(() => page!.evaluate(async () => {
+      const { queryClient } = await import("/src/features/app/queryClient.ts");
+      return queryClient.getQueryState(["sidebar"])?.status;
+    })).toBe("error");
+    expect(logs.some(message => message.includes("HTTP GET /api/sidebar") && message.includes("outcome=failed"))).toBe(true);
+    await expect(page.locator('[data-slot="toast"][role="alert"]')).toHaveCount(0);
+    await page.getByRole("button", { name: "Refresh Workspace", exact: true }).click();
+    await expect(page.locator('[data-slot="toast"][role="alert"]')).toContainText(/fetch/i);
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});

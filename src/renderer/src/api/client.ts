@@ -83,7 +83,9 @@ export async function request<T = void>(path: string, options: RequestOptions = 
   } catch (cause) {
     const aborted = cause instanceof DOMException && cause.name === "AbortError";
     const level = aborted ? "debug" : status >= 500 || status === 0 ? "error" : "warn";
-    frontendLogger[level](`request_id=${activeId} HTTP ${label} status=${status} outcome=${aborted ? "aborted" : "failed"} elapsed_ms=${Math.round(performance.now() - started)}`);
+    const message = `request_id=${activeId} HTTP ${label} status=${status} outcome=${aborted ? "aborted" : "failed"} elapsed_ms=${Math.round(performance.now() - started)}`;
+    if (level === "debug") frontendLogger.debug(message);
+    else frontendLogger[level](message, cause);
     throw cause;
   }
 }

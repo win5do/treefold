@@ -2,11 +2,12 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { refreshGitQueries } from "@/features/git/queries";
 import { toast } from "@/lib/toast";
+import { frontendLogger } from "@/lib/logger";
 
 export function useWorkspaceRefresh() {
   const client = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
-  const refresh = async () => {
+  const refresh = async ({ background = false }: { background?: boolean } = {}) => {
     setRefreshing(true);
     try {
       await Promise.all([
@@ -17,7 +18,8 @@ export function useWorkspaceRefresh() {
         refreshGitQueries(client),
       ]);
     } catch (cause) {
-      toast.errorFrom(cause);
+      if (background) frontendLogger.error("Background Workspace refresh failed", cause);
+      else toast.errorFrom(cause);
     } finally {
       setRefreshing(false);
     }

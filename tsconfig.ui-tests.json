@@ -16,6 +16,8 @@
     "tests/ui/**/*.ts",
     "src/renderer/src/features/actions/model/**/*.ts",
     "src/renderer/src/features/updates/reminders.ts",
+    "src/renderer/src/features/app/queryClient.ts",
+    "src/renderer/src/features/app/runtimeRefreshScheduler.ts",
     "src/preload/bridge.d.ts",
     "src/main/open-project.ts",
     "src/renderer/src/vite-env.d.ts",

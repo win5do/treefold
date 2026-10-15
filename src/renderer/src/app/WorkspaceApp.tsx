@@ -237,13 +237,6 @@ function Workspace() {
     : params.projectId
       ? projectDetail.isPending
       : summaries.isPending;
-  const queryError =
-    workspaceDetail.error ??
-    projectDetail.error ??
-    summaries.error ??
-    sidebar.error ??
-    systemQueryResult.error ??
-    settingsQueryResult.error;
   const [busy, setBusy] = useState(false);
   const [warning, setWarning] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
@@ -298,10 +291,6 @@ function Workspace() {
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Set<string>>(
     new Set(),
   );
-
-  useEffect(() => {
-    if (queryError instanceof Error) toast.error(queryError.message);
-  }, [queryError]);
 
   useEffect(() => {
     const active = Object.values(deletingWorktrees).filter(
@@ -1352,7 +1341,7 @@ function Workspace() {
                       void act(() => sessionsApi.restart(selectedSession.id))
                     }
                     onExit={() => {
-                      void refresh();
+                      void refresh({ background: true });
                     }}
                   />
                 </Suspense>
