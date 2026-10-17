@@ -43,11 +43,11 @@ test('About menu opens the shared dialog, restores the window, and survives relo
       (globalThis as typeof globalThis & { aboutLinks: string[] }).aboutLinks = [];
       shell.openExternal = async url => { (globalThis as typeof globalThis & { aboutLinks: string[] }).aboutLinks.push(url); };
     });
-    for (const href of ['https://github.com/win5do/treefold', 'https://treefold.fffeng566.workers.dev/', 'https://github.com/win5do']) {
+    for (const href of ['https://github.com/win5do/treefold', 'https://treefold.win5do.top/', 'https://github.com/win5do']) {
       await dialog.locator(`a[href="${href}"]`).click();
     }
     await expect.poll(() => desktop!.evaluate(() => (globalThis as typeof globalThis & { aboutLinks: string[] }).aboutLinks)).toEqual([
-      'https://github.com/win5do/treefold', 'https://treefold.fffeng566.workers.dev/', 'https://github.com/win5do',
+      'https://github.com/win5do/treefold', 'https://treefold.win5do.top/', 'https://github.com/win5do',
     ]);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();

@@ -8,7 +8,7 @@ Treefold 是一个本地优先的 macOS App，让你在独立的 Git worktree �
 
 用你熟悉的 **Codex、Claude Code、OpenCode 或 Pi** 开发，用 Shell 启动服务和运行测试。每项 feature 有自己的 Workspace，不必在几个任务之间反复切分支、找终端、回忆进度。
 
-[安装](#安装) · [开始第一个任务](#开始第一个任务) · [常见使用场景](#常见使用场景) · [官网](https://treefold.fffeng566.workers.dev/) · [GitHub Releases](https://github.com/win5do/treefold/releases)
+[安装](#安装) · [开始第一个任务](#开始第一个任务) · [常见使用场景](#常见使用场景) · [官网](https://treefold.win5do.top/) · [GitHub Releases](https://github.com/win5do/treefold/releases)
 
 ## 界面一览
 

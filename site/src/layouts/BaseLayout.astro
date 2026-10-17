@@ -27,10 +27,10 @@ const defaultPath = getLocalizedPath(defaultLocale, route);
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <link rel="canonical" href={currentPath} />
-    <link rel="alternate" hreflang={localeMeta[locale].hreflang} href={currentPath} />
-    <link rel="alternate" hreflang={localeMeta[alternateLocale].hreflang} href={alternatePath} />
-    <link rel="alternate" hreflang="x-default" href={defaultPath} />
+    <link rel="canonical" href={new URL(currentPath, Astro.site)} />
+    <link rel="alternate" hreflang={localeMeta[locale].hreflang} href={new URL(currentPath, Astro.site)} />
+    <link rel="alternate" hreflang={localeMeta[alternateLocale].hreflang} href={new URL(alternatePath, Astro.site)} />
+    <link rel="alternate" hreflang="x-default" href={new URL(defaultPath, Astro.site)} />
     <link rel="icon" href="/favicon.png" type="image/png" />
     <title>{title}</title>
   </head>

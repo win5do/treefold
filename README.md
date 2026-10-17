@@ -8,7 +8,7 @@ Treefold is a local-first macOS app for running AI agents in isolated Git worktr
 
 Develop with **Codex, Claude Code, OpenCode, or Pi**, and use Shell Sessions to run services and tests. Each feature gets its own Workspace, so you can switch tasks without repeatedly switching branches, finding terminals, or reconstructing your progress.
 
-[Install](#install) · [Start your first task](#start-your-first-task) · [Common workflows](#common-workflows) · [Website](https://treefold.fffeng566.workers.dev/) · [GitHub Releases](https://github.com/win5do/treefold/releases)
+[Install](#install) · [Start your first task](#start-your-first-task) · [Common workflows](#common-workflows) · [Website](https://treefold.win5do.top/) · [GitHub Releases](https://github.com/win5do/treefold/releases)
 
 ## A look inside
 

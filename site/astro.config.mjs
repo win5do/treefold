@@ -2,6 +2,7 @@ import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
+  site: 'https://treefold.win5do.top/',
   i18n: {
     defaultLocale: 'zh-cn',
     locales: ['zh-cn', 'en'],
