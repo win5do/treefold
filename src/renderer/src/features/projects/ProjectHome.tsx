@@ -1,4 +1,5 @@
 import { ArchivedCleanupMenu } from "@/features/workspace/ArchivedCleanupMenu";
+import { ProjectReviewSettings } from "@/features/agent-review/ProjectReviewSettings";
 import { isSessionListed } from "@/features/terminal/model/sessionListVisibility";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { AGENT_NAMES, isAgentKind } from "@/features/agents/model";
@@ -93,6 +94,7 @@ export function ProjectHome({
           <p className="mt-2 text-sm text-muted-foreground">
             {project.description}
           </p>
+          {project.status === "active" && <div className="mt-4"><ProjectReviewSettings key={project.id} projectId={project.id} /></div>}
         </div>
         <section className="mt-10">
           <div className="flex items-center justify-between gap-3">

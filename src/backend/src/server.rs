@@ -452,6 +452,10 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/workspaces/{id}/resync", post(resync_workspace))
         .route(
+            "/api/workspaces/{id}/agent-review",
+            get(agent_review::context).post(agent_review::start),
+        )
+        .route(
             "/api/workspaces/{id}/git/pull-all",
             post(pull_all_workspace),
         )
@@ -532,6 +536,10 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/parent-operations/{id}/abort",
             post(abort_parent_operation),
+        )
+        .route(
+            "/api/workspaces/{id}/finish-processes",
+            get(finish_batch::processes::list),
         )
         .route(
             "/api/workspaces/{id}/finish-batch",
@@ -661,6 +669,7 @@ mod parent_operation;
 mod reopen;
 mod workspace_delete;
 use workspace_delete::delete_workspace;
+mod agent_review;
 mod project_creation;
 mod project_open;
 mod session;

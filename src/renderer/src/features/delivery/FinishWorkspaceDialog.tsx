@@ -14,6 +14,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { ParentOperation, Session, WorkspaceDetail } from "@/domain/types";
 import { useFinishBatch } from "./useFinishBatch";
+import { useFinishProcessGuard } from "./useFinishProcessGuard";
 import { ForkDeliveryOptions } from "./ForkDeliveryOptions";
 import { ForceFinishWorkspace } from "./ForceFinishWorkspace";
 import { finishErrorText, isWorktreeError } from "./finishErrors";
@@ -27,6 +28,7 @@ export function FinishWorkspaceDialog({
   onOpenSession,
   onOpenShell,
   onReviewChanges,
+  onAgentReview,
 }: {
   workspace: WorkspaceDetail | null;
   onOpenChange: (open: boolean) => void;
@@ -34,10 +36,19 @@ export function FinishWorkspaceDialog({
   onOpenSession: (operation: ParentOperation, session: Session) => void;
   onOpenShell: (locationId: string) => void;
   onReviewChanges: (locationId: string) => void;
+  onAgentReview: () => void;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const flow = useFinishBatch(workspace);
+  const processes = useFinishProcessGuard({
+    workspaceId: workspace?.id,
+    continueWork: flow.batch?.continue_work ?? flow.continueWork,
+    execute: flow.execute,
+    onWait: () => onOpenChange(false),
+  });
+  const busy = flow.busy || processes.checking;
+  const close = () => { processes.cancel(); onOpenChange(false); };
   const [selected, setSelected] = useState("");
   useEffect(() => setSelected(""), [workspace?.id]);
   const repositories =
@@ -58,7 +69,7 @@ export function FinishWorkspaceDialog({
   const progress = flow.batch?.items.filter((item) => flow.batch?.continue_work ? item.delivered : item.cleaned).length ?? 0;
   const hasDamagedRepositories = flow.skippedRepositories.length > 0;
   return (
-    <Dialog open={Boolean(workspace)} onOpenChange={onOpenChange}>
+    <Dialog open={Boolean(workspace)} onOpenChange={open => { if (!open) close(); }}>
       <DialogContent className="flex h-[min(44rem,86vh)] flex-col overflow-hidden sm:max-w-4xl">
         <DialogHeader className="shrink-0">
           <DialogTitle>
@@ -85,7 +96,7 @@ export function FinishWorkspaceDialog({
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
         {workspace && !flow.batch && flow.loaded && (
-          <ForkDeliveryOptions kind={workspace.kind} continueWork={flow.continueWork} onContinueWork={flow.setContinueWork} action={flow.forkAction} onAction={flow.setForkAction} disabled={flow.busy} />
+          <ForkDeliveryOptions kind={workspace.kind} continueWork={flow.continueWork} onContinueWork={flow.setContinueWork} action={flow.forkAction} onAction={flow.setForkAction} disabled={busy} />
         )}
         {workspace && !flow.batch && flow.loaded && (
           <DeliveryBlockers
@@ -299,12 +310,12 @@ export function FinishWorkspaceDialog({
             </div>
           </Tabs>
         )}
-        {(flow.error || flow.batch?.error) && (
+        {(processes.error || flow.error || flow.batch?.error) && (
           <p
             role="alert"
             className="max-h-24 overflow-y-auto break-words text-xs text-destructive"
           >
-            {flow.error || flow.batch?.error}
+            {processes.error || flow.error || flow.batch?.error}
           </p>
         )}
         </div>
@@ -331,11 +342,12 @@ export function FinishWorkspaceDialog({
                 : null}
           </p>
           <div className="flex gap-2">
+            {!flow.batch && repositories.length > 0 && <Button variant="outline" disabled={busy || !flow.loaded} onClick={onAgentReview}>{t("agentReview.title")}</Button>}
             {(!flow.batch || flow.batch.status === "paused") &&
               repositories.length > 0 && (
                 <Button
                   variant="ghost"
-                  disabled={flow.busy}
+                  disabled={busy}
                   onClick={flow.recheck}
                 >
                   {t("deliveryUi.batchRecheck")}
@@ -343,7 +355,7 @@ export function FinishWorkspaceDialog({
               )}
             <Button
               variant="secondary"
-              onClick={() => (completed && !flow.batch?.continue_work ? onCompleted() : onOpenChange(false))}
+              onClick={() => (completed && !flow.batch?.continue_work ? onCompleted() : close())}
             >
               {t(
                 flow.batch
@@ -357,14 +369,14 @@ export function FinishWorkspaceDialog({
               <Button
                 data-testid="finish-confirm-action"
                 disabled={
-                  flow.busy ||
+                  busy ||
                   hasDamagedRepositories ||
                   !flow.loaded ||
                   (flow.batch ? flow.batch.status === "running" : !flow.ready)
                 }
-                onClick={() => void flow.execute()}
+                onClick={() => void processes.execute()}
               >
-                {t(
+                {processes.checking ? t("deliveryUi.processes.checking") : t(
                   flow.batch
                     ? flow.batch.status === "running"
                       ? flow.batch.continue_work ? "deliveryUi.forkDelivery.delivering" : "deliveryUi.finishing"
@@ -380,13 +392,14 @@ export function FinishWorkspaceDialog({
                 <ForceFinishWorkspace
                   repositories={flow.skippedRepositories}
                   ready={flow.forceReady}
-                  busy={flow.busy}
+                  busy={busy}
                   execute={() => flow.execute(true)}
                 />
               )}
           </div>
         </div>
       </DialogContent>
+      {processes.dialog}
     </Dialog>
   );
 }

@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Serialize)]
+pub struct FinishProcess {
+    pub session_id: String,
+    pub name: String,
+    pub kind: String,
+    pub state: String,
+    pub pid: i32,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FinishPlanItem {
     pub repository_id: String,

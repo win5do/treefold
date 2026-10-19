@@ -516,6 +516,7 @@ export type ThemePreference = "system" | "light" | "dark";
 export type CloseBehavior = "hide_to_tray" | "quit";
 
 export type AppSettings = {
+  projects?: Record<string, { review_prompt: string }>;
   schema_version: number;
   language: LanguagePreference;
   theme: ThemePreference;

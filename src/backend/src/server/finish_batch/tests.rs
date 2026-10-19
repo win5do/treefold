@@ -1546,3 +1546,35 @@ async fn workspace_status_is_scoped_to_owned_checkouts() {
             .dirty
     );
 }
+
+#[tokio::test]
+async fn finish_processes_check_does_not_start_an_offline_daemon() {
+    let fixture = fixture().await;
+    assert!(
+        fixture
+            .state
+            .terminals
+            .existing_processes()
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let Json(processes) =
+        super::processes::list(State(fixture.state.clone()), AxumPath(fixture.workspace.id))
+            .await
+            .unwrap();
+    assert!(processes.is_empty());
+    assert!(
+        fixture
+            .state
+            .terminals
+            .existing_processes()
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(matches!(
+        super::processes::list(State(fixture.state), AxumPath("missing".into())).await,
+        Err(AppError::NotFound)
+    ));
+}

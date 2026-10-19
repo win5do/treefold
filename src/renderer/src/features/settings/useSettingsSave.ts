@@ -5,6 +5,7 @@ import { appKeys } from "@/features/app/queries";
 import type { LanguagePreference } from "@/i18n";
 import type { AgentsSettingsPatch, CloseBehavior, ThemePreference } from "@/domain/types";
 export type SettingsFormPatch = {
+  projects?: Record<string, { review_prompt: string }>;
   language?: LanguagePreference;
   theme?: ThemePreference;
   closeBehavior?: CloseBehavior;
@@ -20,6 +21,7 @@ export function useSettingsSave() {
     try {
       await client.cancelQueries({ queryKey: appKeys.settings });
       const next = await appApi.updateSettings({
+        projects: update.projects,
         reset: update.reset,
         language: update.language,
         theme: update.theme,

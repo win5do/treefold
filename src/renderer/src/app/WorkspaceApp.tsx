@@ -2,6 +2,7 @@ import { CreateWorkspaceDialog } from "@/features/workspace/CreateWorkspaceDialo
 import { CreateProjectDialog } from "@/features/projects/CreateProjectDialog";
 import { useProjectOpening } from "@/features/projects/useProjectOpening";
 import { useNewSession } from "@/features/terminal/useNewSession";
+import { useAgentReview } from "@/features/agent-review/useAgentReview";
 import { isAgentKind } from "@/features/agents/model";
 import type { AgentKind } from "@/domain/types";
 import { useWorkspaceRefresh } from "@/features/app/useWorkspaceRefresh";
@@ -992,10 +993,15 @@ function Workspace() {
   }
 
   const newSession = useNewSession();
+  const agentReview = useAgentReview(session => {
+    void refresh();
+    navigate(`/workspaces/${session.workspace_id}/sessions/${session.id}`);
+  });
   const shortcutDialog = useAppActions({
     project: selectedProject, workspace, session: selectedSession, busy,
     pathname: location.pathname,
     actions: {
+      review: agentReview,
       git: {
         sync: (context, action, repositoryId) => {
           if (repositoryId) {
@@ -1186,6 +1192,7 @@ function Workspace() {
           />
         )}
         <WorkspaceSidebar
+          reviewActions={agentReview}
           projects={projects}
           busy={busy}
           selectedProjectId={params.projectId}
@@ -1619,6 +1626,11 @@ function Workspace() {
       />
       <FinishWorkspaceDialog
         workspace={finishWorkspaceDialog}
+        onAgentReview={() => {
+          if (!finishWorkspaceDialog) return;
+          agentReview.open(finishWorkspaceDialog);
+          setFinishWorkspaceDialog(null);
+        }}
         onOpenChange={(open) => {
           if (!open) setFinishWorkspaceDialog(null);
         }}
@@ -1726,6 +1738,7 @@ function Workspace() {
       />
       {shortcutDialog}
       {newSession.dialog}
+      {agentReview.dialog}
       <SettingsDialog
         open={settingsOpen}
         system={system}

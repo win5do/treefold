@@ -2,12 +2,18 @@ import { test, expect, type Page } from "@playwright/test";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 import { startUiHarness } from "./ui-harness.ts";
 import { closeUiSession, createUiSession, openUiContextMenu } from "./harness/session.ts";
+import type { CreateWorkspaceInput } from "../../src/renderer/src/domain/types.ts";
 
 for (const kind of ["workspace", "fork"] as const) {
   test(`${kind} creation submits the preview branch or a user override`, async () => {
     const harness = await startUiHarness();
     let page: Page | undefined;
-    const requests: { branch: string; generated_branch: string }[] = [];
+    const requests: (CreateWorkspaceInput & { branch?: string; generated_branch?: string })[] = [];
+    const submittedBranch = (index: number) => {
+      if (kind === "fork") return requests[index].branch;
+      const checkout = requests[index].repositories?.find(item => item.repository_id === FIXTURE_IDS.primaryRepository)?.checkout;
+      return checkout?.mode === "new" ? checkout.branch : undefined;
+    };
     try {
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: `create-${kind}` });
       await page.addInitScript(() => {
@@ -42,31 +48,42 @@ for (const kind of ["workspace", "fork"] as const) {
       };
       await open();
       const dialog = page.getByRole("dialog");
-      const branch = dialog.getByRole("textbox", { name: kind === "workspace" ? "Shared local branch" : "Branch name", exact: true });
-      await expect(branch).toHaveValue("");
-      const generated = await branch.getAttribute("placeholder");
+      const branch = kind === "workspace"
+        ? dialog.getByTestId(`workspace-create-repository-${FIXTURE_IDS.primaryRepository}`).getByRole("textbox", { name: "New branch name", exact: true })
+        : dialog.getByRole("textbox", { name: "Branch name", exact: true });
+      if (kind === "workspace") await expect(branch).not.toHaveValue("");
+      else await expect(branch).toHaveValue("");
+      const generated = kind === "workspace" ? await branch.inputValue() : await branch.getAttribute("placeholder");
       expect(generated).toMatch(/^treefold\/\d{6}-\d{4}-[a-f0-9]{4}$/);
       const submit = dialog.getByRole("button", { name: kind === "workspace" ? "Create Workspace" : "Create Fork", exact: true });
       await submit.click();
       await expect.poll(() => requests.length).toBe(1);
-      expect(requests[0].branch).toBe("");
-      expect(requests[0].generated_branch).toBe(generated);
+      expect(submittedBranch(0)).toBe(kind === "workspace" ? generated : "");
+      if (kind === "fork") expect(requests[0].generated_branch).toBe(generated);
       await branch.fill("feature/my-change");
       await submit.click();
       await expect.poll(() => requests.length).toBe(2);
-      expect(requests[1].branch).toBe("feature/my-change");
+      expect(submittedBranch(1)).toBe("feature/my-change");
       await branch.fill("");
-      await expect(branch).toHaveAttribute("placeholder", generated!);
+      if (kind === "workspace") {
+        await expect(submit).toBeDisabled();
+        await branch.fill(generated!);
+      } else await expect(branch).toHaveAttribute("placeholder", generated!);
       await submit.click();
       await expect.poll(() => requests.length).toBe(3);
-      expect(requests[2].branch).toBe("");
-      expect(requests[2].generated_branch).toBe(generated);
+      expect(submittedBranch(2)).toBe(kind === "workspace" ? generated : "");
+      if (kind === "fork") expect(requests[2].generated_branch).toBe(generated);
       await expect(submit).toBeEnabled();
       await dialog.getByRole("button", { name: "Close", exact: true }).click();
       await expect(dialog).toBeHidden();
       await open();
-      await expect(branch).toHaveValue("");
-      await expect(branch).not.toHaveAttribute("placeholder", generated!);
+      if (kind === "workspace") {
+        await expect(branch).not.toHaveValue("");
+        await expect(branch).not.toHaveValue(generated!);
+      } else {
+        await expect(branch).toHaveValue("");
+        await expect(branch).not.toHaveAttribute("placeholder", generated!);
+      }
       harness.assertNoUnexpectedRequests();
     } catch (error) {
       await page?.screenshot({ path: `/tmp/treefold-create-${kind}-failure.png` });

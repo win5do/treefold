@@ -259,6 +259,8 @@ test("palette searches IDs and both languages while keeping contextual actions f
     await search.fill("open");
     await expect(palette.getByRole("option", { name: "打开方式", exact: true })).toHaveAttribute("aria-selected", "true");
     await search.press("ArrowDown");
+    await expect(palette.getByRole("option", { name: "AI Review", exact: true })).toHaveAttribute("aria-selected", "true");
+    await search.press("ArrowDown");
     await expect(palette.getByRole("option", { name: "打开设置", exact: true })).toHaveAttribute("aria-selected", "true");
     await search.fill("⌘ T");
     await expect(palette.getByRole("option")).toHaveCount(0);

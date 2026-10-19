@@ -2,6 +2,7 @@ import { createWorkspaceStatusRoutes } from "./routes/workspace-status.ts";
 import { createProjectCreationRoutes } from "./routes/project-creation.ts";
 import { createWorkspaceDeletionRoutes } from "./routes/workspace-deletion.ts";
 import { createSettingsRoutes } from "./routes/settings.ts";
+import { createAgentReviewRoutes } from "./routes/agent-review.ts";
 import { createSessionLogRoutes } from "./routes/session-logs.ts";
 import { createFinishRoutes } from "./routes/finish.ts";
 import { createKeymapRoutes } from "./routes/keymap.ts";
@@ -83,6 +84,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
   const workspaceStatusRoutes = createWorkspaceStatusRoutes({ fixture, readJson, sendJson });
   const workspaceDeletionRoutes = createWorkspaceDeletionRoutes({ fixture, sendJson });
   const settingsRoutes = createSettingsRoutes({ fixture, readJson, sendJson });
+  const agentReviewRoutes = createAgentReviewRoutes({ fixture, readJson, sendJson });
   const sessionLogRoutes = createSessionLogRoutes({ fixture });
   const finishRoutes = createFinishRoutes({ fixture, readJson, sendJson });
   const gitDiffRoutes = createGitDiffRoutes({ fixture, readJson, sendJson });
@@ -104,6 +106,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
     const requestUrl = new URL(request.url ?? "/", "http://fixture.test");
     const pathname = requestUrl.pathname;
     if (await projectCreationRoutes.handle(request, response, pathname)) return;
+    if (await agentReviewRoutes.handle(request, response, pathname)) return;
     if (await workspaceStatusRoutes.handle(request, response, pathname)) return;
     if (await workspaceDeletionRoutes.handle(request, response, pathname)) return;
     if (await sessionLogRoutes.handle(request, response, pathname)) return;

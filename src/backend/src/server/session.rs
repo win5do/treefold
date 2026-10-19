@@ -693,6 +693,15 @@ pub(super) async fn update_settings(
     input
         .validate()
         .map_err(|error| AppError::BadRequest(error.to_string()))?;
+    if let Some(projects) = &input.projects {
+        for id in projects.keys() {
+            if state.store.project(id).await?.status != "active" {
+                return Err(AppError::BadRequest(
+                    "Archived Projects are read-only".into(),
+                ));
+            }
+        }
+    }
     Ok(Json(state.settings.update(input)?))
 }
 

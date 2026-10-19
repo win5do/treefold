@@ -9,6 +9,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import type { GitBranches, GitBranchRef } from "@/domain/types";
+import { compactPath } from "@/lib/compactPath";
 import { BranchList } from "./BranchList";
 
 export function branchRefLabel(ref: GitBranchRef) {
@@ -94,10 +95,12 @@ export function BranchPicker({
                     <span className="block truncate">{ref.branch}</span>
                     {occupied && (
                       <span
-                        className="block truncate text-xs text-muted-foreground"
+                        className="pointer-events-auto block whitespace-normal break-all text-xs text-muted-foreground"
                         title={occupied}
                       >
-                        {t("workspaceUi.branchOccupied", { path: occupied })}
+                        {t("workspaceUi.branchOccupied", {
+                          path: compactPath(occupied, 40),
+                        })}
                       </span>
                     )}
                   </span>

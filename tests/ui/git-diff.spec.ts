@@ -39,7 +39,7 @@ index 1111111..2222222 100644
     await (page.locator("h1:text-is(\"Commit Diff\")")).waitFor({ timeout: 5_000, state: 'visible' });
     assert.equal((page.context().pages()).length, 1, "View Diff must remain in the current window");
     assert.match(page.url(), /view=git-changes/, "View Diff must switch the Workspace main view");
-    assert.deepEqual(harness.compareRequests.at(-1), {
+    await expect.poll(() => harness.compareRequests.at(-1)).toEqual({
       repositoryId: FIXTURE_IDS.primaryRepository,
       action: "git-diff",
       scope: "commit",
@@ -47,7 +47,7 @@ index 1111111..2222222 100644
       end_commit: FIXTURE_COMMITS[0].hash,
       commit_count: 3,
     });
-    assert.equal(await page.locator('[data-testid="git-diff-content"]').isVisible(), true, "inline diff content must be displayed");
+    await expect(page.getByTestId("git-diff-content")).toBeVisible();
     const next = page.locator('button[aria-label="Next file"]');
     await expect(next).toBeEnabled({ timeout: 3_000 });
     await next.click();

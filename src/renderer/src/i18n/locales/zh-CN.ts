@@ -1,6 +1,25 @@
 import type { LocaleMessages } from "./en-US";
 
 export const zhCN = {
+  agentReview: {
+    title: "AI Review",
+    description: "在新的 Agent Session 中检查 {{name}} 的变更，后续可继续讨论或修复问题。",
+    range: "检查范围",
+    reviewBranch: "检查分支：{{branch}}",
+    comparisonBase: "比较基准：{{branch}}",
+    rangeDescription: "Fork 与父 Workspace 比较，Workspace 与 Project 当前分支比较。检查所有可写仓库中已提交和未提交的变更。所选目录只决定 Agent 从哪里启动。",
+    prompt: "Review 提示词",
+    promptDescription: "可追加或替换本次 Session 的首条消息。仓库上下文和比较范围会自动补充，不会修改 Project 默认值。",
+    keyboardHint: "↑ / ↓ 选择 · ← 目录 · → Agent · Enter 开始 Review · Esc 关闭",
+    promptKeyboardHint: "编辑时，Enter 换行，Esc 返回目录选择。",
+    start: "开始 Review",
+    retry: "重试",
+    settings: "AI Review 设置",
+    settingsDescription: "设置此 Project 下 Workspace 和 Fork 新建 Review Session 时使用的默认提示词。",
+    defaultPromptLabel: "Review 默认提示词",
+    defaultPromptDescription: "留空时使用 Treefold 根据当前界面语言提供的默认值。自定义内容保持原语言，不影响已有 Session。",
+    defaultPrompt: "检查下方范围内的代码变更，以各仓库指定的分支为比较基准，检查待审分支引入的修改。覆盖所有列出的仓库，包括已提交、已暂存、未暂存的修改和未跟踪的文件。先阅读仓库规范及相关代码，理解上下文后再判断。\n\n重点寻找这些变更引入的具体问题：行为错误、功能回归、遗漏的边界条件，以及可能掩盖具体缺陷的测试缺口。每个问题说明触发条件和影响，标明文件及行号，给出修复建议，并按严重程度排序。避免推测性问题、与本次变更无关的已有问题和纯风格建议。没有发现问题时明确说明；同时列出已执行的检查和仍未验证的部分。\n\n先报告问题，不修改文件。当我要求修复时，在此 Session 中完成修改、运行相关检查，并重新检查修改后的 diff。",
+  },
   updates: {
     check: "检查更新",
     checking: "检查更新中...",
@@ -330,6 +349,15 @@ export const zhCN = {
     "noActionsFound": "未找到匹配的操作。"
   },
   "deliveryUi": {
+    processes: {
+      title: "仍有进程在运行",
+      description: "以下 Session 的进程仍在运行。交付并结束会关闭这些 Session，可能中断正在执行的任务。",
+      hint: "选择“等待结束”将暂不交付并保留进程，准备好后请重新交付。Agent 空闲时，进程也可能仍在运行。",
+      wait: "等待结束",
+      force: "强制关闭并交付",
+      checking: "正在检查进程…",
+      checkFailed: "无法检查运行中的进程，请重新点击交付重试。{{error}}",
+    },
     deliveryBlocked: "暂时无法交付",
     upstreamRequired: "未设置上游，请先在 Workspace 中配置远端和分支再推送。",
     openWorkspaceSettings: "前往 Workspace 设置",
@@ -873,7 +901,7 @@ export const zhCN = {
     "newBranchName": "新分支名称",
     "localBranchName": "本地分支名称",
     "remoteCheckoutDescription": "从选中的远端分支创建本地分支。",
-    "branchOccupied": "已被 {{path}} 占用",
+    "branchOccupied": "已被占用：{{path}}",
     "branchMissing": "该分支已不存在，请重新选择。",
     "branchExists": "本地分支已存在，请选择使用已有分支或修改名称。",
     "branchRequired": "请输入分支名称。",
@@ -1111,6 +1139,7 @@ export const zhCN = {
     "fork": "Fork"
   },
   "actionLabels": {
+    "workspace": { "review": { "open": "AI Review" } },
     "git": { "sync": { "push": "推送", "pull": "拉取" } },
     "directory": { "open": { "with": "打开方式" } },
     "app": {

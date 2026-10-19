@@ -10,9 +10,11 @@ test("Workspace intermediate push uses one strategy and keeps the current route"
   let batch: FinishBatch | null = null;
   let submitted: { continue_work: boolean; repositories: FinishPlanItem[] } | undefined;
   let missingRemote = true;
+  let processChecks = 0;
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "workspace-delivery" });
     await page.setViewportSize({ width: 1000, height: 740 });
+    page.on("request", request => { if (request.url().endsWith("/finish-processes")) processChecks++; });
     await page.route(`**/api/workspaces/${FIXTURE_IDS.workspace}`, async route => {
       const response = await route.fetch(); const data = await response.json();
       data.default_delivery = "push_branch";
@@ -46,6 +48,7 @@ test("Workspace intermediate push uses one strategy and keeps the current route"
     await dialog.getByTestId("finish-confirm-action").click();
     await expect.poll(() => Boolean(submitted)).toBe(true);
     expect(submitted!.continue_work).toBe(true);
+    expect(processChecks).toBe(0);
     expect(submitted!.repositories).toHaveLength(2);
     expect(submitted!.repositories.every(plan => plan.code_action === "push_branch" && !plan.delete_worktree && !plan.delete_branch)).toBe(true);
     await dialog.getByRole("button", { name: "Done", exact: true }).click();

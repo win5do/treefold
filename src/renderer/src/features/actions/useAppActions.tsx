@@ -14,6 +14,8 @@ import { sessionActionHandlers } from "@/features/terminal/sessionActions";
 import { appActionHandlers } from "@/features/app/actions";
 import { gitPaletteActions, type GitPaletteHandlers } from "@/features/git/paletteActions";
 import { openInPaletteActions } from "@/features/open-in/paletteActions";
+import { agentReviewPaletteActions } from "@/features/agent-review/paletteActions";
+import type { AgentReviewActions } from "@/features/agent-review/model";
 import { toast } from "@/lib/toast";
 import { CommandPalette } from "./CommandPalette";
 import { actionLabel } from "./labels";
@@ -31,6 +33,7 @@ type Scope = {
   pathname: string;
   busy: boolean;
   actions: {
+    review: AgentReviewActions;
     git: GitPaletteHandlers;
     navigate: (path: string) => void;
     session: {
@@ -88,6 +91,7 @@ export function useAppActions(scope: Scope) {
             ? document.activeElement
             : null,
         actions: bindActions({
+          ...agentReviewPaletteActions(actions.review, source.busy),
           ...gitPaletteActions(actions.git, source.busy, t),
           ...openInPaletteActions(t),
           ...appActionHandlers({

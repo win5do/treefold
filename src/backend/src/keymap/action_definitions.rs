@@ -11,6 +11,7 @@ pub(super) const COMMANDS: &[(&str, &str, Option<&str>)] = &[
     (r#"app.leftSidebar.toggle"#, r#"Toggle Left Sidebar"#, None),
     (r#"app.rightSidebar.toggle"#, r#"Toggle Right Sidebar"#, None),
     (r#"app.palette.open"#, r#"Command Palette"#, Some(r#"super+shift+p"#)),
+    (r#"workspace.review.open"#, r#"AI Review"#, None),
     (r#"git.sync.push"#, r#"Push"#, None),
     (r#"git.sync.pull"#, r#"Pull"#, None),
     (r#"directory.open.with"#, r#"Open With"#, None),

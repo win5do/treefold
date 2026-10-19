@@ -12,7 +12,10 @@ import {
 } from "./harness/session.ts";
 
 test("Finish confirms all repositories and resumes saved progress after closing", async () => {
-  const harness = await startUiHarness();
+  const harness = await startUiHarness(fixture => {
+    // These cases cover Git plans and recovery after Sessions have stopped.
+    fixture.processes = [];
+  });
   let page: Page | undefined;
   const names = [
     "backend-with-a-long-repository-name",
@@ -228,7 +231,10 @@ test("Finish confirms all repositories and resumes saved progress after closing"
 });
 
 test("Finish can archive repositories delivered by the earlier per-repository flow", async () => {
-  const harness = await startUiHarness();
+  const harness = await startUiHarness(fixture => {
+    // These cases cover Git plans and recovery after Sessions have stopped.
+    fixture.processes = [];
+  });
   let page: Page | undefined;
   let submitted: FinishPlanItem[] | undefined;
   let batch: FinishBatch | null = null;
@@ -290,7 +296,10 @@ test("Finish can archive repositories delivered by the earlier per-repository fl
 
 for (const resume of [false, true]) {
   test(`Force execute ${resume ? "resumes saved progress" : "confirms partial damage"} without bypassing healthy repository checks`, async () => {
-    const harness = await startUiHarness();
+    const harness = await startUiHarness(fixture => {
+      // These cases cover Git plans and recovery after Sessions have stopped.
+      fixture.processes = [];
+    });
     let page: Page | undefined;
     const ids = [
       FIXTURE_IDS.workspacePrimaryLocation,

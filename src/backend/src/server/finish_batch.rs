@@ -601,6 +601,7 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
 }
 
 mod intermediate;
+pub(super) mod processes;
 
 #[cfg(test)]
 mod tests;

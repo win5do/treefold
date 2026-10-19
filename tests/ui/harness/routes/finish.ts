@@ -21,6 +21,16 @@ export function createFinishRoutes({
       response: ServerResponse,
       pathname: string,
     ) {
+      const processCheck = /^\/api\/workspaces\/([^/]+)\/finish-processes$/.exec(pathname);
+      if (request.method === "GET" && processCheck) {
+        const sessions = fixture.workspaceDetails[processCheck[1]]?.sessions ?? [];
+        sendJson(response, 200, sessions.flatMap(session => {
+          const process = fixture.processes.find(item => item.session_id === session.id && item.session_root &&
+            ["created", "starting", "running", "stopping"].includes(item.state));
+          return process ? [{ session_id: session.id, name: session.name, kind: session.kind, state: process.state, pid: process.pid }] : [];
+        }));
+        return true;
+      }
       if (
         request.method === "GET" &&
         /^\/api\/workspaces\/[^/]+\/finish-batch$/.test(pathname)

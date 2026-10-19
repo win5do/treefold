@@ -113,6 +113,7 @@ test("background worktree refresh does not keep Workspace actions busy", async (
     });
     const detail = await (await page.request.get(`${harness.apiUrl}/api/workspaces/${FIXTURE_IDS.workspace}`)).json();
     await page.route(`**/api/workspaces/${FIXTURE_IDS.workspace}/resync`, route => route.fulfill({ json: detail }));
+    await page.getByTestId("workspace-repositories-actions-trigger").scrollIntoViewIfNeeded();
     await page.getByTestId("workspace-repositories-actions-trigger").focus();
     await page.getByTestId("workspace-repositories-actions-trigger").press("ArrowDown");
     await page.getByRole("menuitem", { name: "Check and repair worktrees", exact: true }).click();

@@ -264,6 +264,15 @@ source of truth for this configuration.
   standalone icons use `size-*`.
 - Use `Field` primitives for forms, expose validation with `aria-invalid`, and
   give every dialog an accessible title.
+- Display long directory paths with `compactPath` from `@/lib/compactPath`:
+  preserve the leading directory and prioritize trailing directory segments,
+  replacing omitted middle segments with `/.../`. Use the default 64-character
+  budget, or a smaller budget for compact controls. Do not duplicate this logic.
+  Keep status text before the path, and allow wrapping when needed so a final
+  CSS ellipsis does not hide the retained path tail. Expose the original full
+  path on hover (for example, with `title`); ensure the hover target remains
+  reachable even inside a disabled control. Short paths stay unchanged, and
+  path values used for actions, copying, or persistence must remain unabridged.
 
 ## Localization workflow
 

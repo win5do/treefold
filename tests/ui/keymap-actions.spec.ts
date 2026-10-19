@@ -13,7 +13,7 @@ test("Keymap exposes unbound actions and their recorded shortcuts execute in con
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
     await page.getByTestId("open-settings").click();
     await page.getByRole("button", { name: "快捷键", exact: true }).click();
-    for (const id of ["app.settings.open", "app.projects.open", "app.leftSidebar.toggle", "app.rightSidebar.toggle", "git.sync.push", "git.sync.pull", "directory.open.with"]) {
+    for (const id of ["app.settings.open", "app.projects.open", "app.leftSidebar.toggle", "app.rightSidebar.toggle", "git.sync.push", "git.sync.pull", "directory.open.with", "workspace.review.open"]) {
       await expect(page.getByTestId(`keymap-${id}`)).toContainText("未绑定");
     }
     for (const [id, name, key] of [

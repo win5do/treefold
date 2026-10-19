@@ -71,6 +71,38 @@ native history to validate/relocate a known target, never to discover its ID.
 
 ## Shared behavior
 
+- **AI Review** opens a normal Agent Session from the Workspace or Fork sidebar menu. The
+  Delivery dialog also offers this entry before a delivery batch starts; it
+  closes Delivery before opening the Review dialog. Pending delivery operations
+  must be completed before starting a new Review.
+- The Review dialog selects an installed Agent and starting directory and lets
+  the user edit or replace the initial prompt. Project-level defaults are edited
+  from **AI Review settings** on the Project page. Explicit overrides live in
+  `config/settings.toml` under `[projects.<project-id>]` as `review_prompt` and
+  use the generic `PATCH /api/settings` resource. Empty values remove the
+  override; the UI supplies its current English or Chinese default. Custom
+  prompts retain their original language. Dialog edits affect only that Session.
+- `GET /api/workspaces/{id}/agent-review` resolves the review scope;
+  `POST` accepts `kind`, `project_directory_id`, and `prompt`, resolves the scope
+  again, then uses normal Session creation. The first user message contains the
+  edited prompt followed by a generated scope appendix. Existing developer/system
+  context and Agent integrations are preserved. Each writable repository lists
+  current and target paths, branches, HEADs, and merge base. Fork targets its
+  parent Workspace; Workspace targets the Project checkout's current branch.
+  The appendix provides commands for incoming committed changes, staged/unstaged
+  changes, and untracked files; it does not copy a potentially large diff into
+  the prompt. The starting directory does not restrict the review to one repository.
+- Review has no separate status, pass/fail result, or delivery gate. Follow-up
+  discussion and fixes stay in the ordinary Session. Resume does not resend the
+  initial Review message. Before final delivery or resuming it, the UI reads
+  `/api/workspaces/{id}/finish-processes` for a fresh, non-starting amux snapshot
+  of the exact Session roots that delivery will stop. If any are active, the
+  default action cancels delivery and retains them for a later manual retry;
+  explicit force confirmation continues the existing stopping behavior. This is
+  process liveness, not Agent task activity. Intermediate delivery does not stop
+  Sessions and skips this confirmation. Standalone archive and API callers retain
+  their existing behavior.
+
 - Every Agent receives the Treefold Project/Workspace/Fork snapshot, locations,
   read/write labels, Todo scope, and lifecycle ownership instructions. The shared
   CLI environment also allows `treefold current --json` and Todo operations.

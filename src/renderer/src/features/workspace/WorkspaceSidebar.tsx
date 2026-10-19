@@ -1,3 +1,5 @@
+import { AgentReviewMenuItem } from "@/features/agent-review/AgentReviewMenuItem";
+import type { AgentReviewActions } from "@/features/agent-review/model";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { isAgentKind } from "@/features/agents/model";
 import { AgentIcon } from "@/features/agents/AgentIcon";
@@ -56,6 +58,7 @@ import { cn } from "@/lib/utils";
 import { hasWorkspaceUpstream } from "@/features/git/upstream";
 
 export function WorkspaceSidebar({
+  reviewActions,
   projects,
   busy,
   selectedProjectId,
@@ -94,6 +97,7 @@ export function WorkspaceSidebar({
   onResizeKeyboard,
   onSettings,
 }: {
+  reviewActions: AgentReviewActions;
   projects: ProjectDetail[];
   busy: boolean;
   selectedProjectId?: string;
@@ -169,6 +173,7 @@ export function WorkspaceSidebar({
     trigger: React.ReactNode,
   ) => (
     <SidebarOwnerContextMenu
+      reviewActions={reviewActions}
       project={project}
       stream={stream}
       busy={busy}
@@ -505,6 +510,7 @@ function groupDirectories(directories: Directory[]): DirectoryGroup[] {
 }
 
 function SidebarOwnerContextMenu({
+  reviewActions,
   project,
   stream,
   busy,
@@ -517,6 +523,7 @@ function SidebarOwnerContextMenu({
   onFinish,
   onParentOperation,
 }: {
+  reviewActions: AgentReviewActions;
   project: ProjectDetail;
   stream?: SidebarStream;
   busy: boolean;
@@ -581,6 +588,7 @@ function SidebarOwnerContextMenu({
             <Plus />
             {t("sidebar.newSessionIn")}
           </ContextMenuItem>
+          {stream && project.status === "active" && <AgentReviewMenuItem workspace={stream} actions={reviewActions} busy={busy} />}
         </ContextMenuGroup>
         {stream?.status === "active" && (
           <>

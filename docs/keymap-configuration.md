@@ -125,6 +125,7 @@ schema_version = 1
 | `git.sync.push` | Unbound | Open Push choices for an active Project or Workspace with eligible repositories |
 | `git.sync.pull` | Unbound | Open Pull choices for an active Project or Workspace with eligible repositories |
 | `directory.open.with` | Unbound | Open application choices for directories in the current context |
+| `workspace.review.open` | Unbound | Open AI Review for the current active Workspace or Fork, including from its Sessions; unavailable in Project contexts or during pending delivery |
 
 All registered actions appear in Keymap with localized names. The fixed order
 puts actions with default shortcuts first; binding, disabling, or resetting a

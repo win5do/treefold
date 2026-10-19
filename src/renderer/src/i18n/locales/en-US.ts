@@ -1,4 +1,23 @@
 export const enUS = {
+  agentReview: {
+    title: "AI Review",
+    description: "Review changes in {{name}} in a new Agent Session. Continue the conversation to discuss or fix findings.",
+    range: "Review scope",
+    reviewBranch: "Branch to review: {{branch}}",
+    comparisonBase: "Compare against: {{branch}}",
+    rangeDescription: "Compare a Fork with its parent Workspace, or a Workspace with the Project’s current branch. Include committed and uncommitted changes in all writable repositories. The directory selects where the Agent starts.",
+    prompt: "Review prompt",
+    promptDescription: "Edit or replace this Session’s first message. Repository context and comparison ranges are added automatically. Project defaults stay unchanged.",
+    keyboardHint: "↑ / ↓ Select · ← Directories · → Agent · Enter Start Review · Esc Close",
+    promptKeyboardHint: "While editing: Enter for a new line, Esc to return to directory selection.",
+    start: "Start Review",
+    retry: "Retry",
+    settings: "AI Review settings",
+    settingsDescription: "Set the default prompt for new Review Sessions in this Project’s Workspaces and Forks.",
+    defaultPromptLabel: "Default Review prompt",
+    defaultPromptDescription: "Leave empty to use Treefold’s default in the current interface language. Custom prompts keep their original language. Existing Sessions are unchanged.",
+    defaultPrompt: "Review the code changes in the scope provided below, comparing each branch under review with its specified base. Include committed changes, staged and unstaged changes, and untracked files in all listed repositories. Read the repository instructions and relevant surrounding code before drawing conclusions.\n\nFocus on concrete bugs introduced by these changes: incorrect behavior, regressions, missed edge cases, and missing tests that could conceal a specific bug. For each finding, explain the trigger and impact, cite the file and line, and suggest a fix. Order findings by severity. Avoid speculative issues, pre-existing issues unrelated to the changes, and style-only suggestions. If no issues are found, say so; state which checks were run and any remaining verification gaps.\n\nReport findings first without modifying files. When I ask for fixes, make the changes in this Session, run relevant checks, and review the updated diff.",
+  },
   updates: {
     check: "Check for Updates",
     checking: "Checking for updates...",
@@ -328,6 +347,15 @@ export const enUS = {
     "noActionsFound": "No actions found."
   },
   "deliveryUi": {
+    processes: {
+      title: "Processes are still running",
+      description: "The following Session processes are still active. Finishing delivery will stop these Sessions and may interrupt their current work.",
+      hint: "Choose “Wait for them to finish” to cancel this delivery and keep the processes running. Deliver again when you are ready. An idle Agent may still have a running process.",
+      wait: "Wait for them to finish",
+      force: "Force close and deliver",
+      checking: "Checking processes…",
+      checkFailed: "Could not check running processes. Retry delivery to check again. {{error}}",
+    },
     deliveryBlocked: "Cannot deliver yet",
     upstreamRequired: "No upstream is configured. Set a remote and branch in the Workspace before pushing.",
     openWorkspaceSettings: "Go to Workspace settings",
@@ -1109,6 +1137,7 @@ export const enUS = {
     "fork": "Fork"
   },
   "actionLabels": {
+    "workspace": { "review": { "open": "AI Review" } },
     "git": { "sync": { "push": "Push", "pull": "Pull" } },
     "directory": { "open": { "with": "Open With" } },
     "app": {
