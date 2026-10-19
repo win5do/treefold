@@ -21,7 +21,7 @@ export function createWorkspaceDeletionRoutes({ fixture, sendJson }: Pick<RouteD
         }
         for (const detail of Object.values(fixture.workspaceDetails)) detail.forks = detail.forks.filter(item => !deleted.has(item.id));
         for (const id of deleted) delete fixture.workspaceDetails[id];
-        sendJson(response, 200, { deleted_ids: ids, skipped: [] });
+        sendJson(response, 200, { deleted_ids: [...deleted], skipped: [] });
         return true;
       }
       const match = pathname.match(/^\/api\/workspaces\/([^/]+)\/delete-precheck$/);

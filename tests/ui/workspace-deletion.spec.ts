@@ -204,7 +204,13 @@ test("failed precheck blocks cleanup and can be retried", async () => {
 
 for (const scope of ["project", "workspace"] as const) {
   test(`clean archived children from ${scope} list and refresh results`, async () => {
-    const harness = await startUiHarness();
+    const harness = await startUiHarness(fixture => {
+      if (scope === "project") {
+        const workspaces = fixture.projectDetails[FIXTURE_IDS.project].workspaces;
+        const fork = workspaces.find(item => item.id === FIXTURE_IDS.archivedFork)!;
+        workspaces.push({ ...fork, id: "archived-workspace-child", parent_workspace_id: FIXTURE_IDS.archivedWorkspace });
+      }
+    });
     let page: Page | undefined;
     const parentId = scope === "project" ? FIXTURE_IDS.project : FIXTURE_IDS.workspace;
     const kind = scope === "project" ? "workspace" : "fork";
@@ -241,6 +247,13 @@ for (const scope of ["project", "workspace"] as const) {
       expect(requests).toBe(scope === "project" ? 1 : 2);
       await clickUiElement(page, trigger);
       await expect(action).toBeDisabled();
+      if (scope === "project") {
+        await expect(page.getByRole("status")).toContainText("Cleaned up 2; skipped 0.");
+        await page.keyboard.press("Escape");
+        await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+        await expect(page.getByTestId(`fork-list-row-${FIXTURE_IDS.fork}`)).toBeVisible();
+        await expect(page.getByTestId(`fork-list-row-${FIXTURE_IDS.archivedFork}`)).toBeVisible();
+      }
       harness.assertNoUnexpectedRequests();
     } catch (error) {
       await page?.screenshot({ path: `/tmp/treefold-archived-cleanup-${scope}-failure.png` });
@@ -250,3 +263,30 @@ for (const scope of ["project", "workspace"] as const) {
     }
   });
 }
+
+test("Project cleanup skips archived Forks under active Workspaces", async () => {
+  const harness = await startUiHarness(fixture => {
+    const project = fixture.projectDetails[FIXTURE_IDS.project];
+    project.workspaces = project.workspaces.filter(item => item.id !== FIXTURE_IDS.archivedWorkspace);
+    delete fixture.workspaceDetails[FIXTURE_IDS.archivedWorkspace];
+  });
+  let page: Page | undefined;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "recursive-archived-cleanup" });
+    await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+    const trigger = page.getByRole("button", { name: "Workspace list actions", exact: true });
+    const action = page.getByRole("menuitem", { name: "Clean up archived items", exact: true });
+    await clickUiElement(page, trigger);
+    await expect(action).toBeDisabled();
+    await page.keyboard.press("Escape");
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await expect(page.getByTestId(`fork-list-row-${FIXTURE_IDS.fork}`)).toBeVisible();
+    await expect(page.getByTestId(`fork-list-row-${FIXTURE_IDS.archivedFork}`)).toBeVisible();
+    harness.assertNoUnexpectedRequests();
+  } catch (error) {
+    await page?.screenshot({ path: "/tmp/treefold-recursive-archived-cleanup-failure.png" });
+    throw error;
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});

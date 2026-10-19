@@ -8,13 +8,15 @@ pub(super) async fn project(
 ) -> Result<Json<ArchivedCleanupResult>> {
     let _workers = super::finish_batch::workers().lock().await;
     state.store.project(&id).await?;
-    let targets = state
-        .store
-        .workspaces(&id)
-        .await?
-        .into_iter()
-        .filter(|w| w.kind == "workspace" && w.parent_workspace_id.is_none())
-        .collect();
+    let mut targets = Vec::new();
+    for workspace in state.store.workspaces(&id).await?.into_iter().filter(|w| {
+        w.kind == "workspace" && w.parent_workspace_id.is_none() && w.status == "archived"
+    }) {
+        // Only traverse archived Workspaces. Clean their Forks first while the
+        // parent branches still exist for merge checks.
+        targets.extend(state.store.forks(&workspace.id).await?);
+        targets.push(workspace);
+    }
     Ok(Json(cleanup(&state, targets).await))
 }
 

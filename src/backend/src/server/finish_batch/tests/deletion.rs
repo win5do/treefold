@@ -668,6 +668,14 @@ async fn archived_cleanup_forks_continues_past_blocked_items_and_preserves_activ
     .unwrap()
     .0;
     assert!(project.deleted_ids.is_empty() && project.skipped.is_empty());
+    for (fork, repositories) in &archived {
+        assert!(f.state.store.workspace(&fork.id).await.is_ok());
+        assert!(
+            repositories
+                .iter()
+                .all(|r| Path::new(r.checkout_path.as_ref().unwrap()).exists())
+        );
+    }
     let result = crate::server::archived_cleanup::workspace(
         State(f.state.clone()),
         AxumPath(f.workspace.id.clone()),
@@ -690,6 +698,89 @@ async fn archived_cleanup_forks_continues_past_blocked_items_and_preserves_activ
     }
     assert!(f.state.store.workspace(&f.workspace.id).await.is_ok());
     assert!(f.state.store.workspace(&archived[1].0.id).await.is_err());
+}
+
+#[tokio::test]
+async fn archived_cleanup_removes_safe_forks_before_a_blocked_parent_and_retries() {
+    let f = fixture().await;
+    let mut forks = Vec::new();
+    for branch in ["task/clean", "task/dirty"] {
+        let (_, Json(fork)) = create_fork(
+            State(f.state.clone()),
+            AxumPath(f.workspace.id.clone()),
+            ApiJson(crate::server::fork::CreateFork {
+                description: None,
+                branch: Some(branch.into()),
+                generated_branch: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let repositories = f
+            .state
+            .store
+            .workspace_repositories(&fork.id)
+            .await
+            .unwrap();
+        f.state
+            .store
+            .finish_workspace(&fork.id, "kept", "skip", None, "now")
+            .await
+            .unwrap();
+        forks.push((fork, repositories));
+    }
+    finish_retained(&f).await;
+    let dirty_path = Path::new(forks[1].1[0].checkout_path.as_ref().unwrap()).join("dirty.txt");
+    std::fs::write(&dirty_path, "uncommitted").unwrap();
+    let cleanup = || {
+        crate::server::archived_cleanup::project(
+            State(f.state.clone()),
+            AxumPath(f.workspace.project_id.clone()),
+        )
+    };
+    let result = cleanup().await.unwrap().0;
+    assert_eq!(result.deleted_ids, vec![forks[0].0.id.clone()]);
+    assert_eq!(result.skipped.len(), 2);
+    assert!(result.skipped.iter().any(|item| item.id == forks[1].0.id));
+    assert!(result.skipped.iter().any(|item| item.id == f.workspace.id));
+    assert_checkouts_preserved(&f);
+    assert!(
+        forks[1]
+            .1
+            .iter()
+            .all(|r| Path::new(r.checkout_path.as_ref().unwrap()).exists())
+    );
+    assert!(f.state.store.workspace(&forks[0].0.id).await.is_err());
+    assert!(
+        forks[0]
+            .1
+            .iter()
+            .all(|r| !Path::new(r.checkout_path.as_ref().unwrap()).exists())
+    );
+
+    std::fs::remove_file(dirty_path).unwrap();
+    let result = cleanup().await.unwrap().0;
+    assert_eq!(
+        result.deleted_ids,
+        vec![forks[1].0.id.clone(), f.workspace.id.clone()]
+    );
+    assert!(result.skipped.is_empty());
+    forks.push((f.workspace.clone(), f.repositories.clone()));
+    for (workspace, repositories) in &forks {
+        assert!(f.state.store.workspace(&workspace.id).await.is_err());
+        for repository in repositories {
+            assert!(!Path::new(repository.checkout_path.as_ref().unwrap()).exists());
+            assert!(
+                git(
+                    Path::new(&repository.source_root),
+                    &["branch", "--list", repository.branch.as_ref().unwrap()]
+                )
+                .is_empty()
+            );
+        }
+    }
+    let result = cleanup().await.unwrap().0;
+    assert!(result.deleted_ids.is_empty() && result.skipped.is_empty());
 }
 
 #[tokio::test]
