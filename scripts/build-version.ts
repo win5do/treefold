@@ -1,4 +1,4 @@
-import { valid } from 'semver';
+import { parse, valid } from 'semver';
 
 export function resolveBuildVersion(packageVersion: string, options: {
   localInstall?: boolean; override?: string; now?: Date;
@@ -6,7 +6,10 @@ export function resolveBuildVersion(packageVersion: string, options: {
   let version = options.override ?? packageVersion;
   if (options.override === undefined && options.localInstall) {
     const timestamp = (options.now ?? new Date()).toISOString().replace(/\D/g, '').slice(0, 14);
-    const [base, metadata] = packageVersion.split('+');
+    const parsed = parse(packageVersion);
+    if (!parsed) throw new Error(`Package version must be valid SemVer, received: ${packageVersion}`);
+    const base = `${parsed.major}.${parsed.minor}.${parsed.patch + 1}${parsed.prerelease.length ? `-${parsed.prerelease.join('.')}` : ''}`;
+    const metadata = parsed.build.join('.');
     version = `${base}${base.includes('-') ? '.' : '-'}dev.${timestamp}${metadata ? `+${metadata}` : ''}`;
   }
   if (valid(version) !== version.split('+')[0]) throw new Error(`TREEFOLD_BUILD_VERSION must be valid SemVer, received: ${version}`);
