@@ -2,6 +2,20 @@ use serde::{Deserialize, Serialize};
 
 use super::{Project, ProjectDirectory, ProjectRepository};
 
+#[derive(Debug, Default, Serialize)]
+pub struct ArchivedCleanupResult {
+    pub deleted_ids: Vec<String>,
+    pub skipped: Vec<ArchivedCleanupSkipped>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ArchivedCleanupSkipped {
+    pub id: String,
+    pub name: String,
+    pub reason: String,
+    pub message: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct WorkspaceDeletePrecheck {
     pub undelivered_branches: Vec<WorkspaceDeleteBranch>,

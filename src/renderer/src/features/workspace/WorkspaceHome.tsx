@@ -1,3 +1,4 @@
+import { ArchivedCleanupMenu } from "./ArchivedCleanupMenu";
 import { Spinner } from "@/components/ui/spinner";
 import { isSessionListed } from "@/features/terminal/model/sessionListVisibility";
 import { WorkspaceRepositories } from "./WorkspaceRepositories";
@@ -508,6 +509,8 @@ export function WorkspaceHome({
               <div className="flex items-center gap-3">
                 <span className="text-[11px] text-muted-foreground">{detail.forks.length}</span>
                 {creation.available && <Button size="sm" disabled={busy || initializing} onClick={creation.fork}><Plus data-icon="inline-start" />{t("sidebar.newFork")}</Button>}
+                <ArchivedCleanupMenu key={detail.id} scope="workspace" id={detail.id}
+                  hasArchived={detail.forks.some(fork => fork.status === "archived")} busy={busy || initializing} />
               </div>
             </div>
             <div className="mt-3 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">

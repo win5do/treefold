@@ -28,6 +28,8 @@ struct CheckoutCleanup {
     common_dir: String,
     managed_root: PathBuf,
     delete_branch: bool,
+    merged_only: bool,
+    parent_branch: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,7 +44,7 @@ pub(super) async fn delete_precheck(
     Query(options): Query<DeleteWorkspaceOptions>,
 ) -> Result<Json<WorkspaceDeletePrecheck>> {
     let _workers = super::finish_batch::workers().lock().await;
-    let cleanups = collect_cleanups(&state, &id, &options).await?;
+    let cleanups = collect_cleanups(&state, &id, &options, false).await?;
     let checked = inspect_cleanups(&state, &cleanups).await?;
     Ok(Json(precheck_result(&id, &cleanups, &checked)))
 }
@@ -51,6 +53,7 @@ async fn collect_cleanups(
     state: &AppState,
     id: &str,
     options: &DeleteWorkspaceOptions,
+    merged_only: bool,
 ) -> Result<Vec<CheckoutCleanup>> {
     if options.delete_branches && !options.delete_worktrees {
         return Err(AppError::BadRequest(
@@ -82,8 +85,27 @@ async fn collect_cleanups(
                     .store
                     .repository(&location.project_repository_id)
                     .await?;
+                let parent_branch = if merged_only {
+                    if let Some(parent_id) = &target.parent_workspace_id {
+                        state
+                            .store
+                            .workspace_repositories(parent_id)
+                            .await?
+                            .into_iter()
+                            .find(|parent| {
+                                parent.project_repository_id == location.project_repository_id
+                            })
+                            .and_then(|parent| parent.branch)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 cleanups.push(CheckoutCleanup {
                     workspace_name: target.name.clone(),
+                    merged_only,
+                    parent_branch,
                     delete_branch: options.delete_branches
                         && location.branch_ownership == "managed",
                     location,
@@ -163,8 +185,19 @@ pub(super) async fn delete_workspace(
 ) -> Result<StatusCode> {
     // Serialize deletion with Finish and reopening, including archived children.
     let _workers = super::finish_batch::workers().lock().await;
-    let cleanups = collect_cleanups(&state, &id, &options).await?;
-    let checked = inspect_cleanups(&state, &cleanups).await?;
+    delete_workspace_locked(&state, &id, &options, false).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Caller holds the Finish/reopen worker lock for the complete check and mutation.
+pub(super) async fn delete_workspace_locked(
+    state: &AppState,
+    id: &str,
+    options: &DeleteWorkspaceOptions,
+    merged_only: bool,
+) -> Result<()> {
+    let cleanups = collect_cleanups(state, id, options, merged_only).await?;
+    let checked = inspect_cleanups(state, &cleanups).await?;
     let preview = precheck_result(&id, &cleanups, &checked);
     if options.discard_token.is_some() && options.discard_token != preview.discard_token {
         return Err(deletion_changed());
@@ -187,7 +220,9 @@ pub(super) async fn delete_workspace(
             if let Some(path) = cleanup.location.checkout_path.as_deref() {
                 remove_worktree_if_present(&cleanup.repository, path, false)?;
             }
-            if let Some(head) = current.head {
+            if cleanup.delete_branch
+                && let Some(head) = current.head
+            {
                 let branch = cleanup.location.branch.as_deref().unwrap();
                 // Git's expected-value check refuses a concurrent new commit.
                 command_output(
@@ -203,7 +238,7 @@ pub(super) async fn delete_workspace(
     }
     state.store.delete_workspace(&id).await?;
     state.runtime.publish_sessions();
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
 }
 
 async fn check_cleanup(state: &AppState, cleanup: &CheckoutCleanup) -> Result<CheckedCleanup> {
@@ -253,7 +288,7 @@ async fn check_cleanup(state: &AppState, cleanup: &CheckoutCleanup) -> Result<Ch
             ));
         }
     }
-    if !cleanup.delete_branch {
+    if !cleanup.delete_branch && !cleanup.merged_only {
         return Ok(CheckedCleanup {
             head: None,
             undelivered_commits: 0,
@@ -293,6 +328,14 @@ async fn check_cleanup(state: &AppState, cleanup: &CheckoutCleanup) -> Result<Ch
     )
     .map_err(AppError::BadRequest)?;
     let mut delivered = git_is_ancestor(&cleanup.repository, &head, &project_head)?;
+    // A Fork can be merged into its Workspace before that Workspace reaches Project.
+    if !delivered && let Some(parent_branch) = &cleanup.parent_branch {
+        delivered = git_is_ancestor(
+            &cleanup.repository,
+            &head,
+            &format!("refs/heads/{parent_branch}"),
+        )?;
+    }
     if !delivered
         && let Some(operation) = state
             .store
@@ -306,7 +349,10 @@ async fn check_cleanup(state: &AppState, cleanup: &CheckoutCleanup) -> Result<Ch
             }
         }
     }
-    if !delivered && location.close_outcome.as_deref() == Some("push_branch") {
+    if !delivered
+        && !cleanup.merged_only
+        && location.close_outcome.as_deref() == Some("push_branch")
+    {
         if let (Some(remote), Some(branch)) = (&location.remote_name, &location.remote_branch) {
             delivered = git_is_ancestor(
                 &cleanup.repository,

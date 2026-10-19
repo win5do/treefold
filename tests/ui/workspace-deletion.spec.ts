@@ -201,3 +201,52 @@ test("failed precheck blocks cleanup and can be retried", async () => {
     try { await closeUiSession(page); } finally { await harness.close(); }
   }
 });
+
+for (const scope of ["project", "workspace"] as const) {
+  test(`clean archived children from ${scope} list and refresh results`, async () => {
+    const harness = await startUiHarness();
+    let page: Page | undefined;
+    const parentId = scope === "project" ? FIXTURE_IDS.project : FIXTURE_IDS.workspace;
+    const kind = scope === "project" ? "workspace" : "fork";
+    const archivedId = scope === "project" ? FIXTURE_IDS.archivedWorkspace : FIXTURE_IDS.archivedFork;
+    const activeId = scope === "project" ? FIXTURE_IDS.workspace : FIXTURE_IDS.fork;
+    let requests = 0;
+    let blocked = scope === "workspace";
+    try {
+      page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "archived-cleanup" });
+      await page.route(`**/api/${scope}s/${parentId}/${kind}s/cleanup-archived`, async route => {
+        requests += 1;
+        expect(route.request().method()).toBe("POST");
+        if (blocked) {
+          await route.fulfill({ json: { deleted_ids: [], skipped: [{ id: archivedId, name: "Unmerged Fork", reason: "unmerged", message: "raw backend message" }] } });
+        } else await route.continue();
+      });
+      await page.goto(`${harness.baseUrl}/#/${scope}s/${parentId}`);
+      const trigger = page.getByRole("button", { name: scope === "project" ? "Workspace list actions" : "Fork list actions", exact: true });
+      const action = page.getByRole("menuitem", { name: "Clean up archived items", exact: true });
+      await clickUiElement(page, trigger);
+      await action.click();
+      if (blocked) {
+        const result = page.getByRole("dialog", { name: "Cleanup results" });
+        await expect(result).toContainText("Cleaned up 0; skipped 1.");
+        await expect(result).toContainText("Contains unmerged commits; kept the item and its files.");
+        await expect(page.getByTestId(`${kind}-list-row-${archivedId}`)).toBeVisible();
+        await page.keyboard.press("Escape");
+        blocked = false;
+        await clickUiElement(page, trigger);
+        await action.click();
+      }
+      await expect(page.getByTestId(`${kind}-list-row-${archivedId}`)).toHaveCount(0);
+      await expect(page.getByTestId(`${kind}-list-row-${activeId}`)).toBeVisible();
+      expect(requests).toBe(scope === "project" ? 1 : 2);
+      await clickUiElement(page, trigger);
+      await expect(action).toBeDisabled();
+      harness.assertNoUnexpectedRequests();
+    } catch (error) {
+      await page?.screenshot({ path: `/tmp/treefold-archived-cleanup-${scope}-failure.png` });
+      throw error;
+    } finally {
+      try { await closeUiSession(page); } finally { await harness.close(); }
+    }
+  });
+}

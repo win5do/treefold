@@ -1,6 +1,7 @@
 import { request } from "./client";
 import type {
   AgentKind,
+  ArchivedCleanupResult,
   DeliveryPreflight,
   FinishBatch,
   FinishPlanItem,
@@ -24,6 +25,10 @@ import type {
 } from "@/domain/types";
 
 export const workspacesApi = {
+  cleanupArchived: (scope: "project" | "workspace", id: string) =>
+    request<ArchivedCleanupResult>(scope === "project"
+      ? `/api/projects/${id}/workspaces/cleanup-archived`
+      : `/api/workspaces/${id}/forks/cleanup-archived`, { method: "POST" }),
   detail: (id: string, signal?: AbortSignal) =>
     request<WorkspaceDetail>(`/api/workspaces/${id}`, { signal }),
   worktrees: (id: string, signal?: AbortSignal) =>

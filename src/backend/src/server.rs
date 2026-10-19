@@ -427,6 +427,14 @@ fn app(state: AppState) -> Router {
             get(worktree_prune::preview).post(worktree_prune::prune),
         )
         .route("/api/projects/{id}/workspaces", post(create_workspace))
+        .route(
+            "/api/projects/{id}/workspaces/cleanup-archived",
+            post(archived_cleanup::project),
+        )
+        .route(
+            "/api/workspaces/{id}/forks/cleanup-archived",
+            post(archived_cleanup::workspace),
+        )
         .route("/api/workspaces/{id}/forks", post(create_fork))
         .route(
             "/api/workspaces/{id}/delete-precheck",
@@ -640,6 +648,7 @@ async fn list_background_processes(
 
 mod agent;
 mod agent_metadata;
+mod archived_cleanup;
 mod delivery;
 mod finish_batch;
 mod finish_recovery;

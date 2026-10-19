@@ -121,6 +121,20 @@ export const enUS = {
     states: {
     "squash": "squash merge", ready: "Ready", not_installed: "Not installed", outdated: "Outdated", partial: "Partial", conflict: "Conflict", unavailable: "Unavailable" },
   },
+  archivedCleanup: {
+    workspaceActions: "Workspace list actions",
+    forkActions: "Fork list actions",
+    action: "Clean up archived items",
+    title: "Cleanup results",
+    result: "Cleaned up {{deleted}}; skipped {{skipped}}.",
+    description: "Cleaned items and their managed worktrees and local branches are permanently deleted. Skipped items are kept. Unmerged branches and uncommitted changes block cleanup.",
+    failed: "Could not clean up archived items",
+    reasons: {
+      unmerged: "Contains unmerged commits; kept the item and its files.",
+      changed: "Branches changed during cleanup. Check the item before trying again.",
+      session_active: "Stop running Sessions and conflict resolvers before cleanup.",
+    },
+  },
   overview: {
     eyebrow: "Local Agent workspace",
     title: "Overview",

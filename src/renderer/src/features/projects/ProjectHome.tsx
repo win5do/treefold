@@ -1,3 +1,4 @@
+import { ArchivedCleanupMenu } from "@/features/workspace/ArchivedCleanupMenu";
 import { isSessionListed } from "@/features/terminal/model/sessionListVisibility";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { AGENT_NAMES, isAgentKind } from "@/features/agents/model";
@@ -179,6 +180,8 @@ export function ProjectHome({
                   <Plus data-icon="inline-start" />{t("sidebar.newWorkspace")}
                 </Button>
               )}
+              <ArchivedCleanupMenu key={project.id} scope="project" id={project.id}
+                hasArchived={rootWorkspaces.some(workspace => workspace.status === "archived")} busy={busy} />
             </div>
           </div>
           <div className="mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card">

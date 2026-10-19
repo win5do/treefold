@@ -596,3 +596,13 @@ export interface WorkspaceDeletePrecheck {
   }[];
   discard_token: string | null;
 }
+
+export interface ArchivedCleanupResult {
+  deleted_ids: string[];
+  skipped: {
+    id: string;
+    name: string;
+    reason: "unmerged" | "changed" | "session_active" | "cleanup_blocked";
+    message: string;
+  }[];
+}

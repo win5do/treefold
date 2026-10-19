@@ -123,6 +123,20 @@ export const zhCN = {
     states: {
     "squash": "压缩合并", ready: "正常", not_installed: "未安装", outdated: "待更新", partial: "不完整", conflict: "冲突", unavailable: "不可用" },
   },
+  archivedCleanup: {
+    workspaceActions: "Workspace 列表操作",
+    forkActions: "Fork 列表操作",
+    action: "清理已归档项",
+    title: "清理结果",
+    result: "已清理 {{deleted}} 项，跳过 {{skipped}} 项。",
+    description: "清理成功的归档记录及其托管 worktree、本地分支已永久删除，跳过的项会保留。未合并的提交和未提交的修改会阻止清理。",
+    failed: "无法清理已归档项",
+    reasons: {
+      unmerged: "存在未合并的提交，已保留记录和文件。",
+      changed: "清理期间分支发生变化，请检查后重试。",
+      session_active: "请先停止运行中的 Session 和冲突处理进程。",
+    },
+  },
   overview: {
     eyebrow: "本地 Agent 工作环境",
     title: "概览",
