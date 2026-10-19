@@ -8,7 +8,6 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
   Archive,
-  Bot,
   ChevronDown,
   ChevronRight,
   Download,
@@ -76,10 +75,8 @@ export function WorkspaceSidebar({
   onCreateProject,
   onCreateWorkspace,
   onCreateFork,
-  onCreateShell,
-  onCreateAgent,
-  onCreateBaseShell,
-  onCreateBaseAgent,
+  onCreateSession,
+  onCreateBaseSession,
   onSyncProject,
   onSyncDirectory,
   onSyncWorkspace,
@@ -116,10 +113,8 @@ export function WorkspaceSidebar({
   onCreateProject: () => void;
   onCreateWorkspace: (project: ProjectDetail) => void;
   onCreateFork: (workspace: Workspace) => void;
-  onCreateShell: (stream: Workspace, directory?: Directory) => void;
-  onCreateAgent: (stream: Workspace, directory?: Directory) => void;
-  onCreateBaseShell: (project: ProjectDetail, directory?: Directory) => void;
-  onCreateBaseAgent: (project: ProjectDetail, directory?: Directory) => void;
+  onCreateSession: (stream: SidebarStream) => void;
+  onCreateBaseSession: (project: ProjectDetail) => void;
   onSyncProject: (project: ProjectDetail, action: "pull" | "push") => void;
   onSyncDirectory: (
     repository: ProjectRepository,
@@ -179,15 +174,8 @@ export function WorkspaceSidebar({
       busy={busy}
       onCreateWorkspace={onCreateWorkspace}
       onCreateFork={onCreateFork}
-      onCreateShell={(directory) =>
-        stream
-          ? onCreateShell(stream, directory)
-          : onCreateBaseShell(project, directory)
-      }
-      onCreateAgent={(directory) =>
-        stream
-          ? onCreateAgent(stream, directory)
-          : onCreateBaseAgent(project, directory)
+      onCreateSession={() =>
+        stream ? onCreateSession(stream) : onCreateBaseSession(project)
       }
       onSync={(targetId, action) => {
         if (!stream) {
@@ -364,7 +352,6 @@ export function WorkspaceSidebar({
                 {sessionMenu?.id === `project:${project.id}` && (
                   <SessionDirectoryMenu
                     testId="sidebar-session-menu"
-                    directories={project.directories}
                     position={sessionMenu}
                     primaryAction={
                       <SidebarMenuButton
@@ -378,13 +365,9 @@ export function WorkspaceSidebar({
                         {t("sidebar.newWorkspace")}
                       </SidebarMenuButton>
                     }
-                    onShell={(directory) => {
+                    onCreateSession={() => {
                       onSessionMenu(null);
-                      onCreateBaseShell(project, directory);
-                    }}
-                    onAgent={(directory) => {
-                      onSessionMenu(null);
-                      onCreateBaseAgent(project, directory);
+                      onCreateBaseSession(project);
                     }}
                   />
                 )}
@@ -414,8 +397,7 @@ export function WorkspaceSidebar({
                         onToggleWorkspace={onToggleWorkspace}
                         onSessionMenu={onSessionMenu}
                         onNavigate={onNavigate}
-                        onCreateShell={onCreateShell}
-                        onCreateAgent={onCreateAgent}
+                        onCreateSession={onCreateSession}
                         onCreateFork={onCreateFork}
                         onOpenContext={openContextMenu}
                         renderOwnerContext={(stream, trigger) =>
@@ -522,68 +504,6 @@ function groupDirectories(directories: Directory[]): DirectoryGroup[] {
     });
 }
 
-function DirectoryMenuGroups({
-  groups,
-  surface,
-  testIdPrefix,
-  disabled,
-  onSelect,
-}: {
-  groups: DirectoryGroup[];
-  surface: "context" | "sidebar";
-  testIdPrefix: string;
-  disabled?: (directory: Directory) => boolean;
-  onSelect: (directory: Directory) => void;
-}) {
-  const { t } = useTranslation();
-  if (surface === "context") {
-    return groups.map((group) => (
-      <ContextMenuGroup
-        key={group.id}
-        data-testid={`directory-group-${group.id}`}
-      >
-        <ContextMenuLabel>
-          {group.name ?? t("sidebar.otherDirectories")}
-        </ContextMenuLabel>
-        {group.directories.map((directory) => (
-          <ContextMenuItem
-            key={directory.id}
-            data-testid={`${testIdPrefix}-${directory.id}`}
-            disabled={disabled?.(directory)}
-            onClick={() => onSelect(directory)}
-          >
-            {directory.is_git ? <FolderGit2 /> : <Folder />}
-            {directory.name}
-          </ContextMenuItem>
-        ))}
-      </ContextMenuGroup>
-    ));
-  }
-  return groups.map((group) => (
-    <div
-      key={group.id}
-      role="group"
-      aria-label={group.name ?? t("sidebar.otherDirectories")}
-      data-testid={`directory-group-${group.id}`}
-    >
-      <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {group.name ?? t("sidebar.otherDirectories")}
-      </p>
-      {group.directories.map((directory) => (
-        <SidebarMenuButton
-          key={directory.id}
-          testId={`${testIdPrefix}-${directory.id}`}
-          icon={directory.is_git ? <FolderGit2 /> : <Folder />}
-          disabled={disabled?.(directory)}
-          onClick={() => onSelect(directory)}
-        >
-          {directory.name}
-        </SidebarMenuButton>
-      ))}
-    </div>
-  ));
-}
-
 function SidebarOwnerContextMenu({
   project,
   stream,
@@ -591,8 +511,7 @@ function SidebarOwnerContextMenu({
   children,
   onCreateWorkspace,
   onCreateFork,
-  onCreateShell,
-  onCreateAgent,
+  onCreateSession,
   onSync,
   onRename,
   onFinish,
@@ -604,16 +523,14 @@ function SidebarOwnerContextMenu({
   children: React.ReactNode;
   onCreateWorkspace: (project: ProjectDetail) => void;
   onCreateFork: (stream: Workspace) => void;
-  onCreateShell: (directory: Directory) => void;
-  onCreateAgent: (directory: Directory) => void;
+  onCreateSession: () => void;
   onSync: (targetId: string | null, action: "pull" | "push") => void;
   onRename: () => void;
   onFinish: () => void;
   onParentOperation: (direction: "update") => void;
 }) {
   const { t } = useTranslation();
-  const directories = stream?.directories ?? project.directories;
-  const directoryGroups = groupDirectories(directories);
+  const directoryGroups = groupDirectories(stream?.directories ?? project.directories);
   const syncTargets = !stream
     ? project.repositories
         .filter((repository) => repository.git_status === "ready")
@@ -660,34 +577,10 @@ function SidebarOwnerContextMenu({
         </ContextMenuGroup>
         {(!stream || stream.kind === "workspace") && <ContextMenuSeparator />}
         <ContextMenuGroup>
-          <ContextMenuLabel>{t("sidebar.newSessionIn")}</ContextMenuLabel>
-          {(["shell", "agent"] as const).map((kind) => (
-            <ContextMenuSub key={kind}>
-              <ContextMenuSubTrigger data-testid={`session-kind-${kind}`}>
-                {kind === "shell" ? <Shell /> : <Bot />}
-                {kind === "shell" ? "Shell" : "Agent"}
-              </ContextMenuSubTrigger>
-              <ContextMenuSubContent
-                data-testid="directory-session-submenu"
-                className="w-44"
-              >
-                <DirectoryMenuGroups
-                  groups={directoryGroups}
-                  surface="context"
-                  testIdPrefix="session-directory"
-                  disabled={(directory) =>
-                    kind === "agent" &&
-                    (!directory.is_git || directory.git_status !== "ready")
-                  }
-                  onSelect={(directory) =>
-                    kind === "shell"
-                      ? onCreateShell(directory)
-                      : onCreateAgent(directory)
-                  }
-                />
-              </ContextMenuSubContent>
-            </ContextMenuSub>
-          ))}
+          <ContextMenuItem onClick={onCreateSession}>
+            <Plus />
+            {t("sidebar.newSessionIn")}
+          </ContextMenuItem>
         </ContextMenuGroup>
         {stream?.status === "active" && (
           <>
@@ -908,8 +801,7 @@ type SidebarNodeProps = {
   onToggleWorkspace: (id: string) => void;
   onSessionMenu: (menu: SessionMenuState | null) => void;
   onNavigate: (path: string) => void;
-  onCreateShell: (stream: Workspace, directory?: Directory) => void;
-  onCreateAgent: (stream: Workspace, directory?: Directory) => void;
+  onCreateSession: (stream: SidebarStream) => void;
   onCreateFork: (stream: Workspace) => void;
   onOpenContext: (event: React.MouseEvent<HTMLButtonElement>) => void;
   renderOwnerContext: (
@@ -926,12 +818,6 @@ type SidebarNodeProps = {
   onCloseSession: (stream: Workspace, session: Session) => void;
 };
 
-type SidebarSyncTarget = { id: string; name: string };
-type SidebarSessionKind = "shell" | "agent";
-type SidebarSubmenu =
-  | { kind: "session"; sessionKind: SidebarSessionKind }
-  | { kind: "sync"; action: "pull" | "push" };
-
 function resolveSessionDropPosition(
   pointerY: number,
   rect: Pick<DOMRect, "top" | "height">,
@@ -945,64 +831,20 @@ function resolveSessionDropPosition(
 }
 
 function SessionDirectoryMenu({
-  directories,
   testId,
   position,
   primaryAction,
-  syncTargets,
-  busy = false,
-  footer,
-  footerRows = 1,
-  onSync,
-  onShell,
-  onAgent,
+  onCreateSession,
 }: {
-  directories: Directory[];
   testId: string;
   position: { x: number; y: number };
   primaryAction?: React.ReactNode;
-  syncTargets?: SidebarSyncTarget[];
-  busy?: boolean;
-  footer?: React.ReactNode;
-  footerRows?: number;
-  onSync?: (targetId: string | null, action: "pull" | "push") => void;
-  onShell: (directory: Directory) => void;
-  onAgent: (directory: Directory) => void;
+  onCreateSession: () => void;
 }) {
   const { t } = useTranslation();
-  const directoryGroups = groupDirectories(directories);
-  const [submenu, setSubmenu] = useState<SidebarSubmenu | null>(null);
-  const [submenuTop, setSubmenuTop] = useState(0);
-  const activate = (
-    next: SidebarSubmenu,
-    element: HTMLButtonElement,
-    submenuHeight: number,
-  ) => {
-    const menuTop =
-      element
-        .closest<HTMLElement>(`[data-testid="${testId}"]`)
-        ?.getBoundingClientRect().top ?? 0;
-    const availableTop = window.innerHeight - menuTop - submenuHeight - 8;
-    setSubmenu(next);
-    setSubmenuTop(Math.max(0, Math.min(element.offsetTop, availableTop)));
-  };
-  const menuHeight =
-    36 +
-    80 +
-    (primaryAction ? 42 : 0) +
-    (syncTargets ? 82 : 0) +
-    (footer ? 42 * footerRows : 0);
-  const left = Math.max(
-    8,
-    Math.min(position.x, window.innerWidth - 208 - 176 - 8),
-  );
-  const top = Math.max(
-    8,
-    Math.min(position.y, window.innerHeight - menuHeight - 8),
-  );
-  const activeSessionKind =
-    submenu?.kind === "session" ? submenu.sessionKind : null;
-  const activeSync = submenu?.kind === "sync" ? submenu.action : null;
+  const menuHeight = 44 + (primaryAction ? 42 : 0);
+  const left = Math.max(8, Math.min(position.x, window.innerWidth - 208 - 8));
+  const top = Math.max(8, Math.min(position.y, window.innerHeight - menuHeight - 8));
   return createPortal(
     <div
       data-testid={testId}
@@ -1010,184 +852,18 @@ function SessionDirectoryMenu({
       className="fixed z-[100] w-52 rounded-lg border border-border bg-card p-1 shadow-xl"
       style={{ left, top }}
       onClick={(event) => event.stopPropagation()}
-      onMouseLeave={() => setSubmenu(null)}
     >
       {primaryAction && (
         <div
           data-testid="session-menu-primary-action"
           className="mb-1 border-b border-border/60 pb-1"
-          onMouseEnter={() => setSubmenu(null)}
-          onFocus={() => setSubmenu(null)}
         >
           {primaryAction}
         </div>
       )}
-      <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <SidebarMenuButton icon={<Plus />} onClick={onCreateSession}>
         {t("sidebar.newSessionIn")}
-      </p>
-      {(["shell", "agent"] as const).map((sessionKind) => {
-        const label = sessionKind === "shell" ? "Shell" : "Agent";
-        return (
-          <button
-            key={sessionKind}
-            type="button"
-            role="menuitem"
-            data-testid={`session-kind-${sessionKind}`}
-            aria-haspopup="menu"
-            aria-expanded={activeSessionKind === sessionKind}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-muted",
-              activeSessionKind === sessionKind && "bg-muted text-foreground",
-            )}
-            onMouseEnter={(event) =>
-              activate(
-                { kind: "session", sessionKind },
-                event.currentTarget,
-                16 + directoryGroups.length * 28 + directories.length * 36,
-              )
-            }
-            onFocus={(event) =>
-              activate(
-                { kind: "session", sessionKind },
-                event.currentTarget,
-                16 + directoryGroups.length * 28 + directories.length * 36,
-              )
-            }
-          >
-            {sessionKind === "shell" ? (
-              <Shell className="size-3.5" />
-            ) : (
-              <Bot className="size-3.5" />
-            )}
-            <span className="min-w-0 flex-1 truncate">{label}</span>
-            <ChevronRight
-              className={cn(
-                "size-3 transition-transform",
-                activeSessionKind === sessionKind && "translate-x-0.5",
-              )}
-            />
-          </button>
-        );
-      })}
-      {syncTargets && (
-        <div
-          data-testid="sidebar-git-actions"
-          className="mt-1 border-t border-border/60 pt-1"
-        >
-          {(["pull", "push"] as const).map((action) => (
-            <button
-              key={action}
-              type="button"
-              role="menuitem"
-              data-testid={`sidebar-${action}-menu`}
-              disabled={busy || syncTargets.length === 0}
-              aria-haspopup="menu"
-              aria-expanded={activeSync === action}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40",
-                activeSync === action && "bg-muted text-foreground",
-              )}
-              onMouseEnter={(event) =>
-                activate(
-                  { kind: "sync", action },
-                  event.currentTarget,
-                  42 + (syncTargets.length + 1) * 36,
-                )
-              }
-              onFocus={(event) =>
-                activate(
-                  { kind: "sync", action },
-                  event.currentTarget,
-                  42 + (syncTargets.length + 1) * 36,
-                )
-              }
-            >
-              {action === "pull" ? (
-                <Download className="size-3.5" />
-              ) : (
-                <Upload className="size-3.5" />
-              )}
-              <span className="min-w-0 flex-1 truncate">
-                {t(`sidebar.${action}`)}
-              </span>
-              <ChevronRight className="size-3" />
-            </button>
-          ))}
-        </div>
-      )}
-      {activeSessionKind && (
-        <div
-          key={activeSessionKind}
-          data-testid="directory-session-submenu"
-          role="menu"
-          aria-label={
-            activeSessionKind === "shell"
-              ? t("workspaceUi.shellLocations")
-              : t("workspaceUi.agentLocations")
-          }
-          className="directory-session-submenu absolute left-full w-44 rounded-lg border border-border bg-card p-1 shadow-xl"
-          style={{ top: submenuTop }}
-        >
-          <DirectoryMenuGroups
-            groups={directoryGroups}
-            surface="sidebar"
-            testIdPrefix="session-directory"
-            disabled={(directory) =>
-              activeSessionKind === "agent" &&
-              (!directory.is_git || directory.git_status !== "ready")
-            }
-            onSelect={(directory) =>
-              activeSessionKind === "shell"
-                ? onShell(directory)
-                : onAgent(directory)
-            }
-          />
-        </div>
-      )}
-      {activeSync && (
-        <div
-          key={activeSync}
-          data-testid="sidebar-git-submenu"
-          role="menu"
-          aria-label={t(`sidebar.${activeSync}`)}
-          className="absolute left-full w-44 rounded-lg border border-border bg-card p-1 shadow-xl"
-          style={{ top: submenuTop }}
-        >
-          <p className="px-2.5 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {t(`sidebar.${activeSync}`)}
-          </p>
-          <SidebarMenuButton
-            testId={`sidebar-${activeSync}-all`}
-            icon={activeSync === "pull" ? <Download /> : <Upload />}
-            disabled={busy}
-            onClick={() => onSync?.(null, activeSync)}
-          >
-            {t(`sidebar.${activeSync}All`)}
-          </SidebarMenuButton>
-          {(syncTargets ?? []).map((target) => (
-            <SidebarMenuButton
-              key={target.id}
-              testId={`sidebar-${activeSync}-${target.id}`}
-              icon={<FolderGit2 />}
-              disabled={busy}
-              onClick={() => onSync?.(target.id, activeSync)}
-            >
-              {target.name}
-            </SidebarMenuButton>
-          ))}
-        </div>
-      )}
-      {footer && (
-        <div
-          data-testid="session-menu-footer"
-          className="mt-1 border-t border-border/60 pt-1"
-          onMouseEnter={() => setSubmenu(null)}
-          onMouseMove={() => setSubmenu(null)}
-          onFocus={() => setSubmenu(null)}
-        >
-          {footer}
-        </div>
-      )}
+      </SidebarMenuButton>
     </div>,
     document.body,
   );
@@ -1197,16 +873,14 @@ function SidebarCreateSessionMenu({
   stream,
   menu,
   onSessionMenu,
-  onCreateShell,
-  onCreateAgent,
+  onCreateSession,
   onCreateFork,
   allowFork = false,
 }: Pick<
   SidebarNodeProps,
   | "stream"
   | "onSessionMenu"
-  | "onCreateShell"
-  | "onCreateAgent"
+  | "onCreateSession"
   | "onCreateFork"
 > & { menu: SessionMenuState | null; allowFork?: boolean }) {
   const { t } = useTranslation();
@@ -1214,7 +888,6 @@ function SidebarCreateSessionMenu({
   return (
     <SessionDirectoryMenu
       testId="sidebar-session-menu"
-      directories={stream.directories ?? []}
       position={menu}
       primaryAction={
         allowFork ? (
@@ -1230,13 +903,9 @@ function SidebarCreateSessionMenu({
           </SidebarMenuButton>
         ) : undefined
       }
-      onShell={(directory) => {
+      onCreateSession={() => {
         onSessionMenu(null);
-        onCreateShell(stream, directory);
-      }}
-      onAgent={(directory) => {
-        onSessionMenu(null);
-        onCreateAgent(stream, directory);
+        onCreateSession(stream);
       }}
     />
   );
@@ -1566,8 +1235,7 @@ function SidebarForkNode(props: SidebarNodeProps) {
     onToggleWorkspace,
     onSessionMenu,
     onNavigate,
-    onCreateShell,
-    onCreateAgent,
+    onCreateSession,
     onCreateFork,
     onRenameSession,
     onReorderSessions,
@@ -1656,8 +1324,7 @@ function SidebarForkNode(props: SidebarNodeProps) {
         stream={stream}
         menu={sessionMenu?.id === stream.id ? sessionMenu : null}
         onSessionMenu={onSessionMenu}
-        onCreateShell={onCreateShell}
-        onCreateAgent={onCreateAgent}
+        onCreateSession={onCreateSession}
         onCreateFork={onCreateFork}
       />
       {open && (
@@ -1698,8 +1365,7 @@ function SidebarWorkspaceNode(
     onToggleWorkspace,
     onSessionMenu,
     onNavigate,
-    onCreateShell,
-    onCreateAgent,
+    onCreateSession,
     onCreateFork,
     onRenameSession,
     onReorderSessions,
@@ -1795,8 +1461,7 @@ function SidebarWorkspaceNode(
         stream={stream}
         menu={sessionMenu?.id === stream.id ? sessionMenu : null}
         onSessionMenu={onSessionMenu}
-        onCreateShell={onCreateShell}
-        onCreateAgent={onCreateAgent}
+        onCreateSession={onCreateSession}
         onCreateFork={onCreateFork}
         allowFork
       />

@@ -1,7 +1,7 @@
 import { CreateWorkspaceDialog } from "@/features/workspace/CreateWorkspaceDialog";
 import { CreateProjectDialog } from "@/features/projects/CreateProjectDialog";
 import { useProjectOpening } from "@/features/projects/useProjectOpening";
-import { useNewAgentSession } from "@/features/terminal/useNewAgentSession";
+import { useNewSession } from "@/features/terminal/useNewSession";
 import { isAgentKind } from "@/features/agents/model";
 import type { AgentKind } from "@/domain/types";
 import { useWorkspaceRefresh } from "@/features/app/useWorkspaceRefresh";
@@ -991,7 +991,7 @@ function Workspace() {
     });
   }
 
-  const newAgentSession = useNewAgentSession();
+  const newSession = useNewSession();
   const shortcutDialog = useAppActions({
     project: selectedProject, workspace, session: selectedSession, busy,
     pathname: location.pathname,
@@ -1209,19 +1209,17 @@ function Workspace() {
           onCreateProject={() => setCreateProjectOpen(true)}
           onCreateWorkspace={setCreateWorkspaceProject}
           onCreateFork={setCreateForkWorkspace}
-          onCreateShell={(stream, directory) =>
-            void createShell(stream, directory)
-          }
-          onCreateAgent={(stream, directory) => newAgentSession.open({
-            name: stream.name, directories: directory ? [directory] : [],
-            create: (kind, chosen) => void createAgent(stream, chosen, kind),
+          onCreateSession={(stream) => newSession.open({
+            name: stream.name, directories: stream.directories ?? [],
+            create: (kind, directory) => kind === "shell"
+              ? void createShell(stream, directory)
+              : void createAgent(stream, directory, kind),
           })}
-          onCreateBaseShell={(project, directory) =>
-            void createProjectShell(project, directory)
-          }
-          onCreateBaseAgent={(project, directory) => newAgentSession.open({
-            name: project.name, directories: directory ? [directory] : project.directories,
-            create: (kind, chosen) => void createProjectAgent(project, chosen, kind),
+          onCreateBaseSession={(project) => newSession.open({
+            name: project.name, directories: project.directories,
+            create: (kind, directory) => kind === "shell"
+              ? void createProjectShell(project, directory)
+              : void createProjectAgent(project, directory, kind),
           })}
           onSyncProject={(project, action) =>
             void gitSync("projects", project.id, action)
@@ -1727,7 +1725,7 @@ function Workspace() {
         onConfirm={confirmRemoveWorktree}
       />
       {shortcutDialog}
-      {newAgentSession.dialog}
+      {newSession.dialog}
       <SettingsDialog
         open={settingsOpen}
         system={system}
