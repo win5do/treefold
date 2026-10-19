@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import type {
   AppSettings,
+  CloseBehavior,
   SystemStatus,
   ThemePreference,
 } from "@/domain/types";
@@ -47,6 +48,7 @@ export function SettingsPreferences({
   const appVersion = useQuery(appVersionQuery());
   const [language, setLanguage] = useState<LanguagePreference>("system");
   const [theme, setTheme] = useState<ThemePreference>("system");
+  const [closeBehavior, setCloseBehavior] = useState<CloseBehavior>("hide_to_tray");
   const [keepDaemonRunningOnExit, setKeepDaemonRunningOnExit] = useState(false);
   const [saveFeedback, setSaveFeedback] = useState<SettingsSaveFeedback>({
     kind: "idle",
@@ -60,10 +62,11 @@ export function SettingsPreferences({
     if (busy || resetting) return;
     setResetting(true);
     try {
-      const result = await onSave({ reset: ["language", "theme", "amux.keep_daemon_running_on_exit"] });
+      const result = await onSave({ reset: ["language", "theme", "close_behavior", "amux.keep_daemon_running_on_exit"] });
       if (result.ok) {
         setLanguage("system");
         setTheme("system");
+        setCloseBehavior("hide_to_tray");
         setKeepDaemonRunningOnExit(false);
         setResetOpen(false);
         toast.success(t("settings.saved"));
@@ -76,6 +79,7 @@ export function SettingsPreferences({
     if (!open) return;
     setLanguage(settings?.language ?? "system");
     setTheme(settings?.theme ?? "system");
+    setCloseBehavior(settings?.close_behavior ?? "hide_to_tray");
     setKeepDaemonRunningOnExit(
       settings?.amux.keep_daemon_running_on_exit ?? false,
     );
@@ -83,6 +87,7 @@ export function SettingsPreferences({
     open,
     settings?.language,
     settings?.theme,
+    settings?.close_behavior,
     settings?.amux.keep_daemon_running_on_exit,
   ]);
   useEffect(() => {
@@ -95,6 +100,7 @@ export function SettingsPreferences({
     const result = await onSave({
       ...(language !== settings?.language ? { language } : {}),
       ...(theme !== settings?.theme ? { theme } : {}),
+      ...(closeBehavior !== settings?.close_behavior ? { closeBehavior } : {}),
       ...(keepDaemonRunningOnExit !== settings?.amux.keep_daemon_running_on_exit ? { keepDaemonRunningOnExit } : {}),
     });
     setSaveFeedback({ kind: "idle" });
@@ -169,6 +175,30 @@ export function SettingsPreferences({
                 <option value="system">{t("settings.theme.system")}</option>
                 <option value="light">{t("settings.theme.light")}</option>
                 <option value="dark">{t("settings.theme.dark")}</option>
+              </Select>
+            </Field>
+            <Separator />
+            <Field orientation="responsive" className="px-6 py-5">
+              <FieldContent>
+                <FieldLabel htmlFor="settings-close-behavior">
+                  {t("settings.closeBehavior.title")}
+                </FieldLabel>
+                <FieldDescription>
+                  {t("settings.closeBehavior.description")}
+                </FieldDescription>
+              </FieldContent>
+              <Select
+                id="settings-close-behavior"
+                data-testid="settings-close-behavior"
+                className="min-w-44"
+                value={closeBehavior}
+                onChange={(event) => {
+                  clearSaveFeedback();
+                  setCloseBehavior(event.target.value as CloseBehavior);
+                }}
+              >
+                <option value="hide_to_tray">{t("settings.closeBehavior.hideToTray")}</option>
+                <option value="quit">{t("settings.closeBehavior.quit")}</option>
               </Select>
             </Field>
             <Separator />

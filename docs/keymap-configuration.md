@@ -12,6 +12,12 @@ Missing preference keys and command bindings inherit application defaults.
 to empty (using `codex`, `claude`, `opencode`, or `pi`), and daemon retention defaults to `false`. Agent order defaults to
 Codex, Claude Code, OpenCode, Pi.
 
+`close_behavior` controls the window close button: `hide_to_tray` (default) hides
+the window and keeps Treefold available from its tray icon; `quit` exits Treefold
+through the normal shutdown flow. Changes apply on the next window close without
+restarting. Explicit Quit actions always exit. The existing
+`amux.keep_daemon_running_on_exit` setting still controls daemon retention on exit.
+
 The update dialog also saves `updates.remind_after` (Unix milliseconds) or
 `updates.skipped_version`. **Remind me in 7 days** suppresses all automatic
 update notices for seven days from the click; **Skip this version** suppresses

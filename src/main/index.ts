@@ -11,6 +11,7 @@ import { createDirectoryPicker } from './directory-picker';
 import { createProjectOpenRequests } from './open-project';
 import { readShellPath } from './shell-path';
 import { createUpdateChecker, scheduleStartupUpdate } from './updates';
+import { installWindowCloseBehavior } from './window-close';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
 mkdirSync(path.join(home, 'data', 'electron'), { recursive: true });
@@ -134,7 +135,7 @@ async function start() {
     if (params.isEditable) Menu.buildFromTemplate([{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }]).popup({ window });
   });
   window.webContents.on('render-process-gone', (_event, details) => log('error', `Renderer stopped: ${details.reason}`));
-  window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide(); app.dock?.hide(); } });
+  installWindowCloseBehavior(window, apiUrl, () => quitting, message => log('warn', message));
   const menu: MenuItemConstructorOptions[] = [
     ...(process.platform === 'darwin' ? [{ label: 'Treefold', submenu: [{ id: 'about', label: new MenuItem({ role: 'about' }).label, click: showAbout }, { id: 'check-for-updates', label: 'Check for Updates', click: showUpdates }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },

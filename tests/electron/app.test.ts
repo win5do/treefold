@@ -1,5 +1,5 @@
 import type { ElectronApplication } from '@playwright/test';
-import { test } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -63,7 +63,7 @@ test('packaged Electron loads Rust API, persists settings, and preserves close-t
     });
     assert.deepEqual(prefs, { contextIsolation: true, sandbox: true, nodeIntegration: false });
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-    assert.equal(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
+    await expect.poll(() => desktop!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(false);
     assert.equal((await fetch(`${apiUrl}/api/health`)).status, 200);
     await desktop.evaluate(({ app }) => app.emit('activate'));
     assert.equal(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), true);

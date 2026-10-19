@@ -3,10 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { appApi } from "@/api/app";
 import { appKeys } from "@/features/app/queries";
 import type { LanguagePreference } from "@/i18n";
-import type { AgentsSettingsPatch, ThemePreference } from "@/domain/types";
+import type { AgentsSettingsPatch, CloseBehavior, ThemePreference } from "@/domain/types";
 export type SettingsFormPatch = {
   language?: LanguagePreference;
   theme?: ThemePreference;
+  closeBehavior?: CloseBehavior;
   agents?: AgentsSettingsPatch;
   keepDaemonRunningOnExit?: boolean;
   reset?: string[];
@@ -22,6 +23,7 @@ export function useSettingsSave() {
         reset: update.reset,
         language: update.language,
         theme: update.theme,
+        close_behavior: update.closeBehavior,
         agents: update.agents,
         amux:
           update.keepDaemonRunningOnExit === undefined

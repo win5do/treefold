@@ -52,8 +52,9 @@ Electron 主进程启动独立的 `treefold-backend`，通过 stdout 就绪消�
 检查获得随机本地 API 地址。业务请求保持直连 Rust，Electron IPC 仅暴露 API 地址、
 目录选择和桌面日志。
 
-同一 `TREEFOLD_HOME` 只允许一个 Rust backend，文件锁由操作系统释放。关闭窗口仅隐藏
-窗口，API 继续运行；退出 App 时关闭父进程控制管道，Rust 清理 API 地址并按
+同一 `TREEFOLD_HOME` 只允许一个 Rust backend，文件锁由操作系统释放。关闭窗口默认隐藏到
+托盘，API 继续运行；可通过 `close_behavior = "quit"` 改为退出 App，保存后立即生效。
+退出 App 时关闭父进程控制管道，Rust 清理 API 地址并按
 `amux.keep_daemon_running_on_exit` 设置停止或保留 amux。API backend 本身不常驻。
 Rust 与 Electron 分别记录轮转日志，保存在同一 home 的 `logs/` 下：
 `desktop.log` 记录前端（`renderer`）和主进程（`main`），`treefold_rCURRENT.log`

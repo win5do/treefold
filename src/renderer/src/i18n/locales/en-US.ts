@@ -241,6 +241,12 @@ export const enUS = {
       copied: "Runtime information copied",
       copyFailed: "Could not copy runtime information",
     },
+    closeBehavior: {
+      title: "When closing the window",
+      description: "Hide Treefold to its tray icon or quit the app.",
+      hideToTray: "Hide to tray",
+      quit: "Quit app",
+    },
     amux: {
       title: "Keep amux Daemon running when Treefold exits",
       description: "By default, exiting Treefold stops the Daemon and terminates all of its child processes.",

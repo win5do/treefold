@@ -243,6 +243,12 @@ export const zhCN = {
       copied: "已复制运行环境",
       copyFailed: "无法复制运行环境",
     },
+    closeBehavior: {
+      title: "关闭窗口时",
+      description: "将 Treefold 隐藏到托盘图标，或直接退出应用。",
+      hideToTray: "隐藏到托盘",
+      quit: "退出应用",
+    },
     amux: {
       title: "Treefold 退出后保留 amux 守护进程",
       description: "默认退出 Treefold 时停止守护进程，并终止它管理的全部子进程。",

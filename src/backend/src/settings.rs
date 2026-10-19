@@ -75,6 +75,8 @@ pub struct Settings {
     pub language: String,
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default = "default_close_behavior")]
+    pub close_behavior: String,
     #[serde(default)]
     pub agents: AgentsSettings,
     #[serde(default)]
@@ -89,6 +91,7 @@ impl Default for Settings {
             schema_version: SETTINGS_SCHEMA_VERSION,
             language: default_language(),
             theme: default_theme(),
+            close_behavior: default_close_behavior(),
             agents: AgentsSettings::default(),
             amux: AmuxSettings::default(),
             updates: UpdateSettings::default(),
@@ -107,6 +110,7 @@ impl Settings {
         }
         validate_language(&self.language)?;
         validate_theme(&self.theme)?;
+        validate_close_behavior(&self.close_behavior)?;
         validate_remind_after(self.updates.remind_after)?;
         validate_order(&self.agents.order)?;
         for kind in AGENT_KINDS {
@@ -129,6 +133,7 @@ pub struct SettingsPatch {
     pub reset: Vec<String>,
     pub language: Option<String>,
     pub theme: Option<String>,
+    pub close_behavior: Option<String>,
     pub agents: Option<AgentsSettingsPatch>,
     pub amux: Option<AmuxSettingsPatch>,
     pub updates: Option<UpdateSettingsPatch>,
@@ -173,6 +178,7 @@ impl SettingsPatch {
                 && ![
                     "language",
                     "theme",
+                    "close_behavior",
                     "agents.order",
                     "amux.keep_daemon_running_on_exit",
                     "updates.skipped_version",
@@ -188,6 +194,9 @@ impl SettingsPatch {
         }
         if let Some(theme) = &self.theme {
             validate_theme(theme)?;
+        }
+        if let Some(behavior) = &self.close_behavior {
+            validate_close_behavior(behavior)?;
         }
         if let Some(updates) = &self.updates {
             validate_remind_after(updates.remind_after)?;
@@ -244,6 +253,17 @@ fn default_language() -> String {
 
 fn default_theme() -> String {
     "system".into()
+}
+
+fn default_close_behavior() -> String {
+    "hide_to_tray".into()
+}
+
+fn validate_close_behavior(behavior: &str) -> anyhow::Result<()> {
+    if !["hide_to_tray", "quit"].contains(&behavior) {
+        bail!("unsupported close_behavior '{behavior}'; expected hide_to_tray or quit");
+    }
+    Ok(())
 }
 
 fn validate_theme(theme: &str) -> anyhow::Result<()> {
@@ -314,6 +334,9 @@ impl SettingsStore {
         if let Some(theme) = patch.theme {
             settings.theme = theme;
             document["theme"] = value(settings.theme.clone());
+        }
+        if let Some(behavior) = patch.close_behavior {
+            document["close_behavior"] = value(behavior);
         }
         if let Some(agents) = patch.agents {
             if let Some(order) = agents.order {
@@ -584,6 +607,54 @@ mod tests {
         }
     }
 
+    #[test]
+    fn close_behavior_persists_resets_and_rejects_invalid_values_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = SettingsStore::open(dir.path()).unwrap();
+        assert_eq!(store.load().unwrap().close_behavior, "hide_to_tray");
+        let initial = "schema_version = 3\n# keep\ntheme = \"dark\"\nfuture = true\n";
+        std::fs::write(&store.path, initial).unwrap();
+
+        for behavior in ["quit", "hide_to_tray"] {
+            let settings = store
+                .update(
+                    serde_json::from_value(serde_json::json!({"close_behavior": behavior}))
+                        .unwrap(),
+                )
+                .unwrap();
+            assert_eq!(settings.close_behavior, behavior);
+            assert_eq!(
+                SettingsStore::open(dir.path()).unwrap().load().unwrap(),
+                settings
+            );
+            let saved = std::fs::read_to_string(&store.path).unwrap();
+            assert!(saved.contains(&format!("close_behavior = \"{behavior}\"")));
+            assert!(saved.contains("# keep"));
+            assert!(saved.contains("future = true"));
+            assert_eq!(settings.theme, "dark");
+        }
+        let saved = std::fs::read_to_string(&store.path).unwrap();
+        let invalid = serde_json::from_value(serde_json::json!({
+            "theme": "light", "close_behavior": "minimize"
+        }))
+        .unwrap();
+        assert!(store.update(invalid).is_err());
+        assert_eq!(std::fs::read_to_string(&store.path).unwrap(), saved);
+        let invalid_file = saved.replace("hide_to_tray", "minimize");
+        std::fs::write(&store.path, &invalid_file).unwrap();
+        assert!(store.load().is_err());
+        assert_eq!(std::fs::read_to_string(&store.path).unwrap(), invalid_file);
+        std::fs::write(&store.path, &saved).unwrap();
+
+        let reset = store
+            .update(
+                serde_json::from_value(serde_json::json!({"reset": ["close_behavior"]})).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(reset.close_behavior, "hide_to_tray");
+        assert_eq!(std::fs::read_to_string(&store.path).unwrap(), initial);
+    }
+
     fn fixture(label: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "treefold-settings-{label}-{}",
@@ -606,6 +677,7 @@ mod tests {
                 schema_version: SETTINGS_SCHEMA_VERSION,
                 language: "system".into(),
                 theme: "system".into(),
+                close_behavior: "hide_to_tray".into(),
                 agents: AgentsSettings::default(),
                 amux: AmuxSettings::default(),
                 updates: super::UpdateSettings::default(),

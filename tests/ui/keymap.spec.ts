@@ -264,6 +264,18 @@ test("settings Save sends only edited fields and supports resetting overrides", 
     await page.getByTestId("settings-save").click();
     expect((await saved).postDataJSON()).toEqual({ theme: "dark" });
     await expect(page.getByTestId("settings-save")).toBeEnabled();
+    const closeBehavior = page.getByRole("combobox", { name: "When closing the window" });
+    await expect(closeBehavior).toHaveValue("hide_to_tray");
+    await closeBehavior.selectOption("quit");
+    const savedCloseBehavior = page.waitForRequest(request =>
+      request.method() === "PATCH" && request.url().endsWith("/api/settings"),
+    );
+    await page.getByTestId("settings-save").click();
+    expect((await savedCloseBehavior).postDataJSON()).toEqual({ close_behavior: "quit" });
+    await expect(page.getByTestId("settings-save")).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("open-settings").click();
+    await expect(closeBehavior).toHaveValue("quit");
     await page
       .getByRole("button", { name: "Reset settings", exact: true })
       .click();
@@ -296,11 +308,13 @@ test("settings Save sends only edited fields and supports resetting overrides", 
       reset: [
         "language",
         "theme",
+        "close_behavior",
         "amux.keep_daemon_running_on_exit",
       ],
     });
     await expect(confirmation).toHaveCount(0);
     await expect(theme).toHaveValue("system");
+    await expect(page.getByTestId("settings-close-behavior")).toHaveValue("hide_to_tray");
     const afterReset = await (await page.request.get(`${harness.apiUrl}/api/settings`)).json();
     expect(afterReset.agents.codex.command).toContain("--model gpt-5.4");
     await page.screenshot({ path: "/tmp/treefold-preferences.png" });

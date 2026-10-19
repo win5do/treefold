@@ -498,11 +498,13 @@ export type SystemStatus = {
 };
 
 export type ThemePreference = "system" | "light" | "dark";
+export type CloseBehavior = "hide_to_tray" | "quit";
 
 export type AppSettings = {
   schema_version: number;
   language: LanguagePreference;
   theme: ThemePreference;
+  close_behavior: CloseBehavior;
   agents: AgentsSettings;
   amux: {
     keep_daemon_running_on_exit: boolean;

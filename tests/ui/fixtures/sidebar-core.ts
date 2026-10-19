@@ -676,6 +676,7 @@ export function createSidebarCoreFixture(): SidebarFixture {
       schema_version: 3,
       language: "en-US",
       theme: "system",
+      close_behavior: "hide_to_tray",
       agents: createAgentSettings(),
       updates: { skipped_version: null, remind_after: null },
       amux: {

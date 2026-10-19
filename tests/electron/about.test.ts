@@ -54,7 +54,7 @@ test('About menu opens the shared dialog, restores the window, and survives relo
     await expect(settings).toBeFocused();
 
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-    expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(false);
+    await expect.poll(() => desktop!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(false);
     await openAbout();
     await expect(dialog).toBeVisible();
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);

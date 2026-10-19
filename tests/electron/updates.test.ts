@@ -66,6 +66,7 @@ test('stable updates: startup notice, menu checks, release link, errors, reload 
       item.click();
     });
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+    await expect.poll(() => desktop!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(false);
     await checkMenu();
     await expect(dialog).toBeVisible();
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);
