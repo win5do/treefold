@@ -1,7 +1,5 @@
-import { Spinner } from "@/components/ui/spinner";
 import { useTranslation } from "react-i18next";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { BranchNameField } from "@/features/git/BranchNameField";
+import { type FormEvent, useEffect, useState } from "react";
 import { projectsApi } from "@/api/projects";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,69 +14,13 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
-  FieldSet,
 } from "@/components/ui/field";
 import { NativeSelect as Select } from "@/components/ui/native-select";
-import { Textarea } from "@/components/ui/textarea";
 import type {
   GitBranches,
-  ProjectDetail,
   WorkspaceRepository,
 } from "@/domain/types";
 
-export function CreateWorkspaceDialog({ project, busy, onOpenChange, onSubmit }: {
-  project: ProjectDetail | null; busy: boolean; onOpenChange: (open: boolean) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-}) {
-  const { t } = useTranslation();
-  const repositories = useMemo(() => project?.repositories ?? [], [project]);
-  const [branches, setBranches] = useState<Record<string, GitBranches>>({});
-  const [remotes, setRemotes] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    setBranches({}); setRemotes({}); setError("");
-    if (!project) { setLoading(false); return; }
-    const controller = new AbortController();
-    setLoading(true);
-    Promise.all(repositories.map(async repository => [repository.id, await projectsApi.repositoryBranches(repository.id, controller.signal)] as const))
-      .then(entries => {
-        if (controller.signal.aborted) return;
-        setBranches(Object.fromEntries(entries));
-        setRemotes(Object.fromEntries(entries.map(([id, options]) => [id, options.current_remote ?? ""])));
-      }).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [project?.id, repositories]);
-  const invalid = repositories.some(repository => { const options = branches[repository.id]; return !options?.current || !options.local.includes(options.current); });
-  return <Dialog open={Boolean(project)} onOpenChange={onOpenChange}>
-    <DialogContent className="flex max-h-[86vh] flex-col overflow-hidden">
-      <DialogTitle>{t("workspaceUi.newWorkspace")}</DialogTitle>
-      <DialogDescription>{t("workspaceUi.checkoutRemoteInheritance")}</DialogDescription>
-      <form key={project?.id ?? "closed"} className="mt-4 flex min-h-0 flex-col gap-4" onSubmit={onSubmit}>
-        <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-        <FieldGroup>
-          <Field><FieldLabel htmlFor="workspace-description">{t("workspaceUi.workspaceDescription")}</FieldLabel><Textarea id="workspace-description" name="description" placeholder={t("workspaceUi.scopeAndExpectedOutcome")} /></Field>
-          <BranchNameField label={t("workspaceUi.sharedLocalBranch")} />
-        </FieldGroup>
-        {repositories.map(repository => <FieldSet key={repository.id}>
-          <FieldLegend>{repository.name}</FieldLegend>
-          <Field><FieldLabel htmlFor={`workspace-base-${repository.id}`}>{t("workspaceUi.baseBranch")}</FieldLabel><Input id={`workspace-base-${repository.id}`} name={`expected_base:${repository.id}`} readOnly value={branches[repository.id]?.current ?? ""} /></Field>
-          <Field><FieldLabel htmlFor={`workspace-remote-${repository.id}`}>{t("workspaceUi.remote")}</FieldLabel>
-            <Select id={`workspace-remote-${repository.id}`} name={`remote:${repository.id}`} value={remotes[repository.id] ?? ""} disabled={loading} onChange={event => setRemotes(current => ({ ...current, [repository.id]: event.target.value }))}>
-              <option value="">{t("workspaceUi.configureBeforePush")}</option>
-              {branches[repository.id]?.remotes.map(remote => <option key={remote.name} value={remote.name}>{remote.name}</option>)}
-            </Select>
-            <FieldDescription>{t("workspaceUi.sameNameRemoteBranch")}</FieldDescription>
-          </Field>
-        </FieldSet>)}
-        {error && <p role="alert" className="text-destructive">{error}</p>}
-        </div>
-        <div className="flex shrink-0 justify-end"><Button type="submit" disabled={busy || loading || !!error || invalid}>{busy && <Spinner data-icon="inline-start" />}{t(busy ? "workspaceUi.creating" : "workspaceUi.createWorkspace")}</Button></div>
-      </form>
-    </DialogContent>
-  </Dialog>;
-}
 export function ConfigureWorkspaceRepositoryDialog({
   location,
   busy,
@@ -91,6 +33,36 @@ export function ConfigureWorkspaceRepositoryDialog({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   const { t } = useTranslation();
+  const [remotes, setRemotes] = useState<GitBranches["remotes"]>([]);
+  const [remoteName, setRemoteName] = useState("");
+  const [remoteBranch, setRemoteBranch] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setRemotes([]);
+    setRemoteName(location?.remote_name ?? "");
+    setRemoteBranch(location?.remote_branch ?? "");
+    setError("");
+    if (!location) { setLoading(false); return; }
+    const controller = new AbortController();
+    setLoading(true);
+    projectsApi.repositoryBranches(location.project_repository_id, controller.signal)
+      .then((branches) => {
+        if (controller.signal.aborted) return;
+        setRemotes(branches.remotes);
+        if (!branches.remotes.some((remote) => remote.name === location.remote_name)) {
+          setRemoteName("");
+          setRemoteBranch("");
+        }
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [location]);
+
   return (
     <Dialog open={Boolean(location)} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -113,28 +85,37 @@ export function ConfigureWorkspaceRepositoryDialog({
             <FieldGroup className="grid grid-cols-2 gap-3">
               <Field>
                 <FieldLabel htmlFor="workspace-upstream-remote">{t("workspaceUi.remote")}</FieldLabel>
-                <Input
+                <Select
                   id="workspace-upstream-remote"
                   name="remote_name"
-                  defaultValue={location.remote_name ?? ""}
-                  placeholder="origin"
-                  required
-                />
+                  value={remoteName}
+                  disabled={busy || loading}
+                  onChange={(event) => {
+                    const remote = event.target.value;
+                    setRemoteName(remote);
+                    setRemoteBranch(remote ? location.branch ?? "" : "");
+                  }}
+                >
+                  <option value="">{t("workspaceUi.configureBeforePush")}</option>
+                  {remotes.map((remote) => <option key={remote.name} value={remote.name}>{remote.name}</option>)}
+                </Select>
               </Field>
-              <Field>
+              {remoteName ? <Field>
                 <FieldLabel htmlFor="workspace-upstream-branch">{t("workspaceUi.remoteFeatureBranch")}</FieldLabel>
                 <Input
                   id="workspace-upstream-branch"
                   name="remote_branch"
-                  defaultValue={location.remote_branch ?? ""}
-                  placeholder={location.branch || "feature/my-change"}
+                  value={remoteBranch}
+                  onChange={(event) => setRemoteBranch(event.target.value)}
+                  disabled={busy || loading}
                   required
                 />
-              </Field>
+              </Field> : <input type="hidden" name="remote_branch" value="" />}
             </FieldGroup>
-            <FieldDescription className="rounded-lg bg-muted/50 px-3 py-2">{t("workspaceUi.upstreamDescription")}</FieldDescription>
+            <FieldDescription>{t(remoteName ? "workspaceUi.upstreamDescription" : "workspaceUi.upstreamNotConfigured")}</FieldDescription>
+            {error && <p role="alert" className="text-destructive">{error}</p>}
             <div className="flex justify-end">
-              <Button type="submit" disabled={busy}>{t("workspaceUi.saveUpstream")}</Button>
+              <Button type="submit" disabled={busy || loading || !!error || (!!remoteName && !remoteBranch.trim())}>{t("workspaceUi.saveUpstream")}</Button>
             </div>
           </form>
         )}

@@ -35,6 +35,17 @@ async fn retained_plans(f: &Fixture) -> Vec<FinishPlanItem> {
         .collect()
 }
 
+async fn wait_for_delivery(f: &Fixture) {
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        while workers().lock().await.contains(&f.workspace.id) {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(saved(f).await.status, "completed");
+}
+
 #[tokio::test]
 async fn intermediate_delivery_repeats_then_finishes_without_completing_todo_early() {
     let (f, parent_id) = fork_fixture().await;
@@ -275,6 +286,7 @@ async fn workspace_inherits_current_checkout_remote_pushes_repeatedly_and_reopen
         State(f.state.clone()),
         AxumPath(f.workspace.project_id.clone()),
         ApiJson(CreateWorkspace {
+            repositories: None,
             repository_remotes: None,
             expected_base_branches: None,
             generated_branch: None,
@@ -322,10 +334,73 @@ async fn workspace_inherits_current_checkout_remote_pushes_repeatedly_and_reopen
                 delete_branch: false,
             });
         }
-        let batch = prepare_batch_with_mode(&f.state, &f.workspace.id, plan, round == 1)
-            .await
-            .unwrap();
-        run_batch(&f.state, batch, false).await.unwrap();
+        // Preflight is only a preview and must not remember the selected method.
+        assert_eq!(
+            f.state
+                .store
+                .workspace(&f.workspace.id)
+                .await
+                .unwrap()
+                .default_delivery,
+            if round == 1 {
+                "local_merge"
+            } else {
+                "push_branch"
+            }
+        );
+        if round == 1 {
+            let mut invalid = plan.clone();
+            invalid[0].preflight_id = "missing".into();
+            assert!(
+                start_finish_batch(
+                    State(f.state.clone()),
+                    AxumPath(f.workspace.id.clone()),
+                    ApiJson(FinishBatchRequest {
+                        continue_work: true,
+                        repositories: invalid
+                    }),
+                )
+                .await
+                .is_err()
+            );
+            assert_eq!(
+                f.state
+                    .store
+                    .workspace(&f.workspace.id)
+                    .await
+                    .unwrap()
+                    .default_delivery,
+                "local_merge"
+            );
+            assert!(
+                f.state
+                    .store
+                    .finish_batch(&f.workspace.id)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        let _ = start_finish_batch(
+            State(f.state.clone()),
+            AxumPath(f.workspace.id.clone()),
+            ApiJson(FinishBatchRequest {
+                continue_work: round == 1,
+                repositories: plan,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            f.state
+                .store
+                .workspace(&f.workspace.id)
+                .await
+                .unwrap()
+                .default_delivery,
+            "push_branch"
+        );
+        wait_for_delivery(&f).await;
         assert_eq!(saved(&f).await.status, "completed");
         assert_eq!(
             f.state
@@ -363,5 +438,35 @@ async fn workspace_inherits_current_checkout_remote_pushes_repeatedly_and_reopen
             .await
             .unwrap()
             .is_none()
+    );
+    assert_eq!(
+        f.state
+            .store
+            .workspace(&f.workspace.id)
+            .await
+            .unwrap()
+            .default_delivery,
+        "push_branch"
+    );
+    // A later confirmed merge replaces the remembered push choice.
+    let _ = start_finish_batch(
+        State(f.state.clone()),
+        AxumPath(f.workspace.id.clone()),
+        ApiJson(FinishBatchRequest {
+            continue_work: true,
+            repositories: retained_plans(&f).await,
+        }),
+    )
+    .await
+    .unwrap();
+    wait_for_delivery(&f).await;
+    assert_eq!(
+        f.state
+            .store
+            .workspace(&f.workspace.id)
+            .await
+            .unwrap()
+            .default_delivery,
+        "local_merge"
     );
 }

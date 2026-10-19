@@ -72,4 +72,29 @@ impl Store {
             .execute(&self.pool).await?;
         Ok(())
     }
+
+    pub async fn confirm_finish_batch(&self, batch: &FinishBatch) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let state =
+            serde_json::to_string(batch).map_err(|error| AppError::Internal(error.into()))?;
+        let id = &batch.workspace_id;
+        sqlx::query!("INSERT INTO workspace_finish_batches (workspace_id, state) VALUES (?, ?) ON CONFLICT(workspace_id) DO UPDATE SET state = excluded.state", id, state)
+            .execute(&mut *tx).await?;
+        // Remember only an accepted delivery method, never a preview, retry or abandon action.
+        let method = batch
+            .items
+            .iter()
+            .find_map(|item| match item.plan.code_action.as_str() {
+                "local_merge" | "squash_merge" => Some("local_merge"),
+                "push_branch" => Some("push_branch"),
+                _ => None,
+            });
+        if let Some(method) = method {
+            let timestamp = now();
+            sqlx::query!("UPDATE workspaces SET default_delivery=?, updated_at=? WHERE id=? AND kind='workspace'", method, timestamp, id)
+                .execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
 }

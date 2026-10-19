@@ -30,12 +30,22 @@ a missing upstream, detached HEAD, or unborn branch requires setup first.
 Delivery strategy is selected for each Workspace/Fork operation; see
 [Git worktree lifecycle](git-worktree-lifecycle.md).
 
-Workspace creation displays each Repository's current branch without a branch
-selector and records its base branch and starting commit on the Workspace
-Repository. New worktrees start from the captured commit. An existing feature
-branch can still be reused under the existing ownership rules. If the displayed
-Project branch changes before submission, creation requires a refreshed preview.
-Later Project branch switches do not rewrite existing Workspace/Fork bases.
+Workspace creation configures each Repository independently. New branch is the
+default, with the same generated name filled into each editable branch field.
+The base defaults to that Repository's current Project branch and can be changed
+using the shared Local/Remote branch picker. New branches start from the commit
+captured during preparation. Untouched generated names retain the shared
+branch/worktree-root name and retry collisions; explicit names never change silently.
+
+Use existing branch checks out an unoccupied local branch in a new managed
+worktree, preserving user ownership of the branch. Selecting a remote ref creates
+a managed local branch, with an editable local name, from the fetched remote ref.
+A local name collision requires choosing that local branch or a different name.
+Branches occupied by any worktree, including Project and external checkouts, are
+unavailable for reuse. Occupied branches remain valid bases for new branches.
+The backend validates every Repository choice before persisting the Workspace;
+Git also rejects checkout races. Later Project branch switches do not rewrite
+existing Workspace/Fork bases.
 
 A `ProjectDirectory` is only a working scope. A Git Directory stores a
 Repository id and a normalized relative path; a Non-Git Directory stores an
@@ -56,7 +66,7 @@ Adding scopes later never changes existing Workspace snapshots.
 ## Workspace Repository and Directory snapshots
 
 Workspace creation snapshots each Repository exactly once into a
-`WorkspaceRepository`, with one full worktree, one shared feature branch name,
+`WorkspaceRepository`, with one full worktree, its own feature branch name,
 upstream, delivery, rebase/reset, and Finish state. Each selected Project scope
 becomes a `WorkspaceDirectory`: Git paths map to
 `checkout_root/relative_path`, while Non-Git paths keep their external location
@@ -75,9 +85,10 @@ run concurrently.
 ## Fork
 
 A Fork is one level of parallel work beneath a Workspace. It creates one
-worktree per parent Workspace Repository from the parent's current HEAD and
+new branch and worktree per parent Workspace Repository from the parent's current HEAD and
 records its parent branch and commit as its base, and snapshots all Directory
-scopes onto those worktrees. Forks cannot nest. Finish
+scopes onto those worktrees. Fork creation does not offer existing-branch checkout
+or another base. Forks cannot nest. Finish
 and delivery operate per Repository, not per Directory.
 
 ## Local delivery targets

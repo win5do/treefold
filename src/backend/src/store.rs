@@ -357,6 +357,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn workspace_default_delivery_migrates_existing_workspaces_and_reopens() {
+        let data = tempfile::tempdir().unwrap();
+        let old_migrations = tempfile::tempdir().unwrap();
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g2/20261004013417_initial.sql"),
+            old_migrations.path().join("20261004013417_initial.sql"),
+        )
+        .unwrap();
+        let options = SqliteConnectOptions::new()
+            .filename(data.path().join(CURRENT_DATABASE_FILENAME))
+            .create_if_missing(true);
+        let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
+        sqlx::migrate::Migrator::new(old_migrations.path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        // This fixture intentionally uses the historical schema before the new column exists.
+        sqlx::raw_sql("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','before','before');
+            INSERT INTO workspaces(id,project_id,name,status,created_at,updated_at) VALUES('w','p','W','active','before','before');")
+            .execute(&mut connection).await.unwrap();
+        connection.close().await.unwrap();
+        let store = Store::open(data.path()).await.unwrap();
+        assert_eq!(
+            store.workspace("w").await.unwrap().default_delivery,
+            "local_merge"
+        );
+        // Dynamic value exercises the database's allowed-value constraint.
+        for (value, succeeds) in [("push_branch", true), ("invalid", false)] {
+            let result = sqlx::query!(
+                "UPDATE workspaces SET default_delivery=? WHERE id='w'",
+                value
+            )
+            .execute(&store.pool)
+            .await;
+            assert_eq!(result.is_ok(), succeeds);
+        }
+        store.pool.close().await;
+        let reopened = Store::open(data.path()).await.unwrap();
+        let workspace = reopened.workspace("w").await.unwrap();
+        assert_eq!(workspace.default_delivery, "push_branch");
+        assert_eq!(workspace.name, "W");
+        assert_eq!(workspace.created_at, "before");
+        reopened.pool.close().await;
+    }
+
+    #[tokio::test]
     async fn changing_an_executed_migration_is_rejected_by_checksum() {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::open(directory.path()).await.unwrap();

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { GitCompare, SquareTerminal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import { ForkDeliveryOptions } from "./ForkDeliveryOptions";
 import { ForceFinishWorkspace } from "./ForceFinishWorkspace";
 import { finishErrorText, isWorktreeError } from "./finishErrors";
 import { FinishConflict } from "./FinishConflict";
+import { DeliveryBlockers } from "./DeliveryBlockers";
 
 export function FinishWorkspaceDialog({
   workspace,
@@ -34,6 +36,7 @@ export function FinishWorkspaceDialog({
   onReviewChanges: (locationId: string) => void;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const flow = useFinishBatch(workspace);
   const [selected, setSelected] = useState("");
   useEffect(() => setSelected(""), [workspace?.id]);
@@ -80,8 +83,22 @@ export function FinishWorkspaceDialog({
             )}
           </DialogDescription>
         </DialogHeader>
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
         {workspace && !flow.batch && flow.loaded && (
           <ForkDeliveryOptions kind={workspace.kind} continueWork={flow.continueWork} onContinueWork={flow.setContinueWork} action={flow.forkAction} onAction={flow.setForkAction} disabled={flow.busy} />
+        )}
+        {workspace && !flow.batch && flow.loaded && (
+          <DeliveryBlockers
+            repositories={repositories}
+            drafts={flow.drafts}
+            preflights={flow.preflights}
+            checks={flow.checks}
+            onOpenSettings={repositoryId => {
+              flow.preserveSettingsDraft();
+              onOpenChange(false);
+              navigate(`/workspaces/${workspace.id}`, { state: { repositorySettings: repositoryId } });
+            }}
+          />
         )}
         {!flow.loaded ? (
           <p>{t("states.checking")}</p>
@@ -92,7 +109,7 @@ export function FinishWorkspaceDialog({
             orientation="vertical"
             value={current ?? ""}
             onValueChange={(value) => setSelected(String(value))}
-            className="min-h-0 flex-1 gap-4 overflow-hidden"
+            className="min-h-48 flex-1 gap-4 overflow-hidden"
           >
             <TabsList
               aria-label={t("deliveryUi.rEPOSITORY")}
@@ -251,29 +268,6 @@ export function FinishWorkspaceDialog({
                                 {text}
                               </p>
                             ))}
-                            {check?.blockers.map((text) => (
-                              <p
-                                key={text}
-                                className="break-words text-destructive"
-                              >
-                                {text}
-                              </p>
-                            ))}
-                            {flow.checks[item.id] && (
-                              <p
-                                role="alert"
-                                className="break-words text-destructive"
-                              >
-                                {finishErrorText(flow.checks[item.id], t)}
-                                {isWorktreeError(
-                                  flow.checks[item.id]?.code,
-                                ) && (
-                                  <span className="mt-2 block">
-                                    {t("deliveryUi.recovery.repairHint")}
-                                  </span>
-                                )}
-                              </p>
-                            )}
                             {check?.source_dirty && (
                               <div className="flex flex-wrap gap-2">
                                 <Button
@@ -313,7 +307,8 @@ export function FinishWorkspaceDialog({
             {flow.error || flow.batch?.error}
           </p>
         )}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t pt-4">
           <p role="status" className="text-xs text-muted-foreground">
             {flow.batch
               ? t(

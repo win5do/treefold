@@ -75,7 +75,7 @@ pub(super) fn reserve_shared_worktree(
     Err(anyhow::anyhow!("could not allocate a shared worktree directory and branch").into())
 }
 
-fn reserve_worktree_root(settings: &SettingsStore) -> Result<WorktreeRoot> {
+pub(super) fn reserve_worktree_root(settings: &SettingsStore) -> Result<WorktreeRoot> {
     reserve_in(&settings.treefold_home().join("git/w"), || {
         format!(
             "{}-{}",

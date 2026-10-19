@@ -18,13 +18,22 @@ import {
 } from "./finishErrors";
 
 type Draft = Omit<FinishPlanItem, "repository_id" | "preflight_id">;
+type DeliveryChoice = { action: Exclude<Draft["code_action"], "skip">; continueWork: boolean };
 export function useFinishBatch(workspace: WorkspaceDetail | null) {
   const client = useQueryClient();
   const { t } = useTranslation();
   const [continueWork, setContinueWork] = useState(false);
   const [forkAction, setForkAction] = useState<"local_merge" | "squash_merge" | "push_branch" | "keep">("local_merge");
   const showResult = useRef(false);
-  useEffect(() => { setContinueWork(false); setForkAction("local_merge"); showResult.current = false; }, [workspace?.id]);
+  const settingsDraft = useRef<(DeliveryChoice & { workspaceId: string }) | null>(null);
+  useEffect(() => {
+    const draft = settingsDraft.current?.workspaceId === workspace?.id
+      ? settingsDraft.current : null;
+    setContinueWork(draft?.continueWork ?? false);
+    setForkAction(draft?.action ?? workspace?.default_delivery ?? "local_merge");
+    if (draft) settingsDraft.current = null;
+    showResult.current = false;
+  }, [workspace?.id]);
   const [batch, setBatch] = useState<FinishBatch | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [storedDrafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -57,7 +66,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     setDrafts(
       Object.fromEntries(
         repositories.map((item) => {
-          const code_action = "local_merge" as const;
+          const code_action = workspace.default_delivery ?? "local_merge";
           return [
             item.id,
             {
@@ -144,6 +153,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
       )) &&
     repositories.every(
       (item) =>
+        (drafts[item.id]?.code_action !== "push_branch" || Boolean(item.remote_name && item.remote_branch)) &&
         preflights[item.id] &&
         preflights[item.id].code_action === drafts[item.id]?.code_action &&
         !preflights[item.id].blockers.length &&
@@ -234,9 +244,13 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
   return {
     batch,
     continueWork,
-    setContinueWork: (value: boolean) => { setContinueWork(value); setForkAction("local_merge"); },
+    setContinueWork: (value: boolean) => { setContinueWork(value); setForkAction(current => current === "keep" || current === "squash_merge" ? workspace?.default_delivery ?? "local_merge" : current); },
     forkAction,
     setForkAction,
+    preserveSettingsDraft: () => {
+      if (workspace && !batch)
+        settingsDraft.current = { workspaceId: workspace.id, action: forkAction, continueWork };
+    },
     loaded,
     drafts,
     preflights,

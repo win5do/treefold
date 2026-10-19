@@ -116,6 +116,7 @@ async fn fixture() -> Fixture {
         State(state.clone()),
         AxumPath(project.id),
         ApiJson(CreateWorkspace {
+            repositories: None,
             repository_remotes: None,
             expected_base_branches: None,
             generated_branch: None,
@@ -1033,6 +1034,7 @@ async fn workspace_creation_records_each_current_branch_and_rejects_stale_previe
         State(f.state.clone()),
         AxumPath(project_id.clone()),
         ApiJson(CreateWorkspace {
+            repositories: None,
             repository_remotes: None,
             expected_base_branches: None,
             description: None,
@@ -1078,6 +1080,7 @@ async fn workspace_creation_records_each_current_branch_and_rejects_stale_previe
         State(f.state.clone()),
         AxumPath(project_id),
         ApiJson(CreateWorkspace {
+            repositories: None,
             repository_remotes: None,
             expected_base_branches: Some(expected),
             description: None,

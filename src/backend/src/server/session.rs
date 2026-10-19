@@ -50,6 +50,7 @@ pub(super) async fn sync_project_session_workspace(
     }
     let timestamp = now();
     let workspace = Workspace {
+        default_delivery: "local_merge".into(),
         id: format!("project-base-{project_id}"),
         project_id: project_id.into(),
         name: format!("{} · Project Sessions", project.name),

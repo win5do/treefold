@@ -671,6 +671,7 @@ mod squash_delivery;
 mod tests;
 mod verification;
 mod workspace;
+mod workspace_checkout;
 mod workspace_creation;
 mod workspace_status;
 mod worktree_names;

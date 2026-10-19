@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CircleAlert, Folder, GitBranch, RefreshCw, X } from "lucide-react";
+import { CircleAlert, Folder, GitBranch, RefreshCw } from "lucide-react";
 import { ActionMenu, ActionMenuItem } from "@/components/app/ActionMenu";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -13,15 +15,16 @@ import type { GitWorktree, WorkspaceDetail, WorkspaceDirectory, WorkspaceReposit
 import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 
 export function WorkspaceRepositories({
-  detail, busy, onResync, onConfigureUpstream, onClearUpstream,
+  detail, busy, onResync, onConfigureUpstream,
 }: {
   detail: WorkspaceDetail;
   busy: boolean;
   onResync: () => void;
   onConfigureUpstream: (location: WorkspaceRepository) => void;
-  onClearUpstream: (location: WorkspaceRepository) => void;
 }) {
   const { t } = useTranslation();
+  const navigation = useLocation();
+  const settingsRepository = navigation.state?.repositorySettings;
   const worktrees = useQuery({
     ...workspaceWorktreesQuery(detail.id, detail.repositories),
     enabled: detail.repositories.some((repository) => repository.git_status !== "creating" && Boolean(repository.checkout_path)),
@@ -68,6 +71,7 @@ export function WorkspaceRepositories({
           <WorkspaceRepositoryRow
             key={location.id}
             location={location}
+            focusRequest={settingsRepository === location.id ? navigation.key : undefined}
             worktree={worktrees.data?.find((item) =>
               item.project_repository_id === location.project_repository_id &&
               item.path === location.checkout_path
@@ -81,7 +85,6 @@ export function WorkspaceRepositories({
               detail.kind === "workspace" && detail.status === "active"
             }
             onConfigureUpstream={() => onConfigureUpstream(location)}
-            onClearUpstream={() => onClearUpstream(location)}
           />
         ))}
       </div>
@@ -96,7 +99,7 @@ function WorkspaceRepositoryRow({
   busy,
   actionsEnabled,
   onConfigureUpstream,
-  onClearUpstream,
+  focusRequest,
 }: {
   location: WorkspaceRepository;
   worktree?: GitWorktree;
@@ -104,9 +107,16 @@ function WorkspaceRepositoryRow({
   busy: boolean;
   actionsEnabled: boolean;
   onConfigureUpstream: () => void;
-  onClearUpstream: () => void;
+  focusRequest?: string;
 }) {
   const { t } = useTranslation();
+  const row = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (focusRequest) {
+      row.current?.scrollIntoView({ block: "center" });
+      row.current?.focus({ preventScroll: true });
+    }
+  }, [focusRequest]);
   const writableGit =
     location.access_mode === "read_write" && location.git_status === "ready";
   const upstream =
@@ -115,6 +125,9 @@ function WorkspaceRepositoryRow({
       : "";
   return (
     <article
+      ref={row}
+      tabIndex={-1}
+      aria-label={location.repository_name}
       data-testid={`workspace-location-${location.id}`}
       data-workspace-repository-id={location.id}
       className="rounded-xl border border-border bg-card p-4"
@@ -177,7 +190,7 @@ function WorkspaceRepositoryRow({
                 <code>{location.base_branch}</code>
               </MetadataListItem>
               <MetadataListItem label={t("labels.upstream")}>
-                <code>{upstream || "—"}</code>
+                <code>{upstream || t("workspaceUi.configureBeforePush")}</code>
               </MetadataListItem>
             </MetadataList>
           )}
@@ -197,14 +210,6 @@ function WorkspaceRepositoryRow({
               >
                 {upstream ? t("workspaceUi.changeUpstream") : t("workspaceUi.setUpstream")}
               </ActionMenuItem>
-              {upstream && (
-                <ActionMenuItem
-                  icon={<X className="size-3.5" />}
-                  disabled={busy}
-                  testId={`workspace-location-clear-upstream-${location.id}`}
-                  onClick={onClearUpstream}
-                >{t("workspaceUi.clearUpstream")}</ActionMenuItem>
-              )}
             </ActionMenu>
           </div>
         )}

@@ -330,6 +330,9 @@ export const zhCN = {
     "noActionsFound": "未找到匹配的操作。"
   },
   "deliveryUi": {
+    deliveryBlocked: "暂时无法交付",
+    upstreamRequired: "未设置上游，请先在 Workspace 中配置远端和分支再推送。",
+    openWorkspaceSettings: "前往 Workspace 设置",
     mergeProject: "合并到 Project",
     "forkDelivery": {
       "continuedShort": "交付已完成，{{type}} 保持活跃。",
@@ -416,7 +419,7 @@ export const zhCN = {
     "forkDescription": "Fork 描述",
     "independentFeatureOrExperiment": "独立功能或实验",
     "createFork": "创建 Fork",
-    "createDescription": "从 {{name}} 当前的 HEAD 创建独立工作树。Fork 不支持继续嵌套。",
+    "createDescription": "各仓库从 {{name}} 当前的提交创建新分支。Fork 不支持继续嵌套。",
     "parentRequirement": "父 Workspace 必须没有未提交的修改。完成后，可通过“完成 Fork”合并回父 Workspace。"
   },
   "gitUi": {
@@ -639,6 +642,10 @@ export const zhCN = {
     "switch": "切换",
     "delete": "删除",
     "loadingBranches": "正在加载分支…",
+    "searchBranches": "搜索分支…",
+    "clearBranchSearch": "清空搜索",
+    "refreshBranches": "刷新分支",
+    "noMatchingBranches": "没有匹配的分支",
     "local": "本地",
     "projectMultiRepositoryLocations": "Project · 多仓库位置",
     "repositories": "仓库",
@@ -858,9 +865,23 @@ export const zhCN = {
     "sessionState": "Session {{status}}"
   },
   "workspaceUi": {
-    "checkoutRemoteInheritance": "每个仓库从 Project checkout 当前分支创建，并继承该分支的 upstream remote。",
-    "configureBeforePush": "未配置，推送前选择",
-    "sameNameRemoteBranch": "远端分支默认与新建的本地分支同名，创建后仍可修改 upstream。",
+    "branchStrategy": "分支方式",
+    "newBranch": "新建分支",
+    "existingBranch": "使用已有分支",
+    "chooseBranch": "选择分支",
+    "checkoutBranch": "检出分支",
+    "newBranchName": "新分支名称",
+    "localBranchName": "本地分支名称",
+    "remoteCheckoutDescription": "从选中的远端分支创建本地分支。",
+    "branchOccupied": "已被 {{path}} 占用",
+    "branchMissing": "该分支已不存在，请重新选择。",
+    "branchExists": "本地分支已存在，请选择使用已有分支或修改名称。",
+    "branchRequired": "请输入分支名称。",
+    "upstreamInvalid": "请选择可用的远程仓库并填写上游分支。",
+    "checkoutRemoteInheritance": "为每个仓库选择新建分支或检出已有分支。",
+    "configureBeforePush": "未设置",
+    "upstreamNotConfigured": "设置上游后才能使用拉取和推送。",
+    "sameNameRemoteBranch": "上游分支默认与本地分支同名，可在此处或创建后修改。",
     "reopenWorkspace": "重新打开 Workspace",
     "newWorkspaceFromProject": "从 Project 新建 Workspace",
 
@@ -961,7 +982,6 @@ export const zhCN = {
     "actionsFor": "{{name}} 的操作",
     "changeUpstream": "修改上游",
     "setUpstream": "设置上游",
-    "clearUpstream": "清除上游",
     "updateFromParent2": "从父级更新…",
     "shellLocations": "Shell 位置",
     "agentLocations": "Agent 位置",

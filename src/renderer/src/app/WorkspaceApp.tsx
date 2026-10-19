@@ -1,3 +1,4 @@
+import { CreateWorkspaceDialog } from "@/features/workspace/CreateWorkspaceDialog";
 import { CreateProjectDialog } from "@/features/projects/CreateProjectDialog";
 import { useProjectOpening } from "@/features/projects/useProjectOpening";
 import { useNewAgentSession } from "@/features/terminal/useNewAgentSession";
@@ -90,7 +91,6 @@ import { SettingsDialog } from "@/features/settings/SettingsDialog";
 import { AboutDialog } from "@/features/about/AboutDialog";
 import {
   ConfigureWorkspaceRepositoryDialog,
-  CreateWorkspaceDialog,
 } from "@/features/workspace/WorkspaceDialogs";
 import { WorkspaceHome } from "@/features/workspace/WorkspaceHome";
 import { settingsQuery, systemQuery } from "@/features/app/queries";
@@ -528,15 +528,6 @@ function Workspace() {
       error: t(`sidebar.${action}Failed`),
       skipped: t(`sidebar.${action}Skipped`),
     };
-  }
-
-  async function clearWorkspaceRepositoryUpstream(location: WorkspaceRepository) {
-    await act(() =>
-      workspacesApi.updateRepository(location.id, {
-        remote_name: "",
-        remote_branch: "",
-      }),
-    );
   }
 
   async function resyncWorkspace(workspace: Workspace) {
@@ -1367,9 +1358,6 @@ function Workspace() {
                     )
                   }
                   onConfigureUpstream={setConfigureWorkspaceRepository}
-                  onClearUpstream={(location) =>
-                    void clearWorkspaceRepositoryUpstream(location)
-                  }
                   onResync={() => void resyncWorkspace(workspace)}
                   onTodosChanged={() => void refresh()}
                   onTodoForkCreated={(fork, session) =>
@@ -1581,21 +1569,10 @@ function Workspace() {
         onOpenChange={(open) => {
           if (!open) setCreateWorkspaceProject(null);
         }}
-        onSubmit={async (event) => {
-          event.preventDefault();
+        onSubmit={async (payload) => {
           if (!createWorkspaceProject) return;
-          const form = new FormData(event.currentTarget);
           await act(async () => {
-            const created = await projectsApi.createWorkspace(
-              createWorkspaceProject.id,
-              {
-                expected_base_branches: Object.fromEntries(createWorkspaceProject.repositories.map(repository => [repository.id, String(form.get(`expected_base:${repository.id}`) || "")])),
-                description: form.get("description"),
-                branch: form.get("branch"),
-                generated_branch: form.get("generated_branch"),
-                repository_remotes: Object.fromEntries(createWorkspaceProject.repositories.map(repository => [repository.id, String(form.get(`remote:${repository.id}`) || "")])),
-              },
-            );
+            const created = await projectsApi.createWorkspace(createWorkspaceProject.id, payload);
             setCreateWorkspaceProject(null);
             navigate(`/workspaces/${created.id}`);
           });

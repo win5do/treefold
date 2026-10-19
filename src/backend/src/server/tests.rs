@@ -1,5 +1,7 @@
 use super::*;
 
+mod workspace_checkout;
+
 #[cfg(test)]
 mod current_workspace_tests {
     use std::path::{Path, PathBuf};
@@ -35,7 +37,7 @@ mod current_workspace_tests {
         terminal::{TerminalManager, TreefoldProcessView},
     };
 
-    async fn test_state(root: &Path) -> AppState {
+    pub(super) async fn test_state(root: &Path) -> AppState {
         let home = root.join("home");
         AppState {
             store: Store::open(&home.join("data"))
@@ -138,6 +140,7 @@ mod current_workspace_tests {
                 State(state.clone()),
                 axum::extract::Path(project.id),
                 ApiJson(CreateWorkspace {
+                    repositories: None,
                     repository_remotes: None,
                     expected_base_branches: None,
                     generated_branch: None,
@@ -246,6 +249,7 @@ mod current_workspace_tests {
             state.clone(),
             workspace.project_id.clone(),
             CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -432,7 +436,7 @@ mod current_workspace_tests {
         assert_eq!(change.session_id.as_deref(), Some("session-race"));
     }
 
-    fn initialize_repository(repository: &Path) {
+    pub(super) fn initialize_repository(repository: &Path) {
         std::fs::create_dir_all(repository).expect("create repository");
         command_output(repository, "git", &["init", "-b", "main"]).expect("initialize Git");
         command_output(
@@ -1039,6 +1043,7 @@ mod current_workspace_tests {
             super::choose_shared_branch(&locations, Some("feature/existing"), None, false).is_err()
         );
         let input = || CreateWorkspace {
+            repositories: None,
             repository_remotes: None,
             expected_base_branches: None,
             branch: Some("feature/existing".into()),
@@ -1551,6 +1556,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -1669,6 +1675,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -1950,6 +1957,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -2438,6 +2446,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: Some("feature/current-fork-test".into()),
@@ -2702,6 +2711,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -2957,6 +2967,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -3083,6 +3094,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -3183,6 +3195,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -3330,6 +3343,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: Some("main".into()),
@@ -3540,6 +3554,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -3686,6 +3701,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: Some("main".into()),
@@ -3951,6 +3967,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,
@@ -4083,6 +4100,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id),
             ApiJson(CreateWorkspace {
+                repositories: None,
                 repository_remotes: None,
                 expected_base_branches: None,
                 generated_branch: None,

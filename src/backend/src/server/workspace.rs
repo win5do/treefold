@@ -1741,6 +1741,8 @@ pub(super) struct GitRemoteBranches {
 
 #[derive(Serialize)]
 pub(super) struct GitBranches {
+    pub(super) upstreams: std::collections::HashMap<String, super::workspace_checkout::Upstream>,
+    pub(super) occupied: std::collections::HashMap<String, String>,
     pub current_remote: Option<String>,
     pub(super) current: String,
     pub(super) local: Vec<String>,
@@ -1904,8 +1906,9 @@ pub(super) async fn checkout_directory_branch_impl(
     Ok(Json(directory))
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 pub(super) struct CreateWorkspace {
+    pub(super) repositories: Option<Vec<super::workspace_checkout::RepositoryCheckout>>,
     pub(super) repository_remotes: Option<std::collections::HashMap<String, String>>,
     pub(super) expected_base_branches: Option<std::collections::HashMap<String, String>>,
     pub(super) description: Option<String>,
@@ -2028,6 +2031,20 @@ pub(super) async fn prepare_workspace(
             location.name, location.git_status
         )));
     }
+    if input.repositories.is_some() {
+        if !existing.is_empty()
+            || input.branch.is_some()
+            || input.repository_remotes.is_some()
+            || input.expected_base_branches.is_some()
+            || input.remote_name.is_some()
+            || input.remote_branch.is_some()
+        {
+            return Err(AppError::BadRequest(
+                "per-Repository checkout choices cannot be combined with shared branch settings"
+                    .into(),
+            ));
+        }
+    }
     let workspace_id = new_id();
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
     let new_locations = locations
@@ -2039,20 +2056,75 @@ pub(super) async fn prepare_workspace(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let (branch, worktree_root) = super::worktree_names::reserve_shared_worktree(
-        &state.settings,
-        &new_locations,
-        explicit_branch.as_deref(),
-        trimmed(input.generated_branch)
-            .filter(|value| !value.is_empty())
-            .as_deref(),
-        true,
-    )?;
+    let (branch, worktree_root, resolved) = if let Some(mut choices) = input.repositories {
+        // Untouched generated names retain the shared branch/directory identity.
+        // Explicit names and existing branches must never be silently replaced.
+        let generated = trimmed(input.generated_branch).filter(|value| !value.is_empty());
+        let automatic_locations = locations.iter().filter(|location| choices.iter().any(|choice| {
+            choice.repository_id == location.id && matches!(&choice.checkout,
+                super::workspace_checkout::Checkout::New { branch, .. } if Some(branch) == generated.as_ref())
+        })).cloned().collect::<Vec<_>>();
+        let automatic = if automatic_locations.is_empty() {
+            None
+        } else {
+            Some(super::worktree_names::reserve_shared_worktree(
+                &state.settings,
+                &automatic_locations,
+                None,
+                generated.as_deref(),
+                false,
+            )?)
+        };
+        if let Some((name, _)) = &automatic {
+            for choice in &mut choices {
+                if let super::workspace_checkout::Checkout::New { branch, .. } =
+                    &mut choice.checkout
+                {
+                    if Some(&*branch) == generated.as_ref() {
+                        *branch = name.clone();
+                        if let Some(upstream) = &mut choice.upstream {
+                            if Some(&upstream.branch) == generated.as_ref() {
+                                upstream.branch = name.clone();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let resolved = super::workspace_checkout::resolve_repositories(&locations, &choices)?;
+        let root = match automatic {
+            Some((_, root)) => root,
+            None => super::worktree_names::reserve_worktree_root(&state.settings)?,
+        };
+        (
+            resolved[default_repository_id].branch.clone(),
+            root,
+            Some(resolved),
+        )
+    } else {
+        let (branch, root) = super::worktree_names::reserve_shared_worktree(
+            &state.settings,
+            &new_locations,
+            explicit_branch.as_deref(),
+            trimmed(input.generated_branch)
+                .filter(|value| !value.is_empty())
+                .as_deref(),
+            true,
+        )?;
+        (branch, root, None)
+    };
     let timestamp = now();
     let prepared = crate::git_parallel::map(
         &locations,
         |location| -> Result<(WorkspaceRepository, Option<WorkspaceWorktreePlan>)> {
-            let base_branch = current_project_branch(&location.path)?;
+            let choice = resolved
+                .as_ref()
+                .and_then(|choices| choices.get(&location.id));
+            let branch = choice.map(|choice| &choice.branch).unwrap_or(&branch);
+            let base_branch = match choice {
+                Some(choice) => choice.base_branch.clone(),
+                None => current_project_branch(&location.path)?,
+            };
             if let Some(expected) = input.expected_base_branches.as_ref() {
                 if expected.get(&location.id) != Some(&base_branch) {
                     return Err(AppError::BadRequest(format!(
@@ -2098,21 +2170,32 @@ pub(super) async fn prepare_workspace(
                 .join(repository_slug(&location.name))
                 .to_string_lossy()
                 .into_owned();
-            let inherited_remote = directory_branches(&location.path)?.current_remote;
-            let remote_name = input
-                .repository_remotes
-                .as_ref()
-                .and_then(|values| values.get(&location.id))
-                .cloned()
-                .or_else(|| {
-                    if location.id == default_repository_id {
-                        trimmed(input.remote_name.clone())
-                    } else {
-                        None
-                    }
-                })
-                .or(inherited_remote)
-                .filter(|value| !value.is_empty());
+            let inherited_remote = if choice.is_some() {
+                None
+            } else {
+                directory_branches(&location.path)?.current_remote
+            };
+            let remote_name = if let Some(choice) = choice {
+                choice
+                    .upstream
+                    .as_ref()
+                    .map(|upstream| upstream.remote.clone())
+            } else {
+                input
+                    .repository_remotes
+                    .as_ref()
+                    .and_then(|values| values.get(&location.id))
+                    .cloned()
+                    .or_else(|| {
+                        if location.id == default_repository_id {
+                            trimmed(input.remote_name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .or(inherited_remote)
+                    .filter(|value| !value.is_empty())
+            };
             if let Some(remote) = remote_name.as_deref() {
                 if !git_remote_names(&location.path)?
                     .iter()
@@ -2124,15 +2207,22 @@ pub(super) async fn prepare_workspace(
                     )));
                 }
             }
-            let remote_branch = remote_name.as_ref().map(|_| {
-                if location.id == default_repository_id {
-                    trimmed(input.remote_branch.clone())
-                        .filter(|v| !v.is_empty())
-                        .unwrap_or_else(|| branch.clone())
-                } else {
-                    branch.clone()
-                }
-            });
+            let remote_branch = if let Some(choice) = choice {
+                choice
+                    .upstream
+                    .as_ref()
+                    .map(|upstream| upstream.branch.clone())
+            } else {
+                remote_name.as_ref().map(|_| {
+                    if location.id == default_repository_id {
+                        trimmed(input.remote_branch.clone())
+                            .filter(|v| !v.is_empty())
+                            .unwrap_or_else(|| branch.clone())
+                    } else {
+                        branch.clone()
+                    }
+                })
+            };
             let mut snapshot = git_workspace_repository(
                 &workspace_id,
                 location,
@@ -2145,8 +2235,13 @@ pub(super) async fn prepare_workspace(
                 remote_name,
                 remote_branch,
             );
-            let reuse_branch = explicit_branch.is_some()
-                && git_ref_names(&location.path, "refs/heads")?.contains(&branch);
+            let reuse_branch = match choice {
+                Some(choice) => choice.reuse_branch,
+                None => {
+                    explicit_branch.is_some()
+                        && git_ref_names(&location.path, "refs/heads")?.contains(branch)
+                }
+            };
             if reuse_branch {
                 snapshot.branch_ownership = "user".into();
             }
@@ -2157,7 +2252,9 @@ pub(super) async fn prepare_workspace(
                 workspace_repository_id: snapshot.id.clone(),
                 checkout_path,
                 branch: branch.clone(),
-                start_ref: if reuse_branch {
+                start_ref: if let Some(choice) = choice {
+                    choice.commit.clone()
+                } else if reuse_branch {
                     format!("refs/heads/{branch}")
                 } else {
                     git_head(&location.path)?
@@ -2189,6 +2286,7 @@ pub(super) async fn prepare_workspace(
         id: workspace_id.clone(),
         project_id,
         name: branch.clone(),
+        default_delivery: "local_merge".into(),
         description: trimmed(input.description).unwrap_or_default(),
         status: "active".into(),
         kind: "workspace".into(),
@@ -2288,7 +2386,17 @@ pub(super) fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> Workspac
         };
         command_output(Path::new(&plan.location.path), "git", &args)
             .map_err(|error| format!("create worktree for {}: {error}", plan.location.name))?;
-        Ok::<_, String>(start_commit)
+        // An existing local branch may advance after preparation. Record the
+        // commit actually checked out, while new branches retain the frozen base.
+        if plan.reuse_branch {
+            command_output(
+                Path::new(&plan.checkout_path),
+                "git",
+                &["rev-parse", "HEAD"],
+            )
+        } else {
+            Ok::<_, String>(start_commit)
+        }
     })();
 
     match result {

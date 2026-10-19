@@ -1,6 +1,7 @@
 import type { TFunction } from "i18next";
 import type { ActionContext, ActionHandlers, PaletteEntry } from "@/features/actions/model";
 import { ownerScope } from "@/features/actions/model/context";
+import { hasWorkspaceUpstream } from "./upstream";
 
 export type GitPaletteHandlers = {
   sync: (context: ActionContext, action: "pull" | "push", repositoryId: string | null) => void;
@@ -10,7 +11,7 @@ function syncTargets(context: ActionContext) {
   if (context.workspace) {
     if (context.workspace.kind === "fork") return [];
     return context.workspace.repositories
-      .filter((repository) => repository.access_mode === "read_write" && repository.git_status === "ready")
+      .filter((repository) => repository.access_mode === "read_write" && repository.git_status === "ready" && hasWorkspaceUpstream(repository))
       .map((repository) => ({ id: repository.id, name: repository.repository_name }));
   }
   return (context.project?.repositories ?? [])

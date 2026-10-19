@@ -92,6 +92,7 @@ async fn open_worktree_workspace_impl(
                 ));
             }
             let input = CreateWorkspace {
+            repositories: None,
                 branch: Some(worktree.branch.clone()),
                 description: None,
                 repository_remotes: None,

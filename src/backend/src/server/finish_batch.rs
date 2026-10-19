@@ -78,7 +78,7 @@ pub(super) async fn start_finish_batch(
         .await
     })
     .await?;
-    state.store.save_finish_batch(&batch).await?;
+    state.store.confirm_finish_batch(&batch).await?;
     active.insert(id.clone());
     launch(state, batch.clone(), false);
     Ok((StatusCode::ACCEPTED, Json(batch)))

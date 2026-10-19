@@ -6,11 +6,12 @@ use crate::{
 };
 use sqlx::{Sqlite, Transaction};
 use std::path::Path;
-const W: &str = "id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at";
+const W: &str = "default_delivery,id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at";
 const WR: &str = "id,workspace_id,project_repository_id,repository_name,source_root,'read_write' AS access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,worktree_ownership,branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
 const WD: &str = "wd.id,wd.workspace_id,wd.project_directory_id,wd.workspace_repository_id,wd.name,wd.description,wd.relative_path,wd.external_path,wd.access_mode,wd.status,wd.created_at,wd.updated_at,wr.checkout_path,wr.source_root,(SELECT kind FROM workspaces WHERE id=wd.workspace_id) AS workspace_kind";
 #[derive(sqlx::FromRow)]
 struct WorkspaceRow {
+    default_delivery: String,
     id: String,
     project_id: String,
     name: String,
@@ -26,6 +27,7 @@ struct WorkspaceRow {
 impl From<WorkspaceRow> for Workspace {
     fn from(r: WorkspaceRow) -> Self {
         Self {
+            default_delivery: r.default_delivery,
             id: r.id,
             project_id: r.project_id,
             name: r.name,
@@ -190,7 +192,11 @@ impl Store {
         w: &Workspace,
         kind: Option<&str>,
     ) -> Result<()> {
-        sqlx::query("INSERT INTO workspaces(id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").bind(&w.id).bind(&w.project_id).bind(&w.name).bind(&w.description).bind(&w.status).bind(kind.unwrap_or(&w.kind)).bind(&w.parent_workspace_id).bind(&w.runtime_id).bind(&w.runtime_name).bind(&w.created_at).bind(&w.updated_at).execute(&mut **tx).await?;
+        let kind = kind.unwrap_or(&w.kind);
+        sqlx::query!("INSERT INTO workspaces(id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at,default_delivery) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            w.id, w.project_id, w.name, w.description, w.status, kind, w.parent_workspace_id,
+            w.runtime_id, w.runtime_name, w.created_at, w.updated_at, w.default_delivery
+        ).execute(&mut **tx).await?;
         Ok(())
     }
     async fn insert_repositories(

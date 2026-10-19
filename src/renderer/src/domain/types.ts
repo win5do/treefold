@@ -137,6 +137,7 @@ export type RenameTarget =
   | { kind: "session"; value: Session };
 
 export type Workspace = {
+  default_delivery?: "local_merge" | "push_branch";
   id: string;
   project_id: string;
   name: string;
@@ -471,7 +472,21 @@ export type LocationDraft = {
   inspectionError?: string;
 };
 
+export type GitBranchRef = { kind: "local"; branch: string } | { kind: "remote"; remote: string; branch: string };
+export type BranchUpstream = { remote: string; branch: string };
+export type RepositoryCheckout = {
+  repository_id: string;
+  checkout: { mode: "new"; branch: string; base: GitBranchRef } | { mode: "existing"; source: GitBranchRef; local_branch?: string };
+  upstream: BranchUpstream | null;
+};
+export type CreateWorkspaceInput = {
+  generated_branch: string;
+  description: string;
+  repositories: RepositoryCheckout[];
+};
 export type GitBranches = {
+  upstreams?: Record<string, BranchUpstream>;
+  occupied?: Record<string, string>;
   current_remote?: string | null;
   current: string;
   local: string[];

@@ -1,10 +1,9 @@
+import { BranchList } from "@/features/git/BranchList";
 import { compactPath } from "@/lib/compactPath";
 import { useTranslation } from "react-i18next";
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import {
-  ChevronDown,
   ChevronRight,
-  FolderGit2,
   FolderOpen,
   GitBranch,
   Trash2,
@@ -463,38 +462,6 @@ function BranchActionRow({
   );
 }
 
-function BranchGroup({
-  label,
-  open,
-  onOpenChange,
-  children,
-}: {
-  label: string;
-  open: boolean;
-  onOpenChange: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <button
-        type="button"
-        className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-        aria-expanded={open}
-        onClick={onOpenChange}
-      >
-        {open ? (
-          <ChevronDown className="size-3.5" />
-        ) : (
-          <ChevronRight className="size-3.5" />
-        )}
-        <FolderGit2 className="size-3.5 text-muted-foreground" />
-        {label}
-      </button>
-      {open && <div className="ml-4 border-l border-border pl-2">{children}</div>}
-    </div>
-  );
-}
-
 export function RepositoryBranchesDialog({
   repository,
   busy,
@@ -512,34 +479,34 @@ export function RepositoryBranchesDialog({
   const [branches, setBranches] = useState<RepositoryBranches | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [localOpen, setLocalOpen] = useState(true);
-  const [remoteOpen, setRemoteOpen] = useState(true);
-  const [openRemotes, setOpenRemotes] = useState<Record<string, boolean>>({});
-
-  const loadBranches = async (repositoryId: string, signal?: AbortSignal) => {
+  const branchRequest = useRef<AbortController | null>(null);
+  const loadBranches = async (repositoryId: string) => {
+    branchRequest.current?.abort();
+    const controller = new AbortController();
+    branchRequest.current = controller;
+    const { signal } = controller;
     setLoading(true);
     setError("");
     try {
-      setBranches(await projectsApi.repositoryBranches(repositoryId, signal));
+      const result = await projectsApi.repositoryBranches(repositoryId, signal);
+      if (!signal.aborted) setBranches(result);
     } catch (cause) {
-      if (signal?.aborted) return;
+      if (signal.aborted) return;
       setError(cause instanceof Error ? cause.message : t("projectsUi.couldNotLoadBranches"));
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
+    setBranches(null);
+    setError("");
+    setLoading(false);
     if (!repository) {
-      setBranches(null);
       return;
     }
-    const controller = new AbortController();
-    setLocalOpen(true);
-    setRemoteOpen(true);
-    setOpenRemotes({});
-    void loadBranches(repository.id, controller.signal);
-    return () => controller.abort();
+    void loadBranches(repository.id);
+    return () => branchRequest.current?.abort();
   }, [repository?.id]);
 
   const runAndReload = async (
@@ -547,7 +514,9 @@ export function RepositoryBranchesDialog({
     target: RepositoryBranchTarget,
   ) => {
     if (!repository) return;
+    const request = branchRequest.current;
     await action(target);
+    if (request?.signal.aborted) return;
     await loadBranches(repository.id);
   };
 
@@ -560,69 +529,15 @@ export function RepositoryBranchesDialog({
             {repository?.name}
           </DialogDescription>
         </DialogHeader>
-        <div
-          data-testid="repository-branches"
-          className="max-h-[24rem] min-h-28 overflow-y-auto rounded-lg border border-border p-1"
-        >
-          {loading && !branches ? (
-            <div className="grid min-h-24 place-items-center text-xs text-muted-foreground">{t("projectsUi.loadingBranches")}</div>
-          ) : error ? (
-            <div className="grid min-h-24 place-items-center px-4 text-center text-xs text-destructive">
-              {error}
-            </div>
-          ) : branches ? (
-            <>
-              <BranchGroup
-                label={t("projectsUi.local")}
-                open={localOpen}
-                onOpenChange={() => setLocalOpen((value) => !value)}
-              >
-                {branches.local.map((branch) => (
-                  <BranchActionRow
-                    key={branch}
-                    branch={branch}
-                    current={branch === branches.current}
-                    busy={busy || loading}
-                    target={{ kind: "local", branch }}
-                    onSwitch={onSwitch}
-                    onDelete={(target) => runAndReload(onDelete, target)}
-                  />
-                ))}
-              </BranchGroup>
-              <BranchGroup
-                label={t("projectsUi.remote")}
-                open={remoteOpen}
-                onOpenChange={() => setRemoteOpen((value) => !value)}
-              >
-                {branches.remotes.map((remote) => (
-                  <BranchGroup
-                    key={remote.name}
-                    label={remote.name}
-                    open={Boolean(openRemotes[remote.name])}
-                    onOpenChange={() =>
-                      setOpenRemotes((current) => ({
-                        ...current,
-                        [remote.name]: !current[remote.name],
-                      }))
-                    }
-                  >
-                    {remote.branches.map((branch) => (
-                      <BranchActionRow
-                        key={branch}
-                        branch={branch}
-                        current={false}
-                        busy={busy || loading}
-                        target={{ kind: "remote", remote: remote.name, branch }}
-                        onSwitch={onSwitch}
-                        onDelete={(target) => runAndReload(onDelete, target)}
-                      />
-                    ))}
-                  </BranchGroup>
-                ))}
-              </BranchGroup>
-            </>
-          ) : null}
-        </div>
+        <BranchList
+          key={repository?.id ?? "closed"}
+          branches={branches}
+          loading={loading}
+          error={error}
+          busy={busy}
+          onRefresh={() => repository && void loadBranches(repository.id)}
+          renderBranch={(target, current) => <BranchActionRow branch={target.branch} current={current} busy={busy || loading} target={target} onSwitch={onSwitch} onDelete={(target) => runAndReload(onDelete, target)} />}
+        />
       </DialogContent>
     </Dialog>
   );

@@ -1537,7 +1537,42 @@ pub(super) fn directory_branches(repository: &str) -> Result<GitBranches> {
     )
     .ok()
     .filter(|remote| remotes.iter().any(|r| &r.name == remote));
+    let upstream_output = command_output(
+        Path::new(repository),
+        "git",
+        &[
+            "for-each-ref",
+            "--format=%(refname:strip=2)%00%(upstream:remotename)%00%(upstream:remoteref)",
+            "refs/heads",
+        ],
+    )
+    .map_err(AppError::BadRequest)?;
+    let upstreams = upstream_output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\0');
+            let branch = fields.next()?;
+            let remote = fields.next()?;
+            let remote_branch = fields.next()?.strip_prefix("refs/heads/")?;
+            remotes.iter().any(|item| item.name == remote).then(|| {
+                (
+                    branch.into(),
+                    super::workspace_checkout::Upstream {
+                        remote: remote.into(),
+                        branch: remote_branch.into(),
+                    },
+                )
+            })
+        })
+        .collect();
+    let occupied = git_worktrees(repository)?
+        .into_iter()
+        .filter(|worktree| !worktree.branch.is_empty())
+        .map(|worktree| (worktree.branch, worktree.path))
+        .collect();
     Ok(GitBranches {
+        upstreams,
+        occupied,
         current_remote,
         current,
         local,

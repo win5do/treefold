@@ -328,6 +328,9 @@ export const enUS = {
     "noActionsFound": "No actions found."
   },
   "deliveryUi": {
+    deliveryBlocked: "Cannot deliver yet",
+    upstreamRequired: "No upstream is configured. Set a remote and branch in the Workspace before pushing.",
+    openWorkspaceSettings: "Go to Workspace settings",
     mergeProject: "Merge into Project",
     "forkDelivery": {
       "continuedShort": "Delivery complete; {{type}} remains active.",
@@ -414,7 +417,7 @@ export const enUS = {
     "forkDescription": "Fork description",
     "independentFeatureOrExperiment": "Independent feature or experiment",
     "createFork": "Create Fork",
-    "createDescription": "Create an independent worktree from the current HEAD of {{name}}. Forks cannot be nested.",
+    "createDescription": "Create a new branch for each repository from its current commit in {{name}}. Forks cannot be nested.",
     "parentRequirement": "The parent Workspace must have no uncommitted changes. Use Finish Fork to merge your work back into it."
   },
   "gitUi": {
@@ -637,6 +640,10 @@ export const enUS = {
     "switch": "Switch",
     "delete": "Delete",
     "loadingBranches": "Loading branches…",
+    "searchBranches": "Search branches…",
+    "clearBranchSearch": "Clear search",
+    "refreshBranches": "Refresh branches",
+    "noMatchingBranches": "No matching branches",
     "local": "Local",
     "projectMultiRepositoryLocations": "Project · multi-repository locations",
     "repositories": "Repositories",
@@ -856,9 +863,23 @@ export const enUS = {
     "sessionState": "Session is {{status}}"
   },
   "workspaceUi": {
-    "checkoutRemoteInheritance": "Each repository starts from its Project checkout’s current branch and inherits that branch’s upstream remote.",
-    "configureBeforePush": "Not configured — choose before pushing",
-    "sameNameRemoteBranch": "The remote branch defaults to the new local branch name. You can change its upstream after creation.",
+    "branchStrategy": "Branch setup",
+    "newBranch": "New branch",
+    "existingBranch": "Use existing branch",
+    "chooseBranch": "Select a branch",
+    "checkoutBranch": "Branch to check out",
+    "newBranchName": "New branch name",
+    "localBranchName": "Local branch name",
+    "remoteCheckoutDescription": "Creates a local branch from the selected remote branch.",
+    "branchOccupied": "Already checked out at {{path}}",
+    "branchMissing": "This branch is no longer available. Select another branch.",
+    "branchExists": "This local branch already exists. Use an existing branch or enter another name.",
+    "branchRequired": "Enter a branch name.",
+    "upstreamInvalid": "Select an available remote and enter an upstream branch.",
+    "checkoutRemoteInheritance": "Choose how to check out each repository in the new Workspace.",
+    "configureBeforePush": "Not set",
+    "upstreamNotConfigured": "Pull and Push are unavailable until an upstream is set.",
+    "sameNameRemoteBranch": "The upstream branch defaults to the local branch name. You can change it here or later.",
     "reopenWorkspace": "Reopen Workspace",
     "newWorkspaceFromProject": "New Workspace from Project",
 
@@ -959,7 +980,6 @@ export const enUS = {
     "actionsFor": "Actions for {{name}}",
     "changeUpstream": "Change upstream",
     "setUpstream": "Set upstream",
-    "clearUpstream": "Clear upstream",
     "updateFromParent2": "Update from Parent…",
     "shellLocations": "Shell locations",
     "agentLocations": "Agent locations",

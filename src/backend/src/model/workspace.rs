@@ -57,6 +57,8 @@ pub struct SidebarWorkspace {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Workspace {
+    #[serde(default = "default_delivery_method")]
+    pub default_delivery: String,
     pub id: String,
     pub project_id: String,
     pub name: String,
@@ -226,4 +228,8 @@ pub struct WorkspaceDetail {
     pub todos: Vec<Todo>,
     pub forks: Vec<Workspace>,
     pub finish_batch: Option<super::FinishBatch>,
+}
+
+fn default_delivery_method() -> String {
+    "local_merge".into()
 }

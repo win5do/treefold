@@ -6,7 +6,7 @@ Create → Work ↔ Intermediate delivery → Finish → Archive → Delete / Cl
 
 | Phase | Safety boundary |
 | --- | --- |
-| Create | Resolve a fixed target, create a unique branch and managed worktree |
+| Create | Resolve each Repository's base or unoccupied existing branch, then create a managed worktree |
 | Work | Managed Sessions and development Todos belong to Workspace/Fork |
 | Sync | Pull fast-forwards the feature branch; Push never forces |
 | Rebase | Rebase explicitly onto the fixed target with Continue/Abort recovery |
@@ -40,7 +40,19 @@ It supports ordinary merge into the Project checkout's current branch, feature-b
 push, or (when finishing) abandoning delivery. Squash is available only for Finish
 with merge. Every writable repository uses the same strategy; missing push targets
 block the entire plan rather than selecting another strategy per repository.
-Project and Workspace repositories no longer store a default delivery mode.
+Repositories do not store a default delivery mode. Workspace creation does not ask
+for a delivery method. The Workspace stores `default_delivery`, initially
+`local_merge`, and remembers the most recently confirmed merge or push method.
+The backend updates it atomically with an accepted delivery plan, not during
+preflight or when a dialog is cancelled. Squash remembers local merge without
+preselecting Squash next time; abandoning delivery does not change the remembered
+method. Saved batches keep their confirmed plan when retried. Forks default to
+local merge into their parent.
+Delivery methods remain selectable when a repository is blocked. A red notice
+lists the affected repositories and prevents submission until all checks pass.
+Its Workspace settings action closes the dialog and focuses the repository on
+the Workspace page. Reopening delivery after this detour retains the unconfirmed
+choice and runs preflight again without changing the remembered method.
 One confirmation submits the whole plan. The backend rechecks every repository before starting, delivers
 them sequentially. Finish then archives the Workspace or Fork and stops its Sessions.
 New Finish plans keep all worktrees and branches without a checkbox.
@@ -82,12 +94,15 @@ removing clean worktrees while preserving committed work. Files retained after
 record deletion are managed outside Treefold and cannot reopen the deleted item.
 Older saved Finish plans retain their previously confirmed cleanup choices.
 
-New Workspace repositories inherit the remote from the corresponding Project
-checkout's current branch, never the Project's stored preferred remote. The remote
-branch defaults to the new local branch name. Creation can override each remote
-without modifying Project settings; a checkout without an upstream remote starts
-unconfigured. Local development is still available, and push requires configuring
-the Repository target first. A successful push establishes the Git upstream.
+New-branch Workspace repositories default to the Project checkout branch's
+available upstream remote, then the Repository's preferred remote, `origin`, or
+the first configured remote. The upstream branch defaults to the new local branch
+name. Existing local branches prefer their current upstream, and remote checkouts
+prefer the selected remote ref. Each target is editable without modifying Project
+settings. Remote choices always include Not set; it is the only choice when no
+remotes exist. Change upstream uses Not set to clear the target. Choosing a remote
+again fills the local branch name. Pull and Push are disabled while unset.
+These are Treefold sync targets; a successful push establishes the Git upstream.
 
 ## Deferred pull request creation
 

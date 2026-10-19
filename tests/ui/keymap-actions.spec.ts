@@ -47,7 +47,8 @@ test("Keymap exposes unbound actions and their recorded shortcuts execute in con
     }
     await page.keyboard.press("Control+g");
     await expect(page).toHaveURL(/#\/projects$/);
-    await expect(page.getByTestId("page-content")).toBeVisible();
+    // The hash updates before React replaces the previous route's page-content.
+    await expect(page.getByTestId("page-content").getByRole("heading", { name: "概览", exact: true })).toBeVisible();
     // Contextual bindings must stay inactive outside a Project or Workspace.
     await page.keyboard.press("Control+o");
     await page.keyboard.press("Control+p");

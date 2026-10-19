@@ -293,6 +293,7 @@ pub(super) async fn prepare_fork(
         snapshots.push(snapshot);
     }
     let fork = Workspace {
+        default_delivery: "local_merge".into(),
         id: fork_id.clone(),
         project_id: parent.project_id,
         name: branch.clone(),

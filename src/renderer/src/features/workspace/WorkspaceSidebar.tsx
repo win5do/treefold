@@ -54,6 +54,7 @@ import type {
 import { AmuxResourcesPopover } from "@/features/resources/AmuxResourcesPopover";
 import { AgentIntegrationPopover } from "@/features/integration/AgentIntegrationPopover";
 import { cn } from "@/lib/utils";
+import { hasWorkspaceUpstream } from "@/features/git/upstream";
 
 export function WorkspaceSidebar({
   projects,
@@ -616,7 +617,7 @@ function SidebarOwnerContextMenu({
   const syncTargets = !stream
     ? project.repositories
         .filter((repository) => repository.git_status === "ready")
-        .map((repository) => ({ id: repository.id, name: repository.name }))
+        .map((repository) => ({ id: repository.id, name: repository.name, disabled: false }))
     : stream.kind === "workspace"
       ? (stream.repositories ?? [])
           .filter(
@@ -627,6 +628,7 @@ function SidebarOwnerContextMenu({
           .map((location) => ({
             id: location.id,
             name: location.repository_name,
+            disabled: !hasWorkspaceUpstream(location),
           }))
       : null;
   return (
@@ -707,7 +709,7 @@ function SidebarOwnerContextMenu({
               <ContextMenuSub key={action}>
                 <ContextMenuSubTrigger
                   data-testid={`sidebar-${action}-menu`}
-                  disabled={busy || syncTargets.length === 0}
+                  disabled={busy || !syncTargets.some((target) => !target.disabled)}
                 >
                   {action === "pull" ? <Download /> : <Upload />}
                   {t(`sidebar.${action}`)}
@@ -732,7 +734,7 @@ function SidebarOwnerContextMenu({
                       <ContextMenuItem
                         key={target.id}
                         data-testid={`sidebar-${action}-${target.id}`}
-                        disabled={busy}
+                        disabled={busy || target.disabled}
                         onClick={() => onSync(target.id, action)}
                       >
                         <FolderGit2 />

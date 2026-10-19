@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
-function generateBranchName() {
+export function generateBranchName() {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
   const date = `${pad(now.getFullYear() % 100)}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
