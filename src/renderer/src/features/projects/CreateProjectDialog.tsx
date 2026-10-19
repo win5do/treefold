@@ -1,3 +1,4 @@
+import { refreshQueries } from "@/features/app/refreshQueries";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
@@ -100,8 +101,8 @@ function ProjectCreationForm({ onOpenChange, onCreated, initialPath }: Omit<Para
     setCreating(true); setError("");
     try {
       const project = await projectCreationApi.create(review.input);
-      void queryClient.invalidateQueries({ queryKey: projectKeys.summaries });
-      void queryClient.invalidateQueries({ queryKey: projectKeys.sidebar });
+      void refreshQueries(queryClient, { queryKey: projectKeys.summaries });
+      void refreshQueries(queryClient, { queryKey: projectKeys.sidebar });
       onCreated(project);
       onOpenChange(false);
     } catch (cause) { setError(projectCreationError(cause)); }

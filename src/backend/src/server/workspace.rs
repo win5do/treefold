@@ -362,42 +362,25 @@ pub(super) async fn update_project(
     Ok(Json(state.store.project(&id).await?))
 }
 
+#[derive(Deserialize)]
+pub(super) struct ProjectDetailOptions {
+    #[serde(default = "include_project_worktrees")]
+    pub include_worktrees: bool,
+}
+
+fn include_project_worktrees() -> bool {
+    true
+}
+
 pub(super) async fn get_project(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
+    Query(options): Query<ProjectDetailOptions>,
 ) -> Result<Json<ProjectDetail>> {
     let mut detail = state.store.project_detail(&id).await?;
-    let tracked_workspaces = state.store.workspaces(&id).await?;
-    let mut tracked_workspace_repositories = Vec::new();
-    for workspace in &tracked_workspaces {
-        tracked_workspace_repositories
-            .extend(state.store.workspace_repositories(&workspace.id).await?);
+    if options.include_worktrees {
+        detail.worktrees = super::project_status::load_worktrees(&state, &id).await?;
     }
-    let mut squash_operations = Vec::new();
-    for repository in &tracked_workspace_repositories {
-        if let Some(operation) = state
-            .store
-            .latest_parent_operation(&repository.id, "integrate")
-            .await?
-            && operation.strategy == "squash"
-            && operation.status == "completed"
-        {
-            squash_operations.push(operation);
-        }
-    }
-    let mut locations = Vec::new();
-    for repository in state.store.repositories(&id).await? {
-        locations.push(state.store.repository_as_directory(&repository.id).await?);
-    }
-    detail.worktrees = blocking_git_operation(move || async move {
-        Ok(project_worktrees(
-            &locations,
-            &tracked_workspaces,
-            &tracked_workspace_repositories,
-            &squash_operations,
-        ))
-    })
-    .await?;
     detail.sessions = refresh_session_records(&state, detail.sessions).await?;
     Ok(Json(detail))
 }

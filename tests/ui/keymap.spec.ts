@@ -455,6 +455,7 @@ test("Keymap resets all bindings only after confirmation, including filtered com
         "git.sync.push": null,
         "git.sync.pull": null,
         "directory.open.with": null,
+        "workspace.review.open": null,
       },
     });
     await expect(dialog).toHaveCount(0);

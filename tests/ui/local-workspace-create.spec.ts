@@ -9,7 +9,7 @@ for (const scenario of ["local", "mixed", "default", "preferred", "unset"] as co
     let page: Page | undefined;
     try {
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: `workspace-${scenario}` });
-      await page.route(`**/api/projects/${FIXTURE_IDS.project}`, async route => {
+      await page.route(url => url.pathname === `/api/projects/${FIXTURE_IDS.project}`, async route => {
         const response = await route.fetch();
         const data = await response.json();
         for (const repository of data.repositories) {

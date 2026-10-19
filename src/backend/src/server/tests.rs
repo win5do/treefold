@@ -477,9 +477,62 @@ mod current_workspace_tests {
             get_project(
                 State(state.clone()),
                 axum::extract::Path(project.id.clone()),
+                axum::extract::Query(crate::server::workspace::ProjectDetailOptions {
+                    include_worktrees: true,
+                }),
             )
         };
+        let router = app(state.clone());
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/api/projects/{}?include_worktrees=false",
+                        project.id
+                    ))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let light: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(light["id"], project.id);
+        assert!(light["worktrees"].as_array().unwrap().is_empty());
+        assert_eq!(light["repositories"].as_array().unwrap().len(), 1);
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/projects/{}/worktrees", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let worktrees: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
         let Json(before) = read().await.unwrap();
+        assert_eq!(worktrees, serde_json::to_value(&before.worktrees).unwrap());
+        // Omitting the option preserves the existing full-detail API contract.
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/api/projects/{}", project.id))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let full: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                .unwrap();
+        assert_eq!(full["worktrees"], worktrees);
         assert_eq!(before.worktrees.len(), 1);
         assert_eq!(
             before.worktrees[0].status.comparison,
@@ -905,6 +958,9 @@ mod current_workspace_tests {
         let Json(detail) = get_project(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
+            axum::extract::Query(crate::server::workspace::ProjectDetailOptions {
+                include_worktrees: true,
+            }),
         )
         .await
         .unwrap();
@@ -1625,6 +1681,9 @@ mod current_workspace_tests {
         let Json(detail) = get_project(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
+            axum::extract::Query(crate::server::workspace::ProjectDetailOptions {
+                include_worktrees: true,
+            }),
         )
         .await
         .unwrap();
@@ -3446,6 +3505,9 @@ mod current_workspace_tests {
         let Json(project_detail) = get_project(
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
+            axum::extract::Query(crate::server::workspace::ProjectDetailOptions {
+                include_worktrees: true,
+            }),
         )
         .await
         .expect("get Project worktrees");

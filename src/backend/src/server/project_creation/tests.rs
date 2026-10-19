@@ -67,6 +67,9 @@ async fn empty_source_validates_without_writes_then_initializes_an_unborn_reposi
     let detail = super::super::workspace::get_project(
         State(state),
         axum::extract::Path(project_id.to_owned()),
+        axum::extract::Query(crate::server::workspace::ProjectDetailOptions {
+            include_worktrees: true,
+        }),
     )
     .await
     .unwrap();

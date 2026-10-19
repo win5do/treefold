@@ -1,3 +1,4 @@
+import { refreshQueries } from "@/features/app/refreshQueries";
 import { CreateWorkspaceDialog } from "@/features/workspace/CreateWorkspaceDialog";
 import { CreateProjectDialog } from "@/features/projects/CreateProjectDialog";
 import { useProjectOpening } from "@/features/projects/useProjectOpening";
@@ -317,14 +318,7 @@ function Workspace() {
               toast.success(t("appFeedback.worktreeDeleted"), {
                 description: operation.path,
               });
-              void Promise.all([
-                queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
-                params.projectId
-                  ? queryClient.invalidateQueries({
-                      queryKey: projectKeys.detail(params.projectId),
-                    })
-                  : Promise.resolve(),
-              ]);
+              void invalidateHierarchyQueries(queryClient);
             } else if (next.status === "failed") {
               setDeletingWorktrees((current) => ({
                 ...current,
@@ -446,12 +440,12 @@ function Workspace() {
           invalidateHierarchyQueries(queryClient),
           refreshGitQueries(queryClient),
           params.projectId
-            ? queryClient.invalidateQueries({
+            ? refreshQueries(queryClient, {
                 queryKey: projectKeys.sessions(params.projectId),
               })
             : Promise.resolve(),
           params.workspaceId
-            ? queryClient.invalidateQueries({
+            ? refreshQueries(queryClient, {
                 queryKey: workspaceKeys.sessions(params.workspaceId),
               })
             : Promise.resolve(),
@@ -787,8 +781,8 @@ function Workspace() {
       );
     } catch (cause) {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
-        queryClient.invalidateQueries({
+        refreshQueries(queryClient, { queryKey: projectKeys.sidebar }),
+        refreshQueries(queryClient, {
           queryKey: workspaceKeys.sessions(stream.id),
         }),
       ]);
@@ -923,13 +917,13 @@ function Workspace() {
     try {
       await sessionsApi.close(session.id);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
-        queryClient.invalidateQueries({
+        refreshQueries(queryClient, { queryKey: projectKeys.sidebar }),
+        refreshQueries(queryClient, {
           queryKey: workspaceKeys.sessions(stream.id),
         }),
       ]);
     } catch (cause) {
-      await queryClient.invalidateQueries({
+      await refreshQueries(queryClient, {
         queryKey: workspaceKeys.sessions(stream.id),
       });
       toast.errorFrom(cause, t("appFeedback.couldNotCloseSession"));
@@ -954,13 +948,13 @@ function Workspace() {
     try {
       await sessionsApi.close(session.id);
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: projectKeys.sidebar }),
-        queryClient.invalidateQueries({
+        refreshQueries(queryClient, { queryKey: projectKeys.sidebar }),
+        refreshQueries(queryClient, {
           queryKey: projectKeys.sessions(project.id),
         }),
       ]);
     } catch (cause) {
-      await queryClient.invalidateQueries({
+      await refreshQueries(queryClient, {
         queryKey: projectKeys.sessions(project.id),
       });
       toast.errorFrom(cause, t("appFeedback.couldNotCloseSession"));

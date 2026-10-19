@@ -1,4 +1,7 @@
 import { ArchivedCleanupMenu } from "@/features/workspace/ArchivedCleanupMenu";
+import { useQuery } from "@tanstack/react-query";
+import { projectWorktreesQuery } from "./queries";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ProjectReviewSettings } from "@/features/agent-review/ProjectReviewSettings";
 import { isSessionListed } from "@/features/terminal/model/sessionListVisibility";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
@@ -13,6 +16,8 @@ import {
   Plus,
   TerminalSquare,
   Workflow,
+  CircleAlert,
+  RefreshCw,
 } from "lucide-react";
 import { RecordActionMenu } from "@/features/app/RecordActions";
 import {
@@ -68,6 +73,7 @@ export function ProjectHome({
   worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
   const { t } = useTranslation();
+  const worktrees = useQuery(projectWorktreesQuery(project.id));
   const sessions = project.sessions.filter(isSessionListed);
   const rootWorkspaces = project.workspaces.filter(
     (stream) => !stream.parent_workspace_id,
@@ -111,6 +117,20 @@ export function ProjectHome({
                 <Plus data-icon="inline-start" />{t("projectsUi.addLocation")}</Button>
             )}
           </div>
+          {worktrees.isPending && (
+            <p role="status" className="mt-3 text-xs text-muted-foreground">{t("workspaceUi.loadingWorktreeStatus")}</p>
+          )}
+          {worktrees.isError && (
+            <Alert variant="destructive" className="mt-3">
+              <CircleAlert />
+              <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                <span>{t("workspaceUi.worktreeStatusLoadFailed")}</span>
+                <Button size="sm" variant="outline" disabled={worktrees.isFetching} onClick={() => void worktrees.refetch()}>
+                  <RefreshCw data-icon="inline-start" />{t("workspaceUi.retryWorktreeStatus")}
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
           <div
             data-testid="project-repository-tree"
             className="relative mt-4 divide-y divide-border/60 overflow-hidden rounded-xl border border-border bg-card"
@@ -124,9 +144,10 @@ export function ProjectHome({
                   key={repository.id}
                   repository={repository}
                   directories={scopes}
-                  worktrees={project.worktrees.filter(
+                  worktrees={(worktrees.data ?? []).filter(
                     (item) => item.project_repository_id === repository.id,
                   )}
+                  worktreesLoaded={worktrees.data !== undefined}
                   busy={busy}
                   readOnly={project.status === "archived"}
                   onOpen={onOpen}

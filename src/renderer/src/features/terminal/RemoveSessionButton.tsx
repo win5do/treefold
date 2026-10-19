@@ -1,3 +1,4 @@
+import { refreshQueries } from "@/features/app/refreshQueries";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { isAgentKind } from "@/features/agents/model";
 import { useTranslation } from "react-i18next";
@@ -20,7 +21,7 @@ export function RemoveSessionButton({ session, disabled }: { session: Session; d
     setRemoving(true);
     try {
       await sessionsApi.delete(session.id);
-      await queryClient.invalidateQueries({ predicate: ({ queryKey }) => ["sidebar", "project-sessions", "workspace-sessions", "project", "workspace"].includes(String(queryKey[0])) });
+      await refreshQueries(queryClient, { predicate: ({ queryKey }) => ["sidebar", "project-sessions", "workspace-sessions", "project", "workspace"].includes(String(queryKey[0])) });
       setOpen(false);
     } catch (cause) {
       toast.errorFrom(cause, t("terminalUi.couldNotRemoveSession"));

@@ -1,6 +1,8 @@
-import type { InvalidateOptions, QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
+import { refreshQueries } from "./refreshQueries";
 import { appKeys } from "@/features/app/queries";
 import { projectKeys } from "@/features/projects/queries";
+import { frontendLogger } from "@/lib/logger";
 
 export type RuntimeDomain = "sidebar" | "sessions" | "processes" | "amux";
 
@@ -11,10 +13,10 @@ export const allRuntimeDomains: RuntimeDomain[] = [
   "amux",
 ];
 
-const hierarchyKeys = [projectKeys.summaries, projectKeys.sidebar, ["project"], ["workspace"], ["workspace-worktrees"]];
+const hierarchyKeys = [projectKeys.summaries, projectKeys.sidebar, ["project"], ["project-worktrees"], ["workspace"], ["workspace-worktrees"]];
 
 export async function invalidateHierarchyQueries(queryClient: QueryClient) {
-  await Promise.all(hierarchyKeys.map(queryKey => queryClient.invalidateQueries({ queryKey })));
+  await invalidateRuntimeQueries(queryClient, ["sidebar"]);
 }
 
 function runtimeQueryKeys(domains: readonly RuntimeDomain[]) {
@@ -29,18 +31,18 @@ function runtimeQueryKeys(domains: readonly RuntimeDomain[]) {
 export async function invalidateRuntimeQueries(
   queryClient: QueryClient,
   domains: readonly RuntimeDomain[] = allRuntimeDomains,
-  options: InvalidateOptions = {},
+  { throwOnError = false }: { throwOnError?: boolean } = {},
 ) {
-  await Promise.all(runtimeQueryKeys(domains).map(queryKey => queryClient.invalidateQueries({ queryKey }, options)));
+  const keys = runtimeQueryKeys(domains);
+  try {
+    await refreshQueries(queryClient, { predicate: query => keys.some(key => key[0] === query.queryKey[0]) }, { throwOnError: true });
+  } catch (error) {
+    if (throwOnError) throw error;
+    frontendLogger.error("Runtime refresh failed", error);
+  }
 }
 
 export async function refreshRuntimeQueries(queryClient: QueryClient, domains: readonly RuntimeDomain[], signal: AbortSignal) {
-  // A focus/manual refresh may already be in flight. Let it finish, then fetch
-  // the event's state rather than cancelling it or reusing a stale response.
-  const inFlight = runtimeQueryKeys(domains).flatMap(queryKey =>
-    queryClient.getQueryCache().findAll({ queryKey, fetchStatus: "fetching" }).map(query => query.promise),
-  );
-  await Promise.allSettled(inFlight);
   if (signal.aborted) return;
-  await invalidateRuntimeQueries(queryClient, domains, { cancelRefetch: false });
+  await invalidateRuntimeQueries(queryClient, domains, { throwOnError: true });
 }

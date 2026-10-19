@@ -9,14 +9,14 @@ test("repository prune previews, retries changed registrations, and refreshes af
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "worktree-prune" });
     let previewReads = 0;
-    let projectReads = 0;
+    let worktreeReads = 0;
     const submissions: unknown[] = [];
     const preview = {
       report: "Removing worktrees/stale: gitdir file points to non-existent location",
       entries: [{ path: "/fixture/stale-worktree", reason: "gitdir file points to non-existent location", workspaces: ["Previous Workspace"] }],
     };
-    await page.route(`**/api/projects/${FIXTURE_IDS.project}`, async route => {
-      projectReads += 1;
+    await page.route(`**/api/projects/${FIXTURE_IDS.project}/worktrees`, async route => {
+      worktreeReads += 1;
       await route.continue();
     });
     await page.route(`**/api/project-repositories/${FIXTURE_IDS.primaryRepository}/worktrees/prune`, async route => {
@@ -50,10 +50,10 @@ test("repository prune previews, retries changed registrations, and refreshes af
     const beforeRecheck = previewReads;
     await dialog.getByRole("button", { name: "Check again", exact: true }).click();
     await expect.poll(() => previewReads).toBeGreaterThan(beforeRecheck);
-    const beforePrune = projectReads;
+    const beforePrune = worktreeReads;
     await dialog.getByRole("button", { name: "Prune registrations", exact: true }).click();
     await expect(dialog).toBeHidden();
-    await expect.poll(() => projectReads).toBeGreaterThan(beforePrune);
+    await expect.poll(() => worktreeReads).toBeGreaterThan(beforePrune);
     expect(submissions).toEqual([preview, preview]);
     dialog = await openDialog();
     await expect(dialog).toContainText("No stale worktree registrations to prune.");

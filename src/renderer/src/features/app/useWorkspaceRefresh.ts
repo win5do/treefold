@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { refreshGitQueries } from "@/features/git/queries";
 import { toast } from "@/lib/toast";
 import { frontendLogger } from "@/lib/logger";
+import { invalidateRuntimeQueries } from "./runtimeInvalidation";
 
 export function useWorkspaceRefresh() {
   const client = useQueryClient();
@@ -11,10 +12,7 @@ export function useWorkspaceRefresh() {
     setRefreshing(true);
     try {
       await Promise.all([
-        client.invalidateQueries({ predicate: ({ queryKey }) => [
-          "sidebar", "project-summaries", "project", "workspace",
-          "project-sessions", "workspace-sessions", "workspace-worktrees",
-        ].includes(String(queryKey[0])) }, { throwOnError: true }),
+        invalidateRuntimeQueries(client, ["sidebar", "sessions"], { throwOnError: true }),
         refreshGitQueries(client),
       ]);
     } catch (cause) {

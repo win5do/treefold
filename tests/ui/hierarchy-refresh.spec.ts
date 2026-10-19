@@ -10,7 +10,7 @@ for (const source of ["creation", "runtime"] as const) {
     let changed = false;
     try {
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: `hierarchy-${source}` });
-      await page.route(`**/api/projects/${FIXTURE_IDS.project}`, async route => {
+      await page.route(url => url.pathname === `/api/projects/${FIXTURE_IDS.project}`, async route => {
         const response = await route.fetch();
         const data = await response.json();
         if (changed) data.workspaces.push({ ...data.workspaces.find((item: { id: string }) => item.id === FIXTURE_IDS.workspace), id: "new-workspace", name: "New feature" });

@@ -1,4 +1,4 @@
-/** Coalesce event bursts without starving refreshes during continuous activity. */
+/** Coalesce event bursts; individual query queues own in-flight refreshes. */
 export function createRuntimeRefreshScheduler<Domain extends string>(
   refresh: (domains: Domain[], signal: AbortSignal) => Promise<void>,
   onError: (cause: unknown) => void,
@@ -6,27 +6,20 @@ export function createRuntimeRefreshScheduler<Domain extends string>(
   const pending = new Set<Domain>();
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let running = false;
   let disposed = false;
 
   const schedule = () => {
-    if (disposed || running || timer !== undefined || pending.size === 0) return;
+    if (disposed || timer !== undefined || pending.size === 0) return;
     timer = setTimeout(() => void flush(), 100);
   };
   const flush = async () => {
     timer = undefined;
     const domains = [...pending];
     pending.clear();
-    running = true;
     try {
       await refresh(domains, controller.signal);
     } catch (cause) {
       onError(cause);
-    } finally {
-      running = false;
-      // Changes received during a request need one trailing refresh, even when
-      // that request succeeds: its response may predate those changes.
-      schedule();
     }
   };
 

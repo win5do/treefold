@@ -1,3 +1,4 @@
+import { refreshQueries } from "@/features/app/refreshQueries";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -30,7 +31,7 @@ export function SessionListActions({ session, path, available, busy }: {
         if (resume) await sessionsApi.restart(session.id);
         if (session.visibility !== "visible") await sessionsApi.open(session.id);
       } finally {
-        await queryClient.invalidateQueries({ predicate: ({ queryKey }) =>
+        await refreshQueries(queryClient, { predicate: ({ queryKey }) =>
           ["sidebar", "project-summaries", "project-sessions", "workspace-sessions", "project", "workspace"].includes(String(queryKey[0])),
         });
       }

@@ -415,6 +415,7 @@ export function ProjectRepositoryTreeRow({
   repository,
   directories,
   worktrees,
+  worktreesLoaded,
   busy,
   readOnly,
   onOpen,
@@ -432,6 +433,7 @@ export function ProjectRepositoryTreeRow({
   repository: ProjectRepository;
   directories: Directory[];
   worktrees: GitWorktree[];
+  worktreesLoaded: boolean;
   busy: boolean;
   readOnly: boolean;
   onOpen: (id: string) => void;
@@ -514,7 +516,7 @@ export function ProjectRepositoryTreeRow({
               </div>
               <MetadataList size="compact" className="mt-2">
                 <MetadataListItem label={t("labels.current")}>
-                  <code>{currentBranch}</code>
+                  <code>{worktreesLoaded ? currentBranch : t("states.checking")}</code>
                 </MetadataListItem>
                 <MetadataListItem label={t("labels.repository")}>
                   {repositoryLabel(repository.repository_url)}
@@ -609,7 +611,7 @@ export function ProjectRepositoryTreeRow({
                 id={`project-repository-worktrees-${repository.id}`}
                 label={t("projectsUi.worktrees")}
                 subject={repository.name}
-                count={orderedWorktrees.length}
+                count={worktreesLoaded ? orderedWorktrees.length : undefined}
                 icon={GitBranch}
               >
                 {orderedWorktrees.map((item) => (
@@ -725,7 +727,7 @@ export function ProjectRepositoryTreeRow({
                     )}
                   </div>
                 ))}
-                {orderedWorktrees.length === 0 && (
+                {worktreesLoaded && orderedWorktrees.length === 0 && (
                   <div className="py-4 pl-5 text-xs text-muted-foreground">{t("projectsUi.noWorktreesFoundForThisRepository")}</div>
                 )}
               </ProjectRepositoryChildGroup>
@@ -748,7 +750,7 @@ function ProjectRepositoryChildGroup({
   id: string;
   label: string;
   subject: string;
-  count: number;
+  count?: number;
   icon: React.ComponentType<{ className?: string }>;
   children: React.ReactNode;
 }) {
@@ -772,7 +774,7 @@ function ProjectRepositoryChildGroup({
           {label}
         </span>
         <span className="flex w-7 shrink-0 justify-center">
-          <Badge variant="secondary">{count}</Badge>
+          {count !== undefined && <Badge variant="secondary">{count}</Badge>}
         </span>
       </CollapsibleTrigger>
       <CollapsibleContent

@@ -2,6 +2,7 @@ import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { projectsApi } from "@/api/projects";
 import { workspacesApi } from "@/api/workspaces";
 import type { GitDiffRequest } from "@/domain/types";
+import { refreshQueries } from "@/features/app/refreshQueries";
 
 export type RepositoryKind = "project" | "workspace";
 const apiFor = (kind: RepositoryKind) => kind === "project" ? projectsApi : workspacesApi;
@@ -18,7 +19,7 @@ export const gitDiffQuery = (kind: RepositoryKind, id: string, request: GitDiffR
 
 /** Invalidate hidden views too, so reopening them cannot reuse pre-mutation data. */
 export async function refreshGitQueries(client: QueryClient, kind?: RepositoryKind, id?: string, includeHistory = true) {
-  await client.invalidateQueries({
+  await refreshQueries(client, {
     predicate: ({ queryKey }) => ["git-history", "git-status", "git-diff"].includes(String(queryKey[0]))
       && (includeHistory || queryKey[0] !== "git-history")
       && (kind === undefined || queryKey[1] === kind)

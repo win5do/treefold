@@ -10,7 +10,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-test("runtime refresh coalesces bursts and preserves changes received during a slow request", async () => {
+test("runtime refresh coalesces bursts without holding new events behind a slow batch", async () => {
   const calls: string[][] = [];
   const gates = [deferred(), deferred()];
   const errors: unknown[] = [];
@@ -22,12 +22,12 @@ test("runtime refresh coalesces bursts and preserves changes received during a s
     for (let i = 0; i < 10_000; i++) scheduler.request(["sidebar", "sessions"]);
     await expect.poll(() => calls.length).toBe(1);
     for (let i = 0; i < 10_000; i++) scheduler.request(["sidebar", "processes"]);
-    gates[0].resolve();
     await expect.poll(() => calls.length).toBe(2);
     expect(calls).toEqual([["sessions", "sidebar"], ["processes", "sidebar"]]);
     expect(errors).toEqual([]);
     scheduler.request(["amux"]);
     scheduler.dispose();
+    gates[0].resolve();
     gates[1].resolve();
     await new Promise(resolve => setTimeout(resolve, 150));
     expect(calls).toHaveLength(2);
@@ -53,9 +53,9 @@ test("runtime refresh logs rejection and continues pending work; disposal cancel
     scheduler.request(["sidebar"]);
     await expect.poll(() => calls).toBe(1);
     scheduler.request(["sessions"]);
-    gate.resolve();
     await expect.poll(() => calls).toBe(2);
-    expect(errors).toEqual([error]);
+    gate.resolve();
+    await expect.poll(() => errors).toEqual([error]);
     scheduler.request(["amux"]);
     scheduler.dispose();
     scheduler.request(["sidebar"]);

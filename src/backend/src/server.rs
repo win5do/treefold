@@ -307,6 +307,10 @@ fn app(state: AppState) -> Router {
             "/api/projects/{id}/delete-precheck",
             get(precheck_delete_project),
         )
+        .route(
+            "/api/projects/{id}/worktrees",
+            get(project_status::get_worktrees),
+        )
         .route("/api/projects/{id}/git/pull-all", post(pull_all_project))
         .route("/api/projects/{id}/git/push-all", post(push_all_project))
         .route(
@@ -672,6 +676,7 @@ use workspace_delete::delete_workspace;
 mod agent_review;
 mod project_creation;
 mod project_open;
+mod project_status;
 mod session;
 mod session_creation;
 mod squash;
