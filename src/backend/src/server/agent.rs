@@ -37,6 +37,19 @@ pub(super) async fn stop_amux(State(state): State<AppState>) -> Result<StatusCod
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub(super) async fn recover_amux(State(state): State<AppState>) -> Result<StatusCode> {
+    state.terminals.recover_daemon().await.map_err(|error| {
+        AppError::api(
+            StatusCode::CONFLICT,
+            "AMUX_RECOVERY_FAILED",
+            error.to_string(),
+        )
+    })?;
+    reconcile_daemon_sessions(&state).await?;
+    state.runtime.publish_daemon_stopped();
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub(super) async fn agent_integration_status(
     State(state): State<AppState>,
 ) -> Result<Json<crate::integration::IntegrationStatus>> {

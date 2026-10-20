@@ -75,3 +75,46 @@ test("resources", async () => {
   }
 
 });
+
+test("unavailable runtime requires confirmed recovery and keeps failures actionable", async () => {
+  const harness = await startUiHarness();
+  let page!: Page;
+  try {
+    harness.amuxRecovery.setStatus({ state: "unresponsive", running: false, recovery_available: true });
+    page = await createUiSession({ apiUrl: harness.apiUrl, windowSize: "1200,800", sessionName: "runtime-recovery" });
+    await page.goto(harness.baseUrl);
+    const resources = page.getByTestId("open-resources");
+    await expect(resources).toHaveAccessibleName("Resources");
+    await resources.click();
+    const popover = page.getByTestId("amux-resources-popover");
+    await expect(popover.getByText("Unavailable", { exact: true })).toBeVisible();
+    await popover.getByRole("button", { name: "Retry connection" }).click();
+    expect(harness.amuxRecovery.recoverRequests).toHaveLength(0);
+    await popover.getByRole("button", { name: "Recover runtime", exact: true }).click();
+    const dialog = page.getByTestId("recover-amux-dialog");
+    await expect(dialog).toContainText("forcefully terminated");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    expect(harness.amuxRecovery.recoverRequests).toHaveLength(0);
+    await expect(dialog).toBeHidden();
+    await expect(popover).toBeHidden();
+    await resources.click();
+    await popover.getByRole("button", { name: "Recover runtime", exact: true }).click();
+    harness.amuxRecovery.failNextRecovery("Process identity changed; retry inspection");
+    await dialog.getByRole("button", { name: "Recover runtime", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toContainText("Process identity changed");
+    await expect(dialog.getByRole("button", { name: "Recover runtime", exact: true })).toBeEnabled();
+    await dialog.getByRole("button", { name: "Recover runtime", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(popover.getByTestId("amux-running-status")).toBeVisible();
+    expect(harness.amuxRecovery.recoverRequests).toHaveLength(2);
+    harness.amuxRecovery.setStatus({ state: "unresponsive", running: false, recovery_available: false });
+    await expect(popover.getByRole("button", { name: "Recover runtime", exact: true })).toBeDisabled();
+    await expect(popover).toContainText("identity cannot be verified");
+    harness.amuxRecovery.setStatus({ state: "legacy", running: false, recovery_available: true });
+    await expect(popover).toContainText("previous amux instance is still running");
+    await expect(popover.getByRole("button", { name: "Recover runtime", exact: true })).toBeEnabled();
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});

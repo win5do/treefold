@@ -30,6 +30,9 @@ Cargo files change and refreshes the Skill with each build. For Skill-only edits
 run `just prepare-sidecars`.
 Local package versions can differ from the pinned Git version; neither
 repository's committed lockfile is rewritten by the override.
+When the selected source changes, xtask invalidates the amux CLI artifact before
+building it. This prevents Cargo from reusing a CLI from another Git checkout
+that has the same package version; other dependency caches are retained.
 
 For a focused backend command, use `cargo xtask backend test <test-filter>`
 (also supports `build`, `check`, `clippy`, and `run`). Raw backend Cargo commands
@@ -45,3 +48,14 @@ cargo update --manifest-path src/backend/Cargo.toml -p amux-runtime
 ```
 
 Commit the manifest and resulting lockfile change after verifying the new revision.
+
+## Runtime recovery
+
+The Resources popover distinguishes an unavailable runtime from a stopped one.
+When amux is unavailable, Treefold preserves Session states and offers connection
+retry. Explicit runtime recovery requires confirmation because it terminates the
+old runtime's terminals, agents, and services before starting a new instance.
+The backend delegates recovery to amux; it does not maintain a separate PID-kill
+implementation. If ownership cannot be verified, recovery stays disabled and the
+old runtime must be stopped manually. A healthy daemon at an old registered
+socket can be stopped normally through this recovery flow.

@@ -8,6 +8,7 @@ export const appApi = {
   updateSettings: (json: unknown) => request<AppSettings>("/api/settings", { method: "PATCH", json }),
   amuxStatus: (signal?: AbortSignal) => request<AmuxStatus>("/api/amux", { signal }),
   stopAmux: () => request<void>("/api/amux/stop", { method: "POST" }),
+  recoverAmux: () => request<void>("/api/amux/recover", { method: "POST" }),
   agentIntegration: (signal?: AbortSignal) => request<AgentIntegrationStatus>("/api/agent-integration", { signal }),
   syncAgentIntegration: () => request<AgentIntegrationStatus>("/api/agent-integration", { method: "POST" }),
   uninstallAgentIntegration: () => request<AgentIntegrationStatus>("/api/agent-integration", { method: "DELETE" }),

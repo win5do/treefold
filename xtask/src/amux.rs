@@ -129,14 +129,18 @@ impl BackendCargo {
         command.env("TREEFOLD_RESOLVED_AMUX_MANIFEST", &self.amux.manifest);
     }
 
+    pub fn source_record(&self) -> Value {
+        serde_json::json!({
+            "manifest_path": self.amux.manifest,
+            "version": self.amux.version,
+            "source": self.amux.source,
+        })
+    }
+
     pub fn write_source(&self, destination: &Path) -> Result<()> {
         fs::write(
             destination,
-            serde_json::to_vec_pretty(&serde_json::json!({
-                "manifest_path": self.amux.manifest,
-                "version": self.amux.version,
-                "source": self.amux.source,
-            }))?,
+            serde_json::to_vec_pretty(&self.source_record())?,
         )
         .context("write resolved amux source")
     }

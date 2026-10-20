@@ -794,11 +794,13 @@ pub(super) fn strict_process_status(status: &str) -> &'static str {
 }
 
 pub(super) async fn reconcile_daemon_sessions(state: &AppState) -> Result<()> {
-    let processes = state
-        .terminals
-        .existing_processes()
-        .await?
-        .unwrap_or_default();
+    let processes = match state.terminals.existing_processes().await {
+        Ok(processes) => processes.unwrap_or_default(),
+        Err(error) => {
+            log::warn!("amux runtime unavailable; preserving Session states: {error}");
+            return Ok(());
+        }
+    };
     let active = processes
         .iter()
         .map(|process| (process.workspace_name.as_str(), process.name.as_str()))

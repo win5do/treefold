@@ -20,7 +20,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-amux = { package = "amux-runtime", git = "https://github.com/win5do/amux.git", rev = "3453b508e968e9e9b5f9d9e9defcaec71ffa983a" }
+amux = { package = "amux-runtime", git = "https://github.com/win5do/amux.git", rev = "141abc2a8c91c0609b5a60ec70a81a5d6e22092b" }
 base64 = "0.22"
 axum = { version = "0.8", features = ["ws"] }
 chrono = { version = "0.4", features = ["serde"] }

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Network } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { appApi } from "@/api/app";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
@@ -37,9 +38,30 @@ export function AmuxResourcesPopover() {
   const [open, setOpen] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [confirmRecover, setConfirmRecover] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string>();
   const statusQuery = useQuery({ ...amuxQuery(), enabled: open });
   const status = statusQuery.data;
   const running = status?.running ?? false;
+  const unavailable = status?.state === "unresponsive" || status?.state === "legacy";
+
+  const recover = async () => {
+    setRecovering(true);
+    setRecoveryError(undefined);
+    try {
+      await appApi.recoverAmux();
+      setConfirmRecover(false);
+      setOpen(true);
+      await invalidateRuntimeQueries(queryClient);
+      toast.success(t("resources.recovered"));
+    } catch (cause) {
+      setRecoveryError(cause instanceof Error ? cause.message : t("resources.recoverFailed"));
+    } finally {
+      setRecovering(false);
+      void statusQuery.refetch();
+    }
+  };
 
   const stop = async () => {
     setStopping(true);
@@ -75,7 +97,9 @@ export function AmuxResourcesPopover() {
           </PopoverHeader>
           {running
             ? <Button data-testid="amux-running-status" size="xs" variant="ghost" onClick={() => setConfirmStop(true)}><span className="size-2 rounded-full bg-success" />{t("resources.running")}</Button>
-            : <Tooltip>
+            : unavailable
+              ? <span className="text-xs text-destructive">{t(status.state === "legacy" ? "resources.legacy" : "resources.unresponsive")}</span>
+              : <Tooltip>
                 <TooltipTrigger render={<span data-testid="amux-stopped-status" tabIndex={0} className="flex shrink-0 items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring" />}>
                   <span className="size-2 rounded-full bg-muted-foreground/50" />{t("resources.notStarted")}
                 </TooltipTrigger>
@@ -90,6 +114,14 @@ export function AmuxResourcesPopover() {
             <TableRow><TableCell className="text-muted-foreground">{t("resourcesUi.processes")}</TableCell><TableCell>{status?.active_processes ?? 0}</TableCell></TableRow>
           </TableBody>
         </Table>
+        {unavailable && <div className="flex flex-col gap-2">
+          <Alert variant="warning"><AlertDescription>{t(status.state === "legacy" ? "resources.legacyDescription" : "resources.unresponsiveDescription")}</AlertDescription></Alert>
+          {!status.recovery_available && <p className="text-xs text-muted-foreground">{t("resources.identityUnavailable")}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" disabled={recovering || statusQuery.isFetching} onClick={() => void statusQuery.refetch()}>{t("resources.retryConnection")}</Button>
+            <Button size="sm" variant="destructive" disabled={recovering || !status.recovery_available} onClick={() => { setRecoveryError(undefined); setConfirmRecover(true); }}>{t("resources.recover")}</Button>
+          </div>
+        </div>}
         {statusQuery.error && <p role="alert" className="text-xs text-destructive">{statusQuery.error.message}</p>}
       </PopoverContent>
     </Popover>
@@ -102,6 +134,19 @@ export function AmuxResourcesPopover() {
         <AlertDialogFooter>
           <AlertDialogCancel disabled={stopping}>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction variant="destructive" disabled={stopping} onClick={() => void stop()}>{stopping ? t("resources.stopping") : t("resources.stop")}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    <AlertDialog open={confirmRecover} onOpenChange={value => { if (!recovering) setConfirmRecover(value); }}>
+      <AlertDialogContent data-testid="recover-amux-dialog">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("resources.recoverTitle")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("resources.recoverDescription")}</AlertDialogDescription>
+        </AlertDialogHeader>
+        {recoveryError && <Alert variant="destructive"><AlertDescription>{recoveryError}</AlertDescription></Alert>}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={recovering}>{t("common.cancel")}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" disabled={recovering} onClick={() => void recover()}>{t(recovering ? "resources.recovering" : "resources.recover")}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

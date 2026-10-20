@@ -89,6 +89,9 @@ pub struct TreefoldProcessView {
 pub struct DaemonResourceStatus {
     pub name: String,
     pub running: bool,
+    pub state: amux::lifecycle::RuntimeState,
+    pub recovery_available: bool,
+    pub health: amux::lifecycle::Health,
     pub started_at: Option<String>,
     pub active_groups: usize,
     pub active_processes: usize,
@@ -174,41 +177,61 @@ impl TerminalManager {
     }
 
     pub async fn daemon_status(&self) -> DaemonResourceStatus {
-        let stopped = || DaemonResourceStatus {
-            name: self.daemon_name.as_ref().clone(),
-            running: false,
-            started_at: None,
-            active_groups: 0,
-            active_processes: 0,
+        use amux::lifecycle::{Health, RuntimeState};
+        let (state, recovery_available, health) = match self.client.runtime_status().await {
+            Ok(status) => (status.state, status.recovery_available, status.health),
+            Err(error) => (
+                RuntimeState::Unresponsive,
+                false,
+                Health::InvalidResponse {
+                    message: error.to_string(),
+                },
+            ),
         };
-        if !self.client.ready().await {
-            return stopped();
-        }
+        let running = state == RuntimeState::Healthy;
         let registration = std::fs::read(self.client.config.state_dir.join("daemon.json"))
             .ok()
-            .and_then(|bytes| serde_json::from_slice::<DaemonRegistration>(&bytes).ok());
-        match registration {
-            Some(value) => DaemonResourceStatus {
-                name: self.daemon_name.as_ref().clone(),
-                running: true,
-                started_at: Some(value.started_at),
-                active_groups: value.active_groups,
-                active_processes: value.active_processes,
-            },
-            None => DaemonResourceStatus {
-                running: true,
-                ..stopped()
-            },
+            .and_then(|bytes| serde_json::from_slice::<DaemonRegistration>(&bytes).ok())
+            .filter(|_| state != RuntimeState::Stopped);
+        DaemonResourceStatus {
+            name: self.daemon_name.as_ref().clone(),
+            running,
+            state,
+            recovery_available,
+            health,
+            started_at: registration.as_ref().map(|value| value.started_at.clone()),
+            active_groups: registration.as_ref().map_or(0, |value| value.active_groups),
+            active_processes: registration
+                .as_ref()
+                .map_or(0, |value| value.active_processes),
         }
     }
 
-    /// Stops the existing daemon without triggering lazy startup.
+    /// Stops an existing healthy daemon without triggering lazy startup.
     pub async fn stop_daemon(&self) -> anyhow::Result<bool> {
-        if !self.client.ready().await {
+        let status = self.client.runtime_status().await?;
+        if status.state == amux::lifecycle::RuntimeState::Stopped {
             return Ok(false);
         }
-        self.client.do_empty(Method::POST, "/v1/admin/stop").await?;
+        if status.state != amux::lifecycle::RuntimeState::Healthy {
+            return Err(amux::lifecycle::unavailable(&status));
+        }
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            self.client.do_empty(Method::POST, "/v1/admin/stop"),
+        )
+        .await
+        .context("amux stop request timed out")??;
         Ok(true)
+    }
+
+    pub async fn recover_daemon(&self) -> anyhow::Result<()> {
+        let _guard = self.daemon_start.lock().await;
+        self.client
+            .recover_daemon_with(std::env::current_exe()?, vec!["--amux-daemon".into()])
+            .await?;
+        self.start_event_bridge();
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -236,13 +259,19 @@ impl TerminalManager {
 
     /// Returns a fresh daemon snapshot without starting a missing daemon.
     pub async fn existing_processes(&self) -> anyhow::Result<Option<Vec<TreefoldProcessView>>> {
-        if !self.client.ready().await {
+        let status = self.client.runtime_status().await?;
+        if status.state == amux::lifecycle::RuntimeState::Stopped {
             return Ok(None);
         }
-        let bytes = self
-            .client
-            .do_empty(Method::GET, "/v1/processes/snapshot")
-            .await?;
+        if status.state != amux::lifecycle::RuntimeState::Healthy {
+            return Err(amux::lifecycle::unavailable(&status));
+        }
+        let bytes = tokio::time::timeout(
+            Duration::from_secs(3),
+            self.client.do_empty(Method::GET, "/v1/processes/snapshot"),
+        )
+        .await
+        .context("amux snapshot timed out")??;
         let snapshot = serde_json::from_slice::<ProcessSnapshot>(&bytes)?;
         let views = snapshot
             .processes

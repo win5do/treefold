@@ -1,3 +1,4 @@
+import { createResourcesRoutes } from "./routes/resources.ts";
 import { createProjectUpdateRoutes } from "./routes/project-update.ts";
 import { createProjectStatusRoutes } from "./routes/project-status.ts";
 import { createWorkspaceStatusRoutes } from "./routes/workspace-status.ts";
@@ -81,7 +82,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
   };
   let worktreeDeleteOperation: WorktreeDeleteOperation | null = null;
   let worktreeDeletePolls = 0;
-  const amuxStopRequests: string[] = [];
+  const resourcesRoutes = createResourcesRoutes({ fixture, readJson, sendJson }, publishRuntimeChange);
   const repositoryBranches = new Map<string, GitBranches>();
   const projectUpdateRoutes = createProjectUpdateRoutes({ fixture, readJson, sendJson }, renameRequests);
   const projectStatusRoutes = createProjectStatusRoutes({ fixture, readJson, sendJson });
@@ -132,10 +133,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
       return;
     }
     if (await settingsRoutes.handle(request, response, pathname)) return;
-    if (request.method === "GET" && pathname === "/api/amux") {
-      sendJson(response, 200, fixture.amux);
-      return;
-    }
+    if (await resourcesRoutes.handle(request, response, pathname)) return;
     if (request.method === "GET" && pathname === "/api/processes") {
       sendJson(response, 200, fixture.processes);
       return;
@@ -153,21 +151,6 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
       response.write(`event: runtime.sync\ndata: ${JSON.stringify({ instance_id: runtimeInstanceId, revision: runtimeRevision })}\n\n`);
       eventStreams.add(response);
       request.on("close", () => eventStreams.delete(response));
-      return;
-    }
-    if (request.method === "POST" && pathname === "/api/amux/stop") {
-      amuxStopRequests.push(pathname);
-      fixture.amux.running = false;
-      fixture.amux.started_at = undefined;
-      fixture.amux.active_groups = 0;
-      fixture.amux.active_processes = 0;
-      for (const detail of Object.values(fixture.workspaceDetails)) {
-        for (const session of detail.sessions) {
-          if (session.status === "running") session.status = "stopped";
-        }
-      }
-      sendJson(response, 204, null);
-      publishRuntimeChange(["sidebar", "sessions", "processes", "amux"]);
       return;
     }
     if (request.method === "GET" && pathname === "/api/projects/summary") {
@@ -1058,7 +1041,8 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
     renameRequests,
     sessionOrderRequests,
     deleteRequests,
-    amuxStopRequests,
+    amuxStopRequests: resourcesRoutes.stopRequests,
+    amuxRecovery: resourcesRoutes,
     agentIntegrationRequests: agentIntegrationRoutes.requests,
     setAgentIntegrationState: agentIntegrationRoutes.setState,
     parentOperationRequests: parentOperationRoutes.requests,
@@ -1197,6 +1181,7 @@ export async function startUiHarness(configure?: (fixture: SidebarFixture) => vo
     sessionOrderRequests: fixtureApi.sessionOrderRequests,
     deleteRequests: fixtureApi.deleteRequests,
     amuxStopRequests: fixtureApi.amuxStopRequests,
+    amuxRecovery: fixtureApi.amuxRecovery,
     agentIntegrationRequests: fixtureApi.agentIntegrationRequests,
     setAgentIntegrationState: fixtureApi.setAgentIntegrationState,
     parentOperationRequests: fixtureApi.parentOperationRequests,

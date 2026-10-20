@@ -20,7 +20,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "amux-runtime"
 version = "0.1.0"
-source = "git+https://github.com/win5do/amux.git?rev=3453b508e968e9e9b5f9d9e9defcaec71ffa983a#3453b508e968e9e9b5f9d9e9defcaec71ffa983a"
+source = "git+https://github.com/win5do/amux.git?rev=141abc2a8c91c0609b5a60ec70a81a5d6e22092b#141abc2a8c91c0609b5a60ec70a81a5d6e22092b"
 dependencies = [
  "anyhow",
  "async-stream",

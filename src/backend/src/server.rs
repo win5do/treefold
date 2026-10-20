@@ -297,6 +297,7 @@ fn app(state: AppState) -> Router {
         .route("/api/system/logs/reveal", post(reveal_runtime_logs))
         .route("/api/amux", get(amux_status))
         .route("/api/amux/stop", post(stop_amux))
+        .route("/api/amux/recover", post(recover_amux))
         .route(
             "/api/agent-integration",
             get(agent_integration_status)

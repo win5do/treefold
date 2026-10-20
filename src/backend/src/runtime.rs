@@ -216,13 +216,15 @@ async fn serve_backend(home: &std::path::Path, user_home: &std::path::Path) -> a
         .map(|value| value.amux.keep_daemon_running_on_exit)
         .unwrap_or(false)
     {
-        let (daemon, sessions) =
-            tokio::join!(terminals.stop_daemon(), store.stop_active_sessions());
-        if let Err(error) = daemon {
-            log::error!("failed to stop amux daemon: {error:#}");
-        }
-        if let Err(error) = sessions {
-            log::error!("failed to stop persisted Sessions: {error}");
+        match terminals.stop_daemon().await {
+            Ok(_) => {
+                if let Err(error) = store.stop_active_sessions().await {
+                    log::error!("failed to stop persisted Sessions: {error}");
+                }
+            }
+            Err(error) => {
+                log::error!("failed to stop amux daemon; preserving Session states: {error:#}")
+            }
         }
     }
     remove_api_url(&api_url_file, &api_url);

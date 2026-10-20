@@ -687,6 +687,8 @@ export function createSidebarCoreFixture(): SidebarFixture {
     amux: {
       name: "treefold-a8c7fixture",
       running: true,
+      state: "healthy",
+      recovery_available: false,
       started_at: "2026-08-10T06:00:00.000Z",
       active_groups: 3,
       active_processes: 8,

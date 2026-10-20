@@ -282,7 +282,40 @@ fn build_sidecars(
         amux.arg("--locked");
         None
     };
+    let source_marker = options
+        .artifact_dir(target_dir)
+        .join(".treefold-amux-cli-source.json");
+    let previous_source = fs::read(&source_marker)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+    if previous_source.as_ref() != Some(&backend.source_record()) {
+        // Cargo can reuse the root CLI artifact across immutable Git checkouts
+        // with the same package version. Invalidate only amux when its resolved
+        // source changes, preserving dependency caches.
+        let mut clean = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+        if let Some(temporary) = &local_lock {
+            clean.env(
+                "CARGO_RESOLVER_LOCKFILE_PATH",
+                temporary.path().join("Cargo.lock"),
+            );
+        }
+        clean
+            .current_dir(root)
+            .args(["clean", "--package", "amux-runtime"])
+            .arg("--manifest-path")
+            .arg(&backend.amux.manifest)
+            .arg("--target-dir")
+            .arg(target_dir);
+        if options.profile == Profile::Release {
+            clean.arg("--release");
+        }
+        if let Some(target) = &options.target {
+            clean.arg("--target").arg(target);
+        }
+        run_command(&mut clean, "invalidate amux CLI from a different source")?;
+    }
     build_binary(amux, &backend.amux.manifest, "amux", target_dir, options)?;
+    backend.write_source(&source_marker)?;
     drop(local_lock);
 
     let mut command = backend.command();

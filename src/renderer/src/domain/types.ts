@@ -531,6 +531,9 @@ export type AppSettings = {
 export type AmuxStatus = {
   name: string;
   running: boolean;
+  state: "healthy" | "stopped" | "unresponsive" | "legacy";
+  recovery_available: boolean;
+  health?: { kind: "healthy" | "unreachable" | "timeout" | "invalid_response"; message?: string };
   started_at?: string;
   active_groups: number;
   active_processes: number;
