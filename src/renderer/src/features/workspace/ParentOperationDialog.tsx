@@ -291,7 +291,7 @@ export function ParentOperationPanel({
       </AlertTitle>
       <AlertDescription className="flex flex-col gap-2">
         {operation.error && <p>{operation.error}</p>}
-        {operation.strategy === "squash" && conflicted && <p>{t("squashUi.resolveHint")} <code className="break-all">git commit --allow-empty -m "Squash delivery" -m "Treefold-Squash: {operation.id}"</code></p>}
+        {operation.strategy === "squash" && conflicted && <p>{t("squashUi.resolveHint")} <code className="whitespace-pre-wrap break-all">{`git commit --allow-empty -m '${(operation.commit_message ?? `Squash ${operation.source_branch}`).replaceAll("'", "'\"'\"'")}' -m 'Treefold-Squash: ${operation.id}'`}</code></p>}
         {conflicted && !operation.resolver_session_id && <AgentSelect choice={choice} disabled={busy} />}
         <div className="flex flex-wrap gap-2">
           {conflicted && (

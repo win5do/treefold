@@ -152,6 +152,7 @@ async fn plans(f: &Fixture) -> Vec<FinishPlanItem> {
         .await
         .unwrap();
         plans.push(FinishPlanItem {
+            commit_message: None,
             repository_id: repository.id.clone(),
             code_action: "local_merge".into(),
             delete_worktree: true,
@@ -615,7 +616,10 @@ async fn finish_batch_squash_preserves_source_and_creates_one_target_commit() {
         commit(path, "second.txt", "second commit");
         sources.push(git(path, &["rev-parse", "HEAD"]));
     }
-    let plan = squash_plans(&f, false).await;
+    let mut plan = squash_plans(&f, false).await;
+    for (index, item) in plan.iter_mut().enumerate() {
+        item.commit_message = Some(format!("Delivery {index}\n\nDetailed message"));
+    }
     run_batch(
         &f.state,
         prepare_batch(&f.state, &f.workspace.id, plan)
@@ -635,6 +639,14 @@ async fn finish_batch_squash_preserves_source_and_creates_one_target_commit() {
             sources[index]
         );
         assert_eq!(git(&f.roots[index], &["rev-list", "--count", "main"]), "2");
+        let message = git(&f.roots[index], &["show", "-s", "--format=%B", "HEAD"]);
+        assert!(message.starts_with(&format!(
+            "Delivery {index}\n\nDetailed message\n\nTreefold-Squash: "
+        )));
+        assert_eq!(
+            saved(&f).await.items[index].plan.commit_message.as_deref(),
+            Some(format!("Delivery {index}\n\nDetailed message").as_str())
+        );
         assert_eq!(
             git(&f.roots[index], &["rev-parse", "HEAD^{tree}"]),
             git(
@@ -659,7 +671,8 @@ async fn finish_batch_squash_preserves_source_and_creates_one_target_commit() {
 async fn finish_batch_squash_conflict_restart_retry_and_cleanup() {
     let f = fixture().await;
     commit(&f.roots[1], "shared.txt", "target conflict");
-    let plan = squash_plans(&f, true).await;
+    let mut plan = squash_plans(&f, true).await;
+    plan[1].commit_message = Some("Resolve user's changes\n\nKeep this message".into());
     run_batch(
         &f.state,
         prepare_batch(&f.state, &f.workspace.id, plan)
@@ -683,6 +696,20 @@ async fn finish_batch_squash_conflict_restart_retry_and_cleanup() {
         .unwrap();
     assert_eq!(op.strategy, "squash");
     assert_eq!(op.status, "conflicted");
+    assert_eq!(
+        op.commit_message.as_deref(),
+        Some("Resolve user's changes\n\nKeep this message")
+    );
+    let restarted_before_resolution = state(&f._directory.path().join("home")).await;
+    let persisted = restarted_before_resolution
+        .store
+        .parent_operation(&op.id)
+        .await
+        .unwrap();
+    assert_eq!(persisted.commit_message, op.commit_message);
+    assert!(
+        crate::server::squash_delivery::continue_command(&persisted).contains("Keep this message")
+    );
     std::fs::write(f.roots[1].join("shared.txt"), "resolved").unwrap();
     git(&f.roots[1], &["add", "shared.txt"]);
     // Polling while conflicts are staged must not incorrectly mark the operation aborted.
@@ -693,15 +720,25 @@ async fn finish_batch_squash_conflict_restart_retry_and_cleanup() {
             .status,
         "conflicted"
     );
-    git(
-        &f.roots[1],
-        &[
-            "commit",
-            "-m",
-            "resolved",
-            "-m",
-            &format!("Treefold-Squash: {}", op.id),
-        ],
+    let result = std::process::Command::new("sh")
+        .current_dir(&f.roots[1])
+        .args([
+            "-c",
+            &crate::server::squash_delivery::continue_command(&persisted),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        git(&f.roots[1], &["show", "-s", "--format=%B", "HEAD"]),
+        format!(
+            "Resolve user's changes\n\nKeep this message\n\nTreefold-Squash: {}",
+            op.id
+        )
     );
     let restarted = state(&f._directory.path().join("home")).await;
     let completed = reconcile_parent_operation(&restarted, &op).await.unwrap();
@@ -848,6 +885,7 @@ async fn finish_batch_squash_fork_targets_parent_and_preserves_fork_history() {
         .await
         .unwrap();
         plans.push(FinishPlanItem {
+            commit_message: None,
             repository_id: repository.id.clone(),
             code_action: "squash_merge".into(),
             delete_worktree: false,
@@ -1442,6 +1480,7 @@ async fn keep_delivery_does_not_need_a_parent_branch_and_rejects_changed_source(
         assert!(preflight.blockers.is_empty());
         assert!(preflight.target_head.is_empty());
         plans.push(FinishPlanItem {
+            commit_message: None,
             repository_id: repository.id.clone(),
             code_action: "keep".into(),
             delete_worktree: false,
@@ -1474,6 +1513,7 @@ async fn keep_delivery_does_not_need_a_parent_branch_and_rejects_changed_source(
         .await
         .unwrap();
         fresh_plans.push(FinishPlanItem {
+            commit_message: None,
             repository_id: repository.id.clone(),
             code_action: "keep".into(),
             delete_worktree: false,
@@ -1568,3 +1608,5 @@ async fn finish_processes_check_does_not_start_an_offline_daemon() {
         Err(AppError::NotFound)
     ));
 }
+
+mod reword;

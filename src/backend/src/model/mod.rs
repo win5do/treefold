@@ -5,6 +5,7 @@ mod finish;
 mod git;
 mod operations;
 mod project;
+mod reword;
 mod squash;
 mod workspace;
 
@@ -13,5 +14,6 @@ pub use finish::*;
 pub use git::*;
 pub use operations::*;
 pub use project::*;
+pub use reword::*;
 pub use squash::*;
 pub use workspace::*;

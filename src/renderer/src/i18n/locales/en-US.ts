@@ -750,6 +750,30 @@ export const enUS = {
     "daemonTitle": "amux Daemon",
     "daemonStopped": "amux Daemon stopped"
   },
+  rewordUi: {
+    "menu": "Edit Commit Message…",
+    "title": "Edit commit message",
+    "description": "Edit the current branch’s latest commit. Its files, parents, and original author stay the same. The commit hash changes; staged and unstaged changes stay untouched.",
+    "message": "Commit message",
+    "save": "Save",
+    "saved": "Commit message updated",
+    "continue": "Continue and save",
+    "warningTitle": "Rewrite a shared commit?",
+    "warningDescription": "Local Git references show this commit on other branches or tags. If it has been pushed, publishing this edit may require a force push and affect collaborators. Only the current branch will change; other references will keep the original commit. No remote check is performed.",
+    "deliveryTitle": "Squash commit messages",
+    "deliveryHint": "Review each Repository’s message before delivery. Treefold adds the delivery marker automatically.",
+    "errors": {
+        "REWORD_STALE": "The branch or HEAD changed. Close this dialog, refresh history, and try again.",
+        "REWORD_BRANCH": "Check out a local branch before editing a commit.",
+        "REWORD_OPERATION": "Finish or abort the current Git or Treefold operation first.",
+        "REWORD_OWNERSHIP": "This Repository is closed or has a delivery in progress.",
+        "REWORD_DELIVERY": "This commit is used by a Treefold delivery record and cannot be rewritten here. Set its message before squash delivery.",
+        "REWORD_REPLACE": "Remove Git replacement objects before editing a commit.",
+        "REWORD_ENCODING": "This commit cannot be read as UTF-8.",
+        "REWORD_MESSAGE": "Enter a non-empty message without a Treefold-Squash marker.",
+        "REWORD_CONFIRM": "References changed. Close this dialog and reopen it to review the warning."
+    }
+},
   squashUi: {
     errors: {
       "SQUASH_STALE": "HEAD changed. Refresh history and select again.",

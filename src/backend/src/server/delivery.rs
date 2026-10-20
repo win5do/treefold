@@ -115,7 +115,7 @@ pub(super) async fn finish_workspace_repository_impl(
     let mut linked_operation = None;
     let (status, outcome, integrated) = match input.code_action.as_str() {
         "local_merge" | "squash_merge" => {
-            let operation = start_parent_operation_impl(
+            let operation = super::parent_operation::start_parent_operation_with_message(
                 &state,
                 &location.id,
                 "integrate",
@@ -126,6 +126,7 @@ pub(super) async fn finish_workspace_repository_impl(
                 },
                 "finish",
                 Some(&location.id),
+                input.commit_message.as_deref(),
             )
             .await?;
             if matches!(
@@ -865,6 +866,11 @@ pub(super) fn validate_delivery_input(input: &FinishWorkspace) -> Result<()> {
     if !["local_merge", "squash_merge", "push_branch", "keep"].contains(&input.code_action.as_str())
     {
         return Err(AppError::BadRequest("invalid code action".into()));
+    }
+    if input.code_action == "squash_merge" {
+        if let Some(message) = &input.commit_message {
+            super::squash_delivery::validate_message(message)?;
+        }
     }
     if input.push_after_merge {
         return Err(AppError::BadRequest(

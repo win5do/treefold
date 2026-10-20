@@ -377,6 +377,7 @@ export type ParentOperationDirection = "update" | "integrate";
 export type ParentOperationStrategy = "rebase" | "merge" | "squash";
 
 export type ParentOperation = {
+  commit_message?: string | null;
   id: string;
   workspace_repository_id: string;
   workspace_id: string;
@@ -429,6 +430,7 @@ export type ParentOperationPreview = {
 };
 
 export type FinishPlanItem = {
+  commit_message?: string | null;
   repository_id: string;
   code_action: "local_merge" | "squash_merge" | "push_branch" | "keep" | "skip";
   delete_worktree: boolean;

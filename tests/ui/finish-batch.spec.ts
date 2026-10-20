@@ -157,6 +157,13 @@ test("Finish confirms all repositories and resumes saved progress after closing"
     await dialog.getByRole("button", { name: "Recheck", exact: true }).click();
     await expect(dialog.getByTestId("finish-confirm-action")).toBeEnabled();
     await first.click();
+    const messages = dialog.getByRole("region", { name: "Squash commit messages" });
+    for (const name of names) await expect(messages.getByLabel(name, { exact: true })).toHaveValue(/^Squash /);
+    await messages.getByLabel(names[0], { exact: true }).fill("");
+    await expect(dialog.getByTestId("finish-confirm-action")).toBeDisabled();
+    await messages.getByLabel(names[0], { exact: true }).fill("Backend delivery\n\nPreserve API compatibility");
+    await messages.getByLabel(names[1], { exact: true }).fill("Frontend delivery");
+    await expect(dialog.getByTestId("finish-confirm-action")).toBeEnabled();
     await page.screenshot({
       path: "/tmp/treefold-finish-batch-configure.png",
       animations: "disabled",
@@ -171,6 +178,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
         delete_worktree: false,
         delete_branch: false,
         preflight_id: `preflight-${ids[0]}-squash_merge`,
+        commit_message: "Backend delivery\n\nPreserve API compatibility",
       },
       {
         repository_id: ids[1],
@@ -178,6 +186,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
         delete_worktree: false,
         delete_branch: false,
         preflight_id: `preflight-${ids[1]}-squash_merge`,
+        commit_message: "Frontend delivery",
       },
     ]);
     await dialog.getByRole("button", { name: "Close", exact: true }).click();

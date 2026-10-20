@@ -405,6 +405,10 @@ fn app(state: AppState) -> Router {
             post(project_repository_commit),
         )
         .route(
+            "/api/project-repositories/{id}/git/reword",
+            post(reword::project),
+        )
+        .route(
             "/api/project-repositories/{id}/git/squash",
             post(squash::project),
         )
@@ -516,6 +520,10 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/workspace-repositories/{id}/git/commit",
             post(workspace_repository_commit),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/git/reword",
+            post(reword::workspace),
         )
         .route(
             "/api/workspace-repositories/{id}/git/squash",
@@ -702,6 +710,7 @@ mod project_creation;
 mod project_open;
 mod project_status;
 mod repository_observation;
+mod reword;
 mod session;
 mod session_creation;
 mod squash;

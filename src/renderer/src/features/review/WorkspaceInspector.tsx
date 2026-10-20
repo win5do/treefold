@@ -6,7 +6,7 @@ import { gitHistoryQuery } from "./queries";
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
 import type * as React from "react";
-import { Bot, Check, Copy, Combine, GitBranch, GitCommitHorizontal, GitCompare, History, Info, PanelsTopLeft, RotateCcw, TerminalSquare, Undo2 } from "lucide-react";
+import { Bot, Check, Copy, Combine, Pencil, GitBranch, GitCommitHorizontal, GitCompare, History, Info, PanelsTopLeft, RotateCcw, TerminalSquare, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -26,6 +26,7 @@ import { workspacesApi } from "@/api/workspaces";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 
+import { EditCommitMessageDialog } from "./EditCommitMessageDialog";
 import { HistorySquashDialog } from "./HistorySquashDialog";
 
 type InspectorRepository = { id: string; name: string };
@@ -147,12 +148,14 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
 function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, error, onHistoryChange, onOpenDiff }: { repositoryKind: "project" | "workspace"; repositories: { id: string; name: string }[]; repositoryId: string; history: GitHistory | null; error: string; onHistoryChange: (history: GitHistory) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
   const { t } = useTranslation();
   const [squashOpen, setSquashOpen] = useState(false);
+  const [editingHead, setEditingHead] = useState<{ repositoryId: string; kind: "project" | "workspace"; head: string } | null>(null);
   const [selection, setSelection] = useState<{ anchor: number; first: number; last: number } | null>(null);
   const [pendingAction, setPendingAction] = useState<{ kind: "revert" | "reset"; commit: GitCommit } | null>(null);
   const [resetMode, setResetMode] = useState<"soft" | "mixed" | "hard">("mixed");
   const [actionPending, setActionPending] = useState(false);
   const [actionError, setActionError] = useState("");
   useEffect(() => setSelection(null), [history, repositoryId]);
+  useEffect(() => setEditingHead(null), [repositoryId, repositoryKind]);
   const selectCommit = (index: number, extend: boolean) => {
     setSelection((current) => {
       if (!extend || !current) return { anchor: index, first: index, last: index };
@@ -246,6 +249,9 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
               <GitCompare data-icon="inline-start" />{t("reviewUi.viewDiff")}</ContextMenuItem>
             <ContextMenuItem data-testid="copy-git-commit-action" onClick={() => copyCommit(commit.hash)}>
               <Copy data-icon="inline-start" />{t("reviewUi.copyCommit")}</ContextMenuItem>
+            <ContextMenuItem disabled={index !== 0 || Boolean(selection && selection.first !== selection.last)} onClick={() => setEditingHead({ repositoryId, kind: repositoryKind, head: commit.hash })}>
+              <Pencil data-icon="inline-start" />{t("rewordUi.menu")}
+            </ContextMenuItem>
             <ContextMenuItem disabled={!selection || selection.last <= selection.first} onClick={() => setSquashOpen(true)}>
               <Combine data-icon="inline-start" />{t("squashUi.menu")}
             </ContextMenuItem>
@@ -258,6 +264,7 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
       </ContextMenu>;
     })}</div>}
   </div>
+  {editingHead && editingHead.repositoryId === repositoryId && editingHead.kind === repositoryKind && <EditCommitMessageDialog repositoryKind={repositoryKind} repositoryId={repositoryId} head={editingHead.head} onClose={() => setEditingHead(null)} onHistoryChange={onHistoryChange} />}
   <HistorySquashDialog open={squashOpen} onOpenChange={setSquashOpen} repositoryKind={repositoryKind} repositoryId={repositoryId} commits={history && selection ? history.commits.slice(selection.first, selection.last + 1).reverse() : []} head={history?.commits[0]?.hash ?? ""} onHistoryChange={onHistoryChange} />
   <Dialog open={Boolean(pendingAction)} onOpenChange={(nextOpen) => { if (!nextOpen && !actionPending) setPendingAction(null); }}>
     <DialogContent>

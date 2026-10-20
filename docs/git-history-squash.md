@@ -27,8 +27,12 @@ operation rather than delivering it twice. Cleanup checks the recorded source
 HEAD and verifies the squash result is still reachable in the target; it does
 not require the source commits to be target ancestors.
 
-The commit message is generated from the source branch. Editing the delivery
-message is not part of this version. If the source is already an ancestor of the
+The Finish dialog shows an editable message for each Repository when Squash is
+selected, defaulting to `Squash <source-branch>`. Review all Repository messages
+in the same scrollable dialog and submit them together. Editing these drafts
+does not execute Git. The confirmed messages are saved with the batch and parent
+operation, including across restart and conflict resolution. Treefold appends
+its internal trailer; user messages cannot supply that reserved marker. If the source is already an ancestor of the
 target, delivery is a no-op. Finish ends this Workspace/Fork; this is not a
 repeated incremental squash-delivery workflow.
 
@@ -101,3 +105,25 @@ restart; automatic retention cleanup and recovery browsing are deferred.
 The API is `POST /api/{project|workspace}-repositories/{id}/git/squash`:
 `action=preview|apply` takes `commits` and `expected_head`; apply also requires
 `message`. `action=undo` takes `recovery_id` and `expected_head`.
+
+## Edit the latest commit message
+
+Git History offers `Edit Commit Message…` for the current branch HEAD, including
+root and merge commits. The editor loads the full message. Saving creates a new
+commit from the existing tree and parents, retains the original author, and
+updates the branch with an expected-old-hash check and reflog entry. The index
+and working files are untouched. Commit signing configuration applies; commit
+hooks are not run for this message-only rewrite.
+
+Publication checks use local remote-tracking refs only: this action never fetches.
+Remote refs, tags, or other local branches containing the commit trigger a warning
+that users may cancel or confirm. Only the current branch moves; the other refs
+remain unchanged. New references appearing before save require confirmation too.
+A later push may require force push. Local checks cannot establish that a commit
+has never been published.
+
+Editing earlier commits is not supported. Active Git/Treefold operations and
+commits referenced by Treefold delivery records are blocked to preserve recovery
+and cleanup semantics. Squash delivery messages can instead be edited before
+confirming delivery. HEAD and branch are checked again before publishing the
+replacement, so stale editors cannot overwrite newer commits.

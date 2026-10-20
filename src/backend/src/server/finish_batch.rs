@@ -29,7 +29,7 @@ fn input(item: &FinishPlanItem, cleanup: bool) -> FinishWorkspace {
         keep_session_history: true,
         delete_worktree: cleanup && item.delete_worktree,
         delete_branch: cleanup && item.delete_branch,
-        commit_message: None,
+        commit_message: item.commit_message.clone(),
         preflight_id: Some(item.preflight_id.clone()),
     }
 }

@@ -310,6 +310,7 @@ async fn deletion_precheck_covers_skipped_missing_worktrees_and_explicit_discard
         .repositories
         .iter()
         .map(|r| FinishPlanItem {
+            commit_message: None,
             repository_id: r.id.clone(),
             code_action: "skip".into(),
             delete_worktree: false,

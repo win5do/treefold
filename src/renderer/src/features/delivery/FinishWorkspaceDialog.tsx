@@ -19,6 +19,7 @@ import { ForkDeliveryOptions } from "./ForkDeliveryOptions";
 import { ForceFinishWorkspace } from "./ForceFinishWorkspace";
 import { finishErrorText, isWorktreeError } from "./finishErrors";
 import { FinishConflict } from "./FinishConflict";
+import { SquashDeliveryMessages } from "./SquashDeliveryMessages";
 import { DeliveryBlockers } from "./DeliveryBlockers";
 
 export function FinishWorkspaceDialog({
@@ -110,6 +111,9 @@ export function FinishWorkspaceDialog({
               navigate(`/workspaces/${workspace.id}`, { state: { repositorySettings: repositoryId } });
             }}
           />
+        )}
+        {!flow.batch && flow.loaded && flow.forkAction === "squash_merge" && (
+          <SquashDeliveryMessages repositories={repositories.filter(item => flow.drafts[item.id])} value={flow.commitMessage} onChange={flow.setCommitMessage} disabled={busy} />
         )}
         {!flow.loaded ? (
           <p>{t("states.checking")}</p>

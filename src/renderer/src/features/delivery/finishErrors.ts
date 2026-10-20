@@ -14,6 +14,7 @@ export function isWorktreeError(code?: string | null) {
   ].includes(code ?? "");
 }
 export function finishErrorText(error: FinishError, t: TFunction) {
+  if (error.code === "SQUASH_MESSAGE_INVALID") return t("rewordUi.errors.REWORD_MESSAGE");
   const keys: Record<string, string> = {
     PARENT_WORKTREE_DIRECTORY_MISSING: "parentDirectoryMissing",
     PARENT_WORKTREE_NOT_GIT: "parentNotGit",

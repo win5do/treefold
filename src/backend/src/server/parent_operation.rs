@@ -401,6 +401,27 @@ pub(super) async fn start_parent_operation_impl(
     origin: &str,
     delivery_operation_id: Option<&str>,
 ) -> Result<ParentOperation> {
+    start_parent_operation_with_message(
+        state,
+        id,
+        direction,
+        strategy,
+        origin,
+        delivery_operation_id,
+        None,
+    )
+    .await
+}
+
+pub(super) async fn start_parent_operation_with_message(
+    state: &AppState,
+    id: &str,
+    direction: &str,
+    strategy: &str,
+    origin: &str,
+    delivery_operation_id: Option<&str>,
+    commit_message: Option<&str>,
+) -> Result<ParentOperation> {
     validate_parent_strategy(direction, strategy)?;
     if let Some(current) = state.store.latest_parent_operation(id, direction).await? {
         let current = reconcile_parent_operation(state, &current).await?;
@@ -482,6 +503,7 @@ pub(super) async fn start_parent_operation_impl(
     })?;
     let timestamp = now();
     let operation = ParentOperation {
+        commit_message: commit_message.map(str::to_owned),
         id: operation_id,
         workspace_repository_id: id.into(),
         workspace_id: context.workspace.id,

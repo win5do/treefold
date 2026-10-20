@@ -48,6 +48,8 @@ pub struct DeliveryOperation {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ParentOperation {
+    #[serde(default)]
+    pub commit_message: Option<String>,
     pub id: String,
     pub workspace_repository_id: String,
     pub workspace_id: String,

@@ -36,6 +36,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
   }, [workspace?.id]);
   const [batch, setBatch] = useState<FinishBatch | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [commitMessages, setCommitMessages] = useState<Record<string, string>>({});
   const [storedDrafts, setDrafts] = useState<Record<string, Draft>>({});
   const drafts = useMemo(() => workspace && !batch
     ? Object.fromEntries(Object.entries(storedDrafts).map(([id, draft]) => [id, { ...draft, code_action: forkAction, delete_worktree: false, delete_branch: false }]))
@@ -58,6 +59,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
 
   useEffect(() => {
     setBatch(null);
+    setCommitMessages({});
     setLoaded(false);
     setError("");
     setPreflights({});
@@ -140,6 +142,9 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     return () => controller.abort();
   }, [workspace?.id, loaded, batch?.status, drafts]);
 
+  const commitMessage = (id: string) => commitMessages[id] ?? `Squash ${repositories.find(item => item.id === id)?.branch ?? ""}`;
+  const validMessage = (id: string) => drafts[id]?.code_action !== "squash_merge" || Boolean(commitMessage(id).trim());
+
   const ready =
     loaded &&
     !batch &&
@@ -153,6 +158,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
       )) &&
     repositories.every(
       (item) =>
+        validMessage(item.id) &&
         (drafts[item.id]?.code_action !== "push_branch" || Boolean(item.remote_name && item.remote_branch)) &&
         preflights[item.id] &&
         preflights[item.id].code_action === drafts[item.id]?.code_action &&
@@ -183,7 +189,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
           ?.cleaned ||
         batch?.items.find((entry) => entry.repository_id === item.id)
           ?.delivered ||
-        (preflights[item.id] &&
+        (validMessage(item.id) && preflights[item.id] &&
           !preflights[item.id].blockers.length &&
           !checks[item.id]),
     );
@@ -217,6 +223,7 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
                   }
                 : {}),
               preflight_id: preflights[item.id]?.id ?? "",
+              ...(drafts[item.id]?.code_action === "squash_merge" ? { commit_message: commitMessage(item.id) } : {}),
             })),
             continueWork,
           );
@@ -253,6 +260,8 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     },
     loaded,
     drafts,
+    commitMessage,
+    setCommitMessage: (id: string, message: string) => setCommitMessages(current => ({ ...current, [id]: message })),
     preflights,
     checks,
     ready,

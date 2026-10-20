@@ -16,6 +16,8 @@ pub struct FinishPlanItem {
     pub delete_worktree: bool,
     pub delete_branch: bool,
     pub preflight_id: String,
+    #[serde(default)]
+    pub commit_message: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

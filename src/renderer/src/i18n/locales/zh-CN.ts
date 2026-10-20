@@ -752,6 +752,30 @@ export const zhCN = {
     "daemonTitle": "amux 守护进程",
     "daemonStopped": "amux 守护进程已停止"
   },
+  rewordUi: {
+    "menu": "Edit Commit Message…",
+    "title": "编辑提交说明",
+    "description": "编辑当前分支的最新提交。文件内容、父提交和原作者保持不变，提交哈希会变化；已暂存和未暂存的改动不受影响。",
+    "message": "提交说明",
+    "save": "保存",
+    "saved": "提交说明已更新",
+    "continue": "继续并保存",
+    "warningTitle": "修改已被引用的提交？",
+    "warningDescription": "本地 Git 记录显示，其他分支或标签也引用了这个提交。如果已推送，发布这次修改可能需要强制推送，并影响协作者。此次仅修改当前分支，其他引用仍保留原提交。本次未联网检查远端状态。",
+    "deliveryTitle": "Squash 提交说明",
+    "deliveryHint": "交付前请确认每个仓库的提交说明。Treefold 会自动追加交付标记。",
+    "errors": {
+        "REWORD_STALE": "分支或 HEAD 已变化。请关闭弹窗，刷新历史后重试。",
+        "REWORD_BRANCH": "请先切换到一个本地分支，再编辑提交说明。",
+        "REWORD_OPERATION": "请先完成或中止当前的 Git 或 Treefold 操作。",
+        "REWORD_OWNERSHIP": "此仓库已关闭或正在交付。",
+        "REWORD_DELIVERY": "此提交被 Treefold 交付记录引用，暂不能在这里修改。Squash 交付时可预先编辑提交说明。",
+        "REWORD_REPLACE": "请先移除 Git 替换对象，再编辑提交说明。",
+        "REWORD_ENCODING": "无法以 UTF-8 读取此提交。",
+        "REWORD_MESSAGE": "请输入非空的提交说明，不要包含 Treefold-Squash 标记。",
+        "REWORD_CONFIRM": "提交引用已变化。请关闭并重新打开弹窗，确认最新提示。"
+    }
+},
   squashUi: {
     errors: {
       "SQUASH_STALE": "HEAD 已改变，请刷新历史并重新选择。",

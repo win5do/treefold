@@ -6,18 +6,34 @@ use super::{
 };
 use std::path::Path;
 
+pub(super) fn validate_message(message: &str) -> Result<()> {
+    if message.trim().is_empty()
+        || message.contains('\0')
+        || message
+            .lines()
+            .any(|line| line.trim_start().starts_with("Treefold-Squash:"))
+    {
+        return Err(AppError::api(
+            super::StatusCode::BAD_REQUEST,
+            "SQUASH_MESSAGE_INVALID",
+            "Enter a non-empty commit message without a Treefold-Squash marker",
+        ));
+    }
+    Ok(())
+}
+
 fn message(operation: &ParentOperation) -> String {
-    format!(
-        "Squash {}\n\nTreefold-Squash: {}",
-        operation.source_branch, operation.id
-    )
+    let title = operation
+        .commit_message
+        .clone()
+        .unwrap_or_else(|| format!("Squash {}", operation.source_branch));
+    format!("{}\n\nTreefold-Squash: {}", title.trim(), operation.id)
 }
 
 pub(super) fn continue_command(operation: &ParentOperation) -> String {
-    // IDs are application-generated hex, never shell input from a branch name.
     format!(
-        "git commit --allow-empty -m 'Squash delivery' -m 'Treefold-Squash: {}'",
-        operation.id
+        "git commit --allow-empty -m '{}'",
+        message(operation).replace('\'', "'\"'\"'")
     )
 }
 

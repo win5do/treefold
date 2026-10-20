@@ -58,6 +58,7 @@ impl From<DeliveryOperationRow> for DeliveryOperation {
 }
 #[derive(sqlx::FromRow)]
 struct ParentOperationRow {
+    commit_message: Option<String>,
     id: String,
     workspace_repository_id: String,
     workspace_id: String,
@@ -88,6 +89,7 @@ struct ParentOperationRow {
 impl From<ParentOperationRow> for ParentOperation {
     fn from(r: ParentOperationRow) -> Self {
         Self {
+            commit_message: r.commit_message,
             id: r.id,
             workspace_repository_id: r.workspace_repository_id,
             workspace_id: r.workspace_id,
@@ -163,7 +165,7 @@ impl TryFrom<PreflightRow> for DeliveryPreflight {
     }
 }
 const DELIVERY: &str = "workspace_repository_id,phase,code_action,todo_action,push_after_merge,keep_session_history,delete_worktree,delete_branch,commit_message,before_head,source_head,target_head,integrated_commit,error,started_at,updated_at";
-const PARENT: &str = "id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,error,started_at,updated_at,completed_at";
+const PARENT: &str = "commit_message,id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,error,started_at,updated_at,completed_at";
 impl Store {
     pub async fn set_delivery_status(&self, id: &str, status: &str) -> Result<()> {
         let id = self.resolve_workspace_repository_id(id).await?;
@@ -273,7 +275,7 @@ impl Store {
     }
 
     pub async fn create_parent_operation(&self, o: &ParentOperation) -> Result<()> {
-        sqlx::query("INSERT INTO parent_operations(id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&o.id).bind(&o.workspace_repository_id).bind(&o.workspace_id).bind(&o.direction).bind(&o.strategy).bind(&o.origin).bind(&o.source_repository_id).bind(&o.source_path).bind(&o.source_branch).bind(&o.target_scope).bind(&o.target_workspace_id).bind(&o.target_path).bind(&o.target_branch).bind(&o.source_head).bind(&o.parent_head).bind(&o.before_head).bind(&o.result_head).bind(&o.recovery_ref).bind(&o.status).bind(&o.phase).bind(&o.resolver_session_id).bind(&o.delivery_operation_id).bind(&o.error).bind(&o.started_at).bind(&o.updated_at).bind(&o.completed_at).execute(&self.pool).await?;
+        sqlx::query("INSERT INTO parent_operations(commit_message,id,workspace_repository_id,workspace_id,direction,strategy,origin,source_repository_id,source_path,source_branch,target_scope,target_workspace_id,target_path,target_branch,source_head,parent_head,before_head,result_head,recovery_ref,status,phase,resolver_session_id,delivery_operation_id,error,started_at,updated_at,completed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&o.commit_message).bind(&o.id).bind(&o.workspace_repository_id).bind(&o.workspace_id).bind(&o.direction).bind(&o.strategy).bind(&o.origin).bind(&o.source_repository_id).bind(&o.source_path).bind(&o.source_branch).bind(&o.target_scope).bind(&o.target_workspace_id).bind(&o.target_path).bind(&o.target_branch).bind(&o.source_head).bind(&o.parent_head).bind(&o.before_head).bind(&o.result_head).bind(&o.recovery_ref).bind(&o.status).bind(&o.phase).bind(&o.resolver_session_id).bind(&o.delivery_operation_id).bind(&o.error).bind(&o.started_at).bind(&o.updated_at).bind(&o.completed_at).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn update_parent_operation(&self, u: ParentOperationUpdate<'_>) -> Result<()> {

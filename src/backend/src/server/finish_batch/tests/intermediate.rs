@@ -327,6 +327,7 @@ async fn workspace_inherits_current_checkout_remote_pushes_repeatedly_and_reopen
             .await
             .unwrap();
             plan.push(FinishPlanItem {
+                commit_message: None,
                 repository_id: repository.id.clone(),
                 code_action: "push_branch".into(),
                 preflight_id: preflight.id,

@@ -414,6 +414,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delivery_message_migration_preserves_existing_operation() {
+        let data = tempfile::tempdir().unwrap();
+        let old_migrations = tempfile::tempdir().unwrap();
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g2/20261004013417_initial.sql"),
+            old_migrations.path().join("20261004013417_initial.sql"),
+        )
+        .unwrap();
+        let options = SqliteConnectOptions::new()
+            .filename(data.path().join(CURRENT_DATABASE_FILENAME))
+            .create_if_missing(true);
+        let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
+        sqlx::migrate::Migrator::new(old_migrations.path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        // Historical schema fixture intentionally predates commit_message.
+        sqlx::raw_sql("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','before','before');
+            INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,created_at,updated_at) VALUES('r','p','R','/repo','/repo/.git','before','before');
+            INSERT INTO workspaces(id,project_id,name,status,created_at,updated_at) VALUES('w','p','W','active','before','before');
+            INSERT INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,created_at,updated_at) VALUES('wr','w','r','R','/repo','ready','before','before');
+            INSERT INTO parent_operations(id,workspace_repository_id,workspace_id,direction,strategy,source_repository_id,source_path,source_branch,target_scope,target_path,target_branch,source_head,parent_head,before_head,recovery_ref,status,phase,started_at,updated_at)
+            VALUES('op','wr','w','integrate','squash','r','/worktree','feature','project','/repo','main','source','parent','before','refs/treefold/recovery/test','conflicted','conflicted','before','before');")
+            .execute(&mut connection).await.unwrap();
+        connection.close().await.unwrap();
+        let store = Store::open(data.path()).await.unwrap();
+        let operation = store.parent_operation("op").await.unwrap();
+        assert_eq!(operation.commit_message, None);
+        assert_eq!(operation.source_head, "source");
+        assert_eq!(operation.status, "conflicted");
+        store.pool.close().await;
+    }
+
+    #[tokio::test]
     async fn changing_an_executed_migration_is_rejected_by_checksum() {
         let directory = tempfile::tempdir().unwrap();
         let store = Store::open(directory.path()).await.unwrap();
