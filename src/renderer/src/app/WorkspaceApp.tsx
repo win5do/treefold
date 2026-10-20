@@ -348,7 +348,9 @@ function Workspace() {
     };
   }, [deletingWorktrees, params.projectId, queryClient]);
 
-  const { refresh, refreshing } = useWorkspaceRefresh();
+  const { refresh, refreshing } = useWorkspaceRefresh(
+    params.projectId ? projectDetail.data : projects.find(project => project.id === workspace?.project.id),
+  );
 
   useEffect(() => {
     if (!workspace) return;
@@ -529,10 +531,6 @@ function Workspace() {
       error: t(`sidebar.${action}Failed`),
       skipped: t(`sidebar.${action}Skipped`),
     };
-  }
-
-  async function resyncWorkspace(workspace: Workspace) {
-    await act(() => workspacesApi.resync(workspace.id));
   }
 
   async function openFinishWorkspace(stream: Workspace) {
@@ -1157,10 +1155,11 @@ function Workspace() {
             size="icon"
             variant="ghost"
             disabled={busy || refreshing}
+            aria-busy={refreshing}
             aria-label={t("workspace.refresh")}
-            onClick={() => void refresh()}
+            onClick={() => void refresh({ checkRepositories: true })}
           >
-            <RefreshCw data-icon="inline-start" />
+            <RefreshCw data-icon="inline-start" className={refreshing ? "animate-spin" : undefined} />
           </Button>
           {selectedProject && (
             <Button
@@ -1363,7 +1362,6 @@ function Workspace() {
                     )
                   }
                   onConfigureUpstream={setConfigureWorkspaceRepository}
-                  onResync={() => void resyncWorkspace(workspace)}
                   onTodosChanged={() => void refresh()}
                   onTodoForkCreated={(fork, session) =>
                     navigate(

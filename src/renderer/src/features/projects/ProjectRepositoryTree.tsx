@@ -424,7 +424,6 @@ export function ProjectRepositoryTreeRow({
   onOpenBranches,
   onEditRepository,
   onEditDirectory,
-  onRefresh,
   onMakeDefault,
   onReattach,
   onDeleteRepository,
@@ -440,7 +439,6 @@ export function ProjectRepositoryTreeRow({
   onOpenBranches: () => void;
   onEditRepository: () => void;
   onEditDirectory: (directory: Directory) => void;
-  onRefresh: () => void;
   onMakeDefault: (directory: Directory) => void;
   onReattach: () => void;
   onDeleteRepository: () => void;
@@ -535,17 +533,6 @@ export function ProjectRepositoryTreeRow({
           </button>
           {!readOnly && (
             <div className="flex shrink-0 gap-1">
-              <Button
-                data-testid={`project-location-refresh-${repository.id}`}
-                size="icon"
-                variant="ghost"
-                disabled={busy}
-                aria-label={t("projectsUi.refresh", { name: repository.name })}
-                title={t("projectsUi.refresh", { name: repository.name })}
-                onClick={onRefresh}
-              >
-                <RefreshCw data-icon="inline-start" />
-              </Button>
               <ActionMenu
                 label={t("projectsUi.actionsForRepository", { name: repository.name })}
                 testId={`project-location-actions-${repository.id}`}

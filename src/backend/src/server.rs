@@ -476,7 +476,6 @@ fn app(state: AppState) -> Router {
             "/api/workspaces/{id}/worktrees",
             get(workspace_status::get_worktrees),
         )
-        .route("/api/workspaces/{id}/resync", post(resync_workspace))
         .route(
             "/api/workspaces/{id}/agent-review",
             get(agent_review::context).post(agent_review::start),

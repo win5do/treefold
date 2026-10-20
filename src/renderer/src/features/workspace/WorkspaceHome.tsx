@@ -63,7 +63,6 @@ export function WorkspaceHome({
   onDeleteFork,
   onDeleteForkBlocked,
   onConfigureUpstream,
-  onResync,
   onTodosChanged,
   onTodoForkCreated,
 }: {
@@ -81,7 +80,6 @@ export function WorkspaceHome({
   onDeleteFork: (fork: Workspace) => void;
   onDeleteForkBlocked: (fork: Workspace) => void;
   onConfigureUpstream: (location: WorkspaceRepository) => void;
-  onResync: () => void;
   onTodosChanged: () => void;
   onTodoForkCreated: (fork: Workspace, session?: Session) => void;
 }) {
@@ -566,7 +564,6 @@ export function WorkspaceHome({
         <WorkspaceRepositories
           detail={detail}
           busy={busy}
-          onResync={onResync}
           onConfigureUpstream={onConfigureUpstream}
         />
         {detail.workspace_directories.some(

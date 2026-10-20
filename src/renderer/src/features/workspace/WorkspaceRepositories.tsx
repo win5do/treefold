@@ -15,11 +15,10 @@ import type { GitWorktree, WorkspaceDetail, WorkspaceDirectory, WorkspaceReposit
 import { formatRepositoryRelativePath } from "@/lib/repositoryPath";
 
 export function WorkspaceRepositories({
-  detail, busy, onResync, onConfigureUpstream,
+  detail, busy, onConfigureUpstream,
 }: {
   detail: WorkspaceDetail;
   busy: boolean;
-  onResync: () => void;
   onConfigureUpstream: (location: WorkspaceRepository) => void;
 }) {
   const { t } = useTranslation();
@@ -31,26 +30,9 @@ export function WorkspaceRepositories({
   });
   return (
     <section data-testid="workspace-repositories-section" className="mt-8">
-      <div className="flex items-start justify-between gap-4 pr-[calc(1rem+1px)]">
-        <div>
-          <h2 className="text-sm font-semibold">{t("workspaceUi.workspaceRepositories")}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.repositoryLifecycleDescription")}</p>
-        </div>
-        {detail.status === "active" && (
-          <ActionMenu
-            label={t("workspaceUi.actions")}
-            testId="workspace-repositories-actions"
-            disabled={busy}
-          >
-            <ActionMenuItem
-              icon={<RefreshCw className="size-3.5" />}
-              disabled={busy}
-              onClick={onResync}
-            >
-              {t("workspaceUi.resync")}
-            </ActionMenuItem>
-          </ActionMenu>
-        )}
+      <div>
+        <h2 className="text-sm font-semibold">{t("workspaceUi.workspaceRepositories")}</h2>
+        <p className="mt-1 text-xs text-muted-foreground">{t("workspaceUi.repositoryLifecycleDescription")}</p>
       </div>
       {worktrees.isLoading && (
         <p role="status" className="mt-3 text-xs text-muted-foreground">{t("workspaceUi.loadingWorktreeStatus")}</p>
@@ -171,6 +153,16 @@ function WorkspaceRepositoryRow({
               </div>
             </div>
           </div>
+          {(location.git_status === "missing" || location.git_status === "broken") && (
+            <Alert variant="destructive" className="mt-3">
+              <CircleAlert />
+              <AlertDescription>
+                {t(location.git_status === "missing"
+                  ? "workspaceUi.directoryMissingHint"
+                  : "workspaceUi.worktreeBrokenHint")}
+              </AlertDescription>
+            </Alert>
+          )}
           {location.creation_error && (
             <Alert
               role="alert"

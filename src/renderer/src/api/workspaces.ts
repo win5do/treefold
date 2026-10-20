@@ -63,8 +63,6 @@ export const workspacesApi = {
       method: "PATCH",
       json: { session_ids: sessionIds },
     }),
-  resync: (id: string) =>
-    request<WorkspaceDetail>(`/api/workspaces/${id}/resync`, { method: "POST" }),
   sync: (id: string, action: "pull" | "push") =>
     request<GitSyncItemResult[]>(`/api/workspaces/${id}/git/${action}-all`, {
       method: "POST",

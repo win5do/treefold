@@ -224,7 +224,7 @@ for (const owner of [
       await page.keyboard.press("Enter");
       await expect(menu).toHaveCount(0);
       await expect.poll(() => harness.syncRequests).toEqual([`/api/${owner.api}/${owner.repository}/git/push`]);
-      await expect(page.getByRole("status")).toContainText("Push succeeded");
+      await expect(page.getByRole("status", { name: "Push succeeded", exact: true })).toBeVisible();
 
       await page.goto(`${harness.baseUrl}/#/${owner.path}`);
       await expect(page.getByTestId("page-content")).toBeVisible();

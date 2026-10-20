@@ -130,7 +130,6 @@ export function ProjectHome({
                   onOpenBranches={() => onOpenBranches(repository)}
                   onEditRepository={() => onEditRepository(repository)}
                   onEditDirectory={onEditDirectory}
-                  onRefresh={() => scopes[0] && onRefreshLocation(scopes[0])}
                   onMakeDefault={onMakeDefault}
                   onReattach={() => scopes[0] && onReattach(scopes[0])}
                   onDeleteRepository={() => onDeleteRepository(repository)}

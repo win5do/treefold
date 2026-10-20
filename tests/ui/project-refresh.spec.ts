@@ -128,3 +128,86 @@ test("repositories load worktrees independently with loading and empty states in
     try { await closeUiSession(page); } finally { await harness.close(); }
   }
 });
+
+test("global refresh checks repositories independently without blocking page actions", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const checked: string[] = [];
+  let secondaryFinished = false;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "independent-refresh" });
+    await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+    await expect(page.getByTestId("project-worktree-row").first()).toBeVisible();
+    await page.route(url => url.pathname === `/api/projects/${FIXTURE_IDS.project}`, async route => {
+      const response = await route.fetch();
+      const data = await response.json();
+      if (secondaryFinished) {
+        data.repositories.find((repository: { id: string }) => repository.id === FIXTURE_IDS.secondaryRepository).name = "Refreshed repository";
+      }
+      await route.fulfill({ response, json: data });
+    });
+    await page.route("**/api/project-repositories/*/refresh", async route => {
+      const id = route.request().url().split("/").at(-2)!;
+      checked.push(id);
+      if (id === FIXTURE_IDS.primaryRepository) {
+        await route.fulfill({ status: 503, json: { error: { code: "UNAVAILABLE", message: "Primary repository check failed" } } });
+      } else {
+        await gate;
+        secondaryFinished = true;
+        await route.continue();
+      }
+    });
+    harness.archiveAllStreams();
+    const refresh = page.getByRole("button", { name: "Refresh Workspace", exact: true });
+    await refresh.click();
+    await expect.poll(() => checked.sort()).toEqual([FIXTURE_IDS.primaryRepository, FIXTURE_IDS.secondaryRepository].sort());
+    await expect(page.getByText("Primary repository check failed", { exact: true })).toBeVisible();
+    await expect(page.getByTestId(`workspace-list-row-${FIXTURE_IDS.workspace}`).getByText("archived", { exact: true })).toBeVisible();
+    await expect(refresh).toBeDisabled();
+    await expect(page.getByTestId("project-add-location")).toBeEnabled();
+    await expect(page.getByRole("button", { name: "New Workspace", exact: true }).last()).toBeEnabled();
+    await expect(page.getByTestId("project-worktree-row").first()).toBeVisible();
+    release();
+    await expect(page.getByTestId(`project-location-${FIXTURE_IDS.secondaryRepository}`)).toContainText("Refreshed repository");
+    await expect(refresh).toBeEnabled();
+    harness.assertNoUnexpectedRequests();
+  } catch (error) {
+    await page?.screenshot({ path: "/tmp/treefold-independent-refresh-failure.png" }).catch(() => {});
+    throw error;
+  } finally {
+    release();
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});
+
+test("global refresh keeps archived Projects observational", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  let checks = 0;
+  let reads = 0;
+  try {
+    harness.setProjectStatus(FIXTURE_IDS.project, "archived");
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "archived-refresh" });
+    await page.route("**/api/project-repositories/*/refresh", async route => {
+      checks++;
+      await route.continue();
+    });
+    await page.route(url => url.pathname === `/api/projects/${FIXTURE_IDS.project}`, async route => {
+      reads++;
+      await route.continue();
+    });
+    await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+    await expect(page.getByTestId(`project-location-${FIXTURE_IDS.primaryRepository}`)).toBeVisible();
+    const before = reads;
+    const refresh = page.getByRole("button", { name: "Refresh Workspace", exact: true });
+    await refresh.click();
+    await expect.poll(() => reads).toBeGreaterThan(before);
+    await expect(refresh).toBeEnabled();
+    expect(checks).toBe(0);
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});
