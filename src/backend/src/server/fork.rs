@@ -185,10 +185,7 @@ pub(super) async fn prepare_fork(
     }
     let fork_id = new_id();
     let project_directories = state.store.project_directories(&project.id).await?;
-    let mut project_repositorys = Vec::new();
-    for repository in state.store.repositories(&project.id).await? {
-        project_repositorys.push(state.store.repository_as_directory(&repository.id).await?);
-    }
+    let project_repositorys = state.store.repositories(&project.id).await?;
     let explicit_branch = trimmed(input.branch).filter(|value| !value.is_empty());
     let (branch, worktree_root) = super::worktree_names::reserve_shared_worktree(
         &state.settings,
@@ -216,7 +213,7 @@ pub(super) async fn prepare_fork(
     for (parent_location, parent_head) in parent_locations.iter().zip(parent_heads) {
         let project_repository = state
             .store
-            .repository_as_directory(&parent_location.project_repository_id)
+            .repository(&parent_location.project_repository_id)
             .await?;
         let checkout_path = worktree_root
             .path()

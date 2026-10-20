@@ -127,3 +127,32 @@ pub struct ProjectDetail {
     pub workspaces: Vec<Workspace>,
     pub worktrees: Vec<GitWorktree>,
 }
+
+// Preserve the existing Directory-shaped HTTP responses for repository actions.
+impl From<ProjectRepository> for Directory {
+    fn from(r: ProjectRepository) -> Self {
+        Self {
+            id: r.id,
+            project_id: r.project_id,
+            name: r.name,
+            description: String::new(),
+            worktree_setup_command: r.setup_command,
+            path: r.source_root.clone(),
+            repository_url: r.repository_url.clone(),
+            preferred_remote_name: r.preferred_remote_name,
+            git_common_dir: Some(r.git_common_dir),
+            git_status: r.git_status,
+            last_checked_at: r.last_checked_at,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            checkout_path: Some(r.source_root),
+            role: "repository".into(),
+            is_git: true,
+            remote_url: r.repository_url,
+            branch: None,
+            head_commit: None,
+            head_summary: None,
+            dirty: false,
+        }
+    }
+}

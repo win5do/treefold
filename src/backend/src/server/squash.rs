@@ -2,7 +2,7 @@
 //! publish the replacement plus recovery refs; never reset the index/worktree.
 use super::{
     ApiJson, AppError, AppState, AxumPath, Json, Result, State, StatusCode,
-    blocking_git_operation_for, ensure_location_ready, git_head, git_history, git_is_ancestor,
+    blocking_git_operation_for, ensure_repository_ready, git_head, git_history, git_is_ancestor,
     git_operation_in_progress, new_id, normalized_path, workspace_repository_delivery_target,
     workspace_repository_git_path,
 };
@@ -99,16 +99,13 @@ async fn run(
     } else {
         id.clone()
     };
-    let repository = state.store.repository_as_directory(&repository_id).await?;
-    ensure_location_ready(&repository)?;
-    let common = repository
-        .git_common_dir
-        .clone()
-        .ok_or_else(|| blocked("Repository has no common directory"))?;
+    let repository = state.store.repository(&repository_id).await?;
+    ensure_repository_ready(&repository)?;
+    let common = repository.git_common_dir.clone();
     blocking_git_operation_for(common, move || async move {
         // Resolve ownership again inside the same mutation lock as Finish.
         let mut location = if managed { Some(state.store.workspace_repository(&id).await?) } else { None };
-        let mut path = if let Some(location) = &location { workspace_repository_git_path(location)?.to_owned() } else { repository.path.clone() };
+        let mut path = if let Some(location) = &location { workspace_repository_git_path(location)?.to_owned() } else { repository.source_root.clone() };
         if location.is_none() {
             location = state.store.workspace_repositories_for_project_repository(&repository_id).await?
                 .into_iter().find(|item| item.branch_ownership == "managed" && item.checkout_path.as_deref().is_some_and(|p| normalized_path(p) == normalized_path(&path)));

@@ -1112,7 +1112,7 @@ async fn project_sync_uses_current_branch_upstream_instead_of_default_names() {
     let location = f
         .state
         .store
-        .repository_as_directory(&f.repositories[0].project_repository_id)
+        .repository(&f.repositories[0].project_repository_id)
         .await
         .unwrap();
     let result = crate::server::sync_project_repository(&location, "push")

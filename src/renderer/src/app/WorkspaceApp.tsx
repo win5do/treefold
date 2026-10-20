@@ -6,7 +6,7 @@ import { useProjectOpening } from "@/features/projects/useProjectOpening";
 import { useNewSession } from "@/features/terminal/useNewSession";
 import { useAgentReview } from "@/features/agent-review/useAgentReview";
 import { isAgentKind } from "@/features/agents/model";
-import type { AgentKind } from "@/domain/types";
+import { useSessionCreation } from "@/features/terminal/useSessionCreation";
 import { useWorkspaceRefresh } from "@/features/app/useWorkspaceRefresh";
 import { refreshGitQueries } from "@/features/git/queries";
 import { invalidateHierarchyQueries } from "@/features/app/runtimeInvalidation";
@@ -568,133 +568,10 @@ function Workspace() {
     }
   }
 
-  async function createShell(
-    stream: WorkspaceDetail | Workspace,
-    directory?: Directory,
-  ) {
-    setSessionMenu(null);
-    setBusy(true);
-    try {
-      const created = await workspacesApi.createSession(stream.id, {
-        kind: "shell",
-        project_directory_id: directory?.id,
-      });
-      queryClient.setQueryData<Session[]>(
-        workspaceKeys.sessions(stream.id),
-        (current = []) => upsertSession(current, created),
-      );
-      queryClient.setQueryData<ProjectDetail[]>(
-        projectKeys.sidebar,
-        (current = []) =>
-          updateProjectWorkspaceSessions(
-            current,
-            stream.id,
-            upsertSession(
-              (
-                current
-                  .flatMap((project) => project.workspaces)
-                  .find((item) => item.id === stream.id) as
-                  SidebarStream | undefined
-              )?.sessions ?? [],
-              created,
-            ),
-          ),
-      );
-      navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
-    } catch (cause) {
-      toast.errorFrom(cause, t("appFeedback.couldNotCreateShell"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createAgent(
-    stream: WorkspaceDetail | Workspace,
-    directory?: Directory,
-    kind?: AgentKind,
-  ) {
-    setSessionMenu(null);
-    setBusy(true);
-    try {
-      const created = await workspacesApi.createSession(stream.id, {
-        kind,
-        project_directory_id: directory?.id,
-      });
-      queryClient.setQueryData<Session[]>(
-        workspaceKeys.sessions(stream.id),
-        (current = []) => upsertSession(current, created),
-      );
-      queryClient.setQueryData<ProjectDetail[]>(
-        projectKeys.sidebar,
-        (current = []) =>
-          updateProjectWorkspaceSessions(
-            current,
-            stream.id,
-            upsertSession(
-              (
-                current
-                  .flatMap((project) => project.workspaces)
-                  .find((item) => item.id === stream.id) as
-                  SidebarStream | undefined
-              )?.sessions ?? [],
-              created,
-            ),
-          ),
-      );
-      navigate(`/workspaces/${stream.id}/sessions/${created.id}`);
-    } catch (cause) {
-      toast.errorFrom(cause, t("agentsUi.createFailed"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createProjectShell(
-    project: ProjectDetail,
-    directory?: Directory,
-  ) {
-    setSessionMenu(null);
-    setBusy(true);
-    try {
-      const created = await projectsApi.createSession(project.id, {
-        kind: "shell",
-        project_directory_id: directory?.id,
-      });
-      queryClient.setQueryData<Session[]>(
-        projectKeys.sessions(project.id),
-        (current = []) => upsertSession(current, created),
-      );
-      navigate(`/projects/${project.id}/sessions/${created.id}`);
-    } catch (cause) {
-      toast.errorFrom(cause, t("appFeedback.couldNotCreateShell"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createProjectAgent(
-    project: ProjectDetail,
-    directory?: Directory,
-    kind?: AgentKind,
-  ) {
-    setSessionMenu(null);
-    setBusy(true);
-    try {
-      const created = await projectsApi.createSession(project.id, {
-        kind,
-        project_directory_id: directory?.id,
-      });
-      queryClient.setQueryData<Session[]>(
-        projectKeys.sessions(project.id),
-        (current = []) => upsertSession(current, created),
-      );
-      navigate(`/projects/${project.id}/sessions/${created.id}`);
-    } catch (cause) {
-      toast.errorFrom(cause, t("agentsUi.createFailed"));
-    } finally {
-      setBusy(false);
-    }
-  }
+  const sessionCreation = useSessionCreation({
+    onStart: () => { setSessionMenu(null); setBusy(true); },
+    onFinish: () => setBusy(false),
+  });
 
   async function rename(
     target: RenameTarget,
@@ -1025,8 +902,8 @@ function Workspace() {
           else if (selectedProject) void closeProjectSession(selectedProject, selectedSession);
         },
         create: (kind, directory) => {
-          if (workspace) void (kind === "shell" ? createShell(workspace, directory) : createAgent(workspace, directory, kind));
-          else if (selectedProject) void (kind === "shell" ? createProjectShell(selectedProject, directory) : createProjectAgent(selectedProject, directory, kind));
+          if (workspace) void sessionCreation.create({ scope: "workspace", id: workspace.id }, kind, directory.id);
+          else if (selectedProject) void sessionCreation.create({ scope: "project", id: selectedProject.id }, kind, directory.id);
         },
       },
     },
@@ -1217,15 +1094,11 @@ function Workspace() {
           onCreateFork={setCreateForkWorkspace}
           onCreateSession={(stream) => newSession.open({
             name: stream.name, directories: stream.directories ?? [],
-            create: (kind, directory) => kind === "shell"
-              ? void createShell(stream, directory)
-              : void createAgent(stream, directory, kind),
+            create: (kind, directory) => void sessionCreation.create({ scope: "workspace", id: stream.id }, kind, directory?.id),
           })}
           onCreateBaseSession={(project) => newSession.open({
             name: project.name, directories: project.directories,
-            create: (kind, directory) => kind === "shell"
-              ? void createProjectShell(project, directory)
-              : void createProjectAgent(project, directory, kind),
+            create: (kind, directory) => void sessionCreation.create({ scope: "project", id: project.id }, kind, directory?.id),
           })}
           onSyncProject={(project, action) =>
             void gitSync("projects", project.id, action)
@@ -1345,7 +1218,7 @@ function Workspace() {
                   detail={workspace}
                   creation={{
                     available: selectedProject?.status === "active" && workspace.status === "active",
-                    session: (kind, directory) => void (kind === "shell" ? createShell(workspace, directory) : createAgent(workspace, directory, kind)),
+                    session: (kind, directory) => void sessionCreation.create({ scope: "workspace", id: workspace.id }, kind, directory.id),
                     fork: () => setCreateForkWorkspace(workspace),
                     forkFromParent: setCreateForkWorkspace,
                     workspaceFromProject: setCreateWorkspaceProject,
@@ -1657,7 +1530,7 @@ function Workspace() {
             (item) => item.repository_id === location?.project_repository_id,
           );
           setFinishWorkspaceDialog(null);
-          void createShell(owner, directory);
+          void sessionCreation.create({ scope: "workspace", id: owner.id }, "shell", directory?.id);
         }}
         onReviewChanges={(locationId) => {
           if (!finishWorkspaceDialog) return;

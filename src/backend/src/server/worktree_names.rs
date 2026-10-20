@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{error::Result, model::Directory, settings::SettingsStore};
+use crate::{error::Result, model::ProjectRepository, settings::SettingsStore};
 
 use super::git_routes::choose_shared_branch;
 
@@ -41,7 +41,7 @@ fn random_name() -> String {
 
 pub(super) fn reserve_shared_worktree(
     settings: &SettingsStore,
-    locations: &[Directory],
+    locations: &[ProjectRepository],
     explicit: Option<&str>,
     generated: Option<&str>,
     reuse_existing: bool,

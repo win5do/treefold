@@ -701,6 +701,7 @@ mod agent_review;
 mod project_creation;
 mod project_open;
 mod project_status;
+mod repository_observation;
 mod session;
 mod session_creation;
 mod squash;

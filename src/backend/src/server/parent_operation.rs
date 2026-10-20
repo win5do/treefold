@@ -15,7 +15,7 @@ pub(super) struct StartParentOperation {
 pub(super) struct ParentOperationContext {
     workspace: Workspace,
     location: WorkspaceRepository,
-    repository: Directory,
+    repository: ProjectRepository,
     source_path: String,
     source_branch: String,
     source_head: String,
@@ -268,7 +268,7 @@ pub(super) async fn parent_operation_context(
     }
     let repository = state
         .store
-        .repository_as_directory(&location.project_repository_id)
+        .repository(&location.project_repository_id)
         .await?;
     let source_path = workspace_repository_git_path(&location)?.to_owned();
     let source_branch = location
@@ -473,7 +473,7 @@ pub(super) async fn start_parent_operation_impl(
     };
     let recovery_ref = format!("refs/treefold/recovery/parent-{operation_id}");
     command_output(
-        Path::new(&context.repository.path),
+        Path::new(&context.repository.source_root),
         "git",
         &["update-ref", &recovery_ref, &before_head],
     )
@@ -510,7 +510,7 @@ pub(super) async fn start_parent_operation_impl(
         completed_at: None,
     };
     if let Err(error) = state.store.create_parent_operation(&operation).await {
-        let _ = delete_recovery_ref(&context.repository.path, &operation.recovery_ref);
+        let _ = delete_recovery_ref(&context.repository.source_root, &operation.recovery_ref);
         return Err(error);
     }
     execute_parent_operation(state, &operation).await
@@ -571,9 +571,9 @@ pub(super) async fn execute_parent_operation(
                 delete_recovery_ref(
                     &state
                         .store
-                        .repository_as_directory(&operation.source_repository_id)
+                        .repository(&operation.source_repository_id)
                         .await?
-                        .path,
+                        .source_root,
                     &operation.recovery_ref,
                 )?;
                 state
@@ -850,9 +850,9 @@ pub(super) async fn abort_parent_operation_impl(
     delete_recovery_ref(
         &state
             .store
-            .repository_as_directory(&operation.source_repository_id)
+            .repository(&operation.source_repository_id)
             .await?
-            .path,
+            .source_root,
         &operation.recovery_ref,
     )?;
     state
@@ -876,9 +876,9 @@ pub(super) async fn release_parent_operation_recovery(
     delete_recovery_ref(
         &state
             .store
-            .repository_as_directory(&operation.source_repository_id)
+            .repository(&operation.source_repository_id)
             .await?
-            .path,
+            .source_root,
         &operation.recovery_ref,
     )?;
     Ok(())

@@ -5,11 +5,11 @@ pub(super) async fn get_project_repository_git_history(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitHistory>> {
-    let mut location = state.store.repository_as_directory(&id).await?;
+    let mut location = state.store.repository(&id).await?;
     blocking_git_operation(move || async move {
-        refresh_location_observation(&mut location)?;
-        ensure_location_ready(&location)?;
-        Ok(Json(git_history(&location.path)?))
+        super::repository_observation::refresh(&mut location)?;
+        ensure_repository_ready(&location)?;
+        Ok(Json(git_history(&location.source_root)?))
     })
     .await
 }
@@ -33,12 +33,12 @@ pub(super) async fn compare_project_repository_commits(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffComparisonInput>,
 ) -> Result<Json<GitDiffComparison>> {
-    let mut location = state.store.repository_as_directory(&id).await?;
+    let mut location = state.store.repository(&id).await?;
     blocking_git_operation(move || async move {
-        refresh_location_observation(&mut location)?;
-        ensure_location_ready(&location)?;
+        super::repository_observation::refresh(&mut location)?;
+        ensure_repository_ready(&location)?;
         Ok(Json(compare_git_commits(
-            &location.path,
+            &location.source_root,
             &location.name,
             &input,
             MAX_DIFF_PATCH_BYTES,
@@ -69,11 +69,11 @@ pub(super) async fn get_project_repository_git_status(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitStatus>> {
-    let mut location = state.store.repository_as_directory(&id).await?;
+    let mut location = state.store.repository(&id).await?;
     blocking_git_operation(move || async move {
-        refresh_location_observation(&mut location)?;
-        ensure_location_ready(&location)?;
-        Ok(Json(git_status(&location.path)?))
+        super::repository_observation::refresh(&mut location)?;
+        ensure_repository_ready(&location)?;
+        Ok(Json(git_status(&location.source_root)?))
     })
     .await
 }
@@ -94,11 +94,15 @@ pub(super) async fn project_repository_git_diff(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitDiffRequest>,
 ) -> Result<Json<GitDiffComparison>> {
-    let mut location = state.store.repository_as_directory(&id).await?;
+    let mut location = state.store.repository(&id).await?;
     blocking_git_operation(move || async move {
-        refresh_location_observation(&mut location)?;
-        ensure_location_ready(&location)?;
-        Ok(Json(git_diff(&location.path, &location.name, &input)?))
+        super::repository_observation::refresh(&mut location)?;
+        ensure_repository_ready(&location)?;
+        Ok(Json(git_diff(
+            &location.source_root,
+            &location.name,
+            &input,
+        )?))
     })
     .await
 }
@@ -153,14 +157,11 @@ pub(super) async fn project_repository_commit(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<GitCommitInput>,
 ) -> Result<Json<GitCommitResult>> {
-    let mut location = state.store.repository_as_directory(&id).await?;
-    refresh_location_observation(&mut location)?;
-    ensure_location_ready(&location)?;
-    let path = location.path.clone();
-    let common = location
-        .git_common_dir
-        .clone()
-        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    let mut location = state.store.repository(&id).await?;
+    super::repository_observation::refresh(&mut location)?;
+    ensure_repository_ready(&location)?;
+    let path = location.source_root.clone();
+    let common = location.git_common_dir.clone();
     blocking_git_operation_for(
         common,
         move || async move { commit_repository(&path, input) },
@@ -230,14 +231,11 @@ async fn mutate_project_history(
     commit: String,
     action: GitHistoryAction,
 ) -> Result<Json<GitHistory>> {
-    let mut location = state.store.repository_as_directory(&id).await?;
-    refresh_location_observation(&mut location)?;
-    ensure_location_ready(&location)?;
-    let path = location.path.clone();
-    let common = location
-        .git_common_dir
-        .clone()
-        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    let mut location = state.store.repository(&id).await?;
+    super::repository_observation::refresh(&mut location)?;
+    ensure_repository_ready(&location)?;
+    let path = location.source_root.clone();
+    let common = location.git_common_dir.clone();
     blocking_git_operation_for(common, move || async move {
         mutate_git_history(&path, &commit, action)?;
         Ok(Json(git_history(&path)?))
@@ -306,14 +304,11 @@ async fn mutate_project_paths(
     input: GitPathsInput,
     stage: bool,
 ) -> Result<Json<GitStatus>> {
-    let mut location = state.store.repository_as_directory(&id).await?;
-    refresh_location_observation(&mut location)?;
-    ensure_location_ready(&location)?;
-    let path = location.path.clone();
-    let common = location
-        .git_common_dir
-        .clone()
-        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    let mut location = state.store.repository(&id).await?;
+    super::repository_observation::refresh(&mut location)?;
+    ensure_repository_ready(&location)?;
+    let path = location.source_root.clone();
+    let common = location.git_common_dir.clone();
     blocking_git_operation_for(common, move || async move {
         mutate_paths(&path, &input.paths, stage)?;
         Ok(Json(git_status(&path)?))
@@ -660,13 +655,10 @@ pub(super) async fn pull_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.repository_as_directory(&id).await?;
+    let location = state.store.repository(&id).await?;
     let project = state.store.project(&location.project_id).await?;
     ensure_active_project(&project)?;
-    let common = location
-        .git_common_dir
-        .clone()
-        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    let common = location.git_common_dir.clone();
     git::with_repository_lock(Path::new(&common), || async {
         Ok(Json(sync_project_repository(&location, "pull").await?))
     })
@@ -677,13 +669,10 @@ pub(super) async fn push_project_repository(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitSyncResult>> {
-    let location = state.store.repository_as_directory(&id).await?;
+    let location = state.store.repository(&id).await?;
     let project = state.store.project(&location.project_id).await?;
     ensure_active_project(&project)?;
-    let common = location
-        .git_common_dir
-        .clone()
-        .ok_or_else(|| AppError::BadRequest("Repository has no Git common directory".into()))?;
+    let common = location.git_common_dir.clone();
     git::with_repository_lock(Path::new(&common), || async {
         Ok(Json(sync_project_repository(&location, "push").await?))
     })
@@ -744,8 +733,7 @@ pub(super) async fn sync_all_project_repositories(
     let project = state.store.project(project_id).await?;
     ensure_active_project(&project)?;
     let mut results = Vec::new();
-    for repository in state.store.repositories(project_id).await? {
-        let location = state.store.repository_as_directory(&repository.id).await?;
+    for location in state.store.repositories(project_id).await? {
         if location.git_status == "not_git" {
             results.push(GitSyncItemResult {
                 project_repository_id: location.id,
@@ -843,9 +831,9 @@ pub(super) async fn sync_all_workspace_repositories(
     Ok(Json(results))
 }
 
-pub(super) fn ensure_location_ready(location: &Directory) -> Result<()> {
+pub(super) fn ensure_repository_ready(location: &ProjectRepository) -> Result<()> {
     let mut observed = location.clone();
-    refresh_location_observation(&mut observed)?;
+    super::repository_observation::refresh(&mut observed)?;
     if observed.git_status != "ready" {
         return Err(AppError::BadRequest(format!(
             "location unavailable: {}",
@@ -874,13 +862,13 @@ pub(super) fn current_project_branch(path: &str) -> Result<String> {
 }
 
 pub(super) async fn sync_project_repository(
-    location: &Directory,
+    location: &ProjectRepository,
     action: &str,
 ) -> Result<GitSyncResult> {
-    ensure_location_ready(location)?;
-    let branch = current_project_branch(&location.path)?;
+    ensure_repository_ready(location)?;
+    let branch = current_project_branch(&location.source_root)?;
     let upstream = command_output(
-        Path::new(&location.path),
+        Path::new(&location.source_root),
         "git",
         &[
             "for-each-ref",
@@ -902,22 +890,26 @@ pub(super) async fn sync_project_repository(
                 "Branch '{branch}' has no upstream; configure its upstream before {action}"
             ))
         })?;
-    let before_head = command_output(Path::new(&location.path), "git", &["rev-parse", &branch])
-        .map_err(AppError::BadRequest)?;
+    let before_head = command_output(
+        Path::new(&location.source_root),
+        "git",
+        &["rev-parse", &branch],
+    )
+    .map_err(AppError::BadRequest)?;
     if action == "pull" {
-        ensure_clean_workspace(&location.path, "Project location")?;
-        ensure_checked_out_branch(&location.path, &branch, "Project location")?;
-        fetch_remote_branch_async(&location.path, remote, remote_branch).await?;
-        ensure_checked_out_branch(&location.path, &branch, "Project location")?;
+        ensure_clean_workspace(&location.source_root, "Project location")?;
+        ensure_checked_out_branch(&location.source_root, &branch, "Project location")?;
+        fetch_remote_branch_async(&location.source_root, remote, remote_branch).await?;
+        ensure_checked_out_branch(&location.source_root, &branch, "Project location")?;
         git::output_async(
-            Path::new(&location.path),
+            Path::new(&location.source_root),
             &["merge", "--ff-only", "FETCH_HEAD"],
         )
         .await
         .map_err(AppError::BadRequest)?;
     } else {
         git::output_async(
-            Path::new(&location.path),
+            Path::new(&location.source_root),
             &[
                 "push",
                 remote,
@@ -927,8 +919,12 @@ pub(super) async fn sync_project_repository(
         .await
         .map_err(AppError::BadRequest)?;
     }
-    let after_head = command_output(Path::new(&location.path), "git", &["rev-parse", &branch])
-        .map_err(AppError::BadRequest)?;
+    let after_head = command_output(
+        Path::new(&location.source_root),
+        "git",
+        &["rev-parse", &branch],
+    )
+    .map_err(AppError::BadRequest)?;
     Ok(sync_result(
         "project_repository",
         action,
@@ -1296,65 +1292,25 @@ pub(super) fn inspect_path(value: &str) -> Result<(String, bool)> {
 }
 
 pub(super) fn refresh_location_observation(location: &mut Directory) -> Result<()> {
-    location.last_checked_at = Some(now());
-    let path = Path::new(&location.path);
-    if !path.exists() {
-        location.git_status = "missing".into();
-        return Ok(());
-    }
-    if !path.is_dir() {
-        location.git_status = "broken".into();
-        return Ok(());
-    }
-    let inside = command_output(path, "git", &["rev-parse", "--is-inside-work-tree"]).is_ok();
-    if !inside {
-        location.git_status = if location.git_common_dir.is_some() {
-            "broken"
-        } else {
-            "not_git"
-        }
-        .into();
-        location.is_git = false;
-        return Ok(());
-    }
-    let common_dir = command_output(
-        path,
-        "git",
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )
-    .map_err(AppError::BadRequest)?;
-    let source_root = command_output(path, "git", &["rev-parse", "--show-toplevel"])
-        .map_err(AppError::BadRequest)?;
-    let remote_names = git_remote_names(&location.path)?;
-    let remote = location
-        .preferred_remote_name
-        .clone()
-        .filter(|name| remote_names.contains(name))
-        .or_else(|| {
-            remote_names
-                .iter()
-                .find(|name| name.as_str() == "origin")
-                .cloned()
-        })
-        .or_else(|| remote_names.first().cloned());
-    let repository_url = remote
-        .as_ref()
-        .and_then(|name| command_output(path, "git", &["remote", "get-url", name]).ok());
-    if let (Some(expected), Some(observed)) = (
+    let observation = super::repository_observation::observe(
+        &location.path,
+        location.git_common_dir.is_some(),
         location.repository_url.as_deref(),
-        repository_url.as_deref(),
-    ) && !repository_identity_matches(path, expected, observed)
-    {
-        location.git_status = "mismatch".into();
-        return Ok(());
+        location.preferred_remote_name.as_deref(),
+    )?;
+    location.last_checked_at = Some(observation.checked_at);
+    location.git_status = observation.status.into();
+    if observation.not_git {
+        location.is_git = false;
     }
-    location.git_common_dir = Some(common_dir);
-    location.checkout_path = Some(source_root);
-    location.preferred_remote_name = remote;
-    location.repository_url = repository_url.or_else(|| location.repository_url.clone());
-    location.git_status = "ready".into();
-    location.is_git = true;
-    location.remote_url = location.repository_url.clone();
+    if let Some(git) = observation.git {
+        location.git_common_dir = Some(git.common_dir);
+        location.checkout_path = Some(git.root);
+        location.preferred_remote_name = git.remote;
+        location.repository_url = git.url.or_else(|| location.repository_url.clone());
+        location.remote_url = location.repository_url.clone();
+        location.is_git = true;
+    }
     Ok(())
 }
 
@@ -1463,14 +1419,13 @@ pub(super) fn normalized_path(value: &str) -> PathBuf {
     normalized
 }
 
-pub(super) fn ensure_git_directory(directory: &Directory) -> Result<()> {
-    if !directory.is_git
-        || command_output(
-            Path::new(&directory.path),
-            "git",
-            &["rev-parse", "--is-inside-work-tree"],
-        )
-        .is_err()
+pub(super) fn ensure_git_repository(path: &str) -> Result<()> {
+    if command_output(
+        Path::new(path),
+        "git",
+        &["rev-parse", "--is-inside-work-tree"],
+    )
+    .is_err()
     {
         return Err(AppError::BadRequest(
             "directory is not a Git repository".into(),
@@ -1807,18 +1762,18 @@ pub(super) fn parse_git_worktrees(output: &str) -> Vec<ParsedGitWorktree> {
 }
 
 pub(super) fn project_worktrees(
-    directories: &[Directory],
+    directories: &[ProjectRepository],
     workspaces: &[Workspace],
     workspace_repositories: &[WorkspaceRepository],
     squash_operations: &[ParentOperation],
 ) -> Vec<GitWorktree> {
     let mut seen = HashSet::new();
     let mut result = Vec::new();
-    for directory in directories.iter().filter(|item| item.is_git) {
-        let Ok(items) = git_worktrees(&directory.path) else {
+    for directory in directories.iter() {
+        let Ok(items) = git_worktrees(&directory.source_root) else {
             continue;
         };
-        let target = super::worktree_status::comparison_target(&directory.path);
+        let target = super::worktree_status::comparison_target(&directory.source_root);
         for item in items {
             let path = normalized_path(&item.path);
             if !seen.insert(path.clone()) {
@@ -1837,7 +1792,7 @@ pub(super) fn project_worktrees(
                     }) || normalized_path(&stream.checkout_path) == path)
             });
             let mut status = super::worktree_status::inspect_worktree_status(
-                &directory.path,
+                &directory.source_root,
                 &item,
                 target.as_ref(),
                 squash_operations,
@@ -1845,7 +1800,7 @@ pub(super) fn project_worktrees(
             status.cleanup_candidate &= workspace.is_none()
                 && !directories
                     .iter()
-                    .any(|candidate| normalized_path(&candidate.path) == path);
+                    .any(|candidate| normalized_path(&candidate.source_root) == path);
             result.push(GitWorktree {
                 project_repository_id: directory.id.clone(),
                 repository_name: directory.name.clone(),
@@ -1856,7 +1811,7 @@ pub(super) fn project_worktrees(
                 is_main: item.is_main
                     || directories
                         .iter()
-                        .any(|candidate| normalized_path(&candidate.path) == path),
+                        .any(|candidate| normalized_path(&candidate.source_root) == path),
                 workspace_id: workspace.map(|stream| stream.id.clone()),
                 workspace_name: workspace.map(|stream| stream.name.clone()),
             });
@@ -1945,7 +1900,7 @@ pub(super) fn repository_slug(value: &str) -> String {
 }
 
 pub(super) fn choose_shared_branch(
-    locations: &[Directory],
+    locations: &[ProjectRepository],
     explicit: Option<&str>,
     generated: Option<&str>,
     reuse_existing: bool,
@@ -1962,19 +1917,16 @@ pub(super) fn choose_shared_branch(
                     &random[..4]
                 )
             });
-        let repositories = locations
-            .iter()
-            .filter(|location| location.git_status == "ready" || location.git_common_dir.is_some())
-            .collect::<Vec<_>>();
+        let repositories = locations.iter().collect::<Vec<_>>();
         let checks = crate::git_parallel::map(&repositories, |location| -> Result<bool> {
             command_output(
-                Path::new(&location.path),
+                Path::new(&location.source_root),
                 "git",
                 &["check-ref-format", "--branch", &candidate],
             )
             .map_err(|_| AppError::BadRequest("invalid Workspace branch name".into()))?;
             if command_output(
-                Path::new(&location.path),
+                Path::new(&location.source_root),
                 "git",
                 &[
                     "show-ref",
@@ -1986,7 +1938,7 @@ pub(super) fn choose_shared_branch(
             .is_ok()
             {
                 if reuse_existing && explicit.is_some() {
-                    if let Some(worktree) = git_worktrees(&location.path)?
+                    if let Some(worktree) = git_worktrees(&location.source_root)?
                         .into_iter()
                         .find(|worktree| worktree.branch == candidate)
                     {
@@ -2025,7 +1977,7 @@ pub(super) fn choose_shared_branch(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn git_workspace_repository(
     workspace_id: &str,
-    location: &Directory,
+    location: &ProjectRepository,
     timestamp: &str,
     checkout_path: String,
     branch: String,
@@ -2040,7 +1992,7 @@ pub(super) fn git_workspace_repository(
         workspace_id: workspace_id.into(),
         project_repository_id: location.id.clone(),
         repository_name: location.name.clone(),
-        source_root: location.path.clone(),
+        source_root: location.source_root.clone(),
         access_mode: "read_write".into(),
         git_status: "ready".into(),
         creation_error: None,

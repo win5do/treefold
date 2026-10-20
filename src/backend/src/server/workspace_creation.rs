@@ -25,11 +25,7 @@ pub(super) async fn complete(
     } = prepared;
     let mut outcomes = stream::iter(plans.into_iter().map(|plan| async move {
         let fallback = plan.clone();
-        let common = plan
-            .location
-            .git_common_dir
-            .clone()
-            .unwrap_or_else(|| plan.location.path.clone());
+        let common = plan.location.git_common_dir.clone();
         super::blocking_git_operation_for(common, move || async move {
             Ok(create_workspace_worktree(plan))
         })

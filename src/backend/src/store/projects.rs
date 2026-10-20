@@ -266,32 +266,6 @@ impl Store {
     pub async fn repository(&self, id: &str) -> Result<ProjectRepository> {
         Ok(sqlx::query_as::<_,ProjectRepository>(static_sql!("SELECT {REPOSITORY_COLUMNS} FROM project_repositories WHERE id=? AND deleted_at IS NULL")).bind(id).fetch_one(&self.pool).await?)
     }
-    pub async fn repository_as_directory(&self, id: &str) -> Result<Directory> {
-        let r = self.repository(id).await?;
-        Ok(Directory {
-            id: r.id,
-            project_id: r.project_id,
-            name: r.name,
-            description: String::new(),
-            worktree_setup_command: r.setup_command,
-            path: r.source_root.clone(),
-            repository_url: r.repository_url.clone(),
-            preferred_remote_name: r.preferred_remote_name,
-            git_common_dir: Some(r.git_common_dir),
-            git_status: r.git_status,
-            last_checked_at: r.last_checked_at,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-            checkout_path: Some(r.source_root),
-            role: "repository".into(),
-            is_git: true,
-            remote_url: r.repository_url,
-            branch: None,
-            head_commit: None,
-            head_summary: None,
-            dirty: false,
-        })
-    }
     async fn directory_rows(
         &self,
         sql: impl sqlx::SqlSafeStr,

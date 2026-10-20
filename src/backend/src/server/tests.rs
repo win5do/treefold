@@ -1158,13 +1158,7 @@ mod current_workspace_tests {
                 .update_repository(&repository.id, "", ".", None)
                 .await
                 .unwrap();
-            locations.push(
-                state
-                    .store
-                    .repository_as_directory(&repository.id)
-                    .await
-                    .unwrap(),
-            );
+            locations.push(state.store.repository(&repository.id).await.unwrap());
         }
         // Generated names and Forks must still allocate new branches.
         assert_ne!(

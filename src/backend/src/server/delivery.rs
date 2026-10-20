@@ -259,17 +259,17 @@ pub(super) async fn cleanup_finished_repository(
     if input.delete_worktree {
         let project_repository = state
             .store
-            .repository_as_directory(&location.project_repository_id)
+            .repository(&location.project_repository_id)
             .await?;
         // Delivery and cleanup can be separated by a pause or restart. Never remove
         // a worktree or branch that gained new commits after confirmation.
         let source_ref = format!("refs/heads/{branch}");
-        if git_ref_names(&project_repository.path, "refs/heads")?
+        if git_ref_names(&project_repository.source_root, "refs/heads")?
             .iter()
             .any(|candidate| candidate == branch)
         {
             let current_head = command_output(
-                Path::new(&project_repository.path),
+                Path::new(&project_repository.source_root),
                 "git",
                 &["rev-parse", &source_ref],
             )
@@ -306,7 +306,7 @@ pub(super) async fn cleanup_finished_repository(
                 ));
             }
         }
-        remove_worktree_if_present(&project_repository.path, &source_path, false)?;
+        remove_worktree_if_present(&project_repository.source_root, &source_path, false)?;
         if input.delete_branch {
             let (target, require_merged) = match input.code_action.as_str() {
                 "local_merge" => {
@@ -318,7 +318,7 @@ pub(super) async fn cleanup_finished_repository(
                 _ => ("HEAD".to_owned(), false),
             };
             delete_delivered_branch_if_present(
-                &project_repository.path,
+                &project_repository.source_root,
                 &branch,
                 &target,
                 &source_head,
@@ -371,11 +371,11 @@ pub(super) async fn workspace_repository_delivery_target(
     }
     let project_repository = state
         .store
-        .repository_as_directory(&location.project_repository_id)
+        .repository(&location.project_repository_id)
         .await?;
-    ensure_location_ready(&project_repository)?;
-    let branch = current_project_branch(&project_repository.path)?;
-    Ok((project_repository.path, branch))
+    ensure_repository_ready(&project_repository)?;
+    let branch = current_project_branch(&project_repository.source_root)?;
+    Ok((project_repository.source_root, branch))
 }
 
 pub(super) fn rebase_in_progress(workspace: &str) -> Result<bool> {

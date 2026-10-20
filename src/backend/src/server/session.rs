@@ -41,13 +41,7 @@ pub(super) async fn sync_project_session_workspace(
             "Project has no location for a Session".into(),
         ));
     }
-    let mut project_repositorys = Vec::new();
-    for repository in state.store.repositories(project_id).await? {
-        project_repositorys.push(state.store.repository_as_directory(&repository.id).await?);
-    }
-    for location in &mut project_repositorys {
-        refresh_location_observation(location)?;
-    }
+    let project_repositories = state.store.repositories(project_id).await?;
     let timestamp = now();
     let workspace = Workspace {
         default_delivery: "local_merge".into(),
@@ -81,10 +75,15 @@ pub(super) async fn sync_project_session_workspace(
         integrated_commit: None,
         closed_at: None,
     };
-    let locations = project_repositorys
-        .iter()
-        .map(|location| project_session_location(&workspace.id, location, &timestamp))
-        .collect::<Vec<_>>();
+    let mut locations = Vec::new();
+    for mut repository in project_repositories {
+        let checkout = super::repository_observation::refresh(&mut repository)?;
+        let mut location = project_session_location(&workspace.id, &repository, &timestamp);
+        if let Some(checkout) = checkout {
+            location.checkout_path = Some(checkout);
+        }
+        locations.push(location);
+    }
     state
         .store
         .sync_project_session_workspace(&workspace, &locations)
@@ -94,39 +93,28 @@ pub(super) async fn sync_project_session_workspace(
 
 pub(super) fn project_session_location(
     workspace_id: &str,
-    location: &Directory,
+    location: &ProjectRepository,
     timestamp: &str,
 ) -> WorkspaceRepository {
-    let tracked_git = location.git_common_dir.is_some();
     WorkspaceRepository {
         id: format!("{workspace_id}-{}", location.id),
         workspace_id: workspace_id.into(),
         project_repository_id: location.id.clone(),
         repository_name: location.name.clone(),
-        source_root: location.path.clone(),
-        access_mode: if tracked_git {
-            "read_write"
-        } else {
-            "read_only"
-        }
-        .into(),
+        source_root: location.source_root.clone(),
+        access_mode: "read_write".into(),
         git_status: location.git_status.clone(),
         creation_error: None,
         worktree_id: None,
-        checkout_path: tracked_git.then(|| {
-            location
-                .checkout_path
-                .clone()
-                .unwrap_or_else(|| location.path.clone())
-        }),
-        branch: location.branch.clone(),
-        base_branch: location.branch.clone(),
-        start_commit: location.head_commit.clone(),
+        checkout_path: Some(location.source_root.clone()),
+        branch: None,
+        base_branch: None,
+        start_commit: None,
         forked_from_commit: None,
         remote_name: location.preferred_remote_name.clone(),
         remote_branch: None,
         worktree_ownership: "external".into(),
-        branch_ownership: if tracked_git { "user" } else { "none" }.into(),
+        branch_ownership: "user".into(),
         delivery_status: "not_applicable".into(),
         close_outcome: None,
         integrated_commit: None,

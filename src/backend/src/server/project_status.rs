@@ -1,6 +1,6 @@
 use super::git_routes::{blocking_git_operation, project_worktrees};
 use super::{AppState, AxumPath, Json, Result, State};
-use crate::model::{Directory, GitWorktree};
+use crate::model::{GitWorktree, ProjectRepository};
 
 pub(super) async fn get_worktrees(
     State(state): State<AppState>,
@@ -15,24 +15,20 @@ pub(super) async fn get_repository_worktrees(
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<Vec<GitWorktree>>> {
     let repository = state.store.repository(&id).await?;
-    let location = state.store.repository_as_directory(&id).await?;
     Ok(Json(
-        load_location_worktrees(&state, &repository.project_id, vec![location]).await?,
+        load_location_worktrees(&state, &repository.project_id, vec![repository.clone()]).await?,
     ))
 }
 
 pub(super) async fn load_worktrees(state: &AppState, id: &str) -> Result<Vec<GitWorktree>> {
-    let mut locations = Vec::new();
-    for repository in state.store.repositories(id).await? {
-        locations.push(state.store.repository_as_directory(&repository.id).await?);
-    }
+    let locations = state.store.repositories(id).await?;
     load_location_worktrees(state, id, locations).await
 }
 
 async fn load_location_worktrees(
     state: &AppState,
     id: &str,
-    locations: Vec<Directory>,
+    locations: Vec<ProjectRepository>,
 ) -> Result<Vec<GitWorktree>> {
     let tracked_workspaces = state.store.workspaces(id).await?;
     let mut tracked_workspace_repositories = Vec::new();

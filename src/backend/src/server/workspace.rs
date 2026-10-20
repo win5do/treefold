@@ -582,13 +582,8 @@ async fn inspect_delete_worktree(
     repository_id: &str,
     worktree_path: &str,
 ) -> Result<DeleteWorktreeInspection> {
-    let directory = state.store.repository_as_directory(repository_id).await?;
+    let directory = state.store.repository(repository_id).await?;
     ensure_active_project(&state.store.project(&directory.project_id).await?)?;
-    if !directory.is_git {
-        return Err(AppError::BadRequest(
-            "directory is not a Git repository".into(),
-        ));
-    }
 
     let target = normalized_path(worktree_path);
     let mut blockers = Vec::new();
@@ -600,14 +595,14 @@ async fn inspect_delete_worktree(
     {
         blockers.push("a Project directory cannot be removed as a worktree".into());
     }
-    let listed = git_worktrees(&directory.path)?;
+    let listed = git_worktrees(&directory.source_root)?;
     let Some(listed_worktree) = listed
         .iter()
         .find(|item| normalized_path(&item.path) == target)
     else {
         return Ok(DeleteWorktreeInspection {
             project_id: directory.project_id,
-            repository_path: directory.path,
+            repository_path: directory.source_root,
             worktree_path: worktree_path.to_owned(),
             precheck: DeleteWorktreePrecheck {
                 status: "blocked",
@@ -679,7 +674,7 @@ async fn inspect_delete_worktree(
     };
     Ok(DeleteWorktreeInspection {
         project_id: directory.project_id,
-        repository_path: directory.path,
+        repository_path: directory.source_root,
         worktree_path: worktree_path.to_owned(),
         precheck: DeleteWorktreePrecheck {
             status,
@@ -1293,8 +1288,8 @@ pub(super) async fn refresh_project_repository(
 ) -> Result<Json<ProjectRepository>> {
     let repository = state.store.repository(&id).await?;
     ensure_active_project(&state.store.project(&repository.project_id).await?)?;
-    let mut observed = state.store.repository_as_directory(&id).await?;
-    refresh_location_observation(&mut observed)?;
+    let mut observed = repository.clone();
+    let root = super::repository_observation::refresh(&mut observed)?;
     let mut updated = repository;
     updated.name = basename(&updated.source_root);
     updated.git_status = observed.git_status;
@@ -1302,12 +1297,10 @@ pub(super) async fn refresh_project_repository(
     // remote stay stable until an explicit settings change or Relink.
     updated.last_checked_at = observed.last_checked_at;
     updated.updated_at = now();
-    if let Some(root) = observed.checkout_path {
+    if let Some(root) = root {
         updated.source_root = root;
     }
-    if let Some(common) = observed.git_common_dir {
-        updated.git_common_dir = common;
-    }
+    updated.git_common_dir = observed.git_common_dir;
     state.store.refresh_repository(&updated).await?;
     Ok(Json(state.store.repository(&id).await?))
 }
@@ -1325,13 +1318,8 @@ pub(super) async fn reattach_project_repository(
     AxumPath(id): AxumPath<String>,
     ApiJson(input): ApiJson<ReattachProjectRepository>,
 ) -> Result<Json<Directory>> {
-    let current = state.store.repository_as_directory(&id).await?;
+    let current = state.store.repository(&id).await?;
     ensure_active_project(&state.store.project(&current.project_id).await?)?;
-    if current.git_common_dir.is_none() {
-        return Err(AppError::BadRequest(
-            "only a previously identified Git location can be relinked".into(),
-        ));
-    }
     let (candidate, is_git) = inspect_path(&input.path)?;
     if !is_git {
         return Err(AppError::BadRequest(
@@ -1355,15 +1343,16 @@ pub(super) async fn reattach_project_repository(
             "relink path must be the repository main worktree".into(),
         ));
     }
-    let mut observed = current.clone();
-    observed.path = candidate.clone();
-    observed.name = basename(&candidate);
-    observed.git_common_dir = None;
-    refresh_location_observation(&mut observed)?;
-    if observed.git_status != "ready" {
+    let observed = super::repository_observation::observe(
+        &candidate,
+        false,
+        current.repository_url.as_deref(),
+        current.preferred_remote_name.as_deref(),
+    )?;
+    if observed.status != "ready" {
         return Err(AppError::BadRequest(format!(
             "reattach repository is {}",
-            observed.git_status
+            observed.status
         )));
     }
     let remote_names = git_remote_names(&candidate)?;
@@ -1433,10 +1422,8 @@ pub(super) async fn reattach_project_repository(
             preferred,
         )
         .await?;
-    let repository = refresh_project_repository(State(state.clone()), AxumPath(id)).await?;
-    Ok(Json(
-        state.store.repository_as_directory(&repository.id).await?,
-    ))
+    let Json(repository) = refresh_project_repository(State(state), AxumPath(id)).await?;
+    Ok(Json(repository.into()))
 }
 
 pub(super) async fn delete_project_repository(
@@ -1586,10 +1573,10 @@ pub(super) async fn list_directory_branches(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<GitBranches>> {
-    let directory = state.store.repository_as_directory(&id).await?;
+    let directory = state.store.repository(&id).await?;
     blocking_git_operation(move || async move {
-        ensure_git_directory(&directory)?;
-        Ok(Json(directory_branches(&directory.path)?))
+        ensure_git_repository(&directory.source_root)?;
+        Ok(Json(directory_branches(&directory.source_root)?))
     })
     .await
 }
@@ -1685,17 +1672,17 @@ pub(super) async fn checkout_directory_branch_impl(
     id: String,
     input: CheckoutDirectoryBranch,
 ) -> Result<Json<Directory>> {
-    let mut directory = state.store.repository_as_directory(&id).await?;
-    ensure_active_project(&state.store.project(&directory.project_id).await?)?;
-    ensure_git_directory(&directory)?;
-    let branches = directory_branches(&directory.path)?;
+    let repository = state.store.repository(&id).await?;
+    ensure_active_project(&state.store.project(&repository.project_id).await?)?;
+    ensure_git_repository(&repository.source_root)?;
+    let branches = directory_branches(&repository.source_root)?;
     match input.kind.as_str() {
         "local" => {
             if !branches.local.contains(&input.branch) {
                 return Err(AppError::BadRequest("local branch was not found".into()));
             }
             command_output(
-                Path::new(&directory.path),
+                Path::new(&repository.source_root),
                 "git",
                 &["switch", &input.branch],
             )
@@ -1716,7 +1703,7 @@ pub(super) async fn checkout_directory_branch_impl(
             }
             if branches.local.contains(&input.branch) {
                 command_output(
-                    Path::new(&directory.path),
+                    Path::new(&repository.source_root),
                     "git",
                     &["switch", &input.branch],
                 )
@@ -1724,7 +1711,7 @@ pub(super) async fn checkout_directory_branch_impl(
             } else {
                 let remote_ref = format!("{remote}/{}", input.branch);
                 command_output(
-                    Path::new(&directory.path),
+                    Path::new(&repository.source_root),
                     "git",
                     &["switch", "--track", "-c", &input.branch, &remote_ref],
                 )
@@ -1735,6 +1722,7 @@ pub(super) async fn checkout_directory_branch_impl(
             return Err(AppError::BadRequest("kind must be local or remote".into()));
         }
     }
+    let mut directory = Directory::from(repository);
     enrich_directory(&mut directory, None);
     Ok(Json(directory))
 }
@@ -1753,7 +1741,7 @@ pub(super) struct CreateWorkspace {
 
 #[derive(Clone)]
 pub(super) struct WorkspaceWorktreePlan {
-    pub(super) location: Directory,
+    pub(super) location: ProjectRepository,
     pub(super) workspace_repository_id: String,
     pub(super) checkout_path: String,
     pub(super) branch: String,
@@ -1827,13 +1815,9 @@ pub(super) async fn prepare_workspace(
     }
     let directories = state.store.project_directories(&project_id).await?;
     let repositories = state.store.repositories(&project_id).await?;
-    let mut locations = Vec::new();
-    for repository in &repositories {
-        locations.push(state.store.repository_as_directory(&repository.id).await?);
-    }
-    locations = crate::git_parallel::map(&locations, |location| {
+    let locations = crate::git_parallel::map(&repositories, |location| {
         let mut location = location.clone();
-        refresh_location_observation(&mut location)?;
+        super::repository_observation::refresh(&mut location)?;
         Ok(location)
     })
     .into_iter()
@@ -1857,7 +1841,7 @@ pub(super) async fn prepare_workspace(
     }
     if let Some(location) = locations
         .iter()
-        .find(|location| location.git_common_dir.is_some() && location.git_status != "ready")
+        .find(|location| location.git_status != "ready")
     {
         return Err(AppError::BadRequest(format!(
             "Git location '{}' is {}",
@@ -1956,7 +1940,7 @@ pub(super) async fn prepare_workspace(
             let branch = choice.map(|choice| &choice.branch).unwrap_or(&branch);
             let base_branch = match choice {
                 Some(choice) => choice.base_branch.clone(),
-                None => current_project_branch(&location.path)?,
+                None => current_project_branch(&location.source_root)?,
             };
             if let Some(expected) = input.expected_base_branches.as_ref() {
                 if expected.get(&location.id) != Some(&base_branch) {
@@ -2006,7 +1990,7 @@ pub(super) async fn prepare_workspace(
             let inherited_remote = if choice.is_some() {
                 None
             } else {
-                directory_branches(&location.path)?.current_remote
+                directory_branches(&location.source_root)?.current_remote
             };
             let remote_name = if let Some(choice) = choice {
                 choice
@@ -2030,7 +2014,7 @@ pub(super) async fn prepare_workspace(
                     .filter(|value| !value.is_empty())
             };
             if let Some(remote) = remote_name.as_deref() {
-                if !git_remote_names(&location.path)?
+                if !git_remote_names(&location.source_root)?
                     .iter()
                     .any(|name| name == remote)
                 {
@@ -2072,7 +2056,7 @@ pub(super) async fn prepare_workspace(
                 Some(choice) => choice.reuse_branch,
                 None => {
                     explicit_branch.is_some()
-                        && git_ref_names(&location.path, "refs/heads")?.contains(branch)
+                        && git_ref_names(&location.source_root, "refs/heads")?.contains(branch)
                 }
             };
             if reuse_branch {
@@ -2090,7 +2074,7 @@ pub(super) async fn prepare_workspace(
                 } else if reuse_branch {
                     format!("refs/heads/{branch}")
                 } else {
-                    git_head(&location.path)?
+                    git_head(&location.source_root)?
                 },
                 reuse_branch,
                 clean_parent: None,
@@ -2190,7 +2174,7 @@ pub(super) fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> Workspac
                 .map_err(|error| error.to_string())?;
         }
         let start_commit = command_output(
-            Path::new(&plan.location.path),
+            Path::new(&plan.location.source_root),
             "git",
             &["rev-parse", "--verify", &plan.start_ref],
         )
@@ -2217,7 +2201,7 @@ pub(super) fn create_workspace_worktree(plan: WorkspaceWorktreePlan) -> Workspac
                 &plan.start_ref,
             ]
         };
-        command_output(Path::new(&plan.location.path), "git", &args)
+        command_output(Path::new(&plan.location.source_root), "git", &args)
             .map_err(|error| format!("create worktree for {}: {error}", plan.location.name))?;
         // An existing local branch may advance after preparation. Record the
         // commit actually checked out, while new branches retain the frozen base.
@@ -2273,7 +2257,7 @@ pub(super) async fn record_workspace_worktree_outcomes(
                 None,
             )
             .await?;
-        let command = outcome.plan.location.worktree_setup_command.trim();
+        let command = outcome.plan.location.setup_command.trim();
         if !command.is_empty() {
             let setup_path =
                 Path::new(&outcome.plan.checkout_path).join(&outcome.plan.setup_workdir);

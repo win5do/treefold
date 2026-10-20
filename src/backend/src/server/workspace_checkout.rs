@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::git_routes::{command_output, git_remote_names, git_worktrees};
 use crate::{
     error::{AppError, Result},
-    model::Directory,
+    model::ProjectRepository,
 };
 
 #[derive(Clone, Deserialize)]
@@ -63,8 +63,8 @@ fn valid_branch(path: &str, branch: &str) -> Result<()> {
     .map_err(|_| AppError::BadRequest(format!("invalid branch name '{branch}'")))
 }
 
-fn resolve(location: &Directory, input: &RepositoryCheckout) -> Result<ResolvedCheckout> {
-    let path = &location.path;
+fn resolve(location: &ProjectRepository, input: &RepositoryCheckout) -> Result<ResolvedCheckout> {
+    let path = &location.source_root;
     let remotes = git_remote_names(path)?;
     let (branch, source, reuse_branch) = match &input.checkout {
         Checkout::New { branch, base } => (branch.clone(), base, false),
@@ -152,7 +152,7 @@ fn resolve(location: &Directory, input: &RepositoryCheckout) -> Result<ResolvedC
 }
 
 pub(super) fn resolve_repositories(
-    locations: &[Directory],
+    locations: &[ProjectRepository],
     inputs: &[RepositoryCheckout],
 ) -> Result<HashMap<String, ResolvedCheckout>> {
     if inputs.len() != locations.len() {
