@@ -178,6 +178,7 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
   a build-source override.
 - Stage the amux binary, version, and `skills/amux` from the same selected amux
   source so they remain one release unit.
+- See `docs/amux-development.md` for the amux worktree and dependency-update workflow.
 - Run `just install-app-local` to build an ad-hoc signed App and DMG and replace
   the local installation. Quit an installed Treefold instance first.
   `TREEFOLD_BUILD_VERSION` supplies a reproducible SemVer build value and
