@@ -30,6 +30,7 @@ mod tests {
         let home =
             std::env::temp_dir().join(format!("treefold-config-api-{}", uuid::Uuid::new_v4()));
         let state = AppState {
+            cleanup_tasks: Default::default(),
             store: crate::store::Store::open(&home.join("data")).await.unwrap(),
             settings: crate::settings::SettingsStore::open(&home).unwrap(),
             keymap: crate::keymap::KeymapStore::open(&home).unwrap(),

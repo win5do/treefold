@@ -10,9 +10,6 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
 use uuid::Uuid;
 
-mod projects;
-pub use projects::{ProjectSettings, ProjectSettingsPatch};
-
 pub const SETTINGS_SCHEMA_VERSION: u32 = 3;
 
 pub const AGENT_KINDS: [&str; 4] = ["codex", "claude_code", "opencode", "pi"];
@@ -86,8 +83,6 @@ pub struct Settings {
     pub amux: AmuxSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
-    #[serde(default)]
-    pub projects: std::collections::BTreeMap<String, ProjectSettings>,
 }
 
 impl Default for Settings {
@@ -100,7 +95,6 @@ impl Default for Settings {
             agents: AgentsSettings::default(),
             amux: AmuxSettings::default(),
             updates: UpdateSettings::default(),
-            projects: Default::default(),
         }
     }
 }
@@ -143,7 +137,6 @@ pub struct SettingsPatch {
     pub agents: Option<AgentsSettingsPatch>,
     pub amux: Option<AmuxSettingsPatch>,
     pub updates: Option<UpdateSettingsPatch>,
-    pub projects: Option<std::collections::BTreeMap<String, ProjectSettingsPatch>>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -177,9 +170,6 @@ pub struct AgentSettingsPatch {
 
 impl SettingsPatch {
     pub fn validate(&self) -> anyhow::Result<()> {
-        if let Some(projects) = &self.projects {
-            projects::validate(projects)?;
-        }
         for key in &self.reset {
             let agent_key = AGENT_KINDS
                 .iter()
@@ -382,9 +372,6 @@ impl SettingsStore {
             if let Some(timestamp) = updates.remind_after {
                 table.insert("remind_after", value(timestamp));
             }
-        }
-        if let Some(projects) = patch.projects {
-            projects::apply(&mut document, projects)?;
         }
         settings = self.parse(&document.to_string())?;
         self.atomic_write(&document.to_string())?;
@@ -694,7 +681,6 @@ mod tests {
                 agents: AgentsSettings::default(),
                 amux: AmuxSettings::default(),
                 updates: super::UpdateSettings::default(),
-                projects: Default::default(),
             }
         );
         let settings_file = treefold_home.join("config/settings.toml");

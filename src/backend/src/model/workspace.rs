@@ -2,18 +2,33 @@ use serde::{Deserialize, Serialize};
 
 use super::{Project, ProjectDirectory, ProjectRepository};
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct ArchivedCleanupResult {
     pub deleted_ids: Vec<String>,
+    pub orphan_paths: Vec<String>,
     pub skipped: Vec<ArchivedCleanupSkipped>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ArchivedCleanupSkipped {
     pub id: String,
     pub name: String,
     pub reason: String,
     pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ArchivedCleanupTask {
+    pub id: String,
+    pub scope: String,
+    pub scope_id: String,
+    pub scope_name: String,
+    pub status: String,
+    pub total: usize,
+    pub completed: usize,
+    pub error: Option<String>,
+    #[serde(flatten)]
+    pub result: ArchivedCleanupResult,
 }
 
 #[derive(Debug, Serialize)]

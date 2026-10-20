@@ -12,6 +12,7 @@ use tower::ServiceExt;
 async fn test_state(root: &Path) -> AppState {
     let home = root.join("home");
     AppState {
+        cleanup_tasks: Default::default(),
         store: Store::open(&home.join("data")).await.unwrap(),
         settings: SettingsStore::open(&home).unwrap(),
         keymap: KeymapStore::open(&home).unwrap(),

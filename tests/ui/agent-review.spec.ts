@@ -64,15 +64,12 @@ for (const language of ["en-US", "zh-CN"] as const) {
       const expectedPrompt = `${editedPrompt}\nFix confirmed bugs and run focused tests.`;
       await expect(prompt).toHaveValue(expectedPrompt);
       await expect(dialog).toBeVisible();
-      // Diagnostic only: inspect the prompt and shared lists in the scrollable dialog.
-      await page.screenshot({ path: `/tmp/treefold-agent-review-prompt-${language}.png`, animations: "disabled" });
       await prompt.press("Escape");
       await expect(directory).toBeFocused();
       await expect(dialog).toBeVisible();
       await expect(prompt).toHaveValue(expectedPrompt);
       await expect(dialog.getByRole("button", { name: messages.agentReview.start })).toBeEnabled();
       await agents.scrollIntoViewIfNeeded();
-      await page.screenshot({ path: `/tmp/treefold-agent-review-${language}.png`, animations: "disabled" });
       if (language === "zh-CN") {
         await page.keyboard.press("ArrowRight");
         await expect(pi).toBeFocused();
@@ -105,7 +102,9 @@ test("Project prompt persists, Delivery hands off to Review, and edits remain Se
     await page.getByRole("button", { name: "AI Review settings", exact: true }).click();
     const settings = page.getByRole("dialog", { name: "AI Review settings", exact: true });
     await settings.getByRole("textbox", { name: "Default Review prompt", exact: true }).fill("Review public API compatibility.  保留原文。");
+    const saved = page.waitForRequest(request => request.method() === "PATCH" && request.url().endsWith(`/projects/${FIXTURE_IDS.project}`));
     await settings.getByRole("button", { name: "Save", exact: true }).click();
+    expect((await saved).postDataJSON()).toEqual({ review_prompt: "Review public API compatibility.  保留原文。" });
     await expect(settings).toBeHidden();
     await page.reload();
     await page.getByRole("button", { name: "AI Review settings", exact: true }).click();

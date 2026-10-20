@@ -161,6 +161,7 @@ pub(super) async fn create_project_impl(state: AppState, input: CreateProject) -
         })
         .transpose()?;
     let project = Project {
+        review_prompt: String::new(),
         open_path,
         id: project_id.clone(),
         name,
@@ -259,6 +260,7 @@ pub(super) async fn create_project_impl(state: AppState, input: CreateProject) -
 
 #[derive(Deserialize)]
 pub(super) struct UpdateProject {
+    pub(super) review_prompt: Option<String>,
     pub(super) name: Option<String>,
     pub(super) description: Option<String>,
     pub(super) status: Option<String>,
@@ -274,6 +276,7 @@ pub(super) async fn update_project(
     let current = state.store.project(&id).await?;
     if current.status == "archived" {
         let restoring = input.status.as_deref() == Some("active")
+            && input.review_prompt.is_none()
             && input.name.is_none()
             && input.description.is_none()
             && input.default_location_id.is_none();
@@ -345,6 +348,12 @@ pub(super) async fn update_project(
             }
         }
         super::session_titles::capture(&state, true).await?;
+    }
+    if let Some(prompt) = input.review_prompt {
+        state
+            .store
+            .update_project_review_prompt(&id, &prompt)
+            .await?;
     }
     if input.status.is_some() {
         state.store.update_project_status(&id, status).await?;

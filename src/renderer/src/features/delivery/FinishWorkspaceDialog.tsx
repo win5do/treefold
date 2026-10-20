@@ -353,18 +353,14 @@ export function FinishWorkspaceDialog({
                   {t("deliveryUi.batchRecheck")}
                 </Button>
               )}
-            <Button
-              variant="secondary"
-              onClick={() => (completed && !flow.batch?.continue_work ? onCompleted() : close())}
-            >
-              {t(
-                flow.batch
-                  ? completed
-                    ? "deliveryUi.batchDone"
-                    : "deliveryUi.batchClose"
-                  : "deliveryUi.cancel",
-              )}
-            </Button>
+            {(!flow.batch || completed) && (
+              <Button
+                variant="secondary"
+                onClick={() => (completed && !flow.batch?.continue_work ? onCompleted() : close())}
+              >
+                {t(completed ? "deliveryUi.batchDone" : "deliveryUi.cancel")}
+              </Button>
+            )}
             {!completed && (
               <Button
                 data-testid="finish-confirm-action"

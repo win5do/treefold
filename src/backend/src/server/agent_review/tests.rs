@@ -16,6 +16,7 @@ async fn fixture() -> (
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");
     let state = AppState {
+        cleanup_tasks: Default::default(),
         store: Store::open(&home.join("data")).await.unwrap(),
         settings: SettingsStore::open(&home).unwrap(),
         keymap: KeymapStore::open(&home).unwrap(),
@@ -218,6 +219,77 @@ async fn review_rejects_pending_delivery_and_non_agent_requests_without_creating
             .sessions(&workspace.id)
             .await
             .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn project_review_prompt_is_updated_with_project_and_inherited_by_review() {
+    let (_root, state, workspace, _paths) = fixture().await;
+    let project_id = &workspace.project_id;
+    let before = state.store.project(project_id).await.unwrap();
+    assert!(
+        review_context(&state, &workspace)
+            .await
+            .unwrap()
+            .review_prompt
+            .is_empty()
+    );
+    let prompt = "  Review API compatibility.\n保留原文。  ";
+    let update =
+        |value: &str| serde_json::from_value(serde_json::json!({"review_prompt": value})).unwrap();
+    let Json(saved) = crate::server::workspace::update_project(
+        State(state.clone()),
+        AxumPath(project_id.clone()),
+        ApiJson(update(prompt)),
+    )
+    .await
+    .unwrap();
+    assert_eq!(saved.review_prompt, prompt);
+    assert_eq!(saved.name, before.name);
+    assert_eq!(saved.default_location_id, before.default_location_id);
+    assert_eq!(
+        review_context(&state, &workspace)
+            .await
+            .unwrap()
+            .review_prompt,
+        prompt
+    );
+    state
+        .store
+        .update_project_status(project_id, "archived")
+        .await
+        .unwrap();
+    assert!(
+        crate::server::workspace::update_project(
+            State(state.clone()),
+            AxumPath(project_id.clone()),
+            ApiJson(update("overwrite")),
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        state.store.project(project_id).await.unwrap().review_prompt,
+        prompt
+    );
+    state
+        .store
+        .update_project_status(project_id, "active")
+        .await
+        .unwrap();
+    let _ = crate::server::workspace::update_project(
+        State(state.clone()),
+        AxumPath(project_id.clone()),
+        ApiJson(update(" \n\t")),
+    )
+    .await
+    .unwrap();
+    assert!(
+        review_context(&state, &workspace)
+            .await
+            .unwrap()
+            .review_prompt
             .is_empty()
     );
 }

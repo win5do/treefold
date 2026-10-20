@@ -12,7 +12,7 @@ export function createAgentReviewRoutes({ fixture, readJson, sendJson }: RouteDe
       const workspace = fixture.workspaceDetails[match[1]];
       if (!workspace || workspace.status !== "active") { sendJson(response, 400, { error: "Workspace is unavailable" }); return true; }
       if (request.method === "GET") {
-        sendJson(response, 200, { repositories: workspace.repositories.filter(item => item.access_mode === "read_write").map(item => ({
+        sendJson(response, 200, { review_prompt: fixture.projectDetails[workspace.project_id].review_prompt, repositories: workspace.repositories.filter(item => item.access_mode === "read_write").map(item => ({
           repository_id: item.id, name: item.repository_name,
           current_path: item.checkout_path, current_branch: item.branch, current_head: "a".repeat(40),
           target_path: item.source_root, target_branch: workspace.kind === "fork" ? "feature/parent" : "main",

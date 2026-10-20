@@ -261,11 +261,6 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
     busy,
     error,
     execute,
-    update: (id: string, update: Partial<Draft>) =>
-      setDrafts((current) => ({
-        ...current,
-        [id]: { ...current[id], ...update },
-      })),
     recheck: () => setDrafts((current) => ({ ...current })),
   };
 }

@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
 import { applyThemePreference } from "@/lib/theme";
 import { setApiBase } from "@/api/client";
+import { ArchivedCleanupSync } from "@/features/workspace/ArchivedCleanupSync";
 import { RuntimeSync } from "@/features/app/RuntimeSync";
 import { frontendLogger, installGlobalErrorLogging } from "@/lib/logger";
 import { queryClient } from "@/features/app/queryClient";
@@ -52,6 +53,7 @@ createRoot(document.getElementById("root")!, {
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RuntimeSync />
+      <ArchivedCleanupSync />
       <TooltipProvider>
         <HashRouter>
           <App />

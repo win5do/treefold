@@ -6,7 +6,7 @@ export const projectKeys = {
   summaries: ["project-summaries"] as const,
   sidebar: ["sidebar"] as const,
   detail: (id: string) => ["project", id] as const,
-  worktrees: (id: string) => ["project-worktrees", id] as const,
+  worktrees: (projectId: string, repositoryId: string) => ["project-worktrees", projectId, repositoryId] as const,
   sessions: (id: string) => ["project-sessions", id] as const,
 };
 
@@ -89,7 +89,7 @@ export const projectSessionsQuery = (id: string) =>
     refetchInterval: query => query.state.data?.some(session => session.initializing) ? 1000 : false,
   });
 
-export const projectWorktreesQuery = (id: string) => queryOptions({
-  queryKey: projectKeys.worktrees(id),
-  queryFn: ({ signal }) => projectsApi.worktrees(id, signal),
+export const repositoryWorktreesQuery = (projectId: string, repositoryId: string) => queryOptions({
+  queryKey: projectKeys.worktrees(projectId, repositoryId),
+  queryFn: ({ signal }) => projectsApi.repositoryWorktrees(repositoryId, signal),
 });

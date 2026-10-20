@@ -11,7 +11,7 @@ export function createSettingsRoutes({ fixture, readJson, sendJson }: RouteDepen
       if (request.method !== "PATCH") return false;
       const input = await readJson<Omit<Partial<AppSettings>, "agents"> & { agents?: AgentsSettingsPatch; reset?: string[] }>(request);
       await new Promise<void>(resolve => setTimeout(resolve, 150));
-      if (Object.keys(input).some(key => !["reset", "language", "theme", "close_behavior", "agents", "amux", "updates", "projects"].includes(key))) {
+      if (Object.keys(input).some(key => !["reset", "language", "theme", "close_behavior", "agents", "amux", "updates"].includes(key))) {
         sendJson(response, 400, { error: "Unknown settings field" }); return true;
       }
       for (const key of input.reset ?? []) {
@@ -26,12 +26,6 @@ export function createSettingsRoutes({ fixture, readJson, sendJson }: RouteDepen
         if (key === "amux.keep_daemon_running_on_exit") fixture.settings.amux.keep_daemon_running_on_exit = false;
       }
       if (input.language !== undefined) fixture.settings.language = input.language;
-      if (input.projects) {
-        fixture.settings.projects ??= {};
-        for (const [id, project] of Object.entries(input.projects)) {
-          fixture.settings.projects[id] = { review_prompt: project.review_prompt.trim() ? project.review_prompt : "" };
-        }
-      }
       if (input.theme !== undefined) fixture.settings.theme = input.theme;
       if (input.close_behavior !== undefined) fixture.settings.close_behavior = input.close_behavior;
       if (input.updates) Object.assign(fixture.settings.updates, input.updates);

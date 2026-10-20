@@ -40,6 +40,7 @@ mod current_workspace_tests {
     pub(super) async fn test_state(root: &Path) -> AppState {
         let home = root.join("home");
         AppState {
+            cleanup_tasks: Default::default(),
             store: Store::open(&home.join("data"))
                 .await
                 .expect("open test Store"),
@@ -450,6 +451,87 @@ mod current_workspace_tests {
         std::fs::write(repository.join("README.md"), "# fixture\n").expect("write fixture");
         command_output(repository, "git", &["add", "."]).expect("stage fixture");
         command_output(repository, "git", &["commit", "-m", "initial"]).expect("commit fixture");
+    }
+
+    #[tokio::test]
+    async fn repository_worktrees_are_scoped_and_match_project_results() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        initialize_repository(&first);
+        initialize_repository(&second);
+        let state = test_state(temp.path()).await;
+        let (_, Json(project)) = create_project(
+            State(state.clone()),
+            ApiJson(CreateProject {
+                open_path: None,
+                name: Some("Repository worktrees".into()),
+                description: None,
+                path: None,
+                locations: Some(vec![
+                    first.to_string_lossy().into_owned(),
+                    second.to_string_lossy().into_owned(),
+                ]),
+                preferred_remote: None,
+                directory_description: None,
+                directory_worktree_setup_command: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let checkout = temp.path().join("feature");
+        command_output(
+            &first,
+            "git",
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "feature",
+                checkout.to_str().unwrap(),
+            ],
+        )
+        .unwrap();
+        let all = crate::server::project_status::load_worktrees(&state, &project.id)
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 3);
+        let router = app(state.clone());
+        for repository in state.store.repositories(&project.id).await.unwrap() {
+            let response = router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!(
+                            "/api/project-repositories/{}/worktrees",
+                            repository.id
+                        ))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let actual: serde_json::Value =
+                serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+                    .unwrap();
+            let expected: Vec<_> = all
+                .iter()
+                .filter(|item| item.project_repository_id == repository.id)
+                .collect();
+            assert!(!expected.is_empty());
+            assert_eq!(actual, serde_json::to_value(expected).unwrap());
+        }
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/api/project-repositories/missing/worktrees")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
@@ -2072,6 +2154,7 @@ mod current_workspace_tests {
             State(state.clone()),
             axum::extract::Path(project.id.clone()),
             ApiJson(UpdateProject {
+                review_prompt: None,
                 name: None,
                 description: None,
                 status: None,
@@ -2896,6 +2979,7 @@ mod current_workspace_tests {
         .expect("start conflicted update");
         assert_eq!(conflicted.status, "conflicted");
         let restarted = AppState {
+            cleanup_tasks: Default::default(),
             store: Store::open(&root.join("home/data"))
                 .await
                 .expect("reopen Store"),

@@ -1,0 +1,1 @@
+ALTER TABLE projects ADD COLUMN review_prompt TEXT NOT NULL DEFAULT '';

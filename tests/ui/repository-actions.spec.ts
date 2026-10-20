@@ -19,7 +19,7 @@ for (const scope of [
       await moveUiPointerTo(page, page.getByTestId("sidebar-push-menu"));
       await page.getByTestId(`sidebar-push-${scope.repository}`).click();
       await expect.poll(() => harness.syncRequests.at(-1)).toBe(`/api/${scope.api}/${scope.repository}/git/push`);
-      await expect(page.getByRole("status")).toContainText("Push succeeded");
+      await expect(page.getByRole("status", { name: "Push succeeded", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       harness.setNextBulkSyncResults([{ project_repository_id: FIXTURE_IDS.primaryRepository, repository_name: "fixture-repository", status: "failed", error: "remote rejected the update" }]);
       await moveUiPointerTo(page, page.getByTestId(scope.node));

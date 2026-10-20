@@ -35,8 +35,8 @@ export const projectsApi = {
     request<SidebarData>("/api/sidebar", { signal }),
   detail: (id: string, signal?: AbortSignal) =>
     request<ProjectDetail>(`/api/projects/${id}?include_worktrees=false`, { signal }),
-  worktrees: (id: string, signal?: AbortSignal) =>
-    request<GitWorktree[]>(`/api/projects/${id}/worktrees`, { signal }),
+  repositoryWorktrees: (id: string, signal?: AbortSignal) =>
+    request<GitWorktree[]>(`/api/project-repositories/${id}/worktrees`, { signal }),
   create: (json: unknown) =>
     request<Project>("/api/projects", { method: "POST", json }),
   inspectProjectPath: (path: string, signal?: AbortSignal) =>

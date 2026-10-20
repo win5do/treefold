@@ -1,9 +1,16 @@
+import type { ArchivedCleanupTask } from "../../../../src/renderer/src/domain/types.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RouteDependencies } from "../types.ts";
 
 export function createWorkspaceDeletionRoutes({ fixture, sendJson }: Pick<RouteDependencies, "fixture" | "sendJson">) {
+  const tasks = new Map<string, ArchivedCleanupTask>();
+  let sequence = 0;
   return {
     async handle(request: IncomingMessage, response: ServerResponse, pathname: string) {
+      if (request.method === "GET" && pathname === "/api/archived-cleanup") {
+        sendJson(response, 200, [...tasks.values()]);
+        return true;
+      }
       const cleanup = pathname.match(/^\/api\/(projects|workspaces)\/([^/]+)\/(workspaces|forks)\/cleanup-archived$/);
       if (request.method === "POST" && cleanup) {
         const [, scope, id, children] = cleanup;
@@ -21,7 +28,13 @@ export function createWorkspaceDeletionRoutes({ fixture, sendJson }: Pick<RouteD
         }
         for (const detail of Object.values(fixture.workspaceDetails)) detail.forks = detail.forks.filter(item => !deleted.has(item.id));
         for (const id of deleted) delete fixture.workspaceDetails[id];
-        sendJson(response, 200, { deleted_ids: [...deleted], skipped: [] });
+        const task: ArchivedCleanupTask = {
+          id: `cleanup-${++sequence}`, scope: scope === "projects" ? "project" : "workspace",
+          scope_id: id, scope_name: parent.name, status: "completed", total: deleted.size,
+          completed: deleted.size, error: null, deleted_ids: [...deleted], orphan_paths: [], skipped: [],
+        };
+        tasks.set(`${scope}:${id}`, task);
+        sendJson(response, 202, task);
         return true;
       }
       const match = pathname.match(/^\/api\/workspaces\/([^/]+)\/delete-precheck$/);

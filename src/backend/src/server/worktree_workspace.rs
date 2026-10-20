@@ -41,9 +41,32 @@ async fn open_worktree_workspace_impl(
     repository_id: String,
     path: String,
 ) -> Result<CreatedWorkspace> {
-    // Serialize with Finish/reopen so a checkout cannot change owners mid-import.
-    let _workers = super::finish_batch::workers().lock().await;
     let repository = state.store.repository(&repository_id).await?;
+    // Use the same tree lock as deletion before taking the repository lock.
+    let mut owner = None;
+    for workspace in state.store.workspaces(&repository.project_id).await? {
+        if state
+            .store
+            .workspace_repositories(&workspace.id)
+            .await?
+            .iter()
+            .any(|item| {
+                item.project_repository_id == repository_id
+                    && item
+                        .checkout_path
+                        .as_deref()
+                        .is_some_and(|checkout| normalized_path(checkout) == normalized_path(&path))
+            })
+        {
+            owner = Some(workspace.id);
+            break;
+        }
+    }
+    let _lifecycle = if let Some(owner) = owner {
+        Some(super::workspace_lifecycle::lock(&state, &owner).await?)
+    } else {
+        None
+    };
     let operation_state = state.clone();
     let created =
         blocking_git_operation_for(repository.git_common_dir.clone(), move || async move {

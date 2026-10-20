@@ -24,6 +24,7 @@ pub(super) async fn reopen_fork(
     Query(options): Query<ReopenOptions>,
 ) -> Result<Json<Workspace>> {
     // A parent Finish must not pass its active-Fork check while this Fork reopens.
+    let _lifecycle = super::workspace_lifecycle::lock(&state, &id).await?;
     let workers = super::finish_batch::workers().lock().await;
     let workspace = state.store.workspace(&id).await?;
     if workers.contains(&id)
@@ -34,6 +35,7 @@ pub(super) async fn reopen_fork(
     {
         return Err(unavailable());
     }
+    drop(workers);
     if !options.confirm_squash && state.store.has_squash_delivery(&id).await? {
         return Err(AppError::api(
             StatusCode::CONFLICT,

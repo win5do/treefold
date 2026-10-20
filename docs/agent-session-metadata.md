@@ -78,9 +78,9 @@ native history to validate/relocate a known target, never to discover its ID.
 - The Review dialog selects an installed Agent and starting directory and lets
   the user edit or replace the initial prompt. Project-level defaults are edited
   from **AI Review settings** on the Project page. Explicit overrides live in
-  `config/settings.toml` under `[projects.<project-id>]` as `review_prompt` and
-  use the generic `PATCH /api/settings` resource. Empty values remove the
-  override; the UI supplies its current English or Chinese default. Custom
+  the Project database record as `review_prompt` and use
+  `PATCH /api/projects/{id}`. Deleting the Project removes its prompt. Empty
+  values clear the override; the UI supplies its current English or Chinese default. Custom
   prompts retain their original language. Dialog edits affect only that Session.
 - `GET /api/workspaces/{id}/agent-review` resolves the review scope;
   `POST` accepts `kind`, `project_directory_id`, and `prompt`, resolves the scope

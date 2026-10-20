@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE projects SET review_prompt=?, updated_at=? WHERE id=?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "e53f4ea05224517d4ad012b66c10f74deb567bd2bd88844af34388ccaf539618"
+}

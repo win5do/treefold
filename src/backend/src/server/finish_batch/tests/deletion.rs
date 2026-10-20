@@ -546,7 +546,7 @@ async fn archived_cleanup_project_skips_unmerged_and_dirty_then_removes_merged()
     let last = Path::new(f.repositories[1].checkout_path.as_ref().unwrap());
     commit(last, "late.txt", "unmerged");
     let cleanup = || {
-        crate::server::archived_cleanup::project(
+        cleanup_project(
             State(f.state.clone()),
             AxumPath(f.workspace.project_id.clone()),
         )
@@ -599,7 +599,7 @@ async fn archived_cleanup_skips_pushed_but_unmerged_branches() {
         .unwrap();
     // Preserve the established single-delete contract for remote-delivered work.
     assert!(deletion_preview(&f).await.undelivered_branches.is_empty());
-    let result = crate::server::archived_cleanup::project(
+    let result = cleanup_project(
         State(f.state.clone()),
         AxumPath(f.workspace.project_id.clone()),
     )
@@ -660,7 +660,7 @@ async fn archived_cleanup_forks_continues_past_blocked_items_and_preserves_activ
         archived.push((fork, repos));
     }
     // Project cleanup must not traverse Forks under an active Workspace.
-    let project = crate::server::archived_cleanup::project(
+    let project = cleanup_project(
         State(f.state.clone()),
         AxumPath(f.workspace.project_id.clone()),
     )
@@ -676,13 +676,10 @@ async fn archived_cleanup_forks_continues_past_blocked_items_and_preserves_activ
                 .all(|r| Path::new(r.checkout_path.as_ref().unwrap()).exists())
         );
     }
-    let result = crate::server::archived_cleanup::workspace(
-        State(f.state.clone()),
-        AxumPath(f.workspace.id.clone()),
-    )
-    .await
-    .unwrap()
-    .0;
+    let result = cleanup_forks(State(f.state.clone()), AxumPath(f.workspace.id.clone()))
+        .await
+        .unwrap()
+        .0;
     assert_eq!(result.deleted_ids, vec![archived[1].0.id.clone()]);
     assert_eq!(result.skipped.len(), 1);
     assert_eq!(result.skipped[0].id, archived[0].0.id);
@@ -733,7 +730,7 @@ async fn archived_cleanup_removes_safe_forks_before_a_blocked_parent_and_retries
     let dirty_path = Path::new(forks[1].1[0].checkout_path.as_ref().unwrap()).join("dirty.txt");
     std::fs::write(&dirty_path, "uncommitted").unwrap();
     let cleanup = || {
-        crate::server::archived_cleanup::project(
+        cleanup_project(
             State(f.state.clone()),
             AxumPath(f.workspace.project_id.clone()),
         )
@@ -818,12 +815,7 @@ async fn archived_cleanup_checks_user_branches_and_recognizes_merge_into_parent(
         .finish_workspace(&fork.id, "kept", "skip", None, "now")
         .await
         .unwrap();
-    let cleanup = || {
-        crate::server::archived_cleanup::workspace(
-            State(f.state.clone()),
-            AxumPath(f.workspace.id.clone()),
-        )
-    };
+    let cleanup = || cleanup_forks(State(f.state.clone()), AxumPath(f.workspace.id.clone()));
     let result = cleanup().await.unwrap().0;
     assert!(result.deleted_ids.is_empty());
     assert_eq!(result.skipped[0].reason, "unmerged");
@@ -860,4 +852,218 @@ async fn archived_cleanup_checks_user_branches_and_recognizes_merge_into_parent(
         )
         .is_empty()
     );
+}
+
+async fn cleanup_project(
+    state: State<AppState>,
+    id: AxumPath<String>,
+) -> Result<Json<crate::model::ArchivedCleanupResult>> {
+    let (_, Json(task)) = crate::server::archived_cleanup::project(state.clone(), id).await?;
+    Ok(Json(
+        crate::server::archived_cleanup::wait(&state.0, &task.id).await,
+    ))
+}
+async fn cleanup_forks(
+    state: State<AppState>,
+    id: AxumPath<String>,
+) -> Result<Json<crate::model::ArchivedCleanupResult>> {
+    let (_, Json(task)) = crate::server::archived_cleanup::workspace(state.clone(), id).await?;
+    Ok(Json(
+        crate::server::archived_cleanup::wait(&state.0, &task.id).await,
+    ))
+}
+
+#[tokio::test]
+async fn archived_cleanup_tasks_share_ids_and_release_global_lock_while_waiting() {
+    let f = fixture().await;
+    finish_retained(&f).await;
+    let guard = crate::server::workspace_lifecycle::lock(&f.state, &f.workspace.id)
+        .await
+        .unwrap();
+    let (status, Json(first)) = crate::server::archived_cleanup::project(
+        State(f.state.clone()),
+        AxumPath(f.workspace.project_id.clone()),
+    )
+    .await
+    .unwrap();
+    let (_, Json(second)) = crate::server::archived_cleanup::project(
+        State(f.state.clone()),
+        AxumPath(f.workspace.project_id.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(first.id, second.id);
+    assert_eq!(first.status, "running");
+    let other = fixture().await;
+    finish_retained(&other).await;
+    let result = cleanup_project(
+        State(other.state.clone()),
+        AxumPath(other.workspace.project_id.clone()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert_eq!(result.deleted_ids, vec![other.workspace.id.clone()]);
+    assert!(workers().try_lock().is_ok());
+    let Json(tasks) = crate::server::archived_cleanup::list(State(f.state.clone())).await;
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].status, "running");
+    drop(guard);
+    let result = crate::server::archived_cleanup::wait(&f.state, &first.id).await;
+    assert_eq!(result.deleted_ids, vec![f.workspace.id.clone()]);
+    let Json(tasks) = crate::server::archived_cleanup::list(State(f.state.clone())).await;
+    assert_eq!(tasks[0].completed, tasks[0].total);
+}
+
+#[tokio::test]
+async fn archived_cleanup_removes_only_safe_unowned_managed_worktrees() {
+    let f = fixture().await;
+    let root = &f.roots[0];
+    let managed = f.state.settings.treefold_home().join("git/w");
+    std::fs::create_dir_all(&managed).unwrap();
+    let mut paths = Vec::new();
+    for name in [
+        "clean-orphan",
+        "missing-orphan",
+        "dirty-orphan",
+        "ignored-orphan",
+        "locked-orphan",
+        "unmerged-orphan",
+    ] {
+        let path = managed.join(name);
+        git(
+            root,
+            &["worktree", "add", "-b", name, path.to_str().unwrap()],
+        );
+        paths.push(path);
+    }
+    std::fs::remove_dir_all(&paths[1]).unwrap();
+    std::fs::write(paths[2].join("dirty.txt"), "keep").unwrap();
+    std::fs::write(
+        root.join(".git/info/exclude"),
+        "ignored.txt
+",
+    )
+    .unwrap();
+    std::fs::write(paths[3].join("ignored.txt"), "keep").unwrap();
+    git(root, &["worktree", "lock", paths[4].to_str().unwrap()]);
+    commit(&paths[5], "unmerged.txt", "keep");
+    let external = f.state.settings.treefold_home().join("external");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "external-orphan",
+            external.to_str().unwrap(),
+        ],
+    );
+    let result = cleanup_project(
+        State(f.state.clone()),
+        AxumPath(f.workspace.project_id.clone()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(result.deleted_ids.is_empty());
+    assert_eq!(result.orphan_paths.len(), 2);
+    assert_eq!(result.skipped.len(), 4);
+    assert!(!paths[0].exists());
+    for path in &paths[2..] {
+        assert!(path.exists());
+    }
+    assert!(external.exists());
+    assert_checkouts_preserved(&f);
+    assert!(
+        !git(
+            root,
+            &["branch", "--list", "clean-orphan", "missing-orphan"]
+        )
+        .is_empty()
+    );
+    let result = cleanup_project(
+        State(f.state.clone()),
+        AxumPath(f.workspace.project_id.clone()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(result.orphan_paths.is_empty());
+    assert_eq!(result.skipped.len(), 4);
+}
+
+#[tokio::test]
+async fn archived_cleanup_preserves_other_projects_owned_worktrees() {
+    let f = fixture().await;
+    let (_, Json(project)) = create_project(
+        State(f.state.clone()),
+        ApiJson(CreateProject {
+            open_path: None,
+            name: Some("Other Project".into()),
+            description: None,
+            path: None,
+            locations: None,
+            preferred_remote: None,
+            directory_description: None,
+            directory_worktree_setup_command: None,
+        }),
+    )
+    .await
+    .unwrap();
+    let _ = crate::server::create_directory(
+        State(f.state.clone()),
+        AxumPath(project.id.clone()),
+        ApiJson(crate::server::workspace::CreateDirectory {
+            path: f.roots[0].to_string_lossy().into_owned(),
+            description: None,
+            worktree_setup_command: None,
+        }),
+    )
+    .await
+    .unwrap();
+    let repository = f
+        .state
+        .store
+        .repositories(&project.id)
+        .await
+        .unwrap()
+        .remove(0);
+    let path = f.state.settings.treefold_home().join("git/w/cross-project");
+    git(
+        &f.roots[0],
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "cross-project",
+            path.to_str().unwrap(),
+        ],
+    );
+    let mut workspace = f.workspace.clone();
+    workspace.id = crate::ids::new_id();
+    workspace.project_id = project.id;
+    workspace.status = "archived".into();
+    let mut location = f.repositories[0].clone();
+    location.id = crate::ids::new_id();
+    location.workspace_id = workspace.id.clone();
+    location.project_repository_id = repository.id;
+    location.checkout_path = Some(path.to_string_lossy().into_owned());
+    location.branch = Some("cross-project".into());
+    f.state
+        .store
+        .create_workspace_with_repositories(&workspace, &[location])
+        .await
+        .unwrap();
+    let result = cleanup_project(
+        State(f.state.clone()),
+        AxumPath(f.workspace.project_id.clone()),
+    )
+    .await
+    .unwrap()
+    .0;
+    assert!(result.orphan_paths.is_empty());
+    assert!(result.skipped.is_empty());
+    assert!(path.exists());
 }

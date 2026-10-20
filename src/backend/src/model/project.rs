@@ -6,6 +6,8 @@ pub struct Project {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub open_path: Option<String>,
+    #[serde(default)]
+    pub review_prompt: String,
     pub name: String,
     pub description: String,
     pub status: String,

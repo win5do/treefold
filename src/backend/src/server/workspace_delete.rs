@@ -43,7 +43,8 @@ pub(super) async fn delete_precheck(
     AxumPath(id): AxumPath<String>,
     Query(options): Query<DeleteWorkspaceOptions>,
 ) -> Result<Json<WorkspaceDeletePrecheck>> {
-    let _workers = super::finish_batch::workers().lock().await;
+    let _lifecycle = super::workspace_lifecycle::lock(&state, &id).await?;
+    super::workspace_lifecycle::ensure_idle(&state, &id).await?;
     let cleanups = collect_cleanups(&state, &id, &options, false).await?;
     let checked = inspect_cleanups(&state, &cleanups).await?;
     Ok(Json(precheck_result(&id, &cleanups, &checked)))
@@ -184,12 +185,13 @@ pub(super) async fn delete_workspace(
     Query(options): Query<DeleteWorkspaceOptions>,
 ) -> Result<StatusCode> {
     // Serialize deletion with Finish and reopening, including archived children.
-    let _workers = super::finish_batch::workers().lock().await;
+    let _lifecycle = super::workspace_lifecycle::lock(&state, &id).await?;
+    super::workspace_lifecycle::ensure_idle(&state, &id).await?;
     delete_workspace_locked(&state, &id, &options, false).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Caller holds the Finish/reopen worker lock for the complete check and mutation.
+/// Caller holds the Workspace tree lock and has checked for active Finish workers.
 pub(super) async fn delete_workspace_locked(
     state: &AppState,
     id: &str,

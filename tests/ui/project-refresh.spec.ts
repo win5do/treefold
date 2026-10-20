@@ -15,7 +15,7 @@ test("Project archive state and subsequent events update while worktree checks a
     let streamOpen = false;
     page.on("console", message => { if (message.text().includes("Stream open /api/events")) streamOpen = true; });
     page.on("requestfailed", request => {
-      if (request.url().endsWith(`/projects/${FIXTURE_IDS.project}/worktrees`)) failures.push(request.failure()?.errorText ?? "failed");
+      if (request.url().endsWith(`/project-repositories/${FIXTURE_IDS.primaryRepository}/worktrees`)) failures.push(request.failure()?.errorText ?? "failed");
     });
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
     const row = page.getByTestId(`workspace-list-row-${FIXTURE_IDS.workspace}`);
@@ -23,7 +23,7 @@ test("Project archive state and subsequent events update while worktree checks a
     await expect(page.getByTestId("project-worktree-row").first()).toBeVisible();
     await expect.poll(() => streamOpen).toBe(true);
     failures.length = 0;
-    await page.route(`**/api/projects/${FIXTURE_IDS.project}/worktrees`, async route => {
+    await page.route(`**/api/project-repositories/${FIXTURE_IDS.primaryRepository}/worktrees`, async route => {
       const index = requests++;
       const response = await route.fetch();
       if (index === 0) await gate;
@@ -71,19 +71,60 @@ test("failed worktree checks leave Project records available and can be retried"
   let failing = true;
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "project-status-error" });
-    await page.route(`**/api/projects/${FIXTURE_IDS.project}/worktrees`, async route => {
+    await page.route(`**/api/project-repositories/${FIXTURE_IDS.primaryRepository}/worktrees`, async route => {
       if (failing) await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "UNAVAILABLE", message: "Worktree check unavailable" } }) });
       else await route.continue();
     });
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
     await expect(page.getByTestId(`workspace-list-row-${FIXTURE_IDS.workspace}`)).toBeVisible();
-    const alert = page.getByRole("alert").filter({ hasText: "Unable to load worktree status" });
+    const primary = page.getByTestId(`project-location-${FIXTURE_IDS.primaryRepository}`);
+    const secondary = page.getByTestId(`project-location-${FIXTURE_IDS.secondaryRepository}`);
+    await secondary.getByTestId(`project-location-toggle-${FIXTURE_IDS.secondaryRepository}`).click();
+    await expect(secondary.getByTestId("project-worktree-row").first()).toBeVisible();
+    const alert = primary.getByRole("alert").filter({ hasText: "Unable to load worktree status" });
     await expect(alert).toBeVisible();
     failing = false;
     await alert.getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(page.getByTestId("project-worktree-row").first()).toBeVisible();
+    await expect(primary.getByTestId("project-worktree-row").first()).toBeVisible();
     harness.assertNoUnexpectedRequests();
   } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});
+
+
+test("repositories load worktrees independently with loading and empty states inside each list", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let pending = false;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "repository-worktrees" });
+    await page.route(`**/api/project-repositories/${FIXTURE_IDS.primaryRepository}/worktrees`, async route => {
+      pending = true;
+      await gate;
+      await route.fulfill({ json: [] });
+    });
+    await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+    const primary = page.getByTestId(`project-repository-worktrees-${FIXTURE_IDS.primaryRepository}`);
+    const secondary = page.getByTestId(`project-location-${FIXTURE_IDS.secondaryRepository}`);
+    await expect.poll(() => pending).toBe(true);
+    await expect(primary.getByRole("status").filter({ hasText: "Loading worktree status" })).toBeVisible();
+    await expect(primary.getByText("No worktrees found for this repository.", { exact: true })).toHaveCount(0);
+    await secondary.getByTestId(`project-location-toggle-${FIXTURE_IDS.secondaryRepository}`).click();
+    await expect(secondary.getByTestId("project-worktree-row").first()).toBeVisible();
+    // The second repository has completed while the first still awaits its response.
+    await expect(primary.getByRole("status").filter({ hasText: "Loading worktree status" })).toBeVisible();
+    release();
+    await expect(primary.getByRole("status")).toHaveCount(0);
+    await expect(primary.getByText("No worktrees found for this repository.", { exact: true })).toBeVisible();
+    harness.assertNoUnexpectedRequests();
+  } catch (error) {
+    await page?.screenshot({ path: "/tmp/treefold-repository-worktrees-failure.png" }).catch(() => {});
+    throw error;
+  } finally {
+    release();
     try { await closeUiSession(page); } finally { await harness.close(); }
   }
 });

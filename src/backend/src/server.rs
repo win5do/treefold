@@ -44,6 +44,7 @@ use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub cleanup_tasks: archived_cleanup::CleanupTasks,
     pub keymap: crate::keymap::KeymapStore,
     pub store: Store,
     pub settings: SettingsStore,
@@ -412,7 +413,7 @@ fn app(state: AppState) -> Router {
         )
         .route(
             "/api/project-repositories/{id}/worktrees",
-            axum::routing::delete(delete_worktree),
+            get(project_status::get_repository_worktrees).delete(delete_worktree),
         )
         .route(
             "/api/project-repositories/{id}/worktrees/delete-precheck",
@@ -431,6 +432,7 @@ fn app(state: AppState) -> Router {
             get(worktree_prune::preview).post(worktree_prune::prune),
         )
         .route("/api/projects/{id}/workspaces", post(create_workspace))
+        .route("/api/archived-cleanup", get(archived_cleanup::list))
         .route(
             "/api/projects/{id}/workspaces/cleanup-archived",
             post(archived_cleanup::project),
@@ -660,7 +662,7 @@ async fn list_background_processes(
 
 mod agent;
 mod agent_metadata;
-mod archived_cleanup;
+pub(crate) mod archived_cleanup;
 mod delivery;
 mod finish_batch;
 mod finish_recovery;
@@ -669,9 +671,11 @@ mod fork;
 mod git_routes;
 mod hosting;
 mod keymap;
+mod orphan_worktrees;
 mod parent_operation;
 mod reopen;
 mod workspace_delete;
+mod workspace_lifecycle;
 use workspace_delete::delete_workspace;
 mod agent_review;
 mod project_creation;

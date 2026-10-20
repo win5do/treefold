@@ -1,3 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
+import { repositoryWorktreesQuery } from "./queries";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PruneWorktreesDialog } from "@/features/projects/PruneWorktreesDialog";
 import { WorktreeStatusBadges } from "@/features/git/WorktreeStatusBadges";
 import { WorktreeWorkspaceButton } from "@/features/workspace/WorktreeWorkspaceButton";
@@ -7,6 +10,7 @@ import { useMemo, useState } from "react";
 import type * as React from "react";
 import {
   BrushCleaning,
+  CircleAlert,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -414,8 +418,6 @@ export function DirectoryTreeRow({
 export function ProjectRepositoryTreeRow({
   repository,
   directories,
-  worktrees,
-  worktreesLoaded,
   busy,
   readOnly,
   onOpen,
@@ -432,8 +434,6 @@ export function ProjectRepositoryTreeRow({
 }: {
   repository: ProjectRepository;
   directories: Directory[];
-  worktrees: GitWorktree[];
-  worktreesLoaded: boolean;
   busy: boolean;
   readOnly: boolean;
   onOpen: (id: string) => void;
@@ -449,6 +449,9 @@ export function ProjectRepositoryTreeRow({
   worktreeDeletions: Record<string, WorktreeDeleteOperation>;
 }) {
   const { t } = useTranslation();
+  const worktreeQuery = useQuery(repositoryWorktreesQuery(repository.project_id, repository.id));
+  const worktrees = worktreeQuery.data;
+  const worktreesLoaded = worktrees !== undefined;
   const [pruneOpen, setPruneOpen] = useState(false);
   const [expanded, setExpanded] = useState(
     directories.some((directory) => directory.role === "primary") ||
@@ -456,13 +459,13 @@ export function ProjectRepositoryTreeRow({
   );
   const orderedWorktrees = useMemo(
     () =>
-      [...worktrees].sort(
+      [...(worktrees ?? [])].sort(
         (left, right) => Number(right.is_main) - Number(left.is_main),
       ),
     [worktrees],
   );
   const observedDirectory = directories[0];
-  const mainWorktree = worktrees.find((item) => item.is_main);
+  const mainWorktree = worktrees?.find((item) => item.is_main);
   const currentBranch =
     mainWorktree?.branch && mainWorktree.branch !== "detached HEAD"
       ? mainWorktree.branch
@@ -614,6 +617,23 @@ export function ProjectRepositoryTreeRow({
                 count={worktreesLoaded ? orderedWorktrees.length : undefined}
                 icon={GitBranch}
               >
+                {worktreeQuery.isFetching && (
+                  <div role="status" className="flex items-center gap-2 py-4 pl-5 text-xs text-muted-foreground">
+                    <Spinner aria-hidden="true" />
+                    {t("workspaceUi.loadingWorktreeStatus")}
+                  </div>
+                )}
+                {worktreeQuery.isError && (
+                  <Alert variant="destructive" className="my-3 ml-5 w-auto">
+                    <CircleAlert />
+                    <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+                      <span>{t("workspaceUi.worktreeStatusLoadFailed")}</span>
+                      <Button size="sm" variant="outline" disabled={worktreeQuery.isFetching} onClick={() => void worktreeQuery.refetch()}>
+                        <RefreshCw data-icon="inline-start" />{t("workspaceUi.retryWorktreeStatus")}
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                )}
                 {orderedWorktrees.map((item) => (
                   <div
                     key={item.path}
@@ -727,7 +747,7 @@ export function ProjectRepositoryTreeRow({
                     )}
                   </div>
                 ))}
-                {worktreesLoaded && orderedWorktrees.length === 0 && (
+                {worktreesLoaded && !worktreeQuery.isFetching && !worktreeQuery.isError && orderedWorktrees.length === 0 && (
                   <div className="py-4 pl-5 text-xs text-muted-foreground">{t("projectsUi.noWorktreesFoundForThisRepository")}</div>
                 )}
               </ProjectRepositoryChildGroup>

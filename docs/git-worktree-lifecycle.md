@@ -94,6 +94,33 @@ removing clean worktrees while preserving committed work. Files retained after
 record deletion are managed outside Treefold and cannot reopen the deleted item.
 Older saved Finish plans retain their previously confirmed cleanup choices.
 
+Bulk cleanup runs as an in-memory backend task. Both cleanup POST endpoints return
+`202 Accepted` with a task ID; repeated submissions for a running scope return the
+same task. `GET /api/archived-cleanup` returns the latest task per Project or
+Workspace, including progress, deleted IDs, removed orphan paths, and skipped
+items. A backend restart discards task state; another submission inspects current
+records and Git resources rather than resuming a saved plan.
+
+Cleanup takes a lifecycle lock for one Workspace tree at a time, shared with
+Finish startup, reopening, deletion, and importing an owned worktree. Git changes
+continue to use repository locks. Long cleanup operations do not hold the global
+Finish worker registry lock. Forks are processed before their archived parent.
+
+Project cleanup also scans registered worktrees in its repositories for orphan
+checkouts inside the canonical Treefold `git/w` root. Records from both active
+and archived Workspaces protect their checkouts. Ownership is checked again under
+the repository lock before removal. Only merged, clean, unlocked checkouts without
+ignored files or ongoing Git operations are removed; missing merged registrations
+can also be removed. External worktrees and unregistered directories are left
+alone. Orphan branches are retained because there is no ownership record. Fork
+cleanup stays within its Workspace and does not scan Project-wide orphan paths.
+
+The renderer observes tasks above the page routes. Existing runtime SSE events
+trigger progress and list refreshes after each item, with a two-second polling
+fallback while tasks run. Returning to the scope restores the busy indicator;
+completion produces one global toast. There is no task page or persistent task
+history.
+
 New-branch Workspace repositories default to the Project checkout branch's
 available upstream remote, then the Repository's preferred remote, `origin`, or
 the first configured remote. The upstream branch defaults to the new local branch

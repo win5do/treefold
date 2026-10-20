@@ -45,6 +45,7 @@ export function createProjectCreationRoutes({ fixture, readJson, sendJson }: Rou
         const requestedLocations = "locations" in input ? input.locations : [input.source.kind === "empty"
           ? `${input.source.parent_path}/${input.name}` : `/tmp/treefold-ui-fixture/managed/${input.name}`];
         const created: FixtureProject = {
+          review_prompt: "",
           open_path: "locations" in input ? input.open_path : requestedLocations[0],
           id: "project-created-primary-requirement",
           name: input.name,

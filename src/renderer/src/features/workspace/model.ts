@@ -2,7 +2,6 @@ import type {
   Directory,
   ProjectDetail,
   Session,
-  Workspace,
   WorkspaceDetail,
   WorkspaceDirectory,
   WorkspaceRepository,

@@ -143,12 +143,11 @@ export const zhCN = {
     "squash": "压缩合并", ready: "正常", not_installed: "未安装", outdated: "待更新", partial: "不完整", conflict: "冲突", unavailable: "不可用" },
   },
   archivedCleanup: {
+    progress: "正在清理 {{completed}}/{{total}}",
     workspaceActions: "Workspace 列表操作",
     forkActions: "Fork 列表操作",
     action: "清理已归档项",
-    title: "清理结果",
     result: "已清理 {{deleted}} 项，跳过 {{skipped}} 项。",
-    description: "清理成功的归档记录及其托管 worktree、本地分支已永久删除，跳过的项会保留。未合并的提交和未提交的修改会阻止清理。",
     failed: "无法清理已归档项",
     reasons: {
       unmerged: "存在未合并的提交，已保留记录和文件。",
@@ -309,6 +308,7 @@ export const zhCN = {
     },
   },
   "appFeedback": {
+    "itemDeleted": "此项已删除。",
     "worktreeDeleted": "工作树已删除",
     "worktreeDeletionFailed": "工作树删除失败",
     "repository": "仓库",
@@ -425,7 +425,6 @@ export const zhCN = {
     "batchProgress": "已完成 {{done}} / {{total}} 个仓库",
     "batchCompleted": "所有仓库均已完成，当前条目已归档。",
     "batchDone": "完成",
-    "batchClose": "关闭窗口",
     "batchNotice": "有一项完成操作正在执行或需要处理。",
     "batchView": "查看进度",
     "batchStates": {
@@ -952,7 +951,6 @@ export const zhCN = {
     "eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode": "已存在且未被占用的本地分支会被复用；新分支基于各 Project 仓库当前分支创建，并记录创建基准。",
     "workspaceDescription": "Workspace 描述",
     "scopeAndExpectedOutcome": "范围与预期结果",
-    "sharedLocalBranch": "共用的本地分支名称",
     "baseBranch": "基准分支",
     "defaultWorkspaceFinishStrategy": "Workspace 默认完成策略",
     "pushFeatureBranch": "推送功能分支",

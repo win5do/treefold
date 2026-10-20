@@ -1,3 +1,4 @@
+import { createProjectUpdateRoutes } from "./routes/project-update.ts";
 import { createProjectStatusRoutes } from "./routes/project-status.ts";
 import { createWorkspaceStatusRoutes } from "./routes/workspace-status.ts";
 import { createProjectCreationRoutes } from "./routes/project-creation.ts";
@@ -82,6 +83,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
   let worktreeDeletePolls = 0;
   const amuxStopRequests: string[] = [];
   const repositoryBranches = new Map<string, GitBranches>();
+  const projectUpdateRoutes = createProjectUpdateRoutes({ fixture, readJson, sendJson }, renameRequests);
   const projectStatusRoutes = createProjectStatusRoutes({ fixture, readJson, sendJson });
   const workspaceStatusRoutes = createWorkspaceStatusRoutes({ fixture, readJson, sendJson });
   const workspaceDeletionRoutes = createWorkspaceDeletionRoutes({ fixture, sendJson });
@@ -109,6 +111,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
     const pathname = requestUrl.pathname;
     if (await projectCreationRoutes.handle(request, response, pathname)) return;
     if (await agentReviewRoutes.handle(request, response, pathname)) return;
+    if (await projectUpdateRoutes.handle(request, response, pathname)) return;
     if (await projectStatusRoutes.handle(request, response, pathname)) return;
     if (await workspaceStatusRoutes.handle(request, response, pathname)) return;
     if (await workspaceDeletionRoutes.handle(request, response, pathname)) return;
@@ -433,84 +436,6 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
         project.default_location_id = location.id;
       }
       sendJson(response, 201, location);
-      return;
-    }
-    if (
-      request.method === "PATCH" &&
-      projectMatch &&
-      fixture.projectDetails[projectMatch[1]]
-    ) {
-      const input = await readJson<Partial<FixtureProject>>(request);
-      if (
-        input.status !== undefined &&
-        input.status !== "active" &&
-        input.status !== "archived"
-      ) {
-        sendJson(response, 400, {
-          error: "Project status must be active or archived",
-        });
-        return;
-      }
-      const project = fixture.projects.find(
-        (item) => item.id === projectMatch[1],
-      );
-      assert.ok(project);
-      if (
-        input.status === "archived" &&
-        fixture.projectDetails[projectMatch[1]].workspaces.some(
-          (item) => item.kind !== "base" && item.status === "active",
-        )
-      ) {
-        sendJson(response, 400, {
-          error: {
-            code: "BAD_REQUEST",
-            message:
-              "Finish active Workspaces and Forks before archiving this Project",
-          },
-        });
-        return;
-      }
-      if (input.name !== undefined) {
-        project.name = input.name;
-        fixture.projectDetails[projectMatch[1]].name = input.name;
-      }
-      if (input.description !== undefined) {
-        project.description = input.description;
-        fixture.projectDetails[projectMatch[1]].description = input.description;
-      }
-      if (input.name !== undefined || input.description !== undefined)
-        renameRequests.push({ kind: "project", id: projectMatch[1], ...input });
-      if (input.status !== undefined) project.status = input.status;
-      if (input.status !== undefined)
-        fixture.projectDetails[projectMatch[1]].status = input.status;
-      if (input.default_directory_id !== undefined) {
-        project.default_directory_id = input.default_directory_id;
-        project.default_location_id = input.default_directory_id;
-        fixture.projectDetails[projectMatch[1]].default_directory_id =
-          input.default_directory_id;
-        fixture.projectDetails[projectMatch[1]].default_location_id =
-          input.default_directory_id;
-      }
-      if (input.status === "archived") {
-        const projectSessions =
-          fixture.projectDetails[projectMatch[1]].sessions;
-        fixture.projectDetails[projectMatch[1]].sessions =
-          projectSessions.filter((session) => session.kind !== "shell");
-        fixture.projectDetails[projectMatch[1]].sessions.forEach((session) => {
-          session.status = "stopped";
-        });
-        Object.values(fixture.workspaceDetails)
-          .filter((detail) => detail.project_id === projectMatch[1])
-          .forEach((detail) => {
-            detail.sessions = detail.sessions.filter(
-              (session) => session.kind !== "shell",
-            );
-            detail.sessions.forEach((session) => {
-              session.status = "stopped";
-            });
-          });
-      }
-      sendJson(response, 200, project);
       return;
     }
     if (

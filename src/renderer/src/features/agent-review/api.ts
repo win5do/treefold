@@ -15,7 +15,7 @@ export type ReviewRepository = {
 
 export const agentReviewApi = {
   context: (id: string, signal?: AbortSignal) =>
-    request<{ repositories: ReviewRepository[] }>(`/api/workspaces/${id}/agent-review`, { signal }),
+    request<{ review_prompt: string; repositories: ReviewRepository[] }>(`/api/workspaces/${id}/agent-review`, { signal }),
   start: (id: string, input: { kind: AgentKind; prompt: string; project_directory_id: string }) =>
     request<Session>(`/api/workspaces/${id}/agent-review`, { method: "POST", json: input }),
 };

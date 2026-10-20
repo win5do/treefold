@@ -2,6 +2,7 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct AgentReviewContext {
+    pub review_prompt: String,
     pub repositories: Vec<AgentReviewRepository>,
 }
 

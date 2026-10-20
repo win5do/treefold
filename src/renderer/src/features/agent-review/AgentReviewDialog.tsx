@@ -12,7 +12,6 @@ import { useAgentChoice } from "@/features/agents/AgentSelect";
 import { AgentChoices } from "@/features/agents/AgentChoices";
 import { SessionDirectoryChoices } from "@/features/terminal/SessionDirectoryChoices";
 import { handleSessionChoiceKeyboard } from "@/features/terminal/sessionChoiceKeyboard";
-import { settingsQuery } from "@/features/app/queries";
 import { agentReviewApi } from "./api";
 import type { AgentReviewTarget } from "./model";
 
@@ -24,11 +23,10 @@ export function AgentReviewDialog({ workspace, onClose, onCreated }: {
   const { t } = useTranslation();
   const id = useId();
   const choice = useAgentChoice();
-  const settings = useQuery(settingsQuery());
   const context = useQuery({ queryKey: ["agent-review", workspace.id],
     queryFn: ({ signal }) => agentReviewApi.context(workspace.id, signal), refetchOnMount: "always" });
   const [draft, setDraft] = useState<string>();
-  const prompt = draft ?? (settings.data?.projects?.[workspace.project_id]?.review_prompt || t("agentReview.defaultPrompt"));
+  const prompt = draft ?? (context.data?.review_prompt || t("agentReview.defaultPrompt"));
   const directories = (workspace.directories ?? []).filter(directory => directory.is_git && directory.git_status === "ready");
   const [selected, setSelected] = useState<string>();
   const directory = directories.find(item => item.id === selected) ?? directories.find(item => item.role === "primary") ?? directories[0];
@@ -38,7 +36,7 @@ export function AgentReviewDialog({ workspace, onClose, onCreated }: {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const ready = !pending && !choice.loading && !choice.error && !!choice.kind && !!directory &&
-    !!context.data && !context.isFetching && !context.error && !settings.isPending && !settings.error && !!prompt.trim();
+    !!context.data && !context.isFetching && !context.error && !!prompt.trim();
   const submit = async () => {
     if (!ready || submitting.current || !choice.kind || !directory) return;
     submitting.current = true;
@@ -84,7 +82,7 @@ export function AgentReviewDialog({ workspace, onClose, onCreated }: {
           <Field data-invalid={!prompt.trim()}>
             <FieldLabel htmlFor={`${id}-prompt`}>{t("agentReview.prompt")}</FieldLabel>
             <Textarea id={`${id}-prompt`} rows={6} className="max-h-40" value={prompt} required aria-invalid={!prompt.trim()}
-              disabled={pending || settings.isPending || !!settings.error} onChange={event => setDraft(event.target.value)} />
+              disabled={pending || context.isPending || !!context.error} onChange={event => setDraft(event.target.value)} />
             <FieldDescription>{t("agentReview.promptDescription")} {t("agentReview.promptKeyboardHint")}</FieldDescription>
           </Field>
           <SessionDirectoryChoices directories={workspace.directories ?? []} agentOnly
@@ -105,7 +103,7 @@ export function AgentReviewDialog({ workspace, onClose, onCreated }: {
             {context.error && <Button type="button" variant="secondary" onClick={() => void context.refetch()}>{t("agentReview.retry")}</Button>}
           </Field>
         </FieldGroup>
-        {(error || context.error || settings.error) && <Alert variant="destructive"><AlertDescription>{error || context.error?.message || settings.error?.message}</AlertDescription></Alert>}
+        {(error || context.error) && <Alert variant="destructive"><AlertDescription>{error || context.error?.message}</AlertDescription></Alert>}
         <p className="shrink-0 text-xs text-muted-foreground">{t("agentReview.keyboardHint")}</p>
         <DialogFooter>
           <Button type="button" variant="secondary" disabled={pending} onClick={onClose}>{t("common.cancel")}</Button>

@@ -141,12 +141,11 @@ export const enUS = {
     "squash": "squash merge", ready: "Ready", not_installed: "Not installed", outdated: "Outdated", partial: "Partial", conflict: "Conflict", unavailable: "Unavailable" },
   },
   archivedCleanup: {
+    progress: "Cleaning up {{completed}}/{{total}}",
     workspaceActions: "Workspace list actions",
     forkActions: "Fork list actions",
     action: "Clean up archived items",
-    title: "Cleanup results",
     result: "Cleaned up {{deleted}}; skipped {{skipped}}.",
-    description: "Cleaned items and their managed worktrees and local branches are permanently deleted. Skipped items are kept. Unmerged branches and uncommitted changes block cleanup.",
     failed: "Could not clean up archived items",
     reasons: {
       unmerged: "Contains unmerged commits; kept the item and its files.",
@@ -307,6 +306,7 @@ export const enUS = {
     },
   },
   "appFeedback": {
+    "itemDeleted": "This item has been deleted.",
     "worktreeDeleted": "Worktree deleted",
     "worktreeDeletionFailed": "Worktree deletion failed",
     "repository": "Repository",
@@ -423,7 +423,6 @@ export const enUS = {
     "batchProgress": "{{done}} / {{total}} repositories finished",
     "batchCompleted": "All repositories finished and archived.",
     "batchDone": "Done",
-    "batchClose": "Close window",
     "batchNotice": "A Finish operation is in progress or needs attention.",
     "batchView": "View progress",
     "batchStates": {
@@ -950,7 +949,6 @@ export const enUS = {
     "eachGitLocationUsesItsOwnBaseBranchAndDeliveryMode": "Reuses existing local branches that are not checked out elsewhere. New branches start from each Project repository’s current branch, recorded as the creation base.",
     "workspaceDescription": "Workspace description",
     "scopeAndExpectedOutcome": "Scope and expected outcome",
-    "sharedLocalBranch": "Shared local branch",
     "baseBranch": "Base branch",
     "defaultWorkspaceFinishStrategy": "Default Workspace finish strategy",
     "pushFeatureBranch": "Push feature branch",

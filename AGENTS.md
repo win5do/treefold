@@ -205,7 +205,9 @@ hard storage boundary.
   file edits use that single source of truth.
 - `$TREEFOLD_HOME/data/treefold_<generation>.sqlite` owns Projects, Directories, Workspaces,
   Sessions, Todos, delivery/rebase/reset operations, and similar relational
-  runtime records. Do not add user preferences or keymaps to SQLite.
+  runtime records. Project-owned content such as `review_prompt` belongs with the
+  Project in SQLite and follows its lifecycle. Do not add global user preferences
+  or keymaps to SQLite.
 - Persisted random entity IDs use the shared UUID v7 generator and remain
   lowercase 32-character `TEXT`. Stable composite IDs such as Project base
   Workspace IDs remain strings and must not be replaced with random UUIDs.

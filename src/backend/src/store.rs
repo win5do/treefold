@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn workspace_default_delivery_migrates_existing_workspaces_and_reopens() {
+    async fn project_and_workspace_defaults_migrate_and_reopen() {
         let data = tempfile::tempdir().unwrap();
         let old_migrations = tempfile::tempdir().unwrap();
         std::fs::copy(
@@ -385,6 +385,11 @@ mod tests {
             store.workspace("w").await.unwrap().default_delivery,
             "local_merge"
         );
+        assert_eq!(store.project("p").await.unwrap().review_prompt, "");
+        store
+            .update_project_review_prompt("p", "  Review API.\n保留原文。  ")
+            .await
+            .unwrap();
         // Dynamic value exercises the database's allowed-value constraint.
         for (value, succeeds) in [("push_branch", true), ("invalid", false)] {
             let result = sqlx::query!(
@@ -397,6 +402,10 @@ mod tests {
         }
         store.pool.close().await;
         let reopened = Store::open(data.path()).await.unwrap();
+        assert_eq!(
+            reopened.project("p").await.unwrap().review_prompt,
+            "  Review API.\n保留原文。  "
+        );
         let workspace = reopened.workspace("w").await.unwrap();
         assert_eq!(workspace.default_delivery, "push_branch");
         assert_eq!(workspace.name, "W");
@@ -447,6 +456,7 @@ mod tests {
         let timestamp = now();
         store
             .create_empty_project(&Project {
+                review_prompt: String::new(),
                 open_path: None,
                 id: "project".into(),
                 name: "Project".into(),

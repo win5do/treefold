@@ -74,6 +74,7 @@ const secondaryForkPath =
   "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture-api";
 
 const project: FixtureProject = {
+  review_prompt: "",
   id: FIXTURE_IDS.project,
   name: FIXTURE_NAMES.project,
   description: "Deterministic data used only by the Treefold UI core test.",

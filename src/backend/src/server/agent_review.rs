@@ -107,7 +107,14 @@ pub(super) async fn review_context(
             "Review requires a writable Git repository".into(),
         ));
     }
-    Ok(AgentReviewContext { repositories })
+    Ok(AgentReviewContext {
+        review_prompt: state
+            .store
+            .project(&workspace.project_id)
+            .await?
+            .review_prompt,
+        repositories,
+    })
 }
 
 async fn session_input(

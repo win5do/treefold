@@ -13,7 +13,7 @@ export const allRuntimeDomains: RuntimeDomain[] = [
   "amux",
 ];
 
-const hierarchyKeys = [projectKeys.summaries, projectKeys.sidebar, ["project"], ["project-worktrees"], ["workspace"], ["workspace-worktrees"]];
+const hierarchyKeys = [projectKeys.summaries, projectKeys.sidebar, ["project"], ["project-worktrees"], ["workspace"], ["workspace-worktrees"], ["archived-cleanup"]];
 
 export async function invalidateHierarchyQueries(queryClient: QueryClient) {
   await invalidateRuntimeQueries(queryClient, ["sidebar"]);

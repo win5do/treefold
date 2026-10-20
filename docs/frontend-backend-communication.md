@@ -123,8 +123,10 @@ WebSocket handler 继承上下文。每次 WebSocket 重连使用新 ID；同一
 ### 独立刷新基础状态与 Git 状态
 
 Project 页面通过 `GET /api/projects/{id}?include_worktrees=false` 读取基础详情，
-通过 `GET /api/projects/{id}/worktrees` 独立读取工作树状态。前者的 `worktrees`
-为空数组；省略参数时仍返回包含工作树状态的完整详情。两个接口共用后端工作树检查服务，
+通过 `GET /api/project-repositories/{id}/worktrees` 按 Repo 并行读取工作树状态。
+每个 Repo 独立展示加载、结果和重试状态，慢请求不会阻塞其他 Repo；后台刷新保留已有结果。
+基础详情的 `worktrees` 为空数组；省略参数时仍返回包含工作树状态的完整详情。
+原有 `GET /api/projects/{id}/worktrees` 汇总接口保持兼容，与 Repo 接口共用检查服务。
 Workspace 归档、名称和目录等信息不再等待所有工作树检查完成。
 
 前端按查询串行刷新，同一查询已有请求时等待其完成，再执行一次读取；期间的新变更合并为

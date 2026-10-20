@@ -162,9 +162,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
       animations: "disabled",
     });
     await dialog.getByTestId("finish-confirm-action").click();
-    await expect(
-      dialog.getByRole("button", { name: "Close window" }),
-    ).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Finishing…", exact: true })).toBeDisabled();
     expect(submissions).toHaveLength(1);
     expect(submissions[0]).toEqual([
       {
@@ -182,7 +180,7 @@ test("Finish confirms all repositories and resumes saved progress after closing"
         preflight_id: `preflight-${ids[1]}-squash_merge`,
       },
     ]);
-    await dialog.getByRole("button", { name: "Close window" }).click();
+    await dialog.getByRole("button", { name: "Close", exact: true }).click();
     batch = {
       ...batch!,
       status: "paused",

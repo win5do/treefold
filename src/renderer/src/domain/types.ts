@@ -12,6 +12,7 @@ export type ProjectSource = { kind: "git_url"; url: string } | { kind: "empty"; 
 export type ProjectCreation = { name: string } & ({ locations: string[]; open_path: string } | { source: ProjectSource });
 
 export type Project = {
+  review_prompt: string;
   open_path?: string;
   id: string;
   name: string;
@@ -516,7 +517,6 @@ export type ThemePreference = "system" | "light" | "dark";
 export type CloseBehavior = "hide_to_tray" | "quit";
 
 export type AppSettings = {
-  projects?: Record<string, { review_prompt: string }>;
   schema_version: number;
   language: LanguagePreference;
   theme: ThemePreference;
@@ -615,10 +615,22 @@ export interface WorkspaceDeletePrecheck {
 
 export interface ArchivedCleanupResult {
   deleted_ids: string[];
+  orphan_paths: string[];
   skipped: {
     id: string;
     name: string;
     reason: "unmerged" | "changed" | "session_active" | "cleanup_blocked";
     message: string;
   }[];
+}
+
+export interface ArchivedCleanupTask extends ArchivedCleanupResult {
+  id: string;
+  scope: "project" | "workspace";
+  scope_id: string;
+  scope_name: string;
+  status: "running" | "completed" | "failed";
+  total: number;
+  completed: number;
+  error: string | null;
 }

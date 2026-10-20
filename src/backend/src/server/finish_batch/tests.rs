@@ -30,6 +30,7 @@ fn commit(path: &Path, file: &str, contents: &str) {
 }
 async fn state(home: &Path) -> AppState {
     AppState {
+        cleanup_tasks: Default::default(),
         store: Store::open(&home.join("data")).await.unwrap(),
         keymap: KeymapStore::open(home).unwrap(),
         settings: SettingsStore::open(home).unwrap(),

@@ -15,7 +15,7 @@ test("repository prune previews, retries changed registrations, and refreshes af
       report: "Removing worktrees/stale: gitdir file points to non-existent location",
       entries: [{ path: "/fixture/stale-worktree", reason: "gitdir file points to non-existent location", workspaces: ["Previous Workspace"] }],
     };
-    await page.route(`**/api/projects/${FIXTURE_IDS.project}/worktrees`, async route => {
+    await page.route(`**/api/project-repositories/${FIXTURE_IDS.primaryRepository}/worktrees`, async route => {
       worktreeReads += 1;
       await route.continue();
     });

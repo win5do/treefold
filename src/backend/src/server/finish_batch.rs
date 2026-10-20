@@ -54,7 +54,8 @@ pub(super) async fn start_finish_batch(
     AxumPath(id): AxumPath<String>,
     ApiJson(request): ApiJson<FinishBatchRequest>,
 ) -> Result<(StatusCode, Json<FinishBatch>)> {
-    let mut active = workers().lock().await;
+    let _lifecycle = super::workspace_lifecycle::lock(&state, &id).await?;
+    let active = workers().lock().await;
     if active.contains(&id)
         || state
             .store
@@ -66,6 +67,7 @@ pub(super) async fn start_finish_batch(
             "a Finish operation already exists; reopen it to continue".into(),
         ));
     }
+    drop(active);
     let check_state = state.clone();
     let check_id = id.clone();
     let batch = blocking_git_operation(move || async move {
@@ -79,7 +81,7 @@ pub(super) async fn start_finish_batch(
     })
     .await?;
     state.store.confirm_finish_batch(&batch).await?;
-    active.insert(id.clone());
+    workers().lock().await.insert(id.clone());
     launch(state, batch.clone(), false);
     Ok((StatusCode::ACCEPTED, Json(batch)))
 }
@@ -88,19 +90,20 @@ pub(super) async fn resume_finish_batch(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<String>,
 ) -> Result<Json<FinishBatch>> {
-    let mut active = workers().lock().await;
+    let _lifecycle = super::workspace_lifecycle::lock(&state, &id).await?;
+    let running = workers().lock().await.contains(&id);
     let mut batch = state
         .store
         .finish_batch(&id)
         .await?
         .ok_or(AppError::NotFound)?;
-    if active.contains(&id) || batch.status == "completed" {
+    if running || batch.status == "completed" {
         return Ok(Json(batch));
     }
     batch.status = "running".into();
     batch.error = None;
     state.store.save_finish_batch(&batch).await?;
-    active.insert(id);
+    workers().lock().await.insert(id);
     launch(state, batch.clone(), true);
     Ok(Json(batch))
 }
@@ -283,10 +286,12 @@ pub(super) async fn force_resume_finish_batch(
     AxumPath(id): AxumPath<String>,
     ApiJson(request): ApiJson<SkipRepositories>,
 ) -> Result<Json<FinishBatch>> {
-    let mut active = workers().lock().await;
+    let _lifecycle = super::workspace_lifecycle::lock(&state, &id).await?;
+    let active = workers().lock().await;
     if active.contains(&id) {
         return Err(AppError::BadRequest("Finish is still running".into()));
     }
+    drop(active);
     let mut batch = state
         .store
         .finish_batch(&id)
@@ -325,7 +330,7 @@ pub(super) async fn force_resume_finish_batch(
     batch.status = "running".into();
     batch.error = None;
     state.store.save_finish_batch(&batch).await?;
-    active.insert(id);
+    workers().lock().await.insert(id);
     launch(state, batch.clone(), true);
     Ok(Json(batch))
 }

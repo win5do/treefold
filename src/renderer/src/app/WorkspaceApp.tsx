@@ -1,3 +1,4 @@
+import { useMissingResourceRedirect } from "@/app/useMissingResourceRedirect";
 import { refreshQueries } from "@/features/app/refreshQueries";
 import { CreateWorkspaceDialog } from "@/features/workspace/CreateWorkspaceDialog";
 import { CreateProjectDialog } from "@/features/projects/CreateProjectDialog";
@@ -51,7 +52,6 @@ import type {
   ProjectDetail,
   ProjectRepository,
   ProjectSummary,
-  ParentOperation,
   RenameTarget,
   Session,
   SessionMenuState,
@@ -63,7 +63,6 @@ import type {
   WorktreeDeleteOperation,
 } from "@/domain/types";
 import {
-  normalizeProject,
   normalizeWorkspace,
   updateProjectWorkspaceSessions,
   upsertSession,
@@ -188,6 +187,13 @@ function Workspace() {
   const workspaceDetail = useQuery({
     ...workspaceDetailQuery(params.workspaceId ?? ""),
     enabled: Boolean(params.workspaceId),
+  });
+  useMissingResourceRedirect({
+    workspaceId: params.workspaceId,
+    projectId: params.projectId,
+    error: params.workspaceId ? workspaceDetail.error : projectDetail.error,
+    workspace: workspaceDetail.data,
+    projects: sidebar.data ?? [],
   });
   const projectSessions = useQuery({
     ...projectSessionsQuery(params.projectId ?? ""),

@@ -8,7 +8,7 @@ use crate::{
 use std::path::{Path, PathBuf};
 
 const PROJECT_COLUMNS: &str =
-    "id,name,description,status,default_directory_id,open_path,created_at,updated_at";
+    "id,name,description,status,default_directory_id,open_path,review_prompt,created_at,updated_at";
 const REPOSITORY_COLUMNS: &str = "id,project_id,name,source_root,git_common_dir,source_ownership,repository_url,preferred_remote_name,setup_command,setup_workdir,git_status,last_checked_at,created_at,updated_at";
 const DIRECTORY_COLUMNS: &str = "d.id,d.project_id,d.repository_id,d.name,d.description,d.relative_path,d.external_path,d.status,d.created_at,d.updated_at,r.name AS repository_name,r.source_root,r.git_common_dir,r.repository_url,r.preferred_remote_name,r.setup_command,r.setup_workdir,r.git_status AS repository_status,r.last_checked_at";
 
@@ -16,6 +16,7 @@ const DIRECTORY_COLUMNS: &str = "d.id,d.project_id,d.repository_id,d.name,d.desc
 struct ProjectRow {
     id: String,
     open_path: Option<String>,
+    review_prompt: String,
     name: String,
     description: String,
     status: String,
@@ -28,6 +29,7 @@ impl From<ProjectRow> for Project {
         Self {
             id: r.id,
             open_path: r.open_path,
+            review_prompt: r.review_prompt,
             name: r.name,
             description: r.description,
             status: r.status,
@@ -183,6 +185,22 @@ impl Store {
     }
     pub async fn create_empty_project(&self, p: &Project) -> Result<()> {
         sqlx::query!("INSERT INTO projects(id,name,description,status,default_directory_id,open_path,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)", p.id, p.name, p.description, p.status, p.default_location_id, p.open_path, p.created_at, p.updated_at).execute(&self.pool).await?;
+        Ok(())
+    }
+    pub async fn update_project_review_prompt(&self, id: &str, prompt: &str) -> Result<()> {
+        let prompt = if prompt.trim().is_empty() { "" } else { prompt };
+        let timestamp = now();
+        let result = sqlx::query!(
+            "UPDATE projects SET review_prompt=?, updated_at=? WHERE id=?",
+            prompt,
+            timestamp,
+            id
+        )
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound);
+        }
         Ok(())
     }
     pub async fn set_project_open_path(&self, id: &str, path: &str) -> Result<()> {

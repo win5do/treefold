@@ -23,7 +23,6 @@ import {
   Pencil,
   Plus,
   Settings,
-  Shell,
   TerminalSquare,
   Upload,
   Workflow,

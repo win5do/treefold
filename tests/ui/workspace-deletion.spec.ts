@@ -218,13 +218,21 @@ for (const scope of ["project", "workspace"] as const) {
     const activeId = scope === "project" ? FIXTURE_IDS.workspace : FIXTURE_IDS.fork;
     let requests = 0;
     let blocked = scope === "workspace";
+    let blockedTask: unknown;
     try {
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "archived-cleanup" });
+      await page.route("**/api/archived-cleanup", async route => {
+        if (blockedTask && blocked) await route.fulfill({ json: [blockedTask] });
+        else await route.continue();
+      });
       await page.route(`**/api/${scope}s/${parentId}/${kind}s/cleanup-archived`, async route => {
         requests += 1;
         expect(route.request().method()).toBe("POST");
         if (blocked) {
-          await route.fulfill({ json: { deleted_ids: [], skipped: [{ id: archivedId, name: "Unmerged Fork", reason: "unmerged", message: "raw backend message" }] } });
+          blockedTask = { id: "blocked-cleanup", scope, scope_id: parentId, scope_name: "Unmerged Fork",
+            status: "completed", total: 1, completed: 1, error: null, orphan_paths: [],
+            deleted_ids: [], skipped: [{ id: archivedId, name: "Unmerged Fork", reason: "unmerged", message: "raw backend message" }] };
+          await route.fulfill({ status: 202, json: blockedTask });
         } else await route.continue();
       });
       await page.goto(`${harness.baseUrl}/#/${scope}s/${parentId}`);
@@ -233,7 +241,7 @@ for (const scope of ["project", "workspace"] as const) {
       await clickUiElement(page, trigger);
       await action.click();
       if (blocked) {
-        const result = page.getByRole("dialog", { name: "Cleanup results" });
+        const result = page.getByRole("status").filter({ hasText: "Cleaned up 0; skipped 1." });
         await expect(result).toContainText("Cleaned up 0; skipped 1.");
         await expect(result).toContainText("Contains unmerged commits; kept the item and its files.");
         await expect(page.getByTestId(`${kind}-list-row-${archivedId}`)).toBeVisible();
@@ -246,9 +254,10 @@ for (const scope of ["project", "workspace"] as const) {
       await expect(page.getByTestId(`${kind}-list-row-${activeId}`)).toBeVisible();
       expect(requests).toBe(scope === "project" ? 1 : 2);
       await clickUiElement(page, trigger);
-      await expect(action).toBeDisabled();
+      if (scope === "workspace") await expect(action).toBeDisabled();
+      else await expect(action).toBeEnabled(); // Project cleanup can still find orphan worktrees.
       if (scope === "project") {
-        await expect(page.getByRole("status")).toContainText("Cleaned up 2; skipped 0.");
+        await expect(page.getByRole("status").filter({ hasText: "Cleaned up 2; skipped 0." })).toBeVisible();
         await page.keyboard.press("Escape");
         await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
         await expect(page.getByTestId(`fork-list-row-${FIXTURE_IDS.fork}`)).toBeVisible();
@@ -277,8 +286,9 @@ test("Project cleanup skips archived Forks under active Workspaces", async () =>
     const trigger = page.getByRole("button", { name: "Workspace list actions", exact: true });
     const action = page.getByRole("menuitem", { name: "Clean up archived items", exact: true });
     await clickUiElement(page, trigger);
-    await expect(action).toBeDisabled();
-    await page.keyboard.press("Escape");
+    await expect(action).toBeEnabled();
+    await action.click();
+    await expect(page.getByRole("status").filter({ hasText: "Cleaned up 0; skipped 0." })).toBeVisible();
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
     await expect(page.getByTestId(`fork-list-row-${FIXTURE_IDS.fork}`)).toBeVisible();
     await expect(page.getByTestId(`fork-list-row-${FIXTURE_IDS.archivedFork}`)).toBeVisible();
