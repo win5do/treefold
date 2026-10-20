@@ -33,23 +33,17 @@ mod current_workspace_tests {
     use crate::{
         model::{Session, Todo},
         settings::SettingsStore,
-        store::{Store, now},
+        store::now,
         terminal::{TerminalManager, TreefoldProcessView},
     };
 
     pub(super) async fn test_state(root: &Path) -> AppState {
         let home = root.join("home");
-        AppState {
-            cleanup_tasks: Default::default(),
-            store: Store::open(&home.join("data"))
-                .await
-                .expect("open test Store"),
-            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
-            settings: SettingsStore::open(&home).expect("open test Settings"),
-            terminals: TerminalManager::default().with_treefold_home(home.clone()),
-            runtime: RuntimeHub::default(),
-            integration: crate::integration::IntegrationManager::test(&home),
-        }
+        crate::server::test_support::app_state(
+            &home,
+            TerminalManager::default().with_treefold_home(home.clone()),
+        )
+        .await
     }
 
     // Most lifecycle tests need a completed checkout. These helpers exercise the
@@ -2978,17 +2972,9 @@ mod current_workspace_tests {
         .await
         .expect("start conflicted update");
         assert_eq!(conflicted.status, "conflicted");
-        let restarted = AppState {
-            cleanup_tasks: Default::default(),
-            store: Store::open(&root.join("home/data"))
-                .await
-                .expect("reopen Store"),
-            keymap: crate::keymap::KeymapStore::open(&root.join("home")).unwrap(),
-            settings: SettingsStore::open(&root.join("home")).expect("reopen Settings"),
-            terminals: TerminalManager::default(),
-            runtime: RuntimeHub::default(),
-            integration: crate::integration::IntegrationManager::test(&root.join("home")),
-        };
+        let restarted =
+            crate::server::test_support::app_state(&root.join("home"), TerminalManager::default())
+                .await;
         let recovered = reconcile_parent_operation(&restarted, &conflicted)
             .await
             .expect("reconcile after restart");

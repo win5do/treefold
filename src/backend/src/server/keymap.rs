@@ -18,7 +18,6 @@ pub(super) async fn update(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use axum::{
         body::{Body, to_bytes},
         http::{Request, StatusCode},
@@ -29,15 +28,11 @@ mod tests {
     async fn configuration_routes_share_sparse_persistence_and_reject_conflicts() {
         let home =
             std::env::temp_dir().join(format!("treefold-config-api-{}", uuid::Uuid::new_v4()));
-        let state = AppState {
-            cleanup_tasks: Default::default(),
-            store: crate::store::Store::open(&home.join("data")).await.unwrap(),
-            settings: crate::settings::SettingsStore::open(&home).unwrap(),
-            keymap: crate::keymap::KeymapStore::open(&home).unwrap(),
-            terminals: crate::terminal::TerminalManager::default(),
-            runtime: super::super::RuntimeHub::default(),
-            integration: crate::integration::IntegrationManager::test(&home),
-        };
+        let state = super::super::test_support::app_state(
+            &home,
+            crate::terminal::TerminalManager::default(),
+        )
+        .await;
         let router = super::super::app(state.clone());
         for (uri, json, expected) in [
             ("/api/settings", r#"{"theme":"dark"}"#, StatusCode::OK),

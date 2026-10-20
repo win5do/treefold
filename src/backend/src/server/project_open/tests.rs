@@ -1,5 +1,5 @@
 use super::*;
-use crate::{keymap::KeymapStore, settings::SettingsStore, terminal::TerminalManager};
+use crate::terminal::TerminalManager;
 use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
@@ -27,15 +27,11 @@ async fn post(state: &AppState, route: &str, input: Value) -> (StatusCode, Value
 
 async fn test_state(root: &Path) -> AppState {
     let home = root.join("home");
-    AppState {
-        cleanup_tasks: Default::default(),
-        store: Store::open(&home.join("data")).await.unwrap(),
-        settings: SettingsStore::open(&home).unwrap(),
-        keymap: KeymapStore::open(&home).unwrap(),
-        terminals: TerminalManager::default().with_treefold_home(home.clone()),
-        runtime: super::super::RuntimeHub::default(),
-        integration: crate::integration::IntegrationManager::test(&home),
-    }
+    crate::server::test_support::app_state(
+        &home,
+        TerminalManager::default().with_treefold_home(home.clone()),
+    )
+    .await
 }
 
 #[tokio::test]

@@ -53,6 +53,26 @@ pub struct AppState {
     pub integration: IntegrationManager,
 }
 
+impl AppState {
+    pub fn new(
+        store: Store,
+        settings: SettingsStore,
+        keymap: crate::keymap::KeymapStore,
+        terminals: TerminalManager,
+        integration: IntegrationManager,
+    ) -> Self {
+        Self {
+            store,
+            settings,
+            keymap,
+            terminals,
+            integration,
+            cleanup_tasks: Default::default(),
+            runtime: RuntimeHub::default(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct RuntimeHub {
     title_observer: Arc<tokio::sync::Mutex<session_titles::Observer>>,
@@ -685,6 +705,8 @@ mod session;
 mod session_creation;
 mod squash;
 mod squash_delivery;
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;
 mod verification;

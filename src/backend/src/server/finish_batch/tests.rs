@@ -1,13 +1,10 @@
 use super::*;
 use crate::{
-    keymap::KeymapStore,
     model::{Workspace, WorkspaceRepository},
     server::{
-        CreateProject, CreateWorkspace, RuntimeHub, command_output, create_project, git_head,
+        CreateProject, CreateWorkspace, command_output, create_project, git_head,
         reconcile_parent_operation,
     },
-    settings::SettingsStore,
-    store::Store,
     terminal::TerminalManager,
 };
 use std::path::{Path, PathBuf};
@@ -29,15 +26,7 @@ fn commit(path: &Path, file: &str, contents: &str) {
     git(path, &["commit", "-m", file]);
 }
 async fn state(home: &Path) -> AppState {
-    AppState {
-        cleanup_tasks: Default::default(),
-        store: Store::open(&home.join("data")).await.unwrap(),
-        keymap: KeymapStore::open(home).unwrap(),
-        settings: SettingsStore::open(home).unwrap(),
-        terminals: TerminalManager::default(),
-        runtime: RuntimeHub::default(),
-        integration: crate::integration::IntegrationManager::test(home),
-    }
+    crate::server::test_support::app_state(home, TerminalManager::default()).await
 }
 async fn await_ready(state: &AppState, id: &str) {
     tokio::time::timeout(std::time::Duration::from_secs(15), async {

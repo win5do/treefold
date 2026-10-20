@@ -176,15 +176,13 @@ async fn serve_backend(home: &std::path::Path, user_home: &std::path::Path) -> a
         .with_treefold_home(home.to_path_buf())
         .with_bundled_bin_dir(integration.bundled_bin_dir())
         .with_api_url(api_url.clone());
-    let state = server::AppState {
-        cleanup_tasks: Default::default(),
-        keymap: crate::keymap::KeymapStore::open(&settings.treefold_home())?,
-        store: store.clone(),
-        settings: settings.clone(),
-        terminals: terminals.clone(),
-        runtime: server::RuntimeHub::default(),
+    let state = server::AppState::new(
+        store.clone(),
+        settings.clone(),
+        crate::keymap::KeymapStore::open(&settings.treefold_home())?,
+        terminals.clone(),
         integration,
-    };
+    );
     let api_url_file = publish_api_url(home, &api_url)?;
     // stdout is a machine-readable startup channel; logs go to stderr/files.
     println!(

@@ -1,7 +1,5 @@
 use super::*;
-use crate::{
-    keymap::KeymapStore, settings::SettingsStore, store::Store, terminal::TerminalManager,
-};
+use crate::terminal::TerminalManager;
 
 fn git(path: &Path, args: &[&str]) -> String {
     command_output(path, "git", args).unwrap()
@@ -15,15 +13,7 @@ async fn fixture() -> (
 ) {
     let root = tempfile::tempdir().unwrap();
     let home = root.path().join("home");
-    let state = AppState {
-        cleanup_tasks: Default::default(),
-        store: Store::open(&home.join("data")).await.unwrap(),
-        settings: SettingsStore::open(&home).unwrap(),
-        keymap: KeymapStore::open(&home).unwrap(),
-        terminals: TerminalManager::default(),
-        runtime: Default::default(),
-        integration: crate::integration::IntegrationManager::test(&home),
-    };
+    let state = crate::server::test_support::app_state(&home, TerminalManager::default()).await;
     let paths: Vec<_> = ["backend", "frontend"]
         .iter()
         .map(|name| root.path().join(name))
