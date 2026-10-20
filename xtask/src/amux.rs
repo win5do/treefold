@@ -208,12 +208,19 @@ fn source_from_metadata(metadata: &Value, expected: Option<&Path>) -> Result<Amu
             expected.display()
         );
     } else {
-        let prefix = format!("git+{GIT_URL}?tag=v{version}#");
+        let prefix = format!("git+{GIT_URL}?rev=");
         ensure!(
-            source
-                .as_ref()
-                .is_some_and(|source| source.starts_with(&prefix)),
-            "backend amux must resolve to its matching GitHub release tag; use TREEFOLD_AMUX_MANIFEST for local development"
+            source.as_ref().is_some_and(|source| {
+                source
+                    .strip_prefix(&prefix)
+                    .and_then(|value| value.split_once('#'))
+                    .is_some_and(|(revision, commit)| {
+                        revision.len() == 40
+                            && revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+                            && revision == commit
+                    })
+            }),
+            "backend amux must resolve to its pinned full GitHub commit; use TREEFOLD_AMUX_MANIFEST for local development"
         );
     }
     let skill = manifest
@@ -315,13 +322,20 @@ mod tests {
         let (_root, manifest, mut metadata) = fixture();
         assert!(source_from_metadata(&metadata, Some(Path::new("/another/Cargo.toml"))).is_err());
         assert!(source_from_metadata(&metadata, None).is_err());
-        metadata["packages"][1]["source"] = format!("git+{GIT_URL}?tag=v0.1.0#1234").into();
+        let revision = "0123456789abcdef0123456789abcdef01234567";
+        metadata["packages"][1]["source"] =
+            format!("git+{GIT_URL}?rev={revision}#{revision}").into();
         assert!(source_from_metadata(&metadata, Some(&manifest)).is_err());
         assert!(source_from_metadata(&metadata, None).is_ok());
         for source in [
             format!("git+{GIT_URL}?branch=main#1234"),
+            format!("git+{GIT_URL}?tag=v0.1.0#1234"),
             format!("git+{GIT_URL}?tag=v0.2.0#1234"),
-            "git+https://github.com/other/amux.git?tag=v0.1.0#1234".into(),
+            format!("git+{GIT_URL}?rev=main#{revision}"),
+            format!("git+{GIT_URL}?rev=0123456#{revision}"),
+            format!("git+{GIT_URL}?rev={revision}#abcdef0123456789abcdef0123456789abcdef01"),
+            format!("git+{GIT_URL}?rev={}#{}", "z".repeat(40), "z".repeat(40)),
+            format!("git+https://github.com/other/amux.git?rev={revision}#{revision}"),
         ] {
             metadata["packages"][1]["source"] = source.into();
             assert!(source_from_metadata(&metadata, None).is_err());

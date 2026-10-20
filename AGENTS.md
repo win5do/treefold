@@ -150,8 +150,8 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 - `just build` invokes `cargo xtask sidecars bundle` before applying
   the Electron bundle configuration.
 - Development runs prepare debug sidecars through the same xtask workflow.
-  amux uses the GitHub release tag declared in `src/backend/Cargo.toml`, pinned
-  in `src/backend/Cargo.lock`. To upgrade it, change the tag and run
+  amux uses the full GitHub commit declared by `rev` in `src/backend/Cargo.toml`,
+  pinned in `src/backend/Cargo.lock`. To upgrade it, change the commit and run
   `cargo update --manifest-path src/backend/Cargo.toml -p amux-runtime`;
   ordinary builds use the locked revision.
 - For local amux development, set `TREEFOLD_AMUX_MANIFEST=/absolute/path/to/amux/Cargo.toml`.
