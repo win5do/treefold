@@ -77,6 +77,10 @@ jobs:
       - name: Build ad-hoc signed packages
         run: |
           test "$(uname -m)" = arm64
+          # Restored or pre-created Cargo output directories can lack the marker
+          # required by cargo clean when xtask invalidates the amux CLI.
+          mkdir -p src/backend/target
+          printf 'Signature: 8a477f597d28d172789f06886806bc55\n' > src/backend/target/CACHEDIR.TAG
           just build
       - name: Verify package signature and version
         run: |
