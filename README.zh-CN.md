@@ -10,23 +10,30 @@ Treefold 是一个本地优先的 macOS App，让你在独立的 Git worktree �
 
 [安装](#安装) · [开始第一个任务](#开始第一个任务) · [常见使用场景](#常见使用场景) · [官网](https://treefold.win5do.top/) · [GitHub Releases](https://github.com/win5do/treefold/releases)
 
+## 视频演示
+
+30 秒了解 Treefold：从并行开发、检查修改到交付成果。
+
+https://github.com/user-attachments/assets/909fffe9-795c-4e07-bd55-4b5d3d8c6793
+
+## Treefold 能帮你做什么
+
+- **并行开发，改动隔离**：每项 feature 用独立 Workspace，需要并行子任务时再拆 Fork。代码、Todo 和 Session 跟着任务走，检查后逐层合回成果。
+- **多个仓库，一起推进**：前后端放进同一 Project，各仓库分别新建或继续已有分支。也支持 monorepo 子目录和参考资料目录。
+- **检查代码，整理交付**：查看 diff 和历史，使用 Squash、Reset 或编辑最新提交说明；Squash 交付可按仓库填写说明，保留源分支开发记录。
+- **让 Agent 带着范围做 Review**：自动补充仓库和比较目标，要求检查已提交、未提交修改及新文件。提示词可编辑，检查后可在同一 Session 继续讨论、修复。
+- **共享服务与日志**：人和 Agent 通过 amux 查看同一批受管进程及输出。切换 Session 后也能找到服务，不必反复让 Agent 转述日志。
+- **少找目录，少记快捷键**：Command Palette 沿用当前任务上下文；Open With 直接在 IDE、终端或 Finder 打开对应目录。
+
 ## 界面一览
 
 | 场景 |
 | --- |
-| **一个仓库，多个 worktree**<br>在 Project 中查看各项 feature 和 Fork 的分支、目录及 worktree 状态。<br><br>![一个仓库，多个 worktree](docs/images/project-zh-CN.png) |
-| **集中推进一项 feature**<br>在 Workspace 中管理 Todo、Fork 和 Session，从任务拆分一路推进到交付。<br><br>![集中推进一项 feature](docs/images/workspace-zh-CN.png) |
-| **为任务选择 Agent**<br>选择 Codex、Claude Code、OpenCode 或 Pi，在对应目录中启动 Session。<br><br>![为任务选择 Agent](docs/images/agents-zh-CN.png) |
-| **同时检查修改与历史**<br>在中间查看 Git Changes，在右侧多选提交并打开 Git 历史右键菜单。<br><br>![同时检查修改与历史](docs/images/git-zh-CN.png) |
-| **Agent 和进程跟随 Fork**<br>在左侧切换 Codex、Claude Code、Pi 和两个进程页签，在中间查看开发服务的 TTY 日志。<br><br>![Agent 和进程跟随 Fork](docs/images/terminal-zh-CN.png) |
-
-## Treefold 能帮你做什么
-
-- **同时推进多项 feature**：每个 Workspace 使用独立分支和 worktree，保留原有工作现场。
-- **拆分并行子任务**：在 Workspace 下创建 Fork，让不同 Agent 分别负责 API、页面或测试，再合回父 Workspace。
-- **找回工作上下文**：代码、Agent 和 Shell Session、Todo 都跟着任务走。切换页面不会停止进程；已关联原生历史的 Agent Session 可以恢复。
-- **检查并交付成果**：查看 diff 和 Git 历史，处理同步与冲突，选择本地合并或推送分支，完成后归档，按需清理。
-- **组织多个仓库**：在一个 Project 中放入前后端仓库及参考文档，明确各目录的读写用途。
+| **集中推进一项 feature**<br>Todo、Fork 和 Session 放在一起，从任务拆分推进到交付。<br><br>![Workspace 中的 Todo、Fork 和 Session](docs/images/workspace-zh-CN.png) |
+| **多个仓库，各自选择分支**<br>前端新建分支，后端继续已有工作，统一放进同一个 Workspace。<br><br>![各仓库分别选择新建或已有分支](docs/images/workspace-branches-zh-CN.png) |
+| **检查修改与提交历史**<br>查看 diff，整理提交，交付前确认改动。<br><br>![Git Changes 与 History](docs/images/git-zh-CN.png) |
+| **AI Review**<br>选择 Agent、编辑提示词，仓库上下文和比较范围自动补充。<br><br>![AI Review 提示词与 Agent 选择](docs/images/review-zh-CN.png) |
+| **服务日志就在任务里**<br>在 Agent 与开发服务之间切换，直接查看终端输出。<br><br>![Agent 与开发服务终端](docs/images/terminal-zh-CN.png) |
 
 ## 产品架构
 

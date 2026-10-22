@@ -10,23 +10,30 @@ Develop with **Codex, Claude Code, OpenCode, or Pi**, and use Shell Sessions to 
 
 [Install](#install) · [Start your first task](#start-your-first-task) · [Common workflows](#common-workflows) · [Website](https://treefold.win5do.top/) · [GitHub Releases](https://github.com/win5do/treefold/releases)
 
+## Video demo
+
+A 30-second tour of parallel development, review, and delivery. Video in Chinese.
+
+https://github.com/user-attachments/assets/909fffe9-795c-4e07-bd55-4b5d3d8c6793
+
+## What you can do with Treefold
+
+- **Work in parallel with isolated changes.** Give each feature a Workspace and split independent subtasks into Forks. Code, Todos, and Sessions stay with the task. Review the results, then merge into the parent.
+- **Move several repositories forward together.** Keep frontend and backend in one Project, choosing new or existing branches for each repository. Include monorepo subdirectories and reference material too.
+- **Review changes and prepare delivery.** Inspect diffs and history, squash or reset commits, and edit the latest commit message. Squash delivery supports a message per repository while preserving source-branch history.
+- **Give your Agent the scope for AI Review.** Treefold adds repositories and comparison targets, asking the Agent to inspect committed changes, uncommitted changes, and new files. Edit the prompt, then discuss and fix findings in the same Session.
+- **Share services and logs.** People and agents use amux to inspect the same managed processes and output. Find the service across Sessions without asking an Agent to relay its logs.
+- **Spend less time finding commands and directories.** Command Palette keeps the current task context; Open With opens its directory in your IDE, terminal, or Finder.
+
 ## A look inside
 
 | Explore Treefold |
 | --- |
-| **One repository, several worktrees**<br>See each feature and Fork alongside its branch, checkout, and worktree status.<br><br>![One repository, several worktrees](docs/images/project-en-US.png) |
-| **One place for the whole feature**<br>Keep Todos, Forks, and Sessions together from planning through delivery.<br><br>![One place for the whole feature](docs/images/workspace-en-US.png) |
-| **Choose the Agent for the task**<br>Start a Session with Codex, Claude Code, OpenCode, or Pi in the right working directory.<br><br>![Choose the Agent for the task](docs/images/agents-en-US.png) |
-| **Review changes and history together**<br>Inspect working changes while selecting multiple commits and opening Git history actions.<br><br>![Review changes and history together](docs/images/git-en-US.png) |
-| **Agents and processes stay with their Fork**<br>Switch between Codex, Claude Code, Pi, and two process tabs; keep the development server’s TTY output in view.<br><br>![Agents and processes stay with their Fork](docs/images/terminal-en-US.png) |
-
-## What you can do with Treefold
-
-- **Work on several features at once.** Each Workspace gets its own branches and worktrees, preserving your existing checkout.
-- **Delegate parallel subtasks.** Create Forks within a Workspace so different agents can work on the API, UI, or tests, then merge into the parent Workspace.
-- **Keep your context.** Code, Agent and Shell Sessions, and Todos stay attached to their task. Page navigation does not stop processes; Agent Sessions linked to native history can be resumed.
-- **Review and deliver.** Inspect diffs and Git history, handle synchronization and conflicts, choose a local merge or branch push, then archive and clean up when ready.
-- **Organize multiple repositories.** Group frontend and backend repositories with reference documents in one Project, with explicit read/write roles for directories.
+| **One place for the whole feature**<br>Keep Todos, Forks, and Sessions together from planning through delivery.<br><br>![Workspace with Todos, Forks, and Sessions](docs/images/workspace-en-US.png) |
+| **Separate branch choices, one task**<br>Start a new frontend branch while continuing existing backend work in the same Workspace. Screenshot in Chinese.<br><br>![New and existing branch choices per repository](docs/images/workspace-branches-zh-CN.png) |
+| **Review changes and history together**<br>Inspect diffs and organize commits before delivery.<br><br>![Git Changes and History](docs/images/git-en-US.png) |
+| **AI Review**<br>Choose an Agent and edit the prompt; repository context and comparison scope are added automatically. Screenshot in Chinese.<br><br>![AI Review prompt and Agent selection](docs/images/review-zh-CN.png) |
+| **Service logs stay with the task**<br>Switch between agents and development services to inspect terminal output directly.<br><br>![Agent and development service terminals](docs/images/terminal-en-US.png) |
 
 ## Product architecture
 
