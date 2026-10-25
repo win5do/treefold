@@ -168,14 +168,6 @@ Development data defaults to `.treefold-dev/` inside the repository, separate fr
 - [Agent Skills, CLI, and App API](docs/agent-skill-cli-api-architecture.md)
 - [Report an issue or suggest an improvement](https://github.com/win5do/treefold/issues)
 
-### Feishu community
-
-Scan the QR code with Feishu to join the “Treefold开源项目” group and chat with me about your experience, feature ideas, or issues.
-
-<img src="docs/images/feishu-community.png" alt="QR code for the Treefold Feishu community group" width="420" />
-
-This is a Feishu personal-edition group. You can join with a personal Feishu account, or reach me through [GitHub Issues](https://github.com/win5do/treefold/issues).
-
 If Treefold helps you, consider [giving it a star on GitHub](https://github.com/win5do/treefold) to support the project.
 
 ## License
