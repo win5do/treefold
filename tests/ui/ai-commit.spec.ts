@@ -42,7 +42,14 @@ test("AI Commit presets fill the command; testing does not gate saving or automa
         },
       });
     });
-    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+    await page
+      .getByRole("button", { name: "Show right sidebar", exact: true })
+      .click();
+    await page.getByRole("tab", { name: "Changes", exact: true }).click();
+    await expect(
+      page.getByRole("textbox", { name: "Commit message", exact: true }),
+    ).toBeVisible();
     await page.getByTestId("open-settings").click();
     const settings = page.getByRole("dialog", {
       name: "Settings",
