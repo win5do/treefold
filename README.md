@@ -64,7 +64,17 @@ brew upgrade --cask treefold
 
 Visit [GitHub Releases](https://github.com/win5do/treefold/releases), download the Apple Silicon `.dmg`, open it, and drag Treefold into Applications. Release pages also provide a ZIP archive, SHA-256 checksums, and release notes.
 
-Treefold is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch, choose Open Anyway in System Settings → Privacy & Security, then confirm when prompted.
+### macOS first launch
+
+Treefold is ad-hoc signed and has not been notarized by Apple. If macOS blocks the first launch after either installation method, and you trust the downloaded app, run this command in Terminal, then open Treefold again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Treefold.app
+```
+
+This removes the quarantine attribute only from the installed Treefold app. If you installed it elsewhere, replace the path accordingly. You may need to repeat this after downloading a new version.
+
+Alternatively, choose Open Anyway in System Settings → Privacy & Security, then confirm when prompted.
 
 ### Set up your agents
 

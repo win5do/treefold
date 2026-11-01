@@ -64,7 +64,17 @@ brew upgrade --cask treefold
 
 前往 [GitHub Releases](https://github.com/win5do/treefold/releases)，下载 Apple Silicon 的 `.dmg`，打开后将 Treefold 拖入“应用程序”。Release 页面同时提供 ZIP、SHA-256 校验文件和版本说明。
 
-Treefold 使用 ad-hoc 签名，尚未经过 Apple 公证。首次打开如果被 macOS 阻止，请在“系统设置 → 隐私与安全性”中选择“仍要打开”，然后按提示确认。
+### macOS 首次打开
+
+Treefold 使用 ad-hoc 签名，尚未经过 Apple 公证。通过以上任一方式安装后，如果首次打开被 macOS 阻止，且你信任下载的 App，可在终端执行以下命令，再重新打开 Treefold：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Treefold.app
+```
+
+此命令仅移除已安装 Treefold App 的隔离属性。如果安装在其他位置，请替换为实际路径。下载新版本后，可能需要再次执行。
+
+也可以在“系统设置 → 隐私与安全性”中选择“仍要打开”，然后按提示确认。
 
 ### 准备你要使用的 Agent
 
