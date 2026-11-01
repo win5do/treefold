@@ -55,6 +55,20 @@ pub struct AgentSettings {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+pub struct AiCommitSettings {
+    pub command: String,
+    pub automatic: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AiCommitSettingsPatch {
+    pub command: Option<String>,
+    pub automatic: Option<bool>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct AmuxSettings {
     #[serde(default)]
     pub keep_daemon_running_on_exit: bool,
@@ -80,6 +94,8 @@ pub struct Settings {
     #[serde(default)]
     pub agents: AgentsSettings,
     #[serde(default)]
+    pub ai_commit: AiCommitSettings,
+    #[serde(default)]
     pub amux: AmuxSettings,
     #[serde(default)]
     pub updates: UpdateSettings,
@@ -93,6 +109,7 @@ impl Default for Settings {
             theme: default_theme(),
             close_behavior: default_close_behavior(),
             agents: AgentsSettings::default(),
+            ai_commit: AiCommitSettings::default(),
             amux: AmuxSettings::default(),
             updates: UpdateSettings::default(),
         }
@@ -135,6 +152,7 @@ pub struct SettingsPatch {
     pub theme: Option<String>,
     pub close_behavior: Option<String>,
     pub agents: Option<AgentsSettingsPatch>,
+    pub ai_commit: Option<AiCommitSettingsPatch>,
     pub amux: Option<AmuxSettingsPatch>,
     pub updates: Option<UpdateSettingsPatch>,
 }
@@ -180,6 +198,8 @@ impl SettingsPatch {
                     "theme",
                     "close_behavior",
                     "agents.order",
+                    "ai_commit.command",
+                    "ai_commit.automatic",
                     "amux.keep_daemon_running_on_exit",
                     "updates.skipped_version",
                     "updates.remind_after",
@@ -353,6 +373,20 @@ impl SettingsStore {
                         set_agent_value(&mut document, Some(kind), "command", value(command))?;
                     }
                 }
+            }
+        }
+        if let Some(ai_commit) = patch.ai_commit {
+            if document.get("ai_commit").is_none() {
+                document["ai_commit"] = Item::Table(Table::new());
+            }
+            let table = document["ai_commit"]
+                .as_table_like_mut()
+                .context("ai_commit must be a table")?;
+            if let Some(command) = ai_commit.command {
+                table.insert("command", value(command));
+            }
+            if let Some(automatic) = ai_commit.automatic {
+                table.insert("automatic", value(automatic));
             }
         }
         if let Some(keep_running) = patch.amux.and_then(|amux| amux.keep_daemon_running_on_exit) {
@@ -679,6 +713,7 @@ mod tests {
                 theme: "system".into(),
                 close_behavior: "hide_to_tray".into(),
                 agents: AgentsSettings::default(),
+                ai_commit: super::AiCommitSettings::default(),
                 amux: AmuxSettings::default(),
                 updates: super::UpdateSettings::default(),
             }
@@ -1016,5 +1051,42 @@ extra_args = ""
             assert_eq!(std::fs::read_to_string(&store.path).unwrap(), invalid);
             std::fs::write(&store.path, &before).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod ai_commit_tests {
+    use super::*;
+    #[test]
+    fn ai_commit_command_and_automatic_patch_independently_without_testing() {
+        let root = tempfile::tempdir().unwrap();
+        let store = SettingsStore::open(root.path()).unwrap();
+        let path = root.path().join("config/settings.toml");
+        let initial = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            format!("{initial}\n# user preference\n[ai_commit]\nfuture = 42\n"),
+        )
+        .unwrap();
+        let result = store.update(serde_json::from_value(serde_json::json!({"ai_commit":{"command":"missing-cli --invalid", "automatic":false}})).unwrap()).unwrap();
+        assert_eq!(result.ai_commit.command, "missing-cli --invalid");
+        let result = store
+            .update(
+                serde_json::from_value(serde_json::json!({"ai_commit":{"automatic":true}}))
+                    .unwrap(),
+            )
+            .unwrap();
+        assert!(result.ai_commit.automatic);
+        assert_eq!(result.ai_commit.command, "missing-cli --invalid");
+        let result = store
+            .update(
+                serde_json::from_value(serde_json::json!({"reset":["ai_commit.command"]})).unwrap(),
+            )
+            .unwrap();
+        assert!(result.ai_commit.automatic);
+        assert!(result.ai_commit.command.is_empty());
+        let saved = fs::read_to_string(&path).unwrap();
+        assert!(saved.contains("future = 42"));
+        assert!(saved.contains("# user preference"));
     }
 }

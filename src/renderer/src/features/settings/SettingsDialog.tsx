@@ -25,6 +25,14 @@ export function SettingsDialog(
   }, [props.open, client]);
   const [page, setPage] = useState("settings");
   const { t } = useTranslation();
+  useEffect(() => {
+    const openAiCommit = () => { setPage("agents"); props.onOpenChange(true); };
+    window.addEventListener("treefold:ai-commit-settings", openAiCommit);
+    return () => window.removeEventListener("treefold:ai-commit-settings", openAiCommit);
+  }, [props.onOpenChange]);
+  useEffect(() => {
+    if (props.open && page === "agents") document.getElementById("ai-commit-settings")?.scrollIntoView({ block: "nearest" });
+  }, [props.open, page]);
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
       <DialogContent className="flex h-[80vh] max-h-[86vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">

@@ -1,4 +1,5 @@
 mod agents;
+mod ai_commit;
 mod error;
 mod git;
 mod git_parallel;

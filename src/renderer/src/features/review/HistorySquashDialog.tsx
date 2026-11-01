@@ -1,10 +1,10 @@
+import { AiCommitField } from "@/features/ai-commit/AiCommitField";
 import { ApiError } from "@/api/client";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { GitCommit, GitHistory } from "@/domain/types";
 import { historySquash, type SquashPreview } from "./historySquashApi";
@@ -25,6 +25,7 @@ export function HistorySquashDialog({ open, onOpenChange, repositoryKind, reposi
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [recovery, setRecovery] = useState<{ id: string; head: string } | null>(null);
   const selectionKey = commits.map((commit) => commit.hash).join(",");
   useEffect(() => { setRecovery(null); setError(""); onOpenChange(false); }, [repositoryKind, repositoryId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -40,7 +41,7 @@ export function HistorySquashDialog({ open, onOpenChange, repositoryKind, reposi
     return () => controller.abort();
   }, [open, repositoryKind, repositoryId, selectionKey, head]); // eslint-disable-line react-hooks/exhaustive-deps
   const run = async (undo: boolean) => {
-    if (busy || (undo && !recovery)) return;
+    if (busy || generating || (undo && !recovery)) return;
     setBusy(true); setError("");
     try {
       const result = await historySquash(repositoryKind, repositoryId, undo
@@ -75,13 +76,15 @@ export function HistorySquashDialog({ open, onOpenChange, repositoryKind, reposi
         </div>}
         <FieldGroup><Field data-invalid={!message.trim()}>
           <FieldLabel htmlFor="squash-message">{t("squashUi.message")}</FieldLabel>
-          <Textarea id="squash-message" value={message} onChange={(event) => setMessage(event.target.value)} disabled={busy} aria-invalid={!message.trim()} className="max-h-48" />
+          {open && <AiCommitField key={`${repositoryKind}:${repositoryId}`} id="squash-message" label={t("squashUi.message")} value={message}
+            fallback={commits.map(commit => commit.subject).join("\n\n")} onChange={setMessage} disabled={busy} invalid={!message.trim()} onBusyChange={setGenerating}
+            input={preview ? { repository_kind: repositoryKind, repository_id: repositoryId, source: { kind: "history", commits: selectionKey.split(","), expected_head: head } } : null} />}
         </Field></FieldGroup>
         <p className="text-xs text-muted-foreground">{t("squashUi.metadata")}</p>
         {error && <p role="alert" className="break-words text-destructive">{t("squashUi.failed")} {error}</p>}
         <DialogFooter>
           <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>{t("reviewUi.cancel")}</Button>
-          <Button disabled={busy || !preview || !message.trim()} onClick={() => void run(false)}>{busy ? t("reviewUi.working") : t("squashUi.title")}</Button>
+          <Button disabled={busy || generating || !preview || !message.trim()} onClick={() => void run(false)}>{busy ? t("reviewUi.working") : t("squashUi.title")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

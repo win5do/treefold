@@ -1,4 +1,28 @@
 export const enUS = {
+  aiCommit: {
+    title: "AI Commit",
+    settings: "Go to settings",
+    settingsAction: "AI Commit settings",
+    cancel: "Cancel generation",
+    generating: "Generating…",
+    queued: "Waiting…",
+    stale: "The changes have been updated. Generate again to update this message.",
+    timeout: "Generation timed out after 60 seconds. Your message was kept; you can retry.",
+    failed: "Generation failed. Your message was kept. {{detail}}",
+    preset: "Command preset",
+    custom: "Custom",
+    choosePreset: "Choose a preset",
+    presetHint: "Choosing a preset replaces the command below. The command determines which tool runs.",
+    command: "Generation command",
+    commandHint: "Receives change context on stdin and returns only the commit message on stdout. Runs in a temporary directory. You can save without a successful test.",
+    testFailed: "Test failed. {{detail}}",
+    testTimeout: "Test timed out after 60 seconds. You can edit the command and retry.",
+    test: "Test generation",
+    passed: "Test passed · {{seconds}}s",
+    testOutput: "Generated test message",
+    automatic: "Automatically generate commit messages",
+    automaticHint: "Generate a draft once when a commit editor opens. Handwritten messages are kept. You still choose when to commit."
+  },
   agentReview: {
     title: "AI Review",
     description: "Review changes in {{name}} in a new Agent Session. Continue the conversation to discuss or fix findings.",
@@ -370,6 +394,8 @@ export const enUS = {
     },
     deliveryBlocked: "Cannot deliver yet",
     upstreamRequired: "No upstream is configured. Set a remote and branch in the Workspace before pushing.",
+    viewChanges: "View changes",
+    uncommittedChanges: "Workspace has uncommitted changes. View changes and commit or discard them before delivering.",
     openWorkspaceSettings: "Go to Workspace settings",
     mergeProject: "Merge into Project",
     "forkDelivery": {

@@ -1,3 +1,4 @@
+export type AiCommitSettings = { command: string; automatic: boolean };
 export type AgentKind = "codex" | "claude_code" | "opencode" | "pi";
 export type NewSessionKind = "shell" | AgentKind;
 export type AgentConfig = { command: string };
@@ -519,6 +520,7 @@ export type ThemePreference = "system" | "light" | "dark";
 export type CloseBehavior = "hide_to_tray" | "quit";
 
 export type AppSettings = {
+  ai_commit: AiCommitSettings;
   schema_version: number;
   language: LanguagePreference;
   theme: ThemePreference;

@@ -358,7 +358,7 @@ fn mutate_paths(repository: &str, paths: &[String], stage: bool) -> Result<()> {
     Ok(())
 }
 
-fn git_status(repository: &str) -> Result<GitStatus> {
+pub(super) fn git_status(repository: &str) -> Result<GitStatus> {
     let path = Path::new(repository);
     let branch =
         command_output(path, "git", &["branch", "--show-current"]).map_err(AppError::BadRequest)?;
@@ -425,7 +425,7 @@ fn git_status(repository: &str) -> Result<GitStatus> {
         .iter()
         .filter(|file| file.has_unstaged_changes)
         .count();
-    let snapshot = format!("{}|{output}", head.as_deref().unwrap_or(""));
+    let snapshot = git_status_snapshot(head.as_deref().unwrap_or(""), &output);
     Ok(GitStatus {
         branch: if branch.is_empty() {
             "Detached HEAD".into()
@@ -438,6 +438,10 @@ fn git_status(repository: &str) -> Result<GitStatus> {
         unstaged_count,
         snapshot,
     })
+}
+
+pub(super) fn git_status_snapshot(head: &str, porcelain: &str) -> String {
+    format!("{head}|{porcelain}")
 }
 
 fn commit_repository(repository: &str, input: GitCommitInput) -> Result<Json<GitCommitResult>> {

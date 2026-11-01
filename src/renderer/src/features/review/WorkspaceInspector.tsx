@@ -1,3 +1,4 @@
+import { AiCommitField } from "@/features/ai-commit/AiCommitField";
 import { sessionDisplayName } from "@/features/terminal/model/sessionDisplayName";
 import { AGENT_NAMES, isAgentKind } from "@/features/agents/model";
 import { gitStatusQuery, refreshGitQueries } from "@/features/git/queries";
@@ -5,12 +6,14 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { gitHistoryQuery } from "./queries";
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import type * as React from "react";
 import { Bot, Check, Copy, Combine, Pencil, GitBranch, GitCommitHorizontal, GitCompare, History, Info, PanelsTopLeft, RotateCcw, TerminalSquare, Undo2 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
+import { useInspectorRefresh, type InspectorTab } from "./useInspectorRefresh";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -33,9 +36,10 @@ type InspectorRepository = { id: string; name: string };
 
 export function WorkspaceInspector({ open, project, workspace, session, gitChangesActive, onOpenChanges, onOpenDiff }: { open: boolean; project: ProjectDetail; workspace: WorkspaceDetail | null; session: Session | null; gitChangesActive: boolean; onOpenChanges: (repository: InspectorRepository) => void; onOpenDiff: (payload: GitDiffLaunchPayload) => void }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"info" | "changes" | "history">("changes");
+  const navigation = useLocation();
+  const requestedRepositoryId = navigation.state?.changesRepository;
+  const [tab, setTab] = useState<InspectorTab>("changes");
   const queryClient = useQueryClient();
-  useEffect(() => { if (open) setTab("changes"); }, [open]);
   useEffect(() => { if (gitChangesActive) setTab("changes"); }, [gitChangesActive]);
   const historyRepositories = workspace
     ? workspace.repositories
@@ -67,8 +71,19 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
     setHistoryRepositoryId(defaultHistoryRepositoryId);
   }, [defaultHistoryRepositoryId, project.id, workspace?.id]);
 
+  useEffect(() => {
+    if (requestedRepositoryId && workspace?.repositories.some(repository => repository.id === requestedRepositoryId)) {
+      setHistoryRepositoryId(requestedRepositoryId);
+      setTab("changes");
+    }
+  }, [navigation.key, requestedRepositoryId, workspace?.id]);
+
   const historyOptions = gitHistoryQuery(workspace ? "workspace" : "project", activeHistoryRepositoryId);
   const historyQuery = useQuery({ ...historyOptions, enabled: open && tab === "history" && Boolean(activeHistoryRepositoryId) });
+  const { refreshing, error: refreshError, refresh } = useInspectorRefresh({
+    open, tab, repositoryId: activeHistoryRepositoryId, projectId: project.id,
+    workspaceId: workspace?.id, sessionId: session?.id,
+  });
   const history = historyQuery.data ?? null;
   const historyError = historyQuery.error?.message ?? "";
   const setHistory = (value: GitHistory) => {
@@ -84,11 +99,14 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
     </div>
     <div className="flex h-11 shrink-0 items-stretch border-b border-border">
       <div className="flex min-w-0 flex-1" role="tablist" aria-label={t("reviewUi.sidebarSections")}>
-        {([ ["changes", GitCommitHorizontal, t("reviewUi.changes")], ["history", History, t("reviewUi.gitHistory")], ["info", Info, t("reviewUi.repositoryInfo")] ] as const).map(([value, Icon, label]) => <Tooltip key={value}><TooltipTrigger render={<button role="tab" aria-label={label} aria-selected={tab === value} className={cn("relative flex flex-1 items-center justify-center text-muted-foreground hover:text-foreground", tab === value && "text-foreground")} onClick={() => setTab(value)} />}><Icon />{tab === value && <span className="absolute inset-x-4 bottom-0 h-0.5 bg-foreground" />}</TooltipTrigger><TooltipContent side="bottom">{label}</TooltipContent></Tooltip>)}
+        {([ ["changes", GitCommitHorizontal, t("reviewUi.changes")], ["history", History, t("reviewUi.gitHistory")], ["info", Info, t("reviewUi.repositoryInfo")] ] as const).map(([value, Icon, label]) => <Tooltip key={value}><TooltipTrigger render={<button role="tab" aria-label={label} aria-selected={tab === value} className={cn("relative flex flex-1 items-center justify-center text-muted-foreground hover:text-foreground", tab === value && "text-foreground")} onClick={() => { if (tab === value) refresh(); else setTab(value); }} />}><Icon />{tab === value && <span className="absolute inset-x-4 bottom-0 h-0.5 bg-foreground" />}</TooltipTrigger><TooltipContent side="bottom">{label}</TooltipContent></Tooltip>)}
       </div>
     </div>
-    <div className="min-h-0 flex-1 overflow-y-auto">
-    {tab === "changes" ? <GitCommitPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} onOpenChanges={onOpenChanges} /> : tab === "history" ? <GitHistoryPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} history={history} error={historyError} onHistoryChange={setHistory} onOpenDiff={onOpenDiff} /> : session ? <div className="flex flex-col gap-6 p-4">
+    {refreshError && <p role="alert" className="px-3 py-2 text-xs text-destructive">{refreshError}</p>}
+    <div className="relative min-h-0 flex-1" aria-busy={refreshing}>
+    {refreshing && <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center"><div role="status" className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground shadow-sm"><Spinner aria-hidden="true" role="presentation" />{t("controls.loading")}</div></div>}
+    <div className="h-full overflow-y-auto">
+    {tab === "changes" ? <GitCommitPanel open={open} refreshing={refreshing} key={`${workspace ? "workspace" : "project"}:${activeHistoryRepositoryId}`} repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} onOpenChanges={onOpenChanges} /> : tab === "history" ? <GitHistoryPanel repositoryKind={workspace ? "workspace" : "project"} repositories={historyRepositories} repositoryId={activeHistoryRepositoryId} history={history} error={historyError} onHistoryChange={setHistory} onOpenDiff={onOpenDiff} /> : session ? <div className="flex flex-col gap-6 p-4">
       <div><div className="flex items-center gap-2"><div className="grid size-9 place-items-center rounded-lg bg-muted">{isAgentKind(session.kind) ? <Bot className="size-4" /> : session.kind === "command" ? <PanelsTopLeft className="size-4" /> : <TerminalSquare className="size-4" />}</div><div className="min-w-0"><p className="truncate text-sm font-semibold">{sessionDisplayName(session)}</p><div className="mt-1 flex items-center gap-2"><Badge>{isAgentKind(session.kind) ? AGENT_NAMES[session.kind] : t(`states.${session.kind}`, { defaultValue: session.kind })}</Badge><Badge variant={session.status === "running" ? "success" : session.status === "failed" ? "destructive" : "secondary"}>{t(`states.${session.status}`, { defaultValue: session.status })}</Badge></div></div></div></div>
       <InspectorGroup title={t("reviewUi.process")}><InspectorRow label="Workspace" value={session.amux_workspace_name} mono /><InspectorRow label={t("reviewUi.name")} value={session.amux_process_name} mono /><InspectorRow label="I/O" value={session.io_mode} /><InspectorRow label={t("reviewUi.exit")} value={session.exit_code === undefined ? "—" : `${session.exit_code}${session.exit_signal ? ` · ${session.exit_signal}` : ""}`} /></InspectorGroup>
       <InspectorGroup title={workspace ? "Workspace" : t("reviewUi.projectSession")}>{workspace && <><InspectorRow label="Workspace" value={workspace.name} /><InspectorRow label={t("reviewUi.runtime")} value={workspace.runtime_name} /><InspectorRow label={t("reviewUi.workspaceID")} value={workspace.runtime_id} mono /></>}<InspectorRow label={t("reviewUi.workdir")} value={session.cwd} mono />{session.original_cwd !== session.cwd && <InspectorRow label={t("reviewUi.original")} value={session.original_cwd} mono />}</InspectorGroup>
@@ -104,27 +122,32 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
       <InspectorGroup title={t("reviewUi.repository")}><InspectorRow label={t("reviewUi.remote")} value={project.preferred_remote || "—"} /><InspectorRow label={t("reviewUi.directories")} value={String(project.directories.length)} /><InspectorRow label={t("reviewUi.workspaces")} value={String(project.workspaces.filter((item) => !item.parent_workspace_id).length)} /></InspectorGroup>
     </div>}
     </div>
+    </div>
   </aside>;
 }
 
-function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChanges }: { repositoryKind: "project" | "workspace"; repositories: InspectorRepository[]; repositoryId: string; onOpenChanges: (repository: InspectorRepository) => void }) {
+function GitCommitPanel({ open, refreshing, repositoryKind, repositories, repositoryId, onOpenChanges }: { open: boolean; refreshing: boolean; repositoryKind: "project" | "workspace"; repositories: InspectorRepository[]; repositoryId: string; onOpenChanges: (repository: InspectorRepository) => void }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const statusOptions = gitStatusQuery(repositoryKind, repositoryId);
-  const statusQuery = useQuery({ ...statusOptions, enabled: Boolean(repositoryId) });
+  const statusQuery = useQuery({ ...statusOptions, enabled: open && Boolean(repositoryId) });
   const status = statusQuery.data ?? null;
   const setStatus = (next: GitStatus) => queryClient.setQueryData(statusOptions.queryKey, next);
-  const [message, setMessage] = useState("");
+  const [draft, setMessage] = useState<string | null>(null);
+  const staged = status?.files.filter(file => file.has_staged_changes) ?? [];
+  const fallback = staged.length === 1 ? `Update ${staged[0].path}` : `Update ${staged.length} files`;
+  const message = draft ?? (staged.length ? fallback : "");
+  const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const api = repositoryKind === "project" ? projectsApi : workspacesApi;
   useEffect(() => setError(""), [repositoryKind, repositoryId]);
   const commit = async () => {
-    if (!status || !message.trim() || status.staged_count === 0 || loading) return;
+    if (!status || !message.trim() || status.staged_count === 0 || loading || generating || refreshing) return;
     setLoading(true); setError("");
     try {
       const result = await api.commit(repositoryId, message.trim(), status.snapshot);
-      setStatus(result.status); setMessage(""); await refreshGitQueries(queryClient, repositoryKind, repositoryId); toast.success(t("reviewUi.committed", { commit: result.hash.slice(0, 10) }));
+      setStatus(result.status); setMessage(null); await refreshGitQueries(queryClient, repositoryKind, repositoryId); toast.success(t("reviewUi.committed", { commit: result.hash.slice(0, 10) }));
     } catch (cause) { setError(cause instanceof Error ? cause.message : t("reviewUi.commitFailed")); }
     finally { setLoading(false); }
   };
@@ -139,8 +162,9 @@ function GitCommitPanel({ repositoryKind, repositories, repositoryId, onOpenChan
         <div data-testid="git-change-summary" className="flex items-center gap-2 text-xs leading-none"><span className="text-muted-foreground">{t("counts.file", { count: status.files.length })}</span><span className="font-mono tabular-nums text-success">+{additions}</span><span className="font-mono tabular-nums text-destructive">−{deletions}</span>{status.staged_count > 0 && <><span className="text-muted-foreground">·</span><span className="text-muted-foreground">{t("counts.staged", { count: status.staged_count })}</span></>}</div>
         {repository && <Button className="w-full" size="sm" variant="outline" onClick={() => onOpenChanges(repository)}><GitCompare data-icon="inline-start" />{t("reviewUi.reviewChanges")}</Button>}
       </div>
-      <Textarea aria-label={t("reviewUi.commitMessage")} placeholder={t("reviewUi.commitMessage")} value={message} disabled={loading} onChange={(event) => setMessage(event.target.value)} />
-      <Button className="w-full" disabled={loading || !message.trim() || !status.staged_count} onClick={() => void commit()}><Check data-icon="inline-start" />{t("reviewUi.commit")} {status.staged_count || ""}</Button>
+      <AiCommitField label={t("reviewUi.commitMessage")} value={message} fallback={fallback} onChange={setMessage} disabled={loading} onBusyChange={setGenerating}
+        input={status.staged_count ? { repository_kind: repositoryKind, repository_id: repositoryId, source: { kind: "staged", expected_snapshot: status.snapshot } } : null} />
+      <Button className="w-full" disabled={refreshing || loading || generating || !message.trim() || !status.staged_count} onClick={() => void commit()}><Check data-icon="inline-start" />{t("reviewUi.commit")} {status.staged_count || ""}</Button>
     </>}
   </div>;
 }

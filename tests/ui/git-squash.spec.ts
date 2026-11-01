@@ -4,9 +4,10 @@ import { startUiHarness } from "./ui-harness.ts";
 import { closeUiSession, createUiSession, openUiContextMenu } from "./harness/session.ts";
 
 test("History squash submits a consecutive range, honors preflight blockers, and supports Undo", async () => {
-  const harness = await startUiHarness();
+  const harness = await startUiHarness(fixture => { fixture.settings.ai_commit.command = "fixture-agent"; });
   let page: Page | undefined;
   const requests: Record<string, unknown>[] = [];
+  const generated: Record<string, unknown>[] = [];
   let blocked = true;
   const newHead = "f".repeat(40);
   const rewritten = { ...FIXTURE_COMMITS[0], hash: newHead, subject: "Combined work" };
@@ -23,6 +24,10 @@ test("History squash submits a consecutive range, honors preflight blockers, and
       } else {
         await route.fulfill({ json: { preview: null, history: { branch: "main", commits: input.action === "undo" ? FIXTURE_COMMITS : [rewritten, ...FIXTURE_COMMITS.slice(2)] }, recovery_id: input.action === "undo" ? null : "1".repeat(32) } });
       }
+    });
+    await page.route("**/api/ai-commit/generate", route => {
+      generated.push(route.request().postDataJSON());
+      return route.fulfill({ json: { id: "squash-job", status: "succeeded", message: "Combined work", error: null, elapsed_ms: 100 } });
     });
     await page.setViewportSize({ width: 1000, height: 740 });
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
@@ -47,7 +52,9 @@ test("History squash submits a consecutive range, honors preflight blockers, and
     blocked = false;
     await open();
     await expect(dialog.getByRole("button", { name: "Squash commits", exact: true })).toBeEnabled();
-    await dialog.getByLabel("Commit message", { exact: true }).fill("Combined work");
+    await dialog.getByRole("button", { name: "AI Commit", exact: true }).click();
+    await expect(dialog.getByLabel("Commit message", { exact: true })).toHaveValue("Combined work");
+    expect(generated).toEqual([{ repository_kind: "project", repository_id: FIXTURE_IDS.primaryRepository, source: { kind: "history", commits: [FIXTURE_COMMITS[2].hash, FIXTURE_COMMITS[1].hash], expected_head: FIXTURE_COMMITS[0].hash } }]);
     await page.screenshot({ path: "/tmp/treefold-squash-dialog.png", animations: "disabled" });
     await dialog.getByRole("button", { name: "Squash commits", exact: true }).click();
     await expect(dialog).toBeHidden();

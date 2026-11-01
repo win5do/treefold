@@ -1,5 +1,7 @@
 #![allow(dead_code)] // Internal compatibility fields are skipped by the Repository-first API.
 
+pub(crate) mod ai_commit;
+
 mod agent_review;
 mod finish;
 mod git;

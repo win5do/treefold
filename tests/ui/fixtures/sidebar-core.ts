@@ -674,6 +674,7 @@ const deliveryPreflight: FixturePreflight = {
 export function createSidebarCoreFixture(): SidebarFixture {
   return structuredClone<SidebarFixture>({
     settings: {
+      ai_commit: { command: "", automatic: false },
       schema_version: 3,
       language: "en-US",
       theme: "system",

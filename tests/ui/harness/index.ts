@@ -1,3 +1,4 @@
+import { createAiCommitRoutes } from "./routes/ai-commit.ts";
 import { createResourcesRoutes } from "./routes/resources.ts";
 import { createProjectUpdateRoutes } from "./routes/project-update.ts";
 import { createProjectStatusRoutes } from "./routes/project-status.ts";
@@ -88,6 +89,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
   const projectStatusRoutes = createProjectStatusRoutes({ fixture, readJson, sendJson });
   const workspaceStatusRoutes = createWorkspaceStatusRoutes({ fixture, readJson, sendJson });
   const workspaceDeletionRoutes = createWorkspaceDeletionRoutes({ fixture, sendJson });
+  const aiCommitRoutes = createAiCommitRoutes({ fixture, readJson, sendJson });
   const settingsRoutes = createSettingsRoutes({ fixture, readJson, sendJson });
   const agentReviewRoutes = createAgentReviewRoutes({ fixture, readJson, sendJson });
   const sessionLogRoutes = createSessionLogRoutes({ fixture });
@@ -132,6 +134,7 @@ async function startFixtureApi(configure?: (fixture: SidebarFixture) => void) {
       sendJson(response, 204, null);
       return;
     }
+    if (await aiCommitRoutes.handle(request, response, pathname)) return;
     if (await settingsRoutes.handle(request, response, pathname)) return;
     if (await resourcesRoutes.handle(request, response, pathname)) return;
     if (request.method === "GET" && pathname === "/api/processes") {

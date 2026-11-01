@@ -1,3 +1,5 @@
+import { SettingsAiCommit } from "./SettingsAiCommit";
+import { DEFAULT_AI_COMMIT, type AiCommitSettings } from "@/features/ai-commit/api";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -27,6 +29,14 @@ export function SettingsAgents({ settings, busy, onSave }: {
   const [dragging, setDragging] = useState<AgentKind | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiCommit, setAiCommit] = useState<AiCommitSettings>(settings?.ai_commit ?? DEFAULT_AI_COMMIT);
+  const aiBaseline = useRef(settings?.ai_commit ?? DEFAULT_AI_COMMIT);
+  useEffect(() => {
+    const next = settings?.ai_commit ?? DEFAULT_AI_COMMIT;
+    const previous = aiBaseline.current;
+    setAiCommit(current => ({ command: current.command === previous.command ? next.command : current.command, automatic: current.automatic === previous.automatic ? next.automatic : current.automatic }));
+    aiBaseline.current = next;
+  }, [settings?.ai_commit]);
   const baseline = useRef<AgentsSettings | null>(null);
   const configured = JSON.stringify(settings?.agents);
   useEffect(() => {
@@ -67,7 +77,10 @@ export function SettingsAgents({ settings, busy, onSave }: {
     try {
       const result = await onSave(reset
         ? { reset: [`agents.${reset}.command`] }
-        : { agents: changes });
+        : { agents: changes, aiCommit: {
+          ...(aiCommit.command !== (settings.ai_commit?.command ?? "") ? { command: aiCommit.command } : {}),
+          ...(aiCommit.automatic !== (settings.ai_commit?.automatic ?? false) ? { automatic: aiCommit.automatic } : {}),
+        } });
       if (result.ok) {
         if (reset) setDraft(current => current && { ...current, [reset]: { command: "" } });
         toast.success(t("settings.saved"));
@@ -106,6 +119,8 @@ export function SettingsAgents({ settings, busy, onSave }: {
         </ol>
         {(system.isPending || system.error || !installedOrder.length) && <p role="status" aria-live="polite" className="text-sm text-muted-foreground">{t(system.isPending ? "agentsUi.checking" : system.error ? "agentsUi.detectionFailed" : "agentsUi.noneInstalled")}</p>}
       </section>
+      <Separator />
+      <SettingsAiCommit value={aiCommit} onChange={setAiCommit} disabled={busy || saving} />
       <Separator />
       <p className="text-sm text-muted-foreground">{t("agentsUi.description")}</p>
       <div className="flex flex-col gap-3">

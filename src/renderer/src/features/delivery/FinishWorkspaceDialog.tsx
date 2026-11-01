@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { GitCompare, SquareTerminal } from "lucide-react";
@@ -36,16 +36,20 @@ export function FinishWorkspaceDialog({
   onCompleted: () => void;
   onOpenSession: (operation: ParentOperation, session: Session) => void;
   onOpenShell: (locationId: string) => void;
-  onReviewChanges: (locationId: string) => void;
+  onReviewChanges: (locationId: string, destination?: "sidebar") => void;
   onAgentReview: () => void;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const flow = useFinishBatch(workspace);
+  const [generating, setGenerating] = useState<Record<string, boolean>>({});
+  const generationChanged = useCallback((id: string, active: boolean) => setGenerating(current => current[id] === active ? current : { ...current, [id]: active }), []);
+  const aiBusy = Object.values(generating).some(Boolean);
+  useEffect(() => setGenerating({}), [workspace?.id]);
   const processes = useFinishProcessGuard({
     workspaceId: workspace?.id,
     continueWork: flow.batch?.continue_work ?? flow.continueWork,
-    execute: flow.execute,
+    execute: () => aiBusy ? Promise.resolve(false) : flow.execute(),
     onWait: () => onOpenChange(false),
   });
   const busy = flow.busy || processes.checking;
@@ -105,6 +109,7 @@ export function FinishWorkspaceDialog({
             drafts={flow.drafts}
             preflights={flow.preflights}
             checks={flow.checks}
+            onReviewChanges={repositoryId => onReviewChanges(repositoryId, "sidebar")}
             onOpenSettings={repositoryId => {
               flow.preserveSettingsDraft();
               onOpenChange(false);
@@ -113,7 +118,7 @@ export function FinishWorkspaceDialog({
           />
         )}
         {!flow.batch && flow.loaded && flow.forkAction === "squash_merge" && (
-          <SquashDeliveryMessages repositories={repositories.filter(item => flow.drafts[item.id])} value={flow.commitMessage} onChange={flow.setCommitMessage} disabled={busy} />
+          <SquashDeliveryMessages repositories={repositories.filter(item => flow.drafts[item.id])} preflights={flow.preflights} onBusyChange={generationChanged} value={flow.commitMessage} onChange={flow.setCommitMessage} disabled={busy} />
         )}
         {!flow.loaded ? (
           <p>{t("states.checking")}</p>
@@ -346,7 +351,7 @@ export function FinishWorkspaceDialog({
                 : null}
           </p>
           <div className="flex gap-2">
-            {!flow.batch && repositories.length > 0 && <Button variant="outline" disabled={busy || !flow.loaded} onClick={onAgentReview}>{t("agentReview.title")}</Button>}
+            {!flow.batch && repositories.length > 0 && <Button variant="outline" disabled={busy || aiBusy || !flow.loaded} onClick={onAgentReview}>{t("agentReview.title")}</Button>}
             {(!flow.batch || flow.batch.status === "paused") &&
               repositories.length > 0 && (
                 <Button
@@ -369,7 +374,7 @@ export function FinishWorkspaceDialog({
               <Button
                 data-testid="finish-confirm-action"
                 disabled={
-                  busy ||
+                  busy || aiBusy ||
                   hasDamagedRepositories ||
                   !flow.loaded ||
                   (flow.batch ? flow.batch.status === "running" : !flow.ready)
@@ -391,9 +396,9 @@ export function FinishWorkspaceDialog({
               flow.batch?.status !== "running" && (
                 <ForceFinishWorkspace
                   repositories={flow.skippedRepositories}
-                  ready={flow.forceReady}
+                  ready={flow.forceReady && !aiBusy}
                   busy={busy}
-                  execute={() => flow.execute(true)}
+                  execute={() => aiBusy ? Promise.resolve(false) : flow.execute(true)}
                 />
               )}
           </div>

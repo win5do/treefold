@@ -44,6 +44,7 @@ use tower_http::cors::CorsLayer;
 
 #[derive(Clone)]
 pub struct AppState {
+    pub ai_commit: crate::ai_commit::Jobs,
     pub cleanup_tasks: archived_cleanup::CleanupTasks,
     pub keymap: crate::keymap::KeymapStore,
     pub store: Store,
@@ -68,6 +69,7 @@ impl AppState {
             terminals,
             integration,
             cleanup_tasks: Default::default(),
+            ai_commit: Default::default(),
             runtime: RuntimeHub::default(),
         }
     }
@@ -615,6 +617,13 @@ fn app(state: AppState) -> Router {
         .route("/api/sessions/{id}/logs", get(session_logs))
         .route("/api/keymap", get(keymap::get).patch(keymap::update))
         .route("/api/settings", get(get_settings).patch(update_settings))
+        .route("/api/ai-commit/presets", get(ai_commit::presets))
+        .route("/api/ai-commit/generate", post(ai_commit::generate))
+        .route("/api/ai-commit/test", post(ai_commit::test))
+        .route(
+            "/api/ai-commit/jobs/{id}",
+            get(ai_commit::get).delete(ai_commit::cancel),
+        )
         .fallback(route_not_found)
         .method_not_allowed_fallback(method_not_allowed)
         .layer(axum::middleware::from_fn(finish_recovery::guard_mutations))
@@ -690,6 +699,7 @@ async fn list_background_processes(
 
 mod agent;
 mod agent_metadata;
+mod ai_commit;
 pub(crate) mod archived_cleanup;
 mod delivery;
 mod finish_batch;

@@ -147,3 +147,56 @@ test("Delivery keeps its draft through Workspace upstream settings without remem
     try { await closeUiSession(page); } finally { await harness.close(); }
   }
 });
+
+test("Dirty delivery opens Changes for the selected repository and only configuration blockers offer settings", async () => {
+  const repositoryIds = [FIXTURE_IDS.workspacePrimaryLocation, FIXTURE_IDS.workspaceSecondaryLocation];
+  const harness = await startUiHarness(fixture => {
+    const detail = fixture.workspaceDetails[FIXTURE_IDS.workspace];
+    detail.default_delivery = "local_merge";
+    for (const repository of detail.repositories) {
+      repository.delivery_status = "active";
+      repository.git_status = "ready";
+    }
+  });
+  let page: Page | undefined;
+  let dirty = true;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "delivery-changes" });
+    await page.route("**/api/workspace-repositories/*/delivery-preflight", async route => {
+      const id = route.request().url().split("/").at(-2)!;
+      await route.fulfill({ json: {
+        id, code_action: route.request().postDataJSON().code_action,
+        target_branch: "main", ahead: 0, behind: 0, changed_files: [], warnings: [],
+        source_dirty: dirty,
+        blockers: [dirty
+          ? "Workspace has uncommitted changes; commit or discard them in Shell before finishing"
+          : "merge target working tree is dirty"],
+      } });
+    });
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    const dialog = page.getByRole("dialog", { name: "Deliver Workspace", exact: true });
+    for (const repositoryId of repositoryIds) {
+      await openUiContextMenu(page, page.getByTestId("sidebar-workspace-node"));
+      await page.getByTestId("finish-workspace-action").click();
+      await expect(dialog.getByTestId("finish-confirm-action")).toBeDisabled();
+      await expect(dialog.getByRole("button", { name: "Go to Workspace settings", exact: true })).toHaveCount(0);
+      await dialog.getByTestId(`delivery-blocker-${repositoryId}`).getByRole("button", { name: "View changes", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(page).toHaveURL(new RegExp(`/workspaces/${FIXTURE_IDS.workspace}$`));
+      const sidebar = page.getByTestId("right-sidebar");
+      await expect(sidebar.getByRole("tab", { name: "Changes", exact: true })).toHaveAttribute("aria-selected", "true");
+      await expect(sidebar.getByTestId("git-repository")).toHaveValue(repositoryId);
+      await expect(sidebar.getByRole("textbox", { name: "Commit message", exact: true })).toBeVisible();
+      await sidebar.getByRole("tab", { name: "Repository Info", exact: true }).click();
+    }
+    dirty = false;
+    await openUiContextMenu(page, page.getByTestId("sidebar-workspace-node"));
+    await page.getByTestId("finish-workspace-action").click();
+    await expect(dialog.getByRole("alert")).toContainText("merge target working tree is dirty");
+    await expect(dialog.getByRole("button", { name: "Go to Workspace settings", exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "View changes", exact: true })).toHaveCount(0);
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});

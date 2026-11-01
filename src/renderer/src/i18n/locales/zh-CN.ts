@@ -1,6 +1,30 @@
 import type { LocaleMessages } from "./en-US";
 
 export const zhCN = {
+  aiCommit: {
+    title: "AI Commit",
+    settings: "前往设置",
+    settingsAction: "AI Commit 设置",
+    cancel: "取消生成",
+    generating: "正在生成…",
+    queued: "等待生成…",
+    stale: "变更内容已更新，请重新生成提交信息。",
+    timeout: "生成超过 60 秒，已保留原消息，可重试。",
+    failed: "生成失败，已保留原消息。{{detail}}",
+    preset: "命令预设",
+    custom: "自定义",
+    choosePreset: "选择预设",
+    presetHint: "选择预设会替换下方命令，实际执行以命令为准。",
+    command: "生成命令",
+    commandHint: "通过 stdin 接收变更上下文，在 stdout 只输出提交信息。在临时目录中运行；未测试或测试失败也可保存。",
+    testFailed: "测试失败。{{detail}}",
+    testTimeout: "测试超过 60 秒，已停止。可以修改命令后重试。",
+    test: "测试生成",
+    passed: "测试通过 · {{seconds}} 秒",
+    testOutput: "测试生成结果",
+    automatic: "自动生成提交信息",
+    automaticHint: "打开提交输入界面时自动生成一次草稿，保留手写消息，提交仍由你确认。"
+  },
   agentReview: {
     title: "AI Review",
     description: "在新的 Agent Session 中检查 {{name}} 的变更，后续可继续讨论或修复问题。",
@@ -372,6 +396,8 @@ export const zhCN = {
     },
     deliveryBlocked: "暂时无法交付",
     upstreamRequired: "未设置上游，请先在 Workspace 中配置远端和分支再推送。",
+    viewChanges: "查看变更",
+    uncommittedChanges: "Workspace 有未提交的改动。请查看变更，提交或放弃改动后再交付。",
     openWorkspaceSettings: "前往 Workspace 设置",
     mergeProject: "合并到 Project",
     "forkDelivery": {

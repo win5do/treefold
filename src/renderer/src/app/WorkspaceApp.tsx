@@ -1532,13 +1532,17 @@ function Workspace() {
           setFinishWorkspaceDialog(null);
           void sessionCreation.create({ scope: "workspace", id: owner.id }, "shell", directory?.id);
         }}
-        onReviewChanges={(locationId) => {
+        onReviewChanges={(locationId, destination) => {
           if (!finishWorkspaceDialog) return;
           const owner = finishWorkspaceDialog;
           const repository = owner.repositories.find((item) => item.id === locationId);
           if (!repository) return;
           setFinishWorkspaceDialog(null);
           setInspectorOpen(true);
+          if (destination === "sidebar") {
+            navigate(`/workspaces/${owner.id}`, { state: { changesRepository: repository.id } });
+            return;
+          }
           const next = new URLSearchParams();
           next.set("view", "git-changes");
           next.set("repositoryId", repository.id);

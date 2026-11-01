@@ -1,3 +1,4 @@
+import type { AiCommitSettings } from "@/features/ai-commit/api";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { appApi } from "@/api/app";
@@ -5,6 +6,7 @@ import { appKeys } from "@/features/app/queries";
 import type { LanguagePreference } from "@/i18n";
 import type { AgentsSettingsPatch, CloseBehavior, ThemePreference } from "@/domain/types";
 export type SettingsFormPatch = {
+  aiCommit?: Partial<AiCommitSettings>;
   language?: LanguagePreference;
   theme?: ThemePreference;
   closeBehavior?: CloseBehavior;
@@ -25,6 +27,7 @@ export function useSettingsSave() {
         theme: update.theme,
         close_behavior: update.closeBehavior,
         agents: update.agents,
+        ai_commit: update.aiCommit,
         amux:
           update.keepDaemonRunningOnExit === undefined
             ? undefined
@@ -32,6 +35,7 @@ export function useSettingsSave() {
       });
       client.setQueryData(appKeys.settings, next);
       if (update.agents || update.reset?.some(key => key.startsWith("agents."))) {
+        await client.invalidateQueries({ queryKey: ["ai-commit-presets"] });
         await client.invalidateQueries({ queryKey: appKeys.system });
       }
       return { ok: true as const };
