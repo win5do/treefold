@@ -203,6 +203,9 @@ test("visible inspector polls without loading and serializes manual refresh with
   let gate: Promise<void> | undefined;
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "inspector-poll" });
+    // Install before the app registers timers. Use a fixed future pause point
+    // instead of comparing wall clocks across the runner and Electron processes.
+    await page.clock.install({ time: new Date("2026-01-01T08:00:00Z") });
     page.on("request", request => {
       const path = new URL(request.url()).pathname;
       if (path === `/api/project-repositories/${FIXTURE_IDS.primaryRepository}/git-history`) historyReads++;
@@ -227,8 +230,8 @@ test("visible inspector polls without loading and serializes manual refresh with
     await expect(sidebar.getByTestId("git-change-summary")).toContainText("+1");
     await expect(content).toHaveAttribute("aria-busy", "false");
     await sidebar.getByRole("textbox", { name: "Commit message", exact: true }).fill("Polling preserves this draft");
-    await page.clock.install();
-    await page.clock.pauseAt(new Date());
+    await page.clock.pauseAt(new Date("2026-01-01T10:00:00Z"));
+    await expect.poll(() => concurrent).toBe(0);
     const before = reads;
     revision = 1;
     hold = true;

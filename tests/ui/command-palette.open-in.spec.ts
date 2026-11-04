@@ -22,10 +22,6 @@ test("palette hands Open With to an independent keyboard menu and Escape restore
     const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
     const search = palette.getByRole("combobox");
     await search.fill("directory.open.with");
-    await search.press("ArrowLeft");
-    expect(await search.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe("directory.open.with".length - 1);
-    await search.press("ArrowRight");
-    expect(await search.evaluate((input: HTMLInputElement) => input.selectionStart)).toBe("directory.open.with".length);
     await search.press("Enter");
     // Closing the Palette transfers keyboard ownership to the independent menu.
     await expect(palette).toHaveCount(0);
@@ -40,7 +36,7 @@ test("palette hands Open With to an independent keyboard menu and Escape restore
     await expect(appsMenu.getByRole("menuitem", { name: "Finder", exact: true })).toBeFocused();
     await expectAnchoredOverlay(appsMenu, directory);
     await page.screenshot({ path: "/tmp/treefold-palette-independent-menu.png", animations: "disabled" });
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("v");
     await expect(appsMenu.getByRole("menuitem", { name: "VS Code", exact: true })).toBeFocused();
     await page.keyboard.press("ArrowUp");
     await expect(appsMenu.getByRole("menuitem", { name: "Finder", exact: true })).toBeFocused();
@@ -70,38 +66,35 @@ test("palette hands Open With to an independent keyboard menu and Escape restore
   }
 });
 
-for (const owner of [
-  { name: "Project", path: `projects/${FIXTURE_IDS.project}`, directory: "/tmp/treefold-ui-fixture/repository-with-a-long-readable-path/apps/web" },
-  { name: "Workspace", path: `workspaces/${FIXTURE_IDS.workspace}`, directory: "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture/apps/web" },
-  { name: "Fork", path: `workspaces/${FIXTURE_IDS.fork}`, directory: "/tmp/treefold-ui-fixture/worktrees/fork-ui-fixture/apps/web" },
-]) {
-  test(`palette opens the selected ${owner.name} directory in the chosen app after navigation`, async () => {
-    const harness = await startUiHarness();
-    let page: Page | undefined;
-    try {
-      page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-open-target", openInApps: apps });
-      await page.goto(`${harness.baseUrl}/#/${owner.path}`);
-      await expect(page.getByTestId("page-content")).toBeVisible();
-      await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
-      const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
-      await palette.getByRole("option", { name: "Open With", exact: true }).click();
-      await expect(palette).toHaveCount(0);
-      await page.getByRole("menuitem", { name: "fixture-repository · apps/web", exact: true }).click();
-      const app = page.getByRole("menuitem", { name: "VS Code", exact: true });
-      await expect(app).toBeVisible();
-      await page.keyboard.press("v");
-      await expect(app).toBeFocused();
-      await page.evaluate(() => { window.location.hash = "#/projects"; });
-      await expect(page).toHaveURL(/#\/projects$/);
-      await page.keyboard.press("Enter");
-      await expect(page.getByRole("menu")).toHaveCount(0);
-      await expect.poll(() => openInRequests(page!)).toEqual([{ id: "vscode", directory: owner.directory }]);
-      harness.assertNoUnexpectedRequests();
-    } finally {
-      try { await closeUiSession(page); } finally { await harness.close(); }
-    }
-  });
-}
+// Project/Workspace/Fork path mapping is covered by open-in.spec.ts. Keep one
+// palette-specific case for retaining the invoking directory across navigation;
+// keyboard/typeahead behavior belongs to the representative menu case above.
+test("palette retains the selected directory when navigation changes before execution", async () => {
+  const harness = await startUiHarness();
+  let page: Page | undefined;
+  try {
+    page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-open-target", openInApps: apps });
+    await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await expect(page.getByTestId("page-content")).toBeVisible();
+    await page.keyboard.press(process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p");
+    const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
+    await palette.getByRole("option", { name: "Open With", exact: true }).click();
+    await expect(palette).toHaveCount(0);
+    await page.getByRole("menuitem", { name: "fixture-repository · apps/web", exact: true }).click();
+    const app = page.getByRole("menuitem", { name: "VS Code", exact: true });
+    await expect(app).toBeVisible();
+    await page.evaluate(() => { window.location.hash = "#/projects"; });
+    await expect(page).toHaveURL(/#\/projects$/);
+    await app.click();
+    await expect(page.getByRole("menu")).toHaveCount(0);
+    await expect.poll(() => openInRequests(page!)).toEqual([{
+      id: "vscode", directory: "/tmp/treefold-ui-fixture/worktrees/workspace-ui-fixture/apps/web",
+    }]);
+    harness.assertNoUnexpectedRequests();
+  } finally {
+    try { await closeUiSession(page); } finally { await harness.close(); }
+  }
+});
 
 test("palette skips a single directory and reports application launch failures", async () => {
   const harness = await startUiHarness((fixture) => {

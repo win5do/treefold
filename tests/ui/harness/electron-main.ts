@@ -9,7 +9,7 @@ const headed = process.env.TREEFOLD_TEST_HEADED === '1';
 // Prevent macOS from activating the test App or adding it to the Dock.
 if (process.platform === 'darwin' && !headed) app.setActivationPolicy('prohibited');
 app.setPath('userData', process.env.TREEFOLD_TEST_HOME!);
-app.whenReady().then(() => {
+const ready = app.whenReady().then(async () => {
   installOpenInFixture();
   installApplicationMenuFixture();
   ipcMain.handle('treefold:api-url', () => process.env.TREEFOLD_TEST_API_URL!);
@@ -28,6 +28,8 @@ app.whenReady().then(() => {
   (globalThis as typeof globalThis & { treefoldOpenProject: (path: string) => void }).treefoldOpenProject = requests.receive;
   if (process.env.TREEFOLD_TEST_OPEN_PROJECT) requests.receive(process.env.TREEFOLD_TEST_OPEN_PROJECT);
   window.webContents.session.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'));
-  void window.loadURL('about:blank');
-}).catch(error => { console.error(error); app.exit(1); });
+  await window.loadURL('about:blank');
+});
+Object.assign(globalThis, { treefoldFixtureReady: ready });
+void ready.catch(error => { console.error(error); app.exit(1); });
 app.on('window-all-closed', () => app.quit());
