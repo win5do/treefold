@@ -12,6 +12,9 @@ import { createProjectOpenRequests } from './open-project';
 import { readShellPath } from './shell-path';
 import { createUpdateChecker, scheduleStartupUpdate } from './updates';
 import { installWindowCloseBehavior } from './window-close';
+import { directoryFromArguments } from './open-arguments';
+import { persistentAppImageResources } from './appimage-resources';
+import { cleanAppImageEnvironment } from './appimage-environment';
 
 const home = path.resolve(process.env.TREEFOLD_HOME || path.join(app.getPath('home'), '.treefold'));
 mkdirSync(path.join(home, 'data', 'electron'), { recursive: true });
@@ -67,14 +70,25 @@ function trusted(event: IpcMainInvokeEvent | IpcMainEvent) {
   if (actual.protocol !== expected.protocol || actual.host !== expected.host) throw new Error('Untrusted desktop origin');
 }
 async function start() {
+  const appImage = app.isPackaged && process.platform === 'linux' ? process.env.APPIMAGE : undefined;
+  if (appImage) {
+    const environment = cleanAppImageEnvironment(process.env);
+    for (const key of Object.keys(process.env)) if (!(key in environment)) delete process.env[key];
+    Object.assign(process.env, environment);
+  }
   const shellPath = await readShellPath({ onWarning: message => log('warn', message) });
   if (quitting) return;
   if (shellPath !== undefined) process.env.PATH = shellPath;
-  const resources = app.isPackaged ? process.resourcesPath : path.join(root, 'src/backend/bundle-staging/dev-sidecars');
+  const resources = app.isPackaged
+    ? appImage
+      ? await persistentAppImageResources(process.resourcesPath, home, appImage)
+      : process.resourcesPath
+    : path.join(root, 'src/backend/bundle-staging/dev-sidecars');
+  if (quitting) return;
   const bin = path.join(resources, 'bin');
   backend = new Backend({
     executable: app.isPackaged ? path.join(bin, 'treefold-backend') : process.env.TREEFOLD_BACKEND_PATH || path.join(root, 'src/backend/target/debug/treefold-backend'),
-    env: { ...process.env, TREEFOLD_HOME: home, TREEFOLD_RESOURCE_DIR: resources, TREEFOLD_BUNDLED_BIN_DIR: bin,
+    env: { ...process.env, ...(app.isPackaged && process.platform === 'linux' ? { TREEFOLD_DESKTOP_PATH: appImage || process.execPath } : {}), TREEFOLD_HOME: home, TREEFOLD_RESOURCE_DIR: resources, TREEFOLD_BUNDLED_BIN_DIR: bin,
       TREEFOLD_AMUX_SKILL_DIR: path.join(resources, 'agent-integration/skills/amux') },
     onStderr: message => { if (!app.isPackaged) console.error(message); },
     onExit: error => {
@@ -104,6 +118,7 @@ async function start() {
     const item = Menu.getApplicationMenu()?.getMenuItemById('check-for-updates');
     if (item) item.label = label;
   });
+  ipcMain.handle('treefold:quit', event => { trusted(event); app.quit(); });
   ipcMain.handle('treefold:app-version', event => { trusted(event); return app.getVersion(); });
   ipcMain.handle('treefold:pending-open-project', event => { trusted(event); return projectOpenRequests.pending(); });
   ipcMain.handle('treefold:acknowledge-open-project', (event, id) => {
@@ -116,6 +131,7 @@ async function start() {
   });
   ipcMain.handle('treefold:log', (event, level, message) => { trusted(event); log(level, message, 'renderer'); });
   window = new BrowserWindow({ title: 'Treefold', width: 1440, height: 900, minWidth: 960, minHeight: 640, show: false,
+    ...(process.platform === 'linux' ? { icon: app.isPackaged ? path.join(process.resourcesPath, 'icon.png') : path.join(root, 'build/icons/icon.png') } : {}),
     webPreferences: { preload: path.join(__dirname, '../preload/index.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   if (!devUrl) {
     const websocket = apiUrl.replace('http:', 'ws:');
@@ -142,7 +158,8 @@ async function start() {
     ...(process.platform !== 'darwin' ? [{ label: 'File', submenu: [{ role: 'quit' }] }] satisfies MenuItemConstructorOptions[] : []),
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
-  const iconPath = app.isPackaged ? path.join(resources, 'icon.png') : path.join(root, 'build/icons/32x32.png');
+  if (process.platform === 'linux') window.setMenuBarVisibility(false);
+  const iconPath = app.isPackaged ? path.join(process.resourcesPath, 'icon.png') : path.join(root, 'build/icons/32x32.png');
   tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 }));
   tray.setToolTip('Treefold');
   tray.setContextMenu(Menu.buildFromTemplate([{ label: 'Open Treefold', click: showWindow }, { type: 'separator' }, { label: 'Quit Treefold', click: () => app.quit() }]));
@@ -161,7 +178,15 @@ async function acquireInstance() {
 // A dev restart must wait for the previous native instance before asking Chromium for its lock.
 void acquireInstance().then(acquired => {
   if (!acquired) { app.quit(); return; }
-  app.on('second-instance', () => { if (!devUrl) showWindow(); });
+  app.on('second-instance', (_event, argv, cwd) => {
+    const directory = directoryFromArguments(argv, cwd, app.isPackaged);
+    if (directory) projectOpenRequests.receive(directory);
+    else if (!devUrl) showWindow();
+  });
+  if (process.platform === 'linux') {
+    const directory = directoryFromArguments(process.argv, process.cwd(), app.isPackaged);
+    if (directory) projectOpenRequests.receive(directory);
+  }
   app.on('activate', showWindow);
   app.on('before-quit', event => {
     quitting = true;

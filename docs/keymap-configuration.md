@@ -113,11 +113,11 @@ schema_version = 1
 
 | Command | Default | Availability |
 | --- | --- | --- |
-| `session.new` | `super+t` | Active Project, Workspace, or Fork |
-| `session.close` | `super+w` | Current Session; same action as its close button |
+| `session.new` | macOS: `super+t`; Linux: `ctrl+shift+t` | Active Project, Workspace, or Fork |
+| `session.close` | macOS: `super+w`; Linux: `ctrl+shift+w` | Current Session; same action as its close button |
 | `session.next` | `ctrl+tab` | Next visible, running Session in the current scope |
 | `session.previous` | `ctrl+shift+tab` | Previous visible, running Session in the current scope |
-| `app.palette.open` | `super+shift+p` | Open Command Palette |
+| `app.palette.open` | macOS: `super+shift+p`; Linux: `ctrl+shift+p` | Open Command Palette |
 | `app.settings.open` | Unbound | Open Settings |
 | `app.projects.open` | Unbound | Open Projects |
 | `app.leftSidebar.toggle` | Unbound | Toggle the left sidebar |
@@ -126,6 +126,9 @@ schema_version = 1
 | `git.sync.pull` | Unbound | Open Pull choices for an active Project or Workspace with eligible repositories |
 | `directory.open.with` | Unbound | Open application choices for directories in the current context |
 | `workspace.review.open` | Unbound | Open AI Review for the current active Workspace or Fork, including from its Sessions; unavailable in Project contexts or during pending delivery |
+
+Platform defaults apply only when a binding is omitted. Explicit user overrides
+are preserved when moving configuration between macOS and Linux.
 
 All registered actions appear in Keymap with localized names. The fixed order
 puts actions with default shortcuts first; binding, disabling, or resetting a

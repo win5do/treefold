@@ -64,5 +64,5 @@ export function useAboutDialog() {
   }), [check, notify]);
   useEffect(() => () => { request.current++; }, []);
 
-  return { open, result, checking, check, close, reminders: { choose: chooseReminder, saving: reminders.saving } };
+  return { open, openAbout, result, checking, check, close, reminders: { choose: chooseReminder, saving: reminders.saving } };
 }

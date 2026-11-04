@@ -10,6 +10,7 @@ mod model;
 mod request_context;
 mod server;
 mod settings;
+mod shell;
 mod store;
 mod terminal;
 

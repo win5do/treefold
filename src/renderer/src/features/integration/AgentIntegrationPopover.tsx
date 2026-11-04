@@ -1,12 +1,13 @@
+import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Cable, RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { appApi } from "@/api/app";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import type { AgentIntegrationState } from "@/domain/types";
 import { agentIntegrationQuery, appKeys, appVersionQuery } from "@/features/app/queries";
@@ -25,10 +26,9 @@ function badgeVariant(state: AgentIntegrationState) {
   return "warning" as const;
 }
 
-export function AgentIntegrationPopover() {
+export function AgentIntegrationPopover({ open, onOpenChange: setOpen, anchor }: { open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLButtonElement | null> }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
   const [confirmUninstall, setConfirmUninstall] = useState(false);
   const [busy, setBusy] = useState(false);
   const prompted = useRef(false);
@@ -58,11 +58,7 @@ export function AgentIntegrationPopover() {
 
   return <>
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button data-testid="open-agent-integration" size="icon" variant="ghost" aria-label={t("integration.title")} title={t("integration.title")} className="relative" />}>
-        <Cable data-icon="inline-start" />
-        {!ready && <span data-testid="agent-integration-indicator" className="absolute right-1 top-1 size-2 rounded-full bg-warning ring-2 ring-background" />}
-      </PopoverTrigger>
-      <PopoverContent data-testid="agent-integration-popover" side="top" align="start" sideOffset={8} className="w-96 p-3">
+      <PopoverContent anchor={anchor} finalFocus={anchor} data-testid="agent-integration-popover" side="top" align="start" sideOffset={8} className="w-96 p-3">
         <div className="flex items-start justify-between gap-3">
           <PopoverHeader>
             <PopoverTitle>{t("integration.title")}</PopoverTitle>

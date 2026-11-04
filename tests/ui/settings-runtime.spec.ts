@@ -24,6 +24,7 @@ test("settings copies runtime information as a multiline report", async () => {
         },
       });
     });
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByTestId("settings-runtime-treefold-home"))

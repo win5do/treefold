@@ -22,6 +22,7 @@ test("resources", async () => {
 
     const settingsButton = page.locator('[data-testid="open-settings"]');
     const resourcesButton = page.locator('[data-testid="open-resources"]');
+    await page.getByTestId("application-menu-trigger").click();
     // Settings (including the fixture language) load asynchronously.
     await expect(settingsButton).toHaveAccessibleName("Settings");
     await expect(resourcesButton).toHaveAccessibleName("Resources");
@@ -37,6 +38,7 @@ test("resources", async () => {
     await settingsSaveToast.waitFor({ timeout: 3_000, state: 'visible' });
     await pressUiEscape(page);
     await dialog.waitFor({ timeout: 3_000, state: 'hidden' });
+    await page.getByTestId("application-menu-trigger").click();
     await settingsButton.click();
     dialog = page.locator('[role="dialog"]');
     await dialog.waitFor({ timeout: 3_000, state: 'visible' });
@@ -44,6 +46,7 @@ test("resources", async () => {
     await pressUiEscape(page);
     await dialog.waitFor({ timeout: 3_000, state: 'hidden' });
 
+    await page.getByTestId("application-menu-trigger").click();
     await resourcesButton.click();
     const resourcePopover = page.locator('[data-testid="amux-resources-popover"]');
     await resourcePopover.waitFor({ timeout: 3_000, state: 'visible' });
@@ -84,7 +87,8 @@ test("unavailable runtime requires confirmed recovery and keeps failures actiona
     page = await createUiSession({ apiUrl: harness.apiUrl, windowSize: "1200,800", sessionName: "runtime-recovery" });
     await page.goto(harness.baseUrl);
     const resources = page.getByTestId("open-resources");
-    await expect(resources).toHaveAccessibleName("Resources");
+    await page.getByTestId("application-menu-trigger").click();
+    await expect(resources).toHaveAccessibleName(/Resources/);
     await resources.click();
     const popover = page.getByTestId("amux-resources-popover");
     await expect(popover.getByText("Unavailable", { exact: true })).toBeVisible();
@@ -97,6 +101,7 @@ test("unavailable runtime requires confirmed recovery and keeps failures actiona
     expect(harness.amuxRecovery.recoverRequests).toHaveLength(0);
     await expect(dialog).toBeHidden();
     await expect(popover).toBeHidden();
+    await page.getByTestId("application-menu-trigger").click();
     await resources.click();
     await popover.getByRole("button", { name: "Recover runtime", exact: true }).click();
     harness.amuxRecovery.failNextRecovery("Process identity changed; retry inspection");

@@ -101,8 +101,53 @@ jobs:
             release/*.zip
             release/SHA256SUMS
 
-  publish:
+  build-linux:
     needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TREEFOLD_BUILD_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Select pinned Rust toolchain
+        run: rustup show
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        with:
+          workspaces: |
+            xtask
+            src/backend
+            src/cli
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm libarchive-tools
+          npm ci
+          cargo install just --locked
+      - name: Build AppImage, deb and rpm
+        run: just build
+      - name: Generate Linux checksums
+        working-directory: release
+        run: sha256sum *.AppImage *.deb *.rpm > SHA256SUMS-linux
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: release-packages-linux
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/SHA256SUMS-linux
+
+  publish:
+    needs: [build, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -117,6 +162,14 @@ jobs:
         with:
           name: release-packages
           path: release
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: release-packages-linux
+          path: release
+      - name: Combine platform checksums
+        run: |
+          cat release/SHA256SUMS-linux >> release/SHA256SUMS
+          rm release/SHA256SUMS-linux
       - name: Publish complete release or resume draft
         shell: bash
         run: |
@@ -140,7 +193,7 @@ jobs:
             gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes \
               --title "Treefold $RELEASE_TAG" --prerelease="$PRERELEASE"
           fi
-          gh release upload "$RELEASE_TAG" ./*.dmg ./*.zip SHA256SUMS --clobber
+          gh release upload "$RELEASE_TAG" ./*.dmg ./*.zip ./*.AppImage ./*.deb ./*.rpm SHA256SUMS --clobber
           mkdir uploaded
           gh release download "$RELEASE_TAG" --dir uploaded
           (cd uploaded && sha256sum --check SHA256SUMS)

@@ -2,17 +2,18 @@ import { access, readdir, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { appCatalog, type AppDefinition } from './catalog.ts';
 import { ghosttyLaunchCommand } from './ghostty.ts';
 import type { OpenInApp } from '../../preload/bridge.d.ts';
+import { detectLinuxApps, linuxAppCatalog } from './linux.ts';
 
 const execute = promisify(execFile);
-export type DetectedApp = AppDefinition & { appPath: string; cli?: string };
-export type LaunchCommand = { command: string; args: string[] };
-export type DiscoveryOptions = { roots?: string[]; toolboxRoot?: string; platform?: string };
+export type DetectedApp = AppDefinition & { appPath: string; cli?: string; launch?: (directory: string) => LaunchCommand };
+export type LaunchCommand = { command: string; args: string[]; cwd?: string; detached?: boolean };
+export type DiscoveryOptions = { roots?: string[]; toolboxRoot?: string; platform?: string; searchPath?: string };
 async function isDirectory(file: string) { return (await stat(file).catch(() => null))?.isDirectory() ?? false; }
 async function executable(file: string) {
   try { await access(file, constants.X_OK); return (await stat(file)).isFile(); } catch { return false; }
@@ -27,6 +28,7 @@ async function bundlesIn(root: string, depth = 0): Promise<string[]> {
   return results.flat();
 }
 export async function detectApps(options: DiscoveryOptions = {}): Promise<DetectedApp[]> {
+  if ((options.platform ?? process.platform) === 'linux') return detectLinuxApps(options.searchPath);
   if ((options.platform ?? process.platform) !== 'darwin') return [];
   const roots = options.roots ?? ['/Applications', path.join(homedir(), 'Applications')];
   const toolbox = options.toolboxRoot ?? path.join(homedir(), 'Library/Application Support/JetBrains/Toolbox/apps');
@@ -55,6 +57,7 @@ export async function listOpenInApps(): Promise<OpenInApp[]> {
   return (await detectApps()).map(({ id, label, group }) => ({ id, label, group }));
 }
 export function launchCommand(app: DetectedApp, directory: string): LaunchCommand {
+  if (app.launch) return app.launch(directory);
   const open = (...args: string[]) => ({ command: '/usr/bin/open', args });
   switch (app.id) {
     case 'ghostty': return ghosttyLaunchCommand(app.appPath, directory);
@@ -69,19 +72,28 @@ export function launchCommand(app: DetectedApp, directory: string): LaunchComman
 }
 export type OpenInDependencies = {
   detect?: () => Promise<DetectedApp[]>;
-  run?: (command: string, args: string[]) => Promise<void>;
+  run?: (command: string, args: string[], options?: Pick<LaunchCommand, 'cwd' | 'detached'>) => Promise<void>;
 };
 export async function openInApp(id: unknown, directory: unknown, dependencies: OpenInDependencies = {}) {
-  if (typeof id !== 'string' || !appCatalog.some(app => app.id === id)) throw new Error('Unknown application');
+  if (typeof id !== 'string' || ![...appCatalog, ...linuxAppCatalog].some(app => app.id === id)) throw new Error('Unknown application');
   if (typeof directory !== 'string' || !path.isAbsolute(directory) || directory.includes('\0') || !await isDirectory(directory)) {
     throw new Error('The target directory no longer exists');
   }
   const app = (await (dependencies.detect ?? detectApps)()).find(app => app.id === id);
   if (!app) throw new Error('The selected application is no longer installed');
-  const run = dependencies.run ?? (async (command: string, args: string[]) => {
+  const run = dependencies.run ?? (async (command: string, args: string[], options?: Pick<LaunchCommand, 'cwd' | 'detached'>) => {
     const env = { ...process.env };
     // Do not target the cmux workspace/socket that happened to launch Treefold.
     for (const key of Object.keys(env)) if (key.startsWith('CMUX_')) delete env[key];
+    if (options?.detached) {
+      // A Linux desktop app may outlive Treefold; do not impose execFile's timeout.
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(command, args, { cwd: options.cwd, env, detached: true, stdio: 'ignore' });
+        child.once('error', reject);
+        child.once('spawn', () => { child.unref(); resolve(); });
+      });
+      return;
+    }
     await execute(command, args, { timeout: args[0] === 'ping' ? 1_000 : 15_000, env });
   });
   if (app.id === 'cmux') {
@@ -93,5 +105,5 @@ export async function openInApp(id: unknown, directory: unknown, dependencies: O
     }
   }
   const command = launchCommand(app, directory);
-  await run(command.command, command.args);
+  await run(command.command, command.args, command);
 }

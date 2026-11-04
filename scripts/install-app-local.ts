@@ -1,7 +1,9 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import { homedir } from 'node:os';
 import { bundleApp } from './bundle-app.ts';
+import { assertLinuxAppStopped, installLinuxApp } from './install-linux-app.ts';
 
 function assertAppStopped(installedApp: string) {
   const executable = path.join(installedApp, 'Contents/MacOS');
@@ -56,10 +58,16 @@ export function installApp(appPath: string, installDir: string, version: string)
 }
 
 if (import.meta.main) {
-  const installDir = path.resolve(process.env.TREEFOLD_INSTALL_DIR ?? '/Applications');
-  assertAppStopped(path.join(installDir, 'Treefold.app'));
+  const linux = process.platform === 'linux';
+  if (!linux && process.platform !== 'darwin') throw new Error('Local installation supports macOS and Linux.');
+  const dataDir = process.env.XDG_DATA_HOME || path.join(homedir(), '.local/share');
+  const installDir = path.resolve(process.env.TREEFOLD_INSTALL_DIR ?? (linux ? path.join(dataDir, 'treefold') : '/Applications'));
+  if (linux) assertLinuxAppStopped(path.join(installDir, 'app'));
+  else assertAppStopped(path.join(installDir, 'Treefold.app'));
   const { appPath, version, artifacts } = await bundleApp({ localInstall: true });
-  const installedApp = installApp(appPath, installDir, version);
+  const installedApp = linux ? installLinuxApp(appPath, installDir, version, {
+    binDir: path.join(homedir(), '.local/bin'), applicationsDir: path.join(dataDir, 'applications'),
+  }) : installApp(appPath, installDir, version);
   console.log(`Installed Treefold ${version} at ${installedApp}`);
-  for (const artifact of artifacts) if (artifact.endsWith('.dmg')) console.log(`Packaged DMG: ${artifact}`);
+  for (const artifact of artifacts) console.log(`Packaged: ${artifact}`);
 }

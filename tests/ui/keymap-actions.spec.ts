@@ -11,6 +11,7 @@ test("Keymap exposes unbound actions and their recorded shortcuts execute in con
       { id: "finder", label: "Finder", group: "fileManager" },
     ] });
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     await page.getByRole("button", { name: "快捷键", exact: true }).click();
     for (const id of ["app.settings.open", "app.projects.open", "app.leftSidebar.toggle", "app.rightSidebar.toggle", "git.sync.push", "git.sync.pull", "directory.open.with", "workspace.review.open"]) {
@@ -24,7 +25,7 @@ test("Keymap exposes unbound actions and their recorded shortcuts execute in con
     ]) {
       await page.getByRole("button", { name: `录入 ${name}`, exact: true }).click();
       await page.getByRole("textbox", { name: `录入 ${name}`, exact: true }).press(`Control+${key}`);
-      await expect(page.getByTestId(`keymap-${id}`)).toContainText(`ctrl ${key.toUpperCase()}`);
+      await expect(page.getByTestId(`keymap-${id}`)).toContainText(process.platform === "darwin" ? `ctrl ${key.toUpperCase()}` : `ctrl+${key}`);
     }
     await page.keyboard.press("Escape");
     await page.reload();

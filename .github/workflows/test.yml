@@ -12,7 +12,11 @@ concurrency:
 
 jobs:
   full-test:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -34,22 +38,30 @@ jobs:
       - name: Install dependencies
         run: |
           npm ci
-          brew install just
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install -y rpm libarchive-tools libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64 xvfb xdg-utils
+            cargo install just --locked
+          else
+            brew install just
+          fi
       - name: Test backend
         run: just test-backend
       - name: Test backend lifecycle and installation
         run: just test-integration
       - name: Test deterministic Electron UI
-        run: just test-ui
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then xvfb-run -a just test-ui; else just test-ui; fi
       - name: Build App for Electron lifecycle tests
         run: just build
       - name: Test packaged and development Electron lifecycles
-        run: just test-electron
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then xvfb-run -a just test-electron; else just test-electron; fi
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: test-diagnostics
+          name: test-diagnostics-${{ matrix.os }}
           if-no-files-found: ignore
           retention-days: 7
           path: |

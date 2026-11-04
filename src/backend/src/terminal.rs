@@ -338,7 +338,7 @@ impl TerminalManager {
             session.amux_workspace_name.clone()
         };
         self.ensure_workspace(&workspace, &session.cwd).await?;
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
+        let shell = crate::shell::default_shell()?;
         let mut agent_environment = BTreeMap::new();
         let command = if session.kind == "shell" {
             shell_command(&shell, &session.initial_prompt)
@@ -375,6 +375,7 @@ impl TerminalManager {
             session.argv.clone()
         };
         let mut env = BTreeMap::from([
+            ("SHELL".into(), shell),
             ("TERM".into(), "xterm-256color".into()),
             ("COLORTERM".into(), "truecolor".into()),
             ("TREEFOLD_API_URL".into(), self.api_url.as_ref().clone()),
@@ -411,7 +412,6 @@ impl TerminalManager {
             env.insert("TREEFOLD_API_TOKEN".into(), session.id.clone());
         }
         if session.kind == "shell" && !session.initial_prompt.trim().is_empty() {
-            env.insert("SHELL".into(), shell);
             env.insert(
                 "TREEFOLD_SETUP_COMMAND".into(),
                 session.initial_prompt.clone(),
@@ -529,13 +529,34 @@ impl TerminalManager {
         ) {
             return Ok(false);
         }
-        self.client
+        let result = self
+            .client
             .do_json(
                 Method::POST,
                 &format!("/v1/processes/{workspace}/{process}/stop"),
                 Some(&StopRequest { grace_millis: 500 }),
             )
-            .await?;
+            .await;
+        if let Err(error) = result {
+            // Cancelling the launch gate can exit the child and its shim before
+            // the stop request arrives. Confirm that it exited rather than
+            // treating an unavailable shim for a live process as success.
+            if !error.to_string().contains("process_not_running") {
+                return Err(error);
+            }
+            if self
+                .inspect_existing(workspace, process)
+                .await?
+                .is_some_and(|current| {
+                    matches!(
+                        current.state,
+                        ProcessState::Created | ProcessState::Starting | ProcessState::Running
+                    )
+                })
+            {
+                return Err(error);
+            }
+        }
         Ok(true)
     }
 

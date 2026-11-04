@@ -1,10 +1,10 @@
-# Treefold for macOS
+# Treefold
 
 [English](README.md) | **简体中文**
 
 **并行展开，干净收敛。**
 
-Treefold 是一个本地优先的 macOS App，让你在独立的 Git worktree 中并行运行 AI Agent，集中管理代码、终端和任务，再把成果合回主线。
+Treefold 是一个本地优先的 macOS / Linux App，让你在独立的 Git worktree 中并行运行 AI Agent，集中管理代码、终端和任务，再把成果合回主线。
 
 用你熟悉的 **Codex、Claude Code、OpenCode 或 Pi** 开发，用 Shell 启动服务和运行测试。每项 feature 有自己的 Workspace，不必在几个任务之间反复切分支、找终端、回忆进度。
 
@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/909fffe9-795c-4e07-bd55-4b5d3d8c6793
 - **检查代码，整理交付**：查看 diff 和历史，使用 Squash、Reset 或编辑最新提交说明；Squash 交付可按仓库填写说明，保留源分支开发记录。
 - **让 Agent 带着范围做 Review**：自动补充仓库和比较目标，要求检查已提交、未提交修改及新文件。提示词可编辑，检查后可在同一 Session 继续讨论、修复。
 - **共享服务与日志**：人和 Agent 通过 amux 查看同一批受管进程及输出。切换 Session 后也能找到服务，不必反复让 Agent 转述日志。
-- **少找目录，少记快捷键**：Command Palette 沿用当前任务上下文；Open With 直接在 IDE、终端或 Finder 打开对应目录。
+- **少找目录，少记快捷键**：Command Palette 沿用当前任务上下文；Open With 可在文件管理器、终端或编辑器中打开当前目录。
 
 ## 界面一览
 
@@ -45,9 +45,12 @@ Project 组织相关仓库，Workspace 承载一项 feature，Fork 将子任务�
 
 ## 安装
 
-需要 **Apple Silicon Mac、macOS Sonoma 14 或更新版本，以及 Git**。
+Treefold 需要 Git 和图形桌面环境。请按平台选择安装方式：
 
-### Homebrew
+- **macOS**：Apple Silicon、macOS Sonoma 14 或更新版本，可通过 Homebrew 或 DMG 安装。
+- **Linux**：按下方说明从源码构建。开发与本地打包已在 Arch Linux / KDE 上验证。
+
+### macOS：Homebrew
 
 ```bash
 brew install --cask win5do/tap/treefold
@@ -60,7 +63,7 @@ brew update
 brew upgrade --cask treefold
 ```
 
-### 下载安装包
+### macOS：下载安装包
 
 前往 [GitHub Releases](https://github.com/win5do/treefold/releases)，下载 Apple Silicon 的 `.dmg`，打开后将 Treefold 拖入“应用程序”。Release 页面同时提供 ZIP、SHA-256 校验文件和版本说明。
 
@@ -75,6 +78,26 @@ xattr -dr com.apple.quarantine /Applications/Treefold.app
 此命令仅移除已安装 Treefold App 的隔离属性。如果安装在其他位置，请替换为实际路径。下载新版本后，可能需要再次执行。
 
 也可以在“系统设置 → 隐私与安全性”中选择“仍要打开”，然后按提示确认。
+
+### Linux：构建与安装
+
+Linux 支持 **AppImage、deb 和 rpm**。目前尚未发布 Linux 下载包，请从当前源码构建。先按[从源码运行](#从源码运行)准备环境，并安装[打包依赖](docs/linux-development.md#build-and-install)，然后执行：
+
+```bash
+just build
+```
+
+此命令在 `release/` 中生成三种格式：
+
+| 格式 | 使用方式 |
+| --- | --- |
+| `.AppImage` | 添加执行权限后运行。 |
+| `.deb` | 在兼容的 Debian/Ubuntu 系统上运行 `sudo apt install ./release/Treefold-*.deb` 安装生成的包。 |
+| `.rpm` | 在兼容的 Fedora 系统上运行 `sudo dnf install ./release/Treefold-*.rpm` 安装生成的包。 |
+
+在 Arch KDE 上，也可以运行 `just install-app-local`，为当前用户构建并安装 Treefold。替换前请先退出已安装的 Treefold。
+
+在较新发行版上构建的包不保证能在较旧发行版运行。依赖和兼容性说明见 [Linux 指南](docs/linux-development.md)。
 
 ### 准备你要使用的 Agent
 
@@ -134,7 +157,7 @@ Fork 从父 Workspace 展开，各自在独立 worktree 中工作。完成后先
 
 ## CLI 与 Agent 协作
 
-桌面 App 附带 `treefold` CLI 和 Treefold Skill。受管理的 Agent Session 会获得当前 Project、Workspace、目录和 Todo 的上下文，可以查看任务、领取任务、更新进度并完成 Todo。
+桌面 App 附带 `treefold` CLI 和 Treefold Skill，可在左下角应用菜单的 **Agent 集成**中启用。受管理的 Agent Session 会获得当前 Project、Workspace、目录和 Todo 的上下文，可以查看任务、领取任务、更新进度并完成 Todo。
 
 ```bash
 treefold open /path/to/project
@@ -158,9 +181,19 @@ Project 状态、Session 元数据、Todo 和配置保存在本机，核心管�
 
 详见 [配置与快捷键](docs/keymap-configuration.md)。
 
+Linux 的设置、检查更新、关于和退出位于左下角应用菜单；macOS 同时保留原生菜单。
+
+| 默认快捷键 | macOS | Linux |
+| --- | --- | --- |
+| 新建 Session | `Cmd+T` | `Ctrl+Shift+T` |
+| 关闭 Session | `Cmd+W` | `Ctrl+Shift+W` |
+| Command Palette | `Cmd+Shift+P` | `Ctrl+Shift+P` |
+
+两个平台都会优先使用你显式配置的快捷键。
+
 ## 从源码运行
 
-希望体验当前源码中的功能，或参与开发时，准备 stable Rust、Node.js 24.12 或更新版本、Git 和 `just`：
+在 macOS 或 Linux 上体验当前源码中的功能或参与开发，需要 stable Rust、Node.js 24.12 或更新版本、Git 和 `just`：
 
 ```bash
 git clone https://github.com/win5do/treefold.git
@@ -169,7 +202,11 @@ npm install
 just app-dev
 ```
 
-开发数据默认存放在仓库的 `.treefold-dev/`，与日常使用的 `~/.treefold` 分开。运行 `just` 查看可用任务，`just build` 生成 macOS App、DMG 与 ZIP。环境配置、构建和验证细节见 [开发指南](AGENTS.md#development-environment-and-commands)。
+`just app-dev` 启动支持热更新的开发版 App。开发数据默认存放在仓库的 `.treefold-dev/`，与日常使用的 `~/.treefold` 分开。
+
+运行 `just` 查看可用任务，`just build` 在 `release/` 下生成当前平台的产物：macOS 为 App、DMG 与 ZIP，Linux 为 AppImage、deb 与 rpm。环境配置、构建和验证细节见 [开发指南](AGENTS.md#development-environment-and-commands)。
+
+Linux 开发、打包与本地安装请参阅 [Arch Linux / KDE 配置说明](docs/linux-development.md)。
 
 ## 了解更多与反馈
 

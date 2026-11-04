@@ -1,10 +1,10 @@
-# Treefold for macOS
+# Treefold
 
 **English** | [简体中文](README.zh-CN.md)
 
 **Run agents in parallel. Fold the work back cleanly.**
 
-Treefold is a local-first macOS app for running AI agents in isolated Git worktrees. Keep code, terminals, and tasks together, then merge the results back into your main line of work.
+Treefold is a local-first macOS and Linux app for running AI agents in isolated Git worktrees. Keep code, terminals, and tasks together, then merge the results back into your main line of work.
 
 Develop with **Codex, Claude Code, OpenCode, or Pi**, and use Shell Sessions to run services and tests. Each feature gets its own Workspace, so you can switch tasks without repeatedly switching branches, finding terminals, or reconstructing your progress.
 
@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/909fffe9-795c-4e07-bd55-4b5d3d8c6793
 - **Review changes and prepare delivery.** Inspect diffs and history, squash or reset commits, and edit the latest commit message. Squash delivery supports a message per repository while preserving source-branch history.
 - **Give your Agent the scope for AI Review.** Treefold adds repositories and comparison targets, asking the Agent to inspect committed changes, uncommitted changes, and new files. Edit the prompt, then discuss and fix findings in the same Session.
 - **Share services and logs.** People and agents use amux to inspect the same managed processes and output. Find the service across Sessions without asking an Agent to relay its logs.
-- **Spend less time finding commands and directories.** Command Palette keeps the current task context; Open With opens its directory in your IDE, terminal, or Finder.
+- **Spend less time finding commands and directories.** Command Palette keeps the current task context; Open With opens the current directory in your file manager, terminal, or editor.
 
 ## A look inside
 
@@ -45,9 +45,12 @@ Isolation belongs to the Workspace / Fork. Sessions within the same work share a
 
 ## Install
 
-You need an **Apple Silicon Mac running macOS Sonoma 14 or newer, plus Git**.
+Treefold requires Git and a graphical desktop. Choose the instructions for your platform:
 
-### Homebrew
+- **macOS:** Apple Silicon, macOS Sonoma 14 or newer. Install with Homebrew or download the DMG.
+- **Linux:** build from source using the instructions below. Development and local packaging have been verified on Arch Linux with KDE.
+
+### macOS: Homebrew
 
 ```bash
 brew install --cask win5do/tap/treefold
@@ -60,7 +63,7 @@ brew update
 brew upgrade --cask treefold
 ```
 
-### Download the app
+### macOS: Download the app
 
 Visit [GitHub Releases](https://github.com/win5do/treefold/releases), download the Apple Silicon `.dmg`, open it, and drag Treefold into Applications. Release pages also provide a ZIP archive, SHA-256 checksums, and release notes.
 
@@ -75,6 +78,26 @@ xattr -dr com.apple.quarantine /Applications/Treefold.app
 This removes the quarantine attribute only from the installed Treefold app. If you installed it elsewhere, replace the path accordingly. You may need to repeat this after downloading a new version.
 
 Alternatively, choose Open Anyway in System Settings → Privacy & Security, then confirm when prompted.
+
+### Linux: Build and install
+
+Linux supports **AppImage, deb, and rpm**. Linux release downloads have not been published yet; build from the current source checkout. Follow [Run from source](#run-from-source) and install the [packaging dependencies](docs/linux-development.md#build-and-install), then run:
+
+```bash
+just build
+```
+
+This creates all three formats in `release/`:
+
+| Format | Use |
+| --- | --- |
+| `.AppImage` | Mark the file executable and run it. |
+| `.deb` | Install the generated package with `sudo apt install ./release/Treefold-*.deb` on a compatible Debian/Ubuntu system. |
+| `.rpm` | Install the generated package with `sudo dnf install ./release/Treefold-*.rpm` on a compatible Fedora system. |
+
+On Arch KDE, `just install-app-local` builds and installs Treefold for your user account. Quit an installed Treefold instance before replacing it.
+
+Packages built on recent distributions are not guaranteed to run on older ones. See the [Linux guide](docs/linux-development.md) for dependencies and compatibility details.
 
 ### Set up your agents
 
@@ -134,7 +157,7 @@ You can also create a Session with another Agent in the same Workspace and ask i
 
 ## CLI and agent collaboration
 
-The desktop app includes the `treefold` CLI and Treefold Skill. Managed Agent Sessions receive their current Project, Workspace, directory, and Todo context. Agents can inspect and claim tasks, update progress, and mark Todos complete.
+The desktop app includes the `treefold` CLI and Treefold Skill. Enable them through **Agent Integration** in the lower-left application menu. Managed Agent Sessions receive their current Project, Workspace, directory, and Todo context. Agents can inspect and claim tasks, update progress, and mark Todos complete.
 
 ```bash
 treefold open /path/to/project
@@ -149,7 +172,7 @@ The companion `amux` runtime manages persistent processes and terminals. When cr
 
 ## Local data and preferences
 
-Project state, Session metadata, Todos, and configuration stay on your Mac. The core management workflow does not require a hosted control service. Agent model calls, network access, and costs depend on the corresponding services and your configuration.
+Project state, Session metadata, Todos, and configuration stay on your computer. The core management workflow does not require a hosted control service. Agent model calls, network access, and costs depend on the corresponding services and your configuration.
 
 Use Settings to adjust language, theme, agents, and key bindings. Configuration lives under `$TREEFOLD_HOME`, which defaults to `~/.treefold`:
 
@@ -158,9 +181,19 @@ Use Settings to adjust language, theme, agents, and key bindings. Configuration 
 
 See [configuration and key bindings](docs/keymap-configuration.md) for details.
 
+On Linux, use the lower-left application menu for Settings, update checks, About, and Quit. macOS also retains its native menus.
+
+| Default shortcut | macOS | Linux |
+| --- | --- | --- |
+| New Session | `Cmd+T` | `Ctrl+Shift+T` |
+| Close Session | `Cmd+W` | `Ctrl+Shift+W` |
+| Command Palette | `Cmd+Shift+P` | `Ctrl+Shift+P` |
+
+Your explicit key binding overrides take precedence on both platforms.
+
 ## Run from source
 
-To try features in the current source or contribute, install stable Rust, Node.js 24.12 or newer, Git, and `just`:
+To try features in the current source or contribute on macOS or Linux, install stable Rust, Node.js 24.12 or newer, Git, and `just`:
 
 ```bash
 git clone https://github.com/win5do/treefold.git
@@ -169,7 +202,11 @@ npm install
 just app-dev
 ```
 
-Development data defaults to `.treefold-dev/` inside the repository, separate from the usual `~/.treefold` home. Run `just` to list tasks or `just build` to generate the macOS app, DMG, and ZIP. See the [development guide](AGENTS.md#development-environment-and-commands) for environment, build, and validation details.
+`just app-dev` starts the development app with hot reload. Development data defaults to `.treefold-dev/` inside the repository, separate from the usual `~/.treefold` home.
+
+Run `just` to list tasks or `just build` to generate the macOS app, DMG, and ZIP or Linux AppImage, deb, and rpm under `release/`. See the [development guide](AGENTS.md#development-environment-and-commands) for environment, build, and validation details.
+
+For Linux development, packaging and local installation, see the [Arch Linux / KDE setup](docs/linux-development.md).
 
 ## Learn more and give feedback
 

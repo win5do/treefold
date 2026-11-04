@@ -79,7 +79,14 @@ mod tests {
         let snapshot: serde_json::Value =
             serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
                 .unwrap();
-        assert_eq!(snapshot["commands"][0]["binding"], "super+t");
+        assert_eq!(
+            snapshot["commands"][0]["binding"],
+            if cfg!(target_os = "linux") {
+                "ctrl+shift+t"
+            } else {
+                "super+t"
+            }
+        );
         assert_eq!(snapshot["commands"][1]["binding"], false);
         let settings = std::fs::read_to_string(home.join("config/settings.toml")).unwrap();
         assert!(settings.contains("theme = \"dark\""));

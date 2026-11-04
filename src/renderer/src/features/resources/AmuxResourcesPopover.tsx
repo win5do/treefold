@@ -1,12 +1,12 @@
+import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Network } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { appApi } from "@/api/app";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle } from "@/components/ui/popover";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { AmuxStatus } from "@/domain/types";
@@ -32,10 +32,9 @@ function formatDaemonUptime(status: AmuxStatus | undefined, t: (key: string, opt
     : t("resources.duration.days", { count: days });
 }
 
-export function AmuxResourcesPopover() {
+export function AmuxResourcesPopover({ open, onOpenChange: setOpen, anchor }: { open: boolean; onOpenChange: (open: boolean) => void; anchor: RefObject<HTMLButtonElement | null> }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [confirmRecover, setConfirmRecover] = useState(false);
@@ -86,10 +85,7 @@ export function AmuxResourcesPopover() {
 
   return <>
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger render={<Button data-testid="open-resources" size="icon" variant="ghost" aria-label={t("sidebar.resources")} title={t("sidebar.resources")} />}>
-        <Network data-icon="inline-start" />
-      </PopoverTrigger>
-      <PopoverContent data-testid="amux-resources-popover" side="top" align="start" sideOffset={8} className="w-80 p-3">
+      <PopoverContent anchor={anchor} finalFocus={anchor} data-testid="amux-resources-popover" side="top" align="start" sideOffset={8} className="w-80 p-3">
         <div className="flex items-start justify-between gap-4">
           <PopoverHeader className="min-w-0">
             <PopoverTitle>{t("resourcesUi.daemonTitle")}</PopoverTitle>

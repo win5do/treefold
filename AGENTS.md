@@ -54,7 +54,7 @@ cross-domain implementation files.
 
 ## Development environment and commands
 
-Treefold development targets macOS and requires stable Rust, Node.js 24.12 or
+Treefold development targets macOS and Linux and requires stable Rust, Node.js 24.12 or
 newer, Git, and Codex when exercising Codex Sessions. `just` is the preferred
 task runner but is optional.
 
@@ -123,7 +123,7 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 ### Desktop build and sidecars
 
 - `electron-vite` builds main/preload/renderer assets; `electron-builder` packages
-  macOS apps. `electron.vite.config.ts` shares renderer configuration from
+  macOS and Linux apps. `electron.vite.config.ts` shares renderer configuration from
   `vite.config.ts` with deterministic Electron UI tests.
 - React lives in `src/renderer/src/`, Rust CLI code in `src/cli/`, icons and signing
   entitlements in `build/`, and repository Rust tooling in `xtask/`.
@@ -138,7 +138,9 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
 - `src/main/` and `src/preload/` own the desktop main process, sandboxed preload
   bridge, and backend process supervision. `src/backend/` owns the Rust
   HTTP/WebSocket service and all business state. Keep business behavior out of Electron IPC handlers.
-- `just build` produces the macOS App and DMG under `release/`.
+- `just build` produces macOS App/DMG/ZIP or Linux AppImage/deb/rpm under
+  `release/`. Linux builds target the host architecture; see `docs/linux-development.md`
+  for packaging dependencies and compatibility limits.
   Use electron-builder's built-in macOS signing configured in `electron-builder.yml`;
   do not duplicate its signing pipeline in a custom script. The build and local
   install entry points share `bundleApp()` in `scripts/bundle-app.ts` for
@@ -183,6 +185,9 @@ cargo install sqlx-cli --version 0.9.0 --no-default-features --features sqlite,r
   the local installation. Quit an installed Treefold instance first.
   `TREEFOLD_BUILD_VERSION` supplies a reproducible SemVer build value and
   `TREEFOLD_INSTALL_DIR` changes the destination from `/Applications`.
+  On Linux, local installation uses the unpacked application under
+  `$XDG_DATA_HOME/treefold/app` (default `~/.local/share/treefold/app`) with a
+  user-local launcher and desktop entry; `TREEFOLD_INSTALL_DIR` overrides its parent.
   Local installs default to a UTC timestamped version. Installation validates a
   temporary copy before replacing the old App and restores it if replacement
   fails.

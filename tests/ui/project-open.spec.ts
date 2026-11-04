@@ -20,7 +20,7 @@ test('opening an unknown directory before renderer startup enters local import a
     await expect(page).toHaveURL(/#\/projects\/project-created-primary-requirement$/);
     expect(harness.projectCreation.createRequests).toEqual([{ name: 'new-local', locations: [directory], open_path: directory }]);
     await page.reload();
-    await expect(page.getByTestId('open-settings')).toBeVisible();
+    await expect(page.getByTestId('application-menu-trigger')).toBeVisible();
     // A handled request must not replay over the current route on reload.
     await expect(page.getByRole('dialog')).toHaveCount(0);
     harness.assertNoUnexpectedRequests();
@@ -33,7 +33,7 @@ test('opening an existing directory navigates to its Project and later requests 
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl });
     await page.goto(harness.baseUrl);
-    await expect(page.getByTestId('open-settings')).toBeVisible();
+    await expect(page.getByTestId('application-menu-trigger')).toBeVisible();
     await openProjectPath(page, '/tmp/treefold-ui-fixture/first-new');
     const dialog = page.getByRole('dialog', { name: /^New Project/ });
     await expect(dialog.getByRole('textbox', { name: 'Project directory', exact: true })).toHaveValue('/tmp/treefold-ui-fixture/first-new');

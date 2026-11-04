@@ -20,7 +20,7 @@ test('update reminders silence every version for seven days or skip only the sel
   expect(updateReminderPatch('later', '1.0.0', now + 1_000).updates.remind_after).toBe(now + 1_000 + updateReminderDelay);
 });
 
-const release = (tag_name: string, extra = {}) => ({ tag_name, draft: false, prerelease: false, ...extra });
+const release = (tag_name: string, extra = {}) => ({ tag_name, draft: false, prerelease: false, assets: [{ name: `Treefold-1.0.0-${process.arch}.AppImage` }], ...extra });
 
 for (const [current, tag, extra, status] of [
   ['0.1.0-alpha.3', 'v0.1.0', {}, 'available'],
@@ -111,4 +111,16 @@ test('startup checks once at 30 seconds, only announces updates, and cancels on 
     await Promise.resolve();
     expect(notices).toEqual([available]);
   } finally { mock.timers.reset(); }
+});
+
+test('Linux updates require an installer matching the current architecture', async () => {
+  for (const [name, arch, status] of [
+    ['Treefold-1.0.0-x64.AppImage', 'x64', 'available'],
+    ['Treefold-1.0.0-amd64.deb', 'x64', 'available'],
+    ['Treefold-1.0.0-aarch64.rpm', 'arm64', 'available'],
+    ['Treefold-1.0.0-arm64.dmg', 'arm64', 'no-compatible-release'],
+    ['Treefold-1.0.0-arm64.AppImage', 'x64', 'no-compatible-release'],
+  ]) {
+    expect((await createUpdateChecker('0.1.0', async () => Response.json(release('v1.0.0', { assets: [{ name }] })), { platform: 'linux', arch })()).status).toBe(status);
+  }
 });

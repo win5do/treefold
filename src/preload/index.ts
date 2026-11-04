@@ -22,6 +22,8 @@ ipcRenderer.on('treefold:check-for-updates', (_event, notice: UpdateNotice) => {
   deliverUpdate();
 });
 const bridge: DesktopBridge = {
+  platform: process.platform,
+  quit: () => ipcRenderer.invoke('treefold:quit'),
   checkForUpdates: () => ipcRenderer.invoke('treefold:check-for-updates'),
   setUpdateMenuLabel: label => ipcRenderer.send('treefold:update-menu-label', label),
   onCheckForUpdates: listener => {

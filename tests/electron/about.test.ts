@@ -1,3 +1,4 @@
+import { packagedExecutable } from './packaged-paths.ts';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -5,19 +6,20 @@ import path from 'node:path';
 import { test, expect, _electron, type ElectronApplication } from '@playwright/test';
 
 test('About menu opens the shared dialog, restores the window, and survives reload', async () => {
+  test.skip(process.platform !== 'darwin', 'Native application-menu restoration is macOS-only; Linux application menu is covered by UI tests.');
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-about-'));
-  const executablePath = process.env.TREEFOLD_ELECTRON_APP || path.resolve('release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Treefold.app/Contents/MacOS/Treefold');
+  const executablePath = packagedExecutable();
   let desktop: ElectronApplication | undefined;
   try {
     await mkdir(path.join(home, 'config'));
     await writeFile(path.join(home, 'config/settings.toml'), 'schema_version = 1\nlanguage = "en-US"\n');
     const env: NodeJS.ProcessEnv = { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' };
     delete env.ELECTRON_RUN_AS_NODE;
-    desktop = await _electron.launch({ executablePath, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
+    desktop = await _electron.launch({ executablePath, chromiumSandbox: true, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
     const page = await desktop.firstWindow();
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
-    const settings = page.getByTestId('open-settings');
+    const settings = page.getByTestId('application-menu-trigger');
     await settings.waitFor();
     await settings.focus();
     const openAbout = () => desktop!.evaluate(({ Menu }) => {
@@ -78,6 +80,7 @@ test('About menu opens the shared dialog, restores the window, and survives relo
     await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
     await settings.click();
+    await page.getByTestId("open-settings").click();
     await page.getByTestId('settings-language').selectOption('zh-CN');
     await page.getByTestId('settings-save').click();
     await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN');

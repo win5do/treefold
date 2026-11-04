@@ -13,9 +13,14 @@ npm run build
 
 The Chinese pages are `/` and `/download`; English equivalents live at `/en/`
 and `/en/download/`. The header language switch keeps visitors on the matching
-home or download page. Treefold 0.1.0-alpha.1 is available from the public
+home or download page. Treefold 0.2.0 for macOS is available from the public
 `win5do/treefold` GitHub Releases and the `win5do/tap` Homebrew tap. The download
-page links directly to the DMG and shows the Homebrew installation command.
+page separates macOS installation from Linux source builds. The macOS section
+links directly to the DMG and shows the Homebrew installation command. Linux
+supports AppImage, deb and rpm builds through `just build`, but Linux packages
+have not been published yet. Keep that status explicit and link to the Releases
+index instead of inventing Linux asset download URLs. Once Linux artifacts are
+published, verify their versions and architectures before adding direct links.
 Release version and download URLs live in `src/config/site.ts`; update them
 alongside the tap's version and DMG checksum for each release. The Cask supports
 Apple Silicon and macOS Sonoma or newer. Keep the ad-hoc signing and first-launch

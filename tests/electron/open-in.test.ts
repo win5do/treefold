@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mkdtemp, mkdir, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, chmod, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { detectApps, openInApp, type DetectedApp } from '../../src/main/open-in/service.ts';
@@ -20,7 +20,39 @@ test('detects supported apps in user Applications and Toolbox, omits missing app
     await writeFile(cli, '#!/bin/sh\nexit 0\n'); await chmod(cli, 0o755);
     apps = await detectApps(options);
     expect(apps.find(app => app.id === 'cmux')!.cli).toBe(cli);
-    expect(await detectApps({ ...options, platform: 'linux' })).toEqual([]);
+    expect(await detectApps({ ...options, platform: 'linux', searchPath: root })).toEqual([]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Linux discovers PATH launchers and preserves paths without shell interpolation', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'treefold-linux-open-in-'));
+  const directory = path.join(root, '中文 space \' " $HOME `touch nope`');
+  try {
+    await mkdir(directory);
+    for (const command of ['xdg-open', 'xdg-terminal-exec', 'konsole', 'ghostty', 'code', 'code-oss', 'zeditor']) {
+      await writeFile(path.join(root, command), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    }
+    const apps = await detectApps({ platform: 'linux', searchPath: root });
+    expect(apps.map(app => app.id)).toEqual(['files', 'ghostty', 'vscode', 'zed', 'terminal']);
+    const calls: { command: string; args: string[]; cwd?: string; detached?: boolean }[] = [];
+    for (const app of apps) await openInApp(app.id, directory, {
+      detect: async () => apps,
+      run: async (command, args, options) => { calls.push({ command, args, ...options }); },
+    });
+    expect(calls.map(({ command, args, cwd, detached }) => ({ command: path.basename(command), args, cwd, detached }))).toEqual([
+      { command: 'xdg-open', args: [directory], cwd: directory, detached: true },
+      { command: 'ghostty', args: [`--working-directory=${directory}`], cwd: directory, detached: true },
+      { command: 'code', args: ['--new-window', directory], cwd: directory, detached: true },
+      { command: 'zeditor', args: ['--new', directory], cwd: directory, detached: true },
+      { command: 'xdg-terminal-exec', args: [`--dir=${directory}`], cwd: directory, detached: true },
+    ]);
+    await rm(path.join(root, 'xdg-terminal-exec'));
+    await chmod(path.join(root, 'code'), 0o644);
+    const fallback = await detectApps({ platform: 'linux', searchPath: root });
+    expect(fallback.find(app => app.id === 'terminal')?.appPath).toBe(path.join(root, 'konsole'));
+    expect(fallback.find(app => app.id === 'vscode')?.appPath).toBe(path.join(root, 'code-oss'));
+    await rm(path.join(root, 'ghostty'));
+    await expect(openInApp('ghostty', directory, { detect: () => detectApps({ platform: 'linux', searchPath: root }) })).rejects.toThrow('no longer installed');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -48,6 +80,22 @@ test('validates desktop requests and preserves special directory characters in l
     await expect(openInApp('finder', directory, { ...dependencies, detect: async () => [] })).rejects.toThrow('no longer installed');
     expect(calls).toHaveLength(count);
     await expect(openInApp('finder', directory, { ...dependencies, run: async () => { throw new Error('launch failed'); } })).rejects.toThrow('launch failed');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Linux launches detached desktop commands in the requested directory and reports spawn errors', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'treefold-linux-launch-'));
+  const directory = path.join(root, '工作 space $HOME');
+  const executable = path.join(root, 'xdg-open');
+  const result = path.join(root, 'result.json');
+  try {
+    await mkdir(directory);
+    await writeFile(executable, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(result)}, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));\n`, { mode: 0o755 });
+    const apps = await detectApps({ platform: 'linux', searchPath: root });
+    await openInApp('files', directory, { detect: async () => apps });
+    await expect.poll(async () => JSON.parse(await readFile(result, 'utf8').catch(() => '{}'))).toEqual({ cwd: directory, args: [directory] });
+    await rm(executable);
+    await expect(openInApp('files', directory, { detect: async () => apps })).rejects.toThrow('ENOENT');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

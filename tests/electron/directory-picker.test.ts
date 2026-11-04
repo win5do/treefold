@@ -1,9 +1,10 @@
+import { packagedExecutable } from './packaged-paths.ts';
 import { _electron, test, expect, type ElectronApplication } from '@playwright/test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const executablePath = process.env.TREEFOLD_ELECTRON_APP || path.resolve('release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Treefold.app/Contents/MacOS/Treefold');
+const executablePath = packagedExecutable();
 
 test('directory picker starts at home and remembers successful selections across App restarts', async () => {
   test.setTimeout(90_000);
@@ -14,9 +15,9 @@ test('directory picker starts at home and remembers successful selections across
   delete env.ELECTRON_RUN_AS_NODE;
   let desktop: ElectronApplication | undefined;
   async function launch() {
-    desktop = await _electron.launch({ executablePath, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
+    desktop = await _electron.launch({ executablePath, chromiumSandbox: true, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
     const page = await desktop.firstWindow();
-    await page.getByTestId('open-settings').waitFor();
+    await page.getByTestId('application-menu-trigger').waitFor();
     return page;
   }
   async function mockPicker(reply: { canceled: boolean; filePaths: string[] }) {

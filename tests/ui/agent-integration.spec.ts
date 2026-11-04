@@ -15,8 +15,10 @@ test("agent-integration", async () => {
 
     const trigger = page.locator('[data-testid="open-agent-integration"]');
     // Settings apply the fixture language after the initial system-language render.
-    await expect(trigger).toHaveAccessibleName("Agent Integration");
-    await (page.locator('[data-testid="agent-integration-indicator"]')).waitFor({ timeout: 3_000, state: 'attached' });
+    await expect(page.getByTestId("application-menu-indicator")).toBeVisible();
+    await page.getByTestId("application-menu-trigger").click();
+    await expect(trigger).toHaveAccessibleName(/Agent Integration/);
+    await (page.locator('[data-testid="application-menu-indicator"]')).waitFor({ timeout: 3_000, state: 'attached' });
     await trigger.click();
 
     const popover = page.locator('[data-testid="agent-integration-popover"]');
@@ -25,7 +27,7 @@ test("agent-integration", async () => {
     assert.match(await popover.innerText(), /Not installed/);
 
     await (popover.locator('[data-testid="sync-agent-integration"]')).click();
-    await expect.poll(async () => !(await (page.locator('[data-testid="agent-integration-indicator"]')).count().then(count => count > 0)), { timeout: 3_000, message: "integration indicator remained after sync" }).toBeTruthy();
+    await expect.poll(async () => !(await (page.locator('[data-testid="application-menu-indicator"]')).count().then(count => count > 0)), { timeout: 3_000, message: "integration indicator remained after sync" }).toBeTruthy();
     assert.deepEqual(harness.agentIntegrationRequests, ["sync"]);
 
     await (popover.locator('[data-testid="uninstall-agent-integration"]')).click();
@@ -33,7 +35,7 @@ test("agent-integration", async () => {
     await confirmation.waitFor({ timeout: 3_000, state: 'visible' });
     await (confirmation.locator("button:text-is(\"Uninstall\")")).click();
     await confirmation.waitFor({ timeout: 3_000, state: 'hidden' });
-    await (page.locator('[data-testid="agent-integration-indicator"]')).waitFor({ timeout: 3_000, state: 'attached' });
+    await (page.locator('[data-testid="application-menu-indicator"]')).waitFor({ timeout: 3_000, state: 'attached' });
     assert.deepEqual(harness.agentIntegrationRequests, ["sync", "uninstall"]);
 
     harness.assertNoUnexpectedRequests();

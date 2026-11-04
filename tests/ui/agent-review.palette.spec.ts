@@ -18,7 +18,7 @@ for (const owner of [
       await page.goto(`${harness.baseUrl}/#/${path}`);
       if (owner.session) await expect(page.locator(`[data-session-id="${owner.session}"] .xterm-helper-textarea`)).toBeAttached();
       else await expect(page.getByTestId("page-content")).toBeVisible();
-      await page.keyboard.press("Meta+Shift+p");
+      await page.keyboard.press(process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p");
       const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
       const search = palette.getByRole("combobox");
       for (const query of ["AI Review", "workspace.review.open"]) {
@@ -66,7 +66,7 @@ test("palette hides Review outside eligible Workspace and Fork contexts", async 
       await page.goto(`${harness.baseUrl}/#/${path}`);
       if (path.includes("/sessions/")) await expect(page.getByRole("button", { name: "Resume", exact: true })).toBeVisible();
       else await expect(page.getByTestId("page-content")).toBeVisible();
-      await page.keyboard.press("Meta+Shift+p");
+      await page.keyboard.press(process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p");
       const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
       await expect(palette).toBeVisible();
       await expect(palette.getByRole("option", { name: "AI Review", exact: true })).toHaveCount(0);

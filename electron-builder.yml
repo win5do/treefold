@@ -2,6 +2,9 @@ appId: com.win5do.treefold
 productName: Treefold
 artifactName: '${productName}-${version}-${arch}.${ext}'
 asar: true
+toolsets:
+  # Bundle the FUSE userspace library instead of requiring host libfuse.so.2.
+  appimage: '1.0.3'
 directories:
   output: release
 files:
@@ -14,8 +17,43 @@ extraResources:
     to: bin
   - from: src/backend/bundle-staging/agent-integration
     to: agent-integration
-  - from: build/icons/32x32.png
+  - from: build/icons/icon.png
     to: icon.png
+linux:
+  executableName: treefold-desktop
+  icon: build/icons/icon.png
+  category: Development
+  maintainer: win5do <win5do@users.noreply.github.com>
+  target:
+    - AppImage
+    - deb
+    - rpm
+  executableArgs:
+    - '--'
+    - '%F'
+  desktop:
+    entry:
+      StartupWMClass: treefold
+      MimeType: inode/directory;
+appImage:
+  # Keep the desktop launcher arguments explicit; AppRun detects sandbox support.
+  executableArgs:
+    - '--'
+deb:
+  recommends: []
+  fpm:
+    - '--depends=git'
+    - '--depends=libasound2t64 | libasound2'
+    - '--depends=libgbm1'
+    - '--depends=libcups2t64 | libcups2'
+rpm:
+  fpm:
+    - '--depends=git'
+    - '--depends=libasound.so.2()(64bit)'
+    - '--depends=libgbm.so.1()(64bit)'
+    - '--depends=libcups.so.2()(64bit)'
+    - '--rpm-rpmbuild-define=_build_id_links none'
+    - '--rpm-rpmbuild-define=_rpmformat 4'
 mac:
   minimumSystemVersion: '14.0'
   category: public.app-category.developer-tools

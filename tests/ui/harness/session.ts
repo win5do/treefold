@@ -1,5 +1,6 @@
 import type { OpenInApp } from '../../../src/preload/bridge.d.ts';
 import type { OpenInRequest } from './open-in.ts';
+import type { ApplicationMenuCalls } from './application-menu.ts';
 import { _electron, type ElectronApplication, type Page, type Locator } from '@playwright/test';
 import { build } from 'vite';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -21,6 +22,11 @@ export async function createUiSession({ apiUrl, windowSize = '1400,900', session
     const env: NodeJS.ProcessEnv = { ...process.env, TREEFOLD_TEST_HOME: path.join(directory, 'home'), TREEFOLD_TEST_API_URL: apiUrl, TREEFOLD_TEST_WINDOW_SIZE: windowSize, TREEFOLD_TEST_OPEN_IN_APPS: JSON.stringify(openInApps), TREEFOLD_TEST_OPEN_IN_ERROR: openInError, TREEFOLD_TEST_OPEN_PROJECT: openProjectPath };
     delete env.ELECTRON_RUN_AS_NODE;
     app = await _electron.launch({ args: [path.join(directory, 'main.cjs')], env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
+    // firstWindow only observes BrowserWindow creation. Finish the initial
+    // navigation before returning a Page that tests can navigate themselves.
+    await app.evaluate(async () => {
+      await (globalThis as typeof globalThis & { treefoldFixtureReady: Promise<void> }).treefoldFixtureReady;
+    });
     const page = await app.firstWindow();
     page.setDefaultTimeout(10_000);
     sessions.set(page, { app, directory });
@@ -76,6 +82,10 @@ export async function closeUiSession(page: Page | undefined) {
 
 export async function openInRequests(page: Page): Promise<OpenInRequest[]> {
   return sessions.get(page)!.app.evaluate(() => (globalThis as typeof globalThis & { treefoldOpenInRequests: OpenInRequest[] }).treefoldOpenInRequests);
+}
+
+export async function applicationMenuCalls(page: Page): Promise<ApplicationMenuCalls> {
+  return sessions.get(page)!.app.evaluate(() => (globalThis as typeof globalThis & { applicationMenuCalls: ApplicationMenuCalls }).applicationMenuCalls);
 }
 
 export async function openProjectPath(page: Page, path: string) {

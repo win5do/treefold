@@ -11,6 +11,7 @@ test("Agent commands and drag order persist and determine the default installed 
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "settings-agents" });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     const settings = page.getByRole("dialog", { name: "Settings", exact: true });
     await settings.getByRole("button", { name: "Agents", exact: true }).click();
@@ -51,6 +52,7 @@ test("Agent commands and drag order persist and determine the default installed 
     await settings.getByRole("button", { name: "Save", exact: true }).click();
     expect((await (await reordered).json()).agents.order).toEqual(["pi", "codex", "claude_code", "opencode"]);
     await page.reload();
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     await settings.getByRole("button", { name: "Agents", exact: true }).click();
     await settings.getByRole("button", { name: "Configure Pi", exact: true }).click();
@@ -132,6 +134,7 @@ test("Agent refresh rechecks installation and versions without saving command dr
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "agents-refresh" });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     const settings = page.getByRole("dialog", { name: "Settings", exact: true });
     await settings.getByRole("button", { name: "Agents", exact: true }).click();

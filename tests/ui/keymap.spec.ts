@@ -62,6 +62,7 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
       `${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}/sessions/${FIXTURE_IDS.workspaceShell}`,
     );
     await expect(page.locator(".xterm-helper-textarea")).toHaveCount(1);
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     await page.getByRole("button", { name: "Keymap", exact: true }).click();
     const close = page.getByTestId("keymap-session.close");
@@ -71,7 +72,7 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
     await page
       .getByRole("textbox", { name: "Record Close Session", exact: true })
       .press("Control+w");
-    await expect(close).toContainText("ctrl W");
+    await expect(close).toContainText(process.platform === "darwin" ? "ctrl W" : "ctrl+w");
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await page
       .getByRole("button", { name: "Record New Session", exact: true })
@@ -99,6 +100,7 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
       .poll(() => page!.evaluate(() => window.__keymapInputs))
       .toEqual(["\x17"]);
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     await expect(page.getByTestId("keymap-session.close")).toContainText(
       "Unbound",
@@ -107,7 +109,7 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
       .getByRole("button", { name: "Actions for Close Session", exact: true })
       .click();
     await page.getByRole("menuitem", { name: "Reset to default", exact: true }).click();
-    await expect(page.getByTestId("keymap-session.close")).toContainText("⌘ W");
+    await expect(page.getByTestId("keymap-session.close")).toContainText(process.platform === "darwin" ? "⌘ W" : "ctrl+shift+w");
     await close
       .getByRole("button", { name: "Record Close Session", exact: true })
       .click();
@@ -118,9 +120,9 @@ test("keymap records, disables, resets, and protects modal keyboard input", asyn
       .getByRole("textbox", { name: "Record Close Session", exact: true })
       .press("Meta+w");
     expect((await recorded).postDataJSON()).toEqual({
-      bindings: { "session.close": "cmd+w" },
+      bindings: { "session.close": process.platform === "darwin" ? "cmd+w" : "super+w" },
     });
-    await expect(close).toContainText("⌘ W");
+    await expect(close).toContainText(process.platform === "darwin" ? "⌘ W" : "super+w");
     await page.keyboard.press("Meta+w");
     await expect(page.getByRole("dialog")).toBeVisible();
     await page
@@ -170,7 +172,7 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await page.keyboard.press("Control+Shift+Tab");
     await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.workspaceShell + "$"));
     await expect(terminal(FIXTURE_IDS.workspaceShell)).toBeAttached();
-    await terminal(FIXTURE_IDS.workspaceShell).press("Meta+t");
+    await terminal(FIXTURE_IDS.workspaceShell).press((process.platform === "linux" ? "Control+Shift+t" : "Meta+t"));
     const dialog = page.getByRole("dialog", { name: "New Session" });
     await expect(dialog).toBeVisible();
     await expect(
@@ -213,7 +215,7 @@ test("Session shortcuts cycle in scope and create in the chosen directory", asyn
     await expect(directories.getByRole("button", { pressed: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(dialog).toHaveCount(0);
-    await terminal(FIXTURE_IDS.workspaceShell).press("Meta+t");
+    await terminal(FIXTURE_IDS.workspaceShell).press((process.platform === "linux" ? "Control+Shift+t" : "Meta+t"));
     await expect(shellType).toBeFocused();
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowDown");
@@ -254,6 +256,7 @@ test("settings Save sends only edited fields and supports resetting overrides", 
       sessionName: "sparse-settings",
     });
     await page.goto(harness.baseUrl);
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     const theme = page.getByTestId("settings-theme");
     await theme.selectOption("dark");
@@ -274,6 +277,7 @@ test("settings Save sends only edited fields and supports resetting overrides", 
     expect((await savedCloseBehavior).postDataJSON()).toEqual({ close_behavior: "quit" });
     await expect(page.getByTestId("settings-save")).toBeEnabled();
     await page.keyboard.press("Escape");
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     await expect(closeBehavior).toHaveValue("quit");
     await page
@@ -358,7 +362,7 @@ for (const owner of [
           (await page!.request.get(`${harness.apiUrl}/api/keymap`)).ok(),
         )
         .toBeTruthy();
-      await page.keyboard.press("Meta+t");
+      await page.keyboard.press((process.platform === "linux" ? "Control+Shift+t" : "Meta+t"));
       const dialog = page.getByRole("dialog", { name: "New Session" });
       const shellType = dialog.getByRole("button", { name: "Shell", exact: true });
       await expect(shellType).toHaveAttribute("aria-pressed", "true");
@@ -366,7 +370,7 @@ for (const owner of [
       await dialog.getByRole("button", { name: "Agent", exact: true }).click();
       await page.keyboard.press("Escape");
       await expect(dialog).toHaveCount(0);
-      await page.keyboard.press("Meta+t");
+      await page.keyboard.press((process.platform === "linux" ? "Control+Shift+t" : "Meta+t"));
       await expect(shellType).toHaveAttribute("aria-pressed", "true");
       await expect(shellType).toBeFocused();
       const request = page.waitForRequest(
@@ -409,6 +413,7 @@ test("Keymap resets all bindings only after confirmation, including filtered com
     await page.request.patch(`${harness.apiUrl}/api/keymap`, {
       data: { bindings: { "session.close": false, "session.new": "ctrl+n" } },
     });
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     await page.getByRole("button", { name: "Keymap", exact: true }).click();
     await expect(page.getByTestId("keymap-session.close")).toContainText(
@@ -434,7 +439,7 @@ test("Keymap resets all bindings only after confirmation, including filtered com
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId("keymap-session.new")).toContainText(
-      "ctrl N",
+      process.platform === "darwin" ? "ctrl N" : "ctrl+n",
     );
     await openReset();
     const reset = page.waitForRequest(
@@ -460,8 +465,8 @@ test("Keymap resets all bindings only after confirmation, including filtered com
     });
     await expect(dialog).toHaveCount(0);
     await page.getByPlaceholder("Search commands or shortcuts").fill("");
-    await expect(page.getByTestId("keymap-session.new")).toContainText("⌘ T");
-    await expect(page.getByTestId("keymap-session.close")).toContainText("⌘ W");
+    await expect(page.getByTestId("keymap-session.new")).toContainText(process.platform === "darwin" ? "⌘ T" : "ctrl+shift+t");
+    await expect(page.getByTestId("keymap-session.close")).toContainText(process.platform === "darwin" ? "⌘ W" : "ctrl+shift+w");
     harness.assertNoUnexpectedRequests();
   } finally {
     try {

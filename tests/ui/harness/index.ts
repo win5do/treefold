@@ -1154,6 +1154,10 @@ export async function startUiHarness(configure?: (fixture: SidebarFixture) => vo
         host: "127.0.0.1",
         port: 0,
         strictPort: false,
+        // Fixture scenarios must not reload when a developer or a concurrent
+        // native lifecycle test touches source files. HMR belongs to app-dev tests.
+        hmr: false,
+        watch: null,
       },
     });
     await vite.listen();

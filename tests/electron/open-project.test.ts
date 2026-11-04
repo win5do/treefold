@@ -1,3 +1,4 @@
+import { packagedExecutable, packagedResources } from './packaged-paths.ts';
 import { test, expect, _electron, type ElectronApplication } from '@playwright/test';
 import { mkdtemp, mkdir, rm, realpath, writeFile, readFile, symlink } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -20,7 +21,7 @@ test('open requests survive startup and stale acknowledgements preserve the late
 for (const multi of [false, true]) test(`packaged App imports ${multi ? 'a symlink container' : 'a repository'} and treefold open navigates to the existing Project`, async () => {
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-open-project-'));
   const repository = path.join(await realpath(home), '中文 repository');
-  const executablePath = process.env.TREEFOLD_ELECTRON_APP || path.resolve('release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Treefold.app/Contents/MacOS/Treefold');
+  const executablePath = packagedExecutable();
   let desktop: ElectronApplication | undefined;
   try {
     await mkdir(path.join(home, 'config'));
@@ -38,15 +39,17 @@ for (const multi of [false, true]) test(`packaged App imports ${multi ? 'a symli
     }
     const env: NodeJS.ProcessEnv = { ...process.env, TREEFOLD_HOME: home, TREEFOLD_API_ADDR: '127.0.0.1:0' };
     delete env.ELECTRON_RUN_AS_NODE;
-    desktop = await _electron.launch({ executablePath, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
+    desktop = await _electron.launch({ executablePath, chromiumSandbox: true, args: process.platform === 'linux' ? ['--open-directory', repository] : [], env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
     const page = await desktop.firstWindow();
-    await page.getByTestId('open-settings').waitFor();
+    await page.getByTestId('application-menu-trigger').waitFor();
     // Reload removes renderer subscriptions; the main process must retain the
     // OS event until the newly mounted Project flow can read it.
-    await desktop.evaluate(({ app, BrowserWindow }, directory) => {
-      BrowserWindow.getAllWindows()[0].webContents.reload();
-      app.emit('open-file', { preventDefault() {} }, directory);
-    }, repository);
+    if (process.platform === 'darwin') {
+      await desktop.evaluate(({ app, BrowserWindow }, directory) => {
+        BrowserWindow.getAllWindows()[0].webContents.reload();
+        app.emit('open-file', { preventDefault() {} }, directory);
+      }, repository);
+    }
     const dialog = page.getByRole('dialog', { name: /^New Project/ });
     await expect(dialog.getByRole('textbox', { name: 'Project directory', exact: true })).toHaveValue(repository);
     const api = await page.evaluate(() => window.treefoldDesktop!.apiUrl());
@@ -59,7 +62,7 @@ for (const multi of [false, true]) test(`packaged App imports ${multi ? 'a symli
     expect((await (await fetch(`${api}/api/projects`)).json())[0].open_path).toBe(repository);
     if (multi) await mkdir(path.join(repository, 'added-later'));
     await page.goto('treefold://app/index.html');
-    await page.getByTestId('open-settings').waitFor();
+    await page.getByTestId('application-menu-trigger').waitFor();
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].hide());
     // Route the real CLI's application lookup to this exact test build, keeping
     // the user's installed Treefold and home out of the LaunchServices request.
@@ -67,9 +70,9 @@ for (const multi of [false, true]) test(`packaged App imports ${multi ? 'a symli
     await mkdir(shim);
     await writeFile(path.join(shim, 'open'), '#!/bin/sh\n[ "$1" = "-a" ] && [ "$2" = "Treefold" ] || exit 99\nshift 2\nexec /usr/bin/open -a "$TREEFOLD_TEST_APP" "$@"\n', { mode: 0o755 });
     const contents = path.dirname(path.dirname(executablePath));
-    execFileSync(path.join(contents, 'Resources/bin/treefold'), ['open', '.'], {
+    execFileSync(path.join(packagedResources(executablePath), 'bin/treefold'), ['open', '.'], {
       cwd: multi ? repository : path.join(repository, 'src'),
-      env: { ...env, PATH: `${shim}:${process.env.PATH}`, TREEFOLD_TEST_APP: path.dirname(contents) },
+      env: { ...env, PATH: `${shim}:${process.env.PATH}`, TREEFOLD_TEST_APP: path.dirname(contents), TREEFOLD_DESKTOP_PATH: executablePath },
     });
     await expect(page).toHaveURL(projectUrl);
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible())).toBe(true);

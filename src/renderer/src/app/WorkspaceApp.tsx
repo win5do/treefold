@@ -89,7 +89,7 @@ import { DeleteWorktreeDialog } from "@/features/projects/DeleteWorktreeDialog";
 import { DeleteProjectDialog } from "@/features/projects/DeleteProjectDialog";
 import { Overview } from "@/features/projects/Overview";
 import { SettingsDialog } from "@/features/settings/SettingsDialog";
-import { AboutDialog } from "@/features/about/AboutDialog";
+import { ApplicationMenu } from "@/app/ApplicationMenu";
 import {
   ConfigureWorkspaceRepositoryDialog,
 } from "@/features/workspace/WorkspaceDialogs";
@@ -1143,7 +1143,6 @@ function Workspace() {
               Math.min(520, Math.max(240, current + delta)),
             )
           }
-          onSettings={() => setSettingsOpen(true)}
         />
 
         <main
@@ -1622,7 +1621,7 @@ function Workspace() {
         onOpenChange={setSettingsOpen}
         onSave={settingsSave.save}
       />
-      <AboutDialog />
+      <ApplicationMenu onSettings={() => setSettingsOpen(true)} />
     </div>
   );
 }

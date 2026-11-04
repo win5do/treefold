@@ -22,7 +22,6 @@ import {
   PanelsTopLeft,
   Pencil,
   Plus,
-  Settings,
   TerminalSquare,
   Upload,
   Workflow,
@@ -51,8 +50,6 @@ import type {
   Workspace,
   WorkspaceRepository,
 } from "@/domain/types";
-import { AmuxResourcesPopover } from "@/features/resources/AmuxResourcesPopover";
-import { AgentIntegrationPopover } from "@/features/integration/AgentIntegrationPopover";
 import { cn } from "@/lib/utils";
 import { hasWorkspaceUpstream } from "@/features/git/upstream";
 
@@ -94,7 +91,6 @@ export function WorkspaceSidebar({
   onCloseProjectSession,
   onResizeStart,
   onResizeKeyboard,
-  onSettings,
 }: {
   reviewActions: AgentReviewActions;
   projects: ProjectDetail[];
@@ -147,7 +143,6 @@ export function WorkspaceSidebar({
   onCloseProjectSession: (project: ProjectDetail, session: Session) => void;
   onResizeStart: () => void;
   onResizeKeyboard: (delta: number) => void;
-  onSettings: () => void;
 }) {
   const { t } = useTranslation();
   const openContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -423,20 +418,7 @@ export function WorkspaceSidebar({
             );
           })}
       </div>
-      <div className="flex items-center gap-1 border-t border-border p-2">
-        <Button
-          data-testid="open-settings"
-          size="icon"
-          variant="ghost"
-          aria-label={t("sidebar.settings")}
-          title={t("sidebar.settings")}
-          onClick={onSettings}
-        >
-          <Settings data-icon="inline-start" />
-        </Button>
-        <AmuxResourcesPopover />
-        <AgentIntegrationPopover />
-      </div>
+      <div className="h-12 shrink-0 border-t border-border" />
       <div
         data-testid="sidebar-resize-handle"
         role="separator"
