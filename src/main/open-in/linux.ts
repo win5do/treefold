@@ -46,4 +46,3 @@ export async function detectLinuxApps(searchPath?: string): Promise<DetectedApp[
   if (terminal) add({ id: 'terminal', label: 'Terminal', group: 'terminal' }, terminal.executable, terminal.args);
   return apps;
 }
-
