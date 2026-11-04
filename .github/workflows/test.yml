@@ -40,7 +40,10 @@ jobs:
           npm ci
           if [[ "$RUNNER_OS" == Linux ]]; then
             sudo apt-get update
-            sudo apt-get install -y rpm libarchive-tools libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64 xvfb xdg-utils
+            sudo apt-get install -y rpm libarchive-tools libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2t64 xvfb xdg-utils fuse3
+            # Ubuntu's AppArmor restriction blocks Chromium's user-namespace sandbox.
+            # Configure only this disposable CI runner; keep the application sandbox enabled.
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             cargo install just --locked
           else
             brew install just
