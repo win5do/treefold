@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 60
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -207,7 +207,7 @@ jobs:
 
   verify-brew:
     needs: [build, publish]
-    runs-on: macos-15
+    runs-on: macos-26
     outputs:
       dmg-sha256: ${{ steps.install.outputs.dmg-sha256 }}
     env:
