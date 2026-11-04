@@ -68,7 +68,7 @@
     "vite": "^7.3.6"
   },
   "main": "out/main/index.cjs",
-  "description": "Local-first macOS workspace for parallel coding agents in isolated Git worktrees",
+  "description": "Local-first workspace for parallel coding agents in isolated Git worktrees",
   "homepage": "https://treefold.win5do.top/",
   "repository": {
     "type": "git",

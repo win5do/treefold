@@ -59,7 +59,7 @@ build-backend:
 prepare-sidecars mode="dev":
     cargo xtask sidecars {{ quote(mode) }}
 
-# Build the signed App and DMG with one shared version.
+# Build platform packages: macOS App/DMG/ZIP or Linux AppImage/deb/rpm.
 build:
     node scripts/bundle-app.ts
 
@@ -67,7 +67,7 @@ build:
 release version:
     node scripts/release.ts {{ quote(version) }}
 
-# Build an ad-hoc signed, timestamped App + DMG and install the App in /Applications.
+# Build and install locally: /Applications on macOS, user-local application on Linux.
 install-app-local:
     node scripts/install-app-local.ts
 
