@@ -64,3 +64,12 @@ export const keymapDefaults: readonly [KeymapId, string, string | false][] =
       return [action.keymapId, action.name, action.defaultBinding];
     }),
   );
+
+
+// Explicit user bindings are never passed through this default-only conversion.
+export function keymapDefaultsForPlatform(platform: string): readonly [KeymapId, string, string | false][] {
+  return keymapDefaults.map(([id, name, binding]) => [
+    id, name, platform === "linux" && typeof binding === "string" && /^super\+(shift\+)?[a-z]$/.test(binding)
+      ? `ctrl+shift+${binding.split("+").at(-1)}` : binding,
+  ]);
+}

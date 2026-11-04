@@ -106,19 +106,17 @@ pub fn normalize_shortcut(input: &str) -> anyhow::Result<String> {
         .collect();
     chord.push(key);
     let chord = chord.join("+");
-    if [
-        "super+q",
-        "super+h",
-        "super+m",
-        "super+space",
-        "super+tab",
-        "super+shift+tab",
-        "ctrl+alt+delete",
-        "alt+tab",
-        "alt+f4",
-    ]
-    .contains(&chord.as_str())
-    {
+    let mac_reserved = cfg!(target_os = "macos")
+        && [
+            "super+q",
+            "super+h",
+            "super+m",
+            "super+space",
+            "super+tab",
+            "super+shift+tab",
+        ]
+        .contains(&chord.as_str());
+    if mac_reserved || ["ctrl+alt+delete", "alt+tab", "alt+f4"].contains(&chord.as_str()) {
         bail!("'{chord}' is reserved for the operating system or application window");
     }
     Ok(chord)
@@ -249,9 +247,24 @@ mod tests {
             .iter()
             .find(|command| command.id == "app.palette.open")
             .unwrap();
-        assert_eq!(palette.binding, Binding::Shortcut("super+shift+p".into()));
+        assert_eq!(
+            palette.binding,
+            Binding::Shortcut(
+                if cfg!(target_os = "linux") {
+                    "ctrl+shift+p"
+                } else {
+                    "super+shift+p"
+                }
+                .into()
+            )
+        );
         assert!(
-            parse("schema_version = 1\n[bindings]\n\"session.new\" = \"cmd+shift+p\"\n").is_err()
+            parse(if cfg!(target_os = "linux") {
+                "schema_version = 1\n[bindings]\n\"session.new\" = \"ctrl+shift+p\"\n"
+            } else {
+                "schema_version = 1\n[bindings]\n\"session.new\" = \"cmd+shift+p\"\n"
+            })
+            .is_err()
         );
         let disabled =
             parse("schema_version = 1\n[bindings]\n\"app.palette.open\" = false\n").unwrap();
@@ -330,7 +343,14 @@ mod tests {
         );
         assert_eq!(
             store.load().unwrap().commands[0].binding,
-            Binding::Shortcut("super+t".into())
+            Binding::Shortcut(
+                if cfg!(target_os = "linux") {
+                    "ctrl+shift+t"
+                } else {
+                    "super+t"
+                }
+                .into()
+            )
         );
         fs::write(
             &store.path,
@@ -356,7 +376,7 @@ mod tests {
             r#"{"bindings":{"session.close":"super+n"}}"#,
             r#"{"bindings":{"session.close":true}}"#,
             r#"{"bindings":{"missing":false}}"#,
-            r#"{"bindings":{"session.new":"super+q"}}"#,
+            r#"{"bindings":{"session.new":"alt+f4"}}"#,
         ] {
             assert!(update(json).is_err());
             assert_eq!(fs::read_to_string(&store.path).unwrap(), before);
