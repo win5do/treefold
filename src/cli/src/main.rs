@@ -4,6 +4,9 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 use reqwest::{Method, StatusCode, blocking::Client};
 use serde_json::{Value, json};
 
+#[cfg(target_os = "linux")]
+mod desktop;
+
 const BUILD_VERSION: &str = match option_env!("TREEFOLD_BUILD_VERSION") {
     Some(version) => version,
     None => env!("CARGO_PKG_VERSION"),
@@ -278,11 +281,15 @@ fn open_app(path: Option<PathBuf>) -> Result<(), CliError> {
             Err(CliError::unavailable("open Treefold failed"))
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        desktop::open(path.map(open_directory_path).transpose()?)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let _ = path;
         Err(CliError::unavailable(
-            "treefold open is currently supported on macOS",
+            "treefold open is currently supported on macOS and Linux",
         ))
     }
 }
