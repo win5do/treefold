@@ -73,8 +73,10 @@ The default build uses the host architecture. It neither installs nor publishes.
 Arch also needs `libxcrypt-compat` for electron-builder’s bundled Ruby helper.
 On Debian/Ubuntu, install `rpm` and `libarchive-tools` for packaging; electron-builder
 supplies its packaging helper. Git and the Electron desktop libraries are runtime
-requirements. Direct AppImage execution requires FUSE 2 (`sudo pacman -S --needed
-fuse2` on Arch). Without `libfuse.so.2`, use the verified extraction mode:
+requirements. AppImage builds pin the static runtime toolset in
+`electron-builder.yml`, so direct execution does not require the host's
+`libfuse.so.2` or the Arch `fuse2` package. If FUSE mounting is unavailable
+(for example, in a restricted container), use extraction mode:
 
 ```sh
 test_home=$(mktemp -d /tmp/treefold-manual.XXXXXX)
@@ -84,8 +86,8 @@ TREEFOLD_HOME="$test_home" APPIMAGE_EXTRACT_AND_RUN=1 \
 
 This uses isolated application data. Quit through the application menu when
 finished; closing the window normally hides it to the tray. No `--no-sandbox`
-flag is needed. The extraction mode has been checked on Arch KDE; direct FUSE
-launch still needs validation on a machine with FUSE 2 installed.
+flag is needed on systems with unprivileged user namespaces enabled. The
+Electron AppImage lifecycle tests cover both direct and extraction launches.
 
 Packages inherit the host's libc requirements. Building on a recent Arch system
 does not promise compatibility with older distributions. Release CI builds Linux

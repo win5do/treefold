@@ -2,6 +2,9 @@ appId: com.win5do.treefold
 productName: Treefold
 artifactName: '${productName}-${version}-${arch}.${ext}'
 asar: true
+toolsets:
+  # Bundle the FUSE userspace library instead of requiring host libfuse.so.2.
+  appimage: '1.0.3'
 directories:
   output: release
 files:
@@ -33,7 +36,7 @@ linux:
       StartupWMClass: treefold
       MimeType: inode/directory;
 appImage:
-  # electron-builder otherwise inserts --no-sandbox in the desktop launcher.
+  # Keep the desktop launcher arguments explicit; AppRun detects sandbox support.
   executableArgs:
     - '--'
 deb:
