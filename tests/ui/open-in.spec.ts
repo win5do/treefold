@@ -23,7 +23,7 @@ test('Open With sends the selected app and the Project, Workspace or Fork direct
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, openInApps: apps });
     await page.goto(harness.baseUrl);
-    await expect(page.getByTestId('open-settings')).toHaveAccessibleName('Settings', { timeout: 15_000 });
+    await expect(page.getByTestId('application-menu-trigger')).toHaveAccessibleName('Application menu', { timeout: 15_000 });
     await page.evaluate(() => {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true,
@@ -77,7 +77,7 @@ test('Open With keeps directory selection for a single directory and reports a l
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, openInApps: apps, openInError: 'Application was removed' });
     await page.goto(harness.baseUrl);
-    await expect(page.getByTestId('open-settings')).toHaveAccessibleName('Settings', { timeout: 15_000 });
+    await expect(page.getByTestId('application-menu-trigger')).toHaveAccessibleName('Application menu', { timeout: 15_000 });
     await openMenu(page, 'sidebar-project-node');
     await page.getByRole('menuitem', { name: 'Finder', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('Application was removed');
@@ -91,7 +91,7 @@ test('Directory menus stay at the clicked row and copy or open that row in Proje
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, openInApps: apps, windowSize: '1100,720' });
     await page.goto(harness.baseUrl);
-    await expect(page.getByTestId('open-settings')).toHaveAccessibleName('Settings');
+    await expect(page.getByTestId('application-menu-trigger')).toHaveAccessibleName('Application menu');
     await page.evaluate(() => {
       Object.defineProperty(navigator, 'clipboard', {
         configurable: true,

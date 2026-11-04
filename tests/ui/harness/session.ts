@@ -1,5 +1,6 @@
 import type { OpenInApp } from '../../../src/preload/bridge.d.ts';
 import type { OpenInRequest } from './open-in.ts';
+import type { ApplicationMenuCalls } from './application-menu.ts';
 import { _electron, type ElectronApplication, type Page, type Locator } from '@playwright/test';
 import { build } from 'vite';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -76,6 +77,10 @@ export async function closeUiSession(page: Page | undefined) {
 
 export async function openInRequests(page: Page): Promise<OpenInRequest[]> {
   return sessions.get(page)!.app.evaluate(() => (globalThis as typeof globalThis & { treefoldOpenInRequests: OpenInRequest[] }).treefoldOpenInRequests);
+}
+
+export async function applicationMenuCalls(page: Page): Promise<ApplicationMenuCalls> {
+  return sessions.get(page)!.app.evaluate(() => (globalThis as typeof globalThis & { applicationMenuCalls: ApplicationMenuCalls }).applicationMenuCalls);
 }
 
 export async function openProjectPath(page: Page, path: string) {

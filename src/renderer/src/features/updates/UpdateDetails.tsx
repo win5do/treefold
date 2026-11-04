@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { UpdateCheckResult } from "../../../../preload/bridge";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { desktop } from "@/lib/desktop";
 import { toast } from "@/lib/toast";
 import type { UpdateReminderChoice } from "./reminders";
 
@@ -26,18 +27,20 @@ export function UpdateDetails({ release, currentVersion, reminders }: {
       <DialogDescription>{t("updates.versionChange", { current: currentVersion, next: release.version })}</DialogDescription>
     </DialogHeader>
     <div className="flex min-w-0 flex-col gap-3">
-      <p>{t("updates.brewInstructions")}</p>
-      <div className="flex min-w-0 items-start gap-2 rounded-md bg-muted p-3">
-        <code className="min-w-0 flex-1 [overflow-wrap:anywhere] select-text">{upgradeCommand}</code>
-        <Button variant="ghost" size="icon-sm" aria-label={t(copied ? "updates.commandCopied" : "updates.copyCommand")} onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(upgradeCommand);
-            setCopied(true);
-          } catch { toast.error(t("updates.copyFailed")); }
-        }}>{copied ? <CheckIcon data-icon /> : <CopyIcon data-icon />}</Button>
-      </div>
-      <span role="status" className="sr-only">{copied ? t("updates.commandCopied") : ""}</span>
-      <p className="text-muted-foreground">{t("updates.downloadInstructions")}</p>
+      {desktop?.platform === "darwin" && <>
+        <p>{t("updates.brewInstructions")}</p>
+        <div className="flex min-w-0 items-start gap-2 rounded-md bg-muted p-3">
+          <code className="min-w-0 flex-1 [overflow-wrap:anywhere] select-text">{upgradeCommand}</code>
+          <Button variant="ghost" size="icon-sm" aria-label={t(copied ? "updates.commandCopied" : "updates.copyCommand")} onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(upgradeCommand);
+              setCopied(true);
+            } catch { toast.error(t("updates.copyFailed")); }
+          }}>{copied ? <CheckIcon data-icon /> : <CopyIcon data-icon />}</Button>
+        </div>
+        <span role="status" className="sr-only">{copied ? t("updates.commandCopied") : ""}</span>
+      </>}
+      <p className="text-muted-foreground">{t(desktop?.platform === "darwin" ? "updates.downloadInstructions" : "updates.releaseInstructions")}</p>
     </div>
     <DialogFooter className="flex-col sm:flex-col">
       <Button nativeButton={false} role="link" render={<a href={release.url} target="_blank" rel="noopener noreferrer" />}>

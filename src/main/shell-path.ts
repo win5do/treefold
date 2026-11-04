@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { homedir, userInfo } from 'node:os';
+import { homedir } from 'node:os';
+import { selectShell } from './shell.ts';
 
 type Options = {
   env?: NodeJS.ProcessEnv;
@@ -8,11 +9,11 @@ type Options = {
   onWarning?: (message: string) => void;
 };
 
-// Finder launches do not inherit terminal startup files. Read PATH once using
+// Desktop launches do not inherit terminal startup files. Read PATH once using
 // the user's login + interactive shell so zshrc and version managers participate.
 export async function readShellPath({ env = process.env, timeout = 5000, onWarning = () => {} }: Options = {}): Promise<string | undefined> {
   try {
-    const shell = env.SHELL || userInfo().shell || '/bin/zsh';
+    const shell = await selectShell(env);
     const token = `TREEFOLD_PATH_${randomUUID()}`;
     const marker = `\0${token}\0`;
     const delimiter = `\\000${token}\\000`;

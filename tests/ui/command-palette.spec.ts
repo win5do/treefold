@@ -18,7 +18,7 @@ for (const owner of [
       });
       await page.goto(`${harness.baseUrl}/#/${owner.path}`);
       await expect(page.getByTestId("page-content")).toBeVisible();
-      await page.keyboard.press("Meta+Shift+p");
+      await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
       const palette = page.getByRole("dialog", {
         name: "Command Palette",
         exact: true,
@@ -26,7 +26,7 @@ for (const owner of [
       await expect(palette.getByRole("combobox")).toBeFocused();
       await expect(
         palette.getByRole("option", { name: /New Session/ }),
-      ).toContainText("⌘ T");
+      ).toContainText(process.platform === "darwin" ? "⌘ T" : "ctrl+shift+t");
       // A background route transition must not retarget the captured invocation.
       await page.evaluate(() => {
         window.location.hash = "#/projects";
@@ -69,9 +69,9 @@ test("palette searches global actions, restores focus, and honors keymap overrid
       sessionName: "palette-global",
     });
     await page.goto(harness.baseUrl);
-    const settings = page.getByTestId("open-settings");
+    const settings = page.getByTestId("application-menu-trigger");
     await settings.focus();
-    await page.keyboard.press("Meta+Shift+p");
+    await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
     const palette = page.getByRole("dialog", {
       name: "Command Palette",
       exact: true,
@@ -116,7 +116,7 @@ test("palette toggles left and right sidebars independently", async () => {
     const right = page.getByTestId("right-sidebar");
     await expect(right).toHaveAttribute("aria-hidden", "true");
     async function toggle(name: string) {
-      await page!.keyboard.press("Meta+Shift+p");
+      await page!.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
       const palette = page!.getByRole("dialog", { name: "Command Palette", exact: true });
       await palette.getByRole("option", { name, exact: true }).click();
       await expect(palette).toHaveCount(0);
@@ -158,7 +158,7 @@ test("palette uses the invoking Session after navigation and includes actions wi
       `[data-session-id="${FIXTURE_IDS.workspaceShell}"] .xterm-helper-textarea`,
     );
     await expect(terminal).toBeAttached();
-    await terminal.press("Meta+Shift+p");
+    await terminal.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
     const palette = page.getByRole("dialog", {
       name: "Command Palette",
       exact: true,
@@ -205,7 +205,7 @@ for (const owner of [
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-sync" });
       await page.goto(`${harness.baseUrl}/#/${owner.path}`);
       await expect(page.getByTestId("page-content")).toBeVisible();
-      await page.keyboard.press("Meta+Shift+p");
+      await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
       const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
       const search = palette.getByRole("combobox");
       await search.fill("push");
@@ -228,7 +228,7 @@ for (const owner of [
 
       await page.goto(`${harness.baseUrl}/#/${owner.path}`);
       await expect(page.getByTestId("page-content")).toBeVisible();
-      await page.keyboard.press("Meta+Shift+p");
+      await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
       await palette.getByRole("option", { name: "Pull", exact: true }).click();
       await expect(palette).toHaveCount(0);
       await page.getByRole("menuitem", { name: "Pull All", exact: true }).click();
@@ -246,9 +246,9 @@ test("palette searches IDs and both languages while keeping contextual actions f
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-search" });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
-    await expect(page.getByTestId("open-settings")).toHaveAccessibleName("设置");
+    await expect(page.getByTestId("application-menu-trigger")).toHaveAccessibleName("应用菜单");
     await expect(page.getByTestId("page-content")).toBeVisible();
-    await page.keyboard.press("Meta+Shift+p");
+    await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
     const palette = page.getByRole("dialog", { name: "命令面板", exact: true });
     const search = palette.getByRole("combobox");
     await expect(palette.getByRole("option", { name: "新建 Session", exact: true })).toHaveAttribute("aria-selected", "true");
@@ -288,7 +288,7 @@ test("palette hides sync actions in Fork and archived contexts", async () => {
     for (const id of [FIXTURE_IDS.fork, FIXTURE_IDS.archivedWorkspace]) {
       await page.goto(`${harness.baseUrl}/#/workspaces/${id}`);
       await expect(page.getByTestId("page-content")).toBeVisible();
-      await page.keyboard.press("Meta+Shift+p");
+      await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
       const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
       await expect(palette.getByRole("option", { name: "Push", exact: true })).toHaveCount(0);
       await expect(palette.getByRole("option", { name: "Pull", exact: true })).toHaveCount(0);

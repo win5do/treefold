@@ -10,15 +10,15 @@ import { appVersionQuery } from "@/features/app/queries";
 import { UpdateDetails } from "@/features/updates/UpdateDetails";
 import { toast } from "@/lib/toast";
 import { buildInfo } from "./buildInfo";
-import { useAboutDialog } from "./useAboutDialog";
+import type { useAboutDialog } from "./useAboutDialog";
 
-export function AboutDialog() {
-  const state = useAboutDialog();
+export function AboutDialog({ state }: { state: ReturnType<typeof useAboutDialog> }) {
   const { t } = useTranslation();
   const version = useQuery(appVersionQuery()).data ?? buildInfo.version;
   const status = state.result?.status;
   const message = status === "up-to-date" ? t("updates.upToDate")
     : status === "no-stable-release" ? t("updates.noStableRelease")
+    : status === "no-compatible-release" ? t("updates.noCompatibleRelease")
     : status === "error" ? t("updates.failed") : "";
 
   return (

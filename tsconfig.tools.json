@@ -33,8 +33,13 @@
     "src/main/backend.ts",
     "src/main/updates.ts",
     "src/main/shell-path.ts",
+    "src/main/shell.ts",
+    "src/main/executable.ts",
     "src/main/open-in/**/*.ts",
     "src/main/open-project.ts",
+    "src/main/open-arguments.ts",
+    "src/main/appimage-resources.ts",
+    "src/main/appimage-environment.ts",
     "playwright.config.ts"
   ],
   "exclude": [

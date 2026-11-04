@@ -4,13 +4,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { packagedResources } from './packaged-paths.ts';
 
 test("packaged amux CLI supports runtime recovery", async () => {
-  const app = process.env.TREEFOLD_ELECTRON_APP || path.resolve(
-    "release", process.arch === "arm64" ? "mac-arm64" : "mac",
-    "Treefold.app/Contents/MacOS/Treefold",
-  );
-  const executable = path.resolve(path.dirname(app), "../Resources/bin/amux");
+  const executable = path.join(packagedResources(), 'bin/amux');
   const home = await mkdtemp(path.join(tmpdir(), "treefold-packaged-amux-"));
   const env: NodeJS.ProcessEnv = { ...process.env, AMUX_STATE_DIR: home };
   delete env.AMUX_SOCKET;

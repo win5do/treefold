@@ -9,15 +9,16 @@ test("language changes persist and localized actions remain searchable and keybo
   try {
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "localization" });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
-    await expect(page.getByTestId("open-settings")).toHaveAccessibleName("Settings");
+    await expect(page.getByTestId("application-menu-trigger")).toHaveAccessibleName("Application menu");
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     await page.getByTestId("settings-language").selectOption("zh-CN");
     await page.getByTestId("settings-save").click();
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     await expect(page.getByRole("dialog", { name: "设置", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("open-settings")).toBeFocused();
-    await page.keyboard.press("Meta+Shift+p");
+    await expect(page.getByTestId("application-menu-trigger")).toBeFocused();
+    await page.keyboard.press(process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p");
     const palette = page.getByRole("dialog", { name: "命令面板", exact: true });
     await palette.getByRole("combobox").fill("新建 Session");
     await expect(palette.getByRole("option")).toHaveCount(1);
@@ -32,8 +33,9 @@ test("language changes persist and localized actions remain searchable and keybo
     await expect(sessionDialog.getByRole("group", { name: "可用目录", exact: true }).getByRole("button", { pressed: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await page.reload();
-    await expect(page.getByTestId("open-settings")).toHaveAccessibleName("设置");
+    await expect(page.getByTestId("application-menu-trigger")).toHaveAccessibleName("应用菜单");
     expect((await (await page.request.get(`${harness.apiUrl}/api/settings`)).json()).language).toBe("zh-CN");
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     await page.getByRole("button", { name: "快捷键", exact: true }).click();
     await page.getByPlaceholder("搜索命令或快捷键").fill("关闭 Session");
@@ -43,8 +45,8 @@ test("language changes persist and localized actions remain searchable and keybo
     await page.getByTestId("settings-save").click();
     await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("open-settings")).toBeFocused();
-    await page.keyboard.press("Meta+Shift+p");
+    await expect(page.getByTestId("application-menu-trigger")).toBeFocused();
+    await page.keyboard.press(process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p");
     await expect(page.getByRole("dialog", { name: "Command Palette", exact: true })).toBeVisible();
     harness.assertNoUnexpectedRequests();
   } finally {

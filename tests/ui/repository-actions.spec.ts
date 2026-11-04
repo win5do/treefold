@@ -69,7 +69,7 @@ test("Workspace upstream can be unset and restored with a same-name branch, gati
     await expect(page.getByTestId("sidebar-pull-menu")).toBeDisabled();
     await expect(page.getByTestId("sidebar-push-menu")).toBeDisabled();
     await page.keyboard.press("Escape");
-    await page.keyboard.press("Meta+Shift+p");
+    await page.keyboard.press(process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p");
     const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
     await expect(palette).toBeVisible();
     // Unconfigured repositories must not be callable through command actions either.

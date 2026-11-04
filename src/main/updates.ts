@@ -4,7 +4,7 @@ import type { UpdateCheckResult } from '../preload/bridge.d.ts';
 export const stableReleaseEndpoint = 'https://api.github.com/repos/win5do/treefold/releases/latest';
 export const startupUpdateDelay = 30_000;
 
-export function createUpdateChecker(currentVersion: string, fetchRelease: (url: string, init: RequestInit) => Promise<Response> = fetch) {
+export function createUpdateChecker(currentVersion: string, fetchRelease: (url: string, init: RequestInit) => Promise<Response> = fetch, target = { platform: process.platform as string, arch: process.arch as string }) {
   let pending: Promise<UpdateCheckResult> | undefined;
   async function request(): Promise<UpdateCheckResult> {
     try {
@@ -24,6 +24,14 @@ export function createUpdateChecker(currentVersion: string, fetchRelease: (url: 
       // Defense in depth: neither the GitHub flag nor the tag may be a prerelease.
       if (release.draft || release.prerelease || prerelease(version)) return { status: 'no-stable-release' };
       if (!gt(version, currentVersion)) return { status: 'up-to-date' };
+      if (target.platform === 'linux') {
+        const assets = 'assets' in release && Array.isArray(release.assets) ? release.assets : [];
+        const arch = target.arch === 'x64' ? '(?:x64|amd64|x86_64)' : target.arch === 'arm64' ? '(?:arm64|aarch64)' : null;
+        const pattern = arch && new RegExp(`[-_]${arch}\\.(?:AppImage|deb|rpm)$`, 'i');
+        if (!pattern || !assets.some(asset => asset && typeof asset.name === 'string' && pattern.test(asset.name))) {
+          return { status: 'no-compatible-release' };
+        }
+      }
       return { status: 'available', version,
         url: `https://github.com/win5do/treefold/releases/tag/${encodeURIComponent(release.tag_name)}` };
     } catch {

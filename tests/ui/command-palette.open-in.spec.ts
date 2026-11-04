@@ -16,9 +16,9 @@ test("palette hands Open With to an independent keyboard menu and Escape restore
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-open", openInApps: apps, windowSize: "640,480" });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.workspace}`);
     await expect(page.getByTestId("page-content")).toBeVisible();
-    const settings = page.getByTestId("open-settings");
+    const settings = page.getByTestId("application-menu-trigger");
     await settings.focus();
-    await page.keyboard.press("Meta+Shift+p");
+    await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
     const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
     const search = palette.getByRole("combobox");
     await search.fill("directory.open.with");
@@ -54,7 +54,7 @@ test("palette hands Open With to an independent keyboard menu and Escape restore
     await expect(appsMenu).toHaveCount(0);
     await expect(settings).toBeFocused();
     // Reopening uses a fresh menu, and clicking outside cancels without executing.
-    await page.keyboard.press("Meta+Shift+p");
+    await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
     await palette.getByRole("option", { name: "Open With", exact: true }).click();
     await expect(menu).toBeVisible();
     // The modal menu backdrop receives this physical click over the page heading.
@@ -82,7 +82,7 @@ for (const owner of [
       page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-open-target", openInApps: apps });
       await page.goto(`${harness.baseUrl}/#/${owner.path}`);
       await expect(page.getByTestId("page-content")).toBeVisible();
-      await page.keyboard.press("Meta+Shift+p");
+      await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
       const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
       await palette.getByRole("option", { name: "Open With", exact: true }).click();
       await expect(palette).toHaveCount(0);
@@ -113,7 +113,7 @@ test("palette skips a single directory and reports application launch failures",
     page = await createUiSession({ apiUrl: harness.apiUrl, sessionName: "palette-open-single", openInApps: apps, openInError: "Application was removed" });
     await page.goto(`${harness.baseUrl}/#/projects/${FIXTURE_IDS.project}`);
     await expect(page.getByTestId("page-content")).toBeVisible();
-    await page.keyboard.press("Meta+Shift+p");
+    await page.keyboard.press((process.platform === "linux" ? "Control+Shift+p" : "Meta+Shift+p"));
     const palette = page.getByRole("dialog", { name: "Command Palette", exact: true });
     await palette.getByRole("option", { name: "Open With", exact: true }).click();
     await expect(palette).toHaveCount(0);

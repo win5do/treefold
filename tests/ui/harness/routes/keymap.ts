@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ReadJson, SendJson } from "../types.ts";
 import type { Keymap } from "../../../../src/renderer/src/domain/types.ts";
-import { keymapDefaults } from "../../../../src/renderer/src/features/actions/model/registry.ts";
+import { keymapDefaultsForPlatform } from "../../../../src/renderer/src/features/actions/model/registry.ts";
 export function createKeymapRoutes({
   readJson,
   sendJson,
@@ -9,7 +9,7 @@ export function createKeymapRoutes({
   readJson: ReadJson;
   sendJson: SendJson;
 }) {
-  const defaults = keymapDefaults;
+  const defaults = keymapDefaultsForPlatform(process.platform);
   const overrides: Record<string, string | false> = {};
   const snapshot = () =>
     ({

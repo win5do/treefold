@@ -29,7 +29,7 @@ test("Project creation imports only the selected discovered locations", async ()
     ]);
     expect(harness.projectCreation.createRequests[0]).toMatchObject({ open_path: "/tmp/treefold-ui-fixture/multi-repo" });
     await page.goto(harness.baseUrl);
-    await page.getByTestId("open-settings").waitFor();
+    await page.getByTestId("application-menu-trigger").waitFor();
     await openProjectPath(page, "/tmp/treefold-ui-fixture/multi-repo");
     await expect(page).toHaveURL(/#\/projects\/project-created-primary-requirement$/);
     expect(harness.projectCreation.createRequests).toHaveLength(1);

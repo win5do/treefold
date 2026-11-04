@@ -50,6 +50,7 @@ test("AI Commit presets fill the command; testing does not gate saving or automa
     await expect(
       page.getByRole("textbox", { name: "Commit message", exact: true }),
     ).toBeVisible();
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     const settings = page.getByRole("dialog", {
       name: "Settings",

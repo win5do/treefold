@@ -1,3 +1,4 @@
+import { packagedExecutable } from './packaged-paths.ts';
 import type { ElectronApplication } from '@playwright/test';
 import { test, expect } from '@playwright/test';
 import assert from 'node:assert/strict';
@@ -6,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
 
-const executablePath = process.env.TREEFOLD_ELECTRON_APP || path.resolve('release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Treefold.app/Contents/MacOS/Treefold');
+const executablePath = packagedExecutable();
 test('packaged Electron loads Rust API, persists settings, and preserves close-to-tray lifecycle', async () => {
   test.setTimeout(60000);
   const home = await mkdtemp(path.join(tmpdir(), 'treefold-electron-app-'));
@@ -16,16 +17,17 @@ test('packaged Electron loads Rust API, persists settings, and preserves close-t
   await writeFile(path.join(home, 'config/settings.toml'), 'schema_version = 1\nlanguage = "en-US"\n');
   let desktop: ElectronApplication | undefined, apiUrl: string | undefined;
   try {
-    desktop = await electron.launch({ executablePath, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
+    desktop = await electron.launch({ executablePath, chromiumSandbox: true, env: Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined)) });
     const page = await desktop.firstWindow();
     const errors: string[] = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.getByTestId('open-settings').waitFor();
+    await page.getByTestId('application-menu-trigger').waitFor();
     assert.match(page.url(), /^treefold:\/\/app\//);
     apiUrl = await page.evaluate(() => window.treefoldDesktop!.apiUrl());
     assert.equal(await page.evaluate(() => window.treefoldDesktop!.appVersion()), await desktop.evaluate(({ app }) => app.getVersion()));
     assert.equal((await fetch(`${apiUrl}/api/health`)).status, 200);
     assert.equal(await page.evaluate(async () => (await navigator.permissions.query({ name: 'clipboard-write' as PermissionName })).state), 'granted');
+    await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId('open-settings').click();
     await page.getByRole('dialog').waitFor();
     await page.getByTestId('settings-theme').selectOption('dark');
@@ -43,12 +45,12 @@ test('packaged Electron loads Rust API, persists settings, and preserves close-t
     await desktop.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ['/tmp/treefold-picker-test'] }); });
     assert.equal(await page.evaluate(() => window.treefoldDesktop!.openDirectory({ title: 'Test picker', directory: true, multiple: false })), '/tmp/treefold-picker-test');
     const openInApps = await page.evaluate(() => window.treefoldDesktop!.listOpenInApps());
-    assert.ok(openInApps.some(app => app.id === 'finder'));
-    assert.ok(openInApps.some(app => app.id === 'terminal'));
+    assert.ok(openInApps.some(app => app.id === (process.platform === 'linux' ? 'files' : 'finder')));
+    if (process.platform === 'darwin') assert.ok(openInApps.some(app => app.id === 'terminal'));
     assert.equal(new Set(openInApps.map(app => app.id)).size, openInApps.length);
     // Verify the production IPC validation boundary without launching external applications.
     await assert.rejects(page.evaluate(() => window.treefoldDesktop!.openInApp('untrusted-command', '/tmp')), /Unknown application/);
-    await assert.rejects(page.evaluate(() => window.treefoldDesktop!.openInApp('finder', 'relative-path')), /target directory/);
+    await assert.rejects(page.evaluate(id => window.treefoldDesktop!.openInApp(id, 'relative-path'), process.platform === 'linux' ? 'files' : 'finder'), /target directory/);
     await page.evaluate(() => window.treefoldDesktop!.log('info', 'desktop-smoke-log'));
     const desktopLog = await readFile(path.join(home, 'logs/desktop.log'), 'utf8');
     assert.match(desktopLog, /INFO \[renderer\] desktop-smoke-log/);

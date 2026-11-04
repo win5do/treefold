@@ -1,4 +1,5 @@
 import { installOpenInFixture } from './open-in.ts';
+import { installApplicationMenuFixture } from './application-menu.ts';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 import { createProjectOpenRequests } from '../../../src/main/open-project.ts';
@@ -10,14 +11,17 @@ if (process.platform === 'darwin' && !headed) app.setActivationPolicy('prohibite
 app.setPath('userData', process.env.TREEFOLD_TEST_HOME!);
 app.whenReady().then(() => {
   installOpenInFixture();
+  installApplicationMenuFixture();
   ipcMain.handle('treefold:api-url', () => process.env.TREEFOLD_TEST_API_URL!);
   ipcMain.handle('treefold:app-version', () => '0.1.0-alpha.20261003000000');
   ipcMain.handle('treefold:open-directory', () => null);
   ipcMain.handle('treefold:log', () => {});
   const [width, height] = process.env.TREEFOLD_TEST_WINDOW_SIZE!.split(',').map(Number);
   const window = new BrowserWindow({ width, height, useContentSize: true, show: headed,
-    // Keep rendering and timers active for input, overlays, and screenshots while hidden.
-    webPreferences: { backgroundThrottling: false, preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    // Hidden Linux compositor surfaces can stall animations after screenshots.
+    // Offscreen rendering keeps frames advancing without mapping a desktop window.
+    // Keep timers active for input and overlays too.
+    webPreferences: { offscreen: process.platform === 'linux' && !headed, backgroundThrottling: false, preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   const requests = createProjectOpenRequests(request => window.webContents.send('treefold:open-project', request));
   ipcMain.handle('treefold:pending-open-project', () => requests.pending());
   ipcMain.handle('treefold:acknowledge-open-project', (_event, id) => requests.acknowledge(id));
