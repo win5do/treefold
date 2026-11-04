@@ -23,8 +23,8 @@ const home = getLocalizedPath(locale, 'home');
         <h1><span>{copy.heading[0]}</span><span class="gradient-text">{copy.heading[1]}</span></h1>
         <p>{copy.intro}</p>
         <div class="download-actions">
-          <a class="button button-primary" href="#homebrew">{copy.brewTitle}<LinkIcon name="download" /></a>
-          <a class="button button-secondary" href={currentRelease.dmgUrl}>{copy.dmgTitle}<LinkIcon name="download" /></a>
+          <a class="button button-primary" href="#macos">{copy.macTitle}<LinkIcon name="download" /></a>
+          <a class="button button-secondary" href="#linux">{copy.linuxTitle}<LinkIcon /></a>
         </div>
         <div class="badge-row">{copy.badges.map((item) => <span>{item}</span>)}</div>
       </div>
@@ -32,22 +32,27 @@ const home = getLocalizedPath(locale, 'home');
 
     <section class="download-content border-section section-grid">
       <div class="site-container">
-        <div class="notice"><span>ALPHA</span><p><strong>{copy.noticeTitle}：</strong>{copy.notice}</p></div>
+        <div class="notice"><span>MACOS</span><p><strong>{copy.noticeTitle}：</strong>{copy.notice}</p></div>
         <div class="download-grid">
-          <article id="homebrew" class="download-card featured">
+          <article id="macos" class="download-card featured">
             <div class="option-label"><span>{copy.option1}</span><em>{copy.recommended}</em></div>
-            <h2>{copy.brewTitle}</h2><p>{copy.brewBody}</p>
+            <h2>{copy.macTitle}</h2><p>{copy.brewBody}</p>
             <div class="command-box"><div><span>{copy.terminal}</span><button type="button" data-copy-command={installCommand} data-idle-label={copy.copyCommand} data-copied-label={copy.copied} data-error-label={copy.copyFailed}><span data-copy-label>{copy.copyCommand}</span></button></div><pre><code><span>$</span> {installCommand}</code></pre></div>
             <small>{copy.brewNote}</small>
-            <a href={siteLinks.homebrewTap} target="_blank" rel="noopener noreferrer">{copy.tap}<LinkIcon /></a>
-          </article>
-          <article class="download-card">
-            <div class="option-label"><span>{copy.option2}</span></div>
-            <h2>{copy.dmgTitle}</h2><p>{copy.dmgBody}</p>
+            <p>{copy.dmgBody}</p>
             <div class="release-asset"><span>{copy.expected}</span><code>{currentRelease.dmgFilename}</code></div>
             <small>{copy.releaseNote}</small>
             <a href={currentRelease.dmgUrl}>{copy.dmgTitle}<LinkIcon name="download" /></a>
             <a href={currentRelease.url} target="_blank" rel="noopener noreferrer">{copy.openReleases}<LinkIcon /></a>
+          </article>
+          <article id="linux" class="download-card">
+            <div class="option-label"><span>{copy.option2}</span><em>{copy.linuxStatus}</em></div>
+            <h2>{copy.linuxTitle}</h2><p>{copy.linuxBody}</p>
+            <div class="release-asset"><span>{copy.linuxFormatsTitle}</span><code>AppImage · deb · rpm</code></div>
+            <p>{copy.linuxFeatures}</p>
+            <small>{copy.linuxNote}</small>
+            <a href={siteLinks.linuxDevelopment} target="_blank" rel="noopener noreferrer">{copy.linuxGuide}<LinkIcon /></a>
+            <a href={siteLinks.releases} target="_blank" rel="noopener noreferrer">{copy.linuxReleases}<LinkIcon /></a>
           </article>
         </div>
       </div>
