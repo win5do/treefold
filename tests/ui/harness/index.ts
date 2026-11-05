@@ -15,9 +15,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { BackgroundProcess, GitBranches, GitSyncItemResult, Session, WorktreeDeleteOperation, WorktreeDeletePrecheck, WorkspaceRepository } from "../../../src/renderer/src/domain/types.ts";
 import type { FixtureDirectory, FixtureProject, FixtureRepository, FixtureSession, FixtureWorkspace, SidebarFixture } from "../fixtures/types.ts";
 import http from "node:http";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { createServer as createViteServer } from "vite";
+import { startRenderer } from "./renderer.ts";
 import {
   createSidebarCoreFixture,
   FIXTURE_IDS,
@@ -26,11 +24,6 @@ import { createGitDiffRoutes } from "./routes/git-diff.ts";
 import { createParentOperationRoutes } from "./routes/parent-operations.ts";
 import { createTodoRoutes } from "./routes/todos.ts";
 import { createAgentIntegrationRoutes } from "./routes/agent-integration.ts";
-
-const projectRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../..",
-);
 
 function sendJson(response: ServerResponse, status: number, value: unknown) {
   response.writeHead(status, {
@@ -1139,42 +1132,12 @@ type UiHarness = Omit<Awaited<ReturnType<typeof startFixtureApi>>, "unexpectedRe
 
 export async function startUiHarness(configure?: (fixture: SidebarFixture) => void): Promise<UiHarness> {
   const fixtureApi = await startFixtureApi(configure);
-  let vite;
-  try {
-    vite = await createViteServer({
-      configFile: path.join(projectRoot, "vite.config.ts"),
-      root: path.join(projectRoot, "src/renderer"),
-      logLevel: "error",
-      define: {
-        "import.meta.env.VITE_TREEFOLD_API_BASE": JSON.stringify(
-          fixtureApi.baseUrl,
-        ),
-      },
-      server: {
-        host: "127.0.0.1",
-        port: 0,
-        strictPort: false,
-        // Fixture scenarios must not reload when a developer or a concurrent
-        // native lifecycle test touches source files. HMR belongs to app-dev tests.
-        hmr: false,
-        watch: null,
-      },
-    });
-    await vite.listen();
-  } catch (error) {
-    await fixtureApi.close();
-    throw error;
-  }
-
-  const address = vite.httpServer?.address();
-  if (!address || typeof address === "string") {
-    await vite.close();
-    await fixtureApi.close();
-    throw new Error("Could not determine UI fixture Vite address");
-  }
+  let renderer;
+  try { renderer = await startRenderer(fixtureApi.baseUrl); }
+  catch (error) { await fixtureApi.close(); throw error; }
 
   return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
+    baseUrl: renderer.baseUrl,
     apiUrl: fixtureApi.baseUrl,
     syncRequests: fixtureApi.syncRequests,
     setNextBulkSyncResults: fixtureApi.setNextBulkSyncResults,
@@ -1209,7 +1172,7 @@ export async function startUiHarness(configure?: (fixture: SidebarFixture) => vo
       }
     },
     async close() {
-      try { await vite.close(); } finally { await fixtureApi.close(); }
+      try { await renderer.close(); } finally { await fixtureApi.close(); }
     },
   };
 }
