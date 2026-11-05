@@ -48,7 +48,7 @@ Isolation belongs to the Workspace / Fork. Sessions within the same work share a
 Treefold requires Git and a graphical desktop. Choose the instructions for your platform:
 
 - **macOS:** Apple Silicon, macOS Sonoma 14 or newer. Install with Homebrew or download the DMG.
-- **Linux:** build from source using the instructions below. Development and local packaging have been verified on Arch Linux with KDE.
+- **Linux:** x86_64 desktop. Download an AppImage, deb, or rpm for your system.
 
 ### macOS: Homebrew
 
@@ -79,25 +79,17 @@ This removes the quarantine attribute only from the installed Treefold app. If y
 
 Alternatively, choose Open Anyway in System Settings → Privacy & Security, then confirm when prompted.
 
-### Linux: Build and install
+### Linux: Download and install
 
-Linux supports **AppImage, deb, and rpm**. Linux release downloads have not been published yet; build from the current source checkout. Follow [Run from source](#run-from-source) and install the [packaging dependencies](docs/linux-development.md#build-and-install), then run:
-
-```bash
-just build
-```
-
-This creates all three formats in `release/`:
+Download a Linux x86_64 package from [Treefold 0.3.0](https://github.com/win5do/treefold/releases/tag/v0.3.0):
 
 | Format | Use |
 | --- | --- |
-| `.AppImage` | Mark the file executable and run it. |
-| `.deb` | Install the generated package with `sudo apt install ./release/Treefold-*.deb` on a compatible Debian/Ubuntu system. |
-| `.rpm` | Install the generated package with `sudo dnf install ./release/Treefold-*.rpm` on a compatible Fedora system. |
+| [AppImage](https://github.com/win5do/treefold/releases/download/v0.3.0/Treefold-0.3.0-x86_64.AppImage) | Mark the file executable and open it. |
+| [deb](https://github.com/win5do/treefold/releases/download/v0.3.0/Treefold-0.3.0-amd64.deb) | Install with your package manager on a compatible Debian/Ubuntu system. |
+| [rpm](https://github.com/win5do/treefold/releases/download/v0.3.0/Treefold-0.3.0-x86_64.rpm) | Install with your package manager on a compatible Fedora system. |
 
-On Arch KDE, `just install-app-local` builds and installs Treefold for your user account. Quit an installed Treefold instance before replacing it.
-
-Packages built on recent distributions are not guaranteed to run on older ones. See the [Linux guide](docs/linux-development.md) for dependencies and compatibility details.
+Release notes include SHA-256 checksums and compatibility information. For source builds and local installation, see the [Linux guide](docs/linux-development.md).
 
 ### Set up your agents
 
