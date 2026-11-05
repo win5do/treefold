@@ -45,6 +45,8 @@ test("Keymap exposes unbound actions and their recorded shortcuts execute in con
       await page.keyboard.press("Enter");
       await expect.poll(() => harness.syncRequests.at(-1)).toBe(`/api/project-repositories/${FIXTURE_IDS.primaryRepository}/git/${operation}`);
       await expect(menu).toHaveCount(0);
+      // A recorded request precedes completion; sync shortcuts are disabled while busy.
+      await expect(page.getByRole("status").filter({ hasText: `${name}成功` })).toBeVisible();
     }
     await page.keyboard.press("Control+g");
     await expect(page).toHaveURL(/#\/projects$/);

@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 export async function startRenderer(apiUrl: string) {
   const child = fork(fileURLToPath(new URL('./renderer-process.ts', import.meta.url)), [], {
     execArgv: [],
-    env: { ...process.env, TREEFOLD_FIXTURE_API_URL: apiUrl },
+    // Vite's preload build can set production mode in the parent worker.
+    env: { ...process.env, NODE_ENV: 'development', TREEFOLD_FIXTURE_API_URL: apiUrl },
     stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
   });
   const exited = new Promise<void>(resolve => { child.once('exit', () => resolve()); child.once('error', () => resolve()); });
