@@ -462,6 +462,8 @@ for (const resume of [false, true]) {
       await confirmation
         .getByRole("button", { name: "Cancel", exact: true })
         .click();
+      // Finish closing the cancelled confirmation before opening a new one.
+      await expect(confirmation).toHaveCount(0);
       expect(submissions).toHaveLength(0);
       await force.click();
       if (!resume)
