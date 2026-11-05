@@ -36,6 +36,7 @@ jobs:
             src/cli
           cache-on-failure: true
       - name: Install dependencies
+        id: dependencies
         run: |
           npm ci
           if [[ "$RUNNER_OS" == Linux ]]; then
@@ -56,8 +57,11 @@ jobs:
         run: |
           if [[ "$RUNNER_OS" == Linux ]]; then xvfb-run -a just test-ui; else just test-ui; fi
       - name: Build App for Electron lifecycle tests
+        id: bundle
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: just build
       - name: Test packaged and development Electron lifecycles
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
         run: |
           if [[ "$RUNNER_OS" == Linux ]]; then xvfb-run -a just test-electron; else just test-electron; fi
       - name: Upload failure diagnostics
