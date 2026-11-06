@@ -75,6 +75,9 @@ jobs:
         id: bundle
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: just build
+      - name: Prepare development sidecars for lifecycle tests
+        if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
+        run: just prepare-sidecars
       - name: Test packaged and development Electron lifecycles
         if: ${{ !cancelled() && steps.bundle.outcome == 'success' }}
         run: |
