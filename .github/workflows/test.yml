@@ -2,6 +2,17 @@ name: Test
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Validation scope
+        type: choice
+        default: all
+        options: [all, electron]
+      platform:
+        description: Runner platform
+        type: choice
+        default: all
+        options: [all, macos, linux]
 
 permissions:
   contents: read
@@ -15,7 +26,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-26, ubuntu-24.04]
+        os: ${{ fromJSON(inputs.platform == 'macos' && '["macos-26"]' || inputs.platform == 'linux' && '["ubuntu-24.04"]' || '["macos-26", "ubuntu-24.04"]') }}
+    name: ${{ inputs.suite || 'all' }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
@@ -50,10 +62,13 @@ jobs:
             brew install just
           fi
       - name: Test backend
+        if: ${{ inputs.suite != 'electron' }}
         run: just test-backend
       - name: Test backend lifecycle and installation
+        if: ${{ inputs.suite != 'electron' }}
         run: just test-integration
       - name: Test deterministic Electron UI
+        if: ${{ inputs.suite != 'electron' }}
         run: |
           if [[ "$RUNNER_OS" == Linux ]]; then xvfb-run -a just test-ui; else just test-ui; fi
       - name: Build App for Electron lifecycle tests
