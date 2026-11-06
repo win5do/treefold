@@ -121,9 +121,12 @@ child.on('exit', code => process.exit(code ?? 1));
       await expect.poll(() => fetch(`${api}/api/health`).then(() => false, () => true)).toBe(true);
       await expect.poll(() => readFile(path.join(home, 'runtime/api-url')).then(() => false, () => true)).toBe(true);
       for (const pid of daemonPids) {
-        await expect.poll(() => {
-          try { process.kill(pid, 0); return false; }
-          catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH'; }
+        await expect.poll(async () => {
+          // kill(pid, 0) also succeeds for exited zombies awaiting OS reaping.
+          const { stdout } = await run('ps', ['-axo', 'pid=,stat=']);
+          const row = stdout.trim().split('\n').map(line => line.trim().split(/\s+/))
+            .find(([value]) => Number(value) === pid);
+          return !row || row[1].startsWith('Z');
         }).toBe(true);
       }
     }

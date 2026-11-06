@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mkdtemp, mkdir, readFile, writeFile, chmod, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, chmod, rm, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { detectApps, openInApp, type DetectedApp } from '../../src/main/open-in/service.ts';
@@ -93,7 +93,7 @@ test('Linux launches detached desktop commands in the requested directory and re
     await writeFile(executable, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(result)}, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));\n`, { mode: 0o755 });
     const apps = await detectApps({ platform: 'linux', searchPath: root });
     await openInApp('files', directory, { detect: async () => apps });
-    await expect.poll(async () => JSON.parse(await readFile(result, 'utf8').catch(() => '{}'))).toEqual({ cwd: directory, args: [directory] });
+    await expect.poll(async () => JSON.parse(await readFile(result, 'utf8').catch(() => '{}'))).toEqual({ cwd: await realpath(directory), args: [directory] });
     await rm(executable);
     await expect(openInApp('files', directory, { detect: async () => apps })).rejects.toThrow('ENOENT');
   } finally { await rm(root, { recursive: true, force: true }); }
