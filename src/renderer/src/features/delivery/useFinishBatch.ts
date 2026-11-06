@@ -87,17 +87,19 @@ export function useFinishBatch(workspace: WorkspaceDetail | null) {
       try {
         const next = await workspacesApi.finishBatch(workspace.id);
         if (stopped) return;
-        setBatch(next?.continue_work && next.status === "completed" && !showResult.current ? null : next);
-        if (next && next.status !== "completed") {
-          setContinueWork(Boolean(next.continue_work));
-          setDrafts(Object.fromEntries(next.items.map(item => [item.repository_id, { code_action: item.code_action, delete_worktree: item.delete_worktree, delete_branch: item.delete_branch }])));
+        const fingerprint = JSON.stringify(next);
+        // Unchanged polls must not restart preflight or unmount an open recovery confirmation.
+        if (fingerprint !== previous) {
+          setBatch(next?.continue_work && next.status === "completed" && !showResult.current ? null : next);
+          if (next && next.status !== "completed") {
+            setContinueWork(Boolean(next.continue_work));
+            setDrafts(Object.fromEntries(next.items.map(item => [item.repository_id, { code_action: item.code_action, delete_worktree: item.delete_worktree, delete_branch: item.delete_branch }])));
+          }
+          if (previous) void invalidateHierarchyQueries(client);
+          previous = fingerprint;
         }
         setLoaded(true);
         setError("");
-        const fingerprint = JSON.stringify(next);
-        if (previous && fingerprint !== previous)
-          void invalidateHierarchyQueries(client);
-        previous = fingerprint;
         if (next && next.status !== "completed")
           timer = setTimeout(() => void poll(), 1000);
       } catch (cause) {

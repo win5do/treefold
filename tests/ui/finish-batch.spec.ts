@@ -335,6 +335,7 @@ for (const resume of [false, true]) {
         }
       : null;
     const submissions: unknown[] = [];
+    let batchReads = 0;
     try {
       page = await createUiSession({
         apiUrl: harness.apiUrl,
@@ -387,6 +388,7 @@ for (const resume of [false, true]) {
         },
       );
       const handle = async (route: import("@playwright/test").Route) => {
+        if (route.request().method() === "GET") batchReads++;
         if (route.request().method() === "POST") {
           const input = route.request().postDataJSON();
           submissions.push(input);
@@ -459,6 +461,11 @@ for (const resume of [false, true]) {
       await force.click();
       const confirmation = page.getByRole("alertdialog");
       await expect(confirmation.getByRole("listitem")).toHaveText(["backend"]);
+      if (resume) {
+        const readsBeforeConfirmation = batchReads;
+        await expect.poll(() => batchReads).toBeGreaterThan(readsBeforeConfirmation + 1);
+        await expect(confirmation).toBeVisible();
+      }
       await confirmation
         .getByRole("button", { name: "Cancel", exact: true })
         .click();
