@@ -48,7 +48,7 @@ Project 组织相关仓库，Workspace 承载一项 feature，Fork 将子任务�
 Treefold 需要 Git 和图形桌面环境。请按平台选择安装方式：
 
 - **macOS**：Apple Silicon、macOS Sonoma 14 或更新版本，可通过 Homebrew 或 DMG 安装。
-- **Linux**：按下方说明从源码构建。开发与本地打包已在 Arch Linux / KDE 上验证。
+- **Linux**：x86_64 桌面，按系统选择 AppImage、deb 或 rpm 安装包。
 
 ### macOS：Homebrew
 
@@ -79,25 +79,17 @@ xattr -dr com.apple.quarantine /Applications/Treefold.app
 
 也可以在“系统设置 → 隐私与安全性”中选择“仍要打开”，然后按提示确认。
 
-### Linux：构建与安装
+### Linux：下载与安装
 
-Linux 支持 **AppImage、deb 和 rpm**。目前尚未发布 Linux 下载包，请从当前源码构建。先按[从源码运行](#从源码运行)准备环境，并安装[打包依赖](docs/linux-development.md#build-and-install)，然后执行：
-
-```bash
-just build
-```
-
-此命令在 `release/` 中生成三种格式：
+从 [Treefold 0.3.0](https://github.com/win5do/treefold/releases/tag/v0.3.0) 下载 Linux x86_64 安装包：
 
 | 格式 | 使用方式 |
 | --- | --- |
-| `.AppImage` | 添加执行权限后运行。 |
-| `.deb` | 在兼容的 Debian/Ubuntu 系统上运行 `sudo apt install ./release/Treefold-*.deb` 安装生成的包。 |
-| `.rpm` | 在兼容的 Fedora 系统上运行 `sudo dnf install ./release/Treefold-*.rpm` 安装生成的包。 |
+| [AppImage](https://github.com/win5do/treefold/releases/download/v0.3.0/Treefold-0.3.0-x86_64.AppImage) | 添加执行权限后打开。 |
+| [deb](https://github.com/win5do/treefold/releases/download/v0.3.0/Treefold-0.3.0-amd64.deb) | 在兼容的 Debian/Ubuntu 系统上通过包管理器安装。 |
+| [rpm](https://github.com/win5do/treefold/releases/download/v0.3.0/Treefold-0.3.0-x86_64.rpm) | 在兼容的 Fedora 系统上通过包管理器安装。 |
 
-在 Arch KDE 上，也可以运行 `just install-app-local`，为当前用户构建并安装 Treefold。替换前请先退出已安装的 Treefold。
-
-在较新发行版上构建的包不保证能在较旧发行版运行。依赖和兼容性说明见 [Linux 指南](docs/linux-development.md)。
+版本说明中提供 SHA-256 校验文件和兼容性信息。从源码构建与本地安装的步骤见 [Linux 指南](docs/linux-development.md)。
 
 ### 准备你要使用的 Agent
 

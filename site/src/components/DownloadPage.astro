@@ -43,6 +43,7 @@ const home = getLocalizedPath(locale, 'home');
             <div class="release-asset"><span>{copy.expected}</span><code>{currentRelease.dmgFilename}</code></div>
             <small>{copy.releaseNote}</small>
             <a href={currentRelease.dmgUrl}>{copy.dmgTitle}<LinkIcon name="download" /></a>
+            <a href={currentRelease.zipUrl}>{copy.zipTitle}<LinkIcon name="download" /></a>
             <a href={currentRelease.url} target="_blank" rel="noopener noreferrer">{copy.openReleases}<LinkIcon /></a>
           </article>
           <article id="linux" class="download-card">
@@ -51,8 +52,10 @@ const home = getLocalizedPath(locale, 'home');
             <div class="release-asset"><span>{copy.linuxFormatsTitle}</span><code>AppImage · deb · rpm</code></div>
             <p>{copy.linuxFeatures}</p>
             <small>{copy.linuxNote}</small>
-            <a href={siteLinks.linuxDevelopment} target="_blank" rel="noopener noreferrer">{copy.linuxGuide}<LinkIcon /></a>
-            <a href={siteLinks.releases} target="_blank" rel="noopener noreferrer">{copy.linuxReleases}<LinkIcon /></a>
+            <a href={currentRelease.appImageUrl}>{copy.appImageTitle}<LinkIcon name="download" /></a>
+            <a href={currentRelease.debUrl}>{copy.debTitle}<LinkIcon name="download" /></a>
+            <a href={currentRelease.rpmUrl}>{copy.rpmTitle}<LinkIcon name="download" /></a>
+            <a href={currentRelease.url} target="_blank" rel="noopener noreferrer">{copy.openReleases}<LinkIcon /></a>
           </article>
         </div>
       </div>
