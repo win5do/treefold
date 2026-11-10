@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "./select-options.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 import { startUiHarness } from "./ui-harness.ts";
@@ -129,7 +130,7 @@ test("Delivery keeps its draft through Workspace upstream settings without remem
     await clickUiElement(page, page.getByTestId(`workspace-location-actions-${repositoryId}-trigger`));
     await page.getByTestId(`workspace-location-upstream-${repositoryId}`).click();
     const upstream = page.getByRole("dialog", { name: "Set upstream", exact: true });
-    await upstream.getByRole("combobox", { name: "Remote", exact: true }).selectOption("origin");
+    await chooseSelectOption(page, upstream.getByRole("combobox", { name: "Remote", exact: true }), "origin");
     await upstream.getByRole("button", { name: "Save upstream", exact: true }).click();
     await expect(upstream).toHaveCount(0);
     await expect(repository).toContainText("origin/");
@@ -185,7 +186,7 @@ test("Dirty delivery opens Changes for the selected repository and only configur
       await expect(page).toHaveURL(new RegExp(`/workspaces/${FIXTURE_IDS.workspace}$`));
       const sidebar = page.getByTestId("right-sidebar");
       await expect(sidebar.getByRole("tab", { name: "Changes", exact: true })).toHaveAttribute("aria-selected", "true");
-      await expect(sidebar.getByTestId("git-repository")).toHaveValue(repositoryId);
+      await expect(sidebar.getByTestId("git-repository")).toHaveText(repositoryId === FIXTURE_IDS.workspacePrimaryLocation ? "fixture-repository" : "fixture-api-repository");
       await expect(sidebar.getByRole("textbox", { name: "Commit message", exact: true })).toBeVisible();
       await sidebar.getByRole("tab", { name: "Repository Info", exact: true }).click();
     }

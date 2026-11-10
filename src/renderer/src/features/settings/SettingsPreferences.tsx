@@ -13,7 +13,7 @@ import {
   FieldLabel,
   FieldTitle,
 } from "@/components/ui/field";
-import { NativeSelect as Select } from "@/components/ui/native-select";
+import { ChoiceSelect } from "@/components/ui/choice-select";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
@@ -135,22 +135,21 @@ export function SettingsPreferences({
                   {t("settings.language.description")}
                 </FieldDescription>
               </FieldContent>
-              <Select
+              <ChoiceSelect
                 data-testid="settings-language"
                 id="settings-language"
                 className="min-w-44"
                 value={language}
-                onChange={(event) => {
+                onValueChange={(value) => {
                   clearSaveFeedback();
-                  setLanguage(event.target.value as LanguagePreference);
+                  setLanguage(value as LanguagePreference);
                 }}
-              >
-                <option value="system">{t("settings.language.system")}</option>
-                <option value="en-US">{t("settings.language.english")}</option>
-                <option value="zh-CN">
-                  {t("settings.language.simplifiedChinese")}
-                </option>
-              </Select>
+                options={[
+                  { value: "system", label: t("settings.language.system") },
+                  { value: "en-US", label: t("settings.language.english") },
+                  { value: "zh-CN", label: t("settings.language.simplifiedChinese") },
+                ]}
+              />
             </Field>
             <Separator />
             <Field orientation="responsive" className="px-6 py-5">
@@ -162,20 +161,21 @@ export function SettingsPreferences({
                   {t("settings.theme.description")}
                 </FieldDescription>
               </FieldContent>
-              <Select
+              <ChoiceSelect
                 data-testid="settings-theme"
                 id="settings-theme"
                 className="min-w-44"
                 value={theme}
-                onChange={(event) => {
+                onValueChange={(value) => {
                   clearSaveFeedback();
-                  setTheme(event.target.value as ThemePreference);
+                  setTheme(value as ThemePreference);
                 }}
-              >
-                <option value="system">{t("settings.theme.system")}</option>
-                <option value="light">{t("settings.theme.light")}</option>
-                <option value="dark">{t("settings.theme.dark")}</option>
-              </Select>
+                options={[
+                  { value: "system", label: t("settings.theme.system") },
+                  { value: "light", label: t("settings.theme.light") },
+                  { value: "dark", label: t("settings.theme.dark") },
+                ]}
+              />
             </Field>
             <Separator />
             <Field orientation="responsive" className="px-6 py-5">
@@ -187,19 +187,23 @@ export function SettingsPreferences({
                   {t("settings.closeBehavior.description")}
                 </FieldDescription>
               </FieldContent>
-              <Select
+              <ChoiceSelect
                 id="settings-close-behavior"
                 data-testid="settings-close-behavior"
                 className="min-w-44"
                 value={closeBehavior}
-                onChange={(event) => {
+                onValueChange={(value) => {
                   clearSaveFeedback();
-                  setCloseBehavior(event.target.value as CloseBehavior);
+                  setCloseBehavior(value as CloseBehavior);
                 }}
-              >
-                <option value="hide_to_tray">{t("settings.closeBehavior.hideToTray")}</option>
-                <option value="quit">{t("settings.closeBehavior.quit")}</option>
-              </Select>
+                options={[
+                  {
+                    value: "hide_to_tray",
+                    label: t("settings.closeBehavior.hideToTray"),
+                  },
+                  { value: "quit", label: t("settings.closeBehavior.quit") },
+                ]}
+              />
             </Field>
             <Separator />
             <Field orientation="responsive" className="px-6 py-5">

@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "./select-options.ts";
 import { test, expect, type Page } from "@playwright/test";
 import assert from "node:assert/strict";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
@@ -51,7 +52,9 @@ test("parent-operations", async () => {
     let dialog = page.locator('[data-testid="parent-operation-dialog"]');
     await dialog.waitFor({ timeout: 3_000, state: 'visible' });
     const repository = dialog.locator('#parent-operation-repository');
-    assert.equal((await repository.locator('option').all()).length, 1, "Repository selector must exclude unavailable and read-only locations");
+    await repository.click();
+    await expect(page.getByRole("option")).toHaveCount(1);
+    await page.keyboard.press("Escape");
     assert.match(await repository.innerText(), /fixture-repository/);
     const rebase = dialog.locator("button:text-is(\"Rebase (Recommended)\")");
     const merge = dialog.locator("button:text-is(\"Merge\")");
@@ -59,7 +62,7 @@ test("parent-operations", async () => {
     await merge.click();
     await (dialog.locator('[data-testid="start-parent-operation"]')).click();
     await expect.poll(async () => (await dialog.innerText()).includes("Resolve with AI"), { timeout: 3_000 }).toBeTruthy();
-    await dialog.getByRole("combobox", { name: "Agent", exact: true }).selectOption("claude_code");
+    await chooseSelectOption(page, dialog.getByRole("combobox", { name: "Agent", exact: true }), "Claude Code");
     await (dialog.locator("button:text-is(\"Resolve with AI\")")).click();
     await expect.poll(async () => (await dialog.innerText()).includes("Open Session"), { timeout: 3_000 }).toBeTruthy();
     await (dialog.locator("button:text-is(\"Close\")")).click();

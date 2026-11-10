@@ -9,10 +9,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+import { ChoiceSelect } from "@/components/ui/choice-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { useAgentCatalog } from "@/features/agents/useAgentCatalog";
@@ -120,26 +117,22 @@ export function SettingsAiCommit({
           <FieldLabel htmlFor="ai-commit-preset">
             {t("aiCommit.preset")}
           </FieldLabel>
-          <NativeSelect
+          <ChoiceSelect
             id="ai-commit-preset"
             value={selected}
             disabled={disabled || !available.length}
-            onChange={(event) => {
-              const preset = available.find(
-                (preset) => preset.kind === event.target.value,
-              );
+            onValueChange={(presetKind) => {
+              const preset = available.find((preset) => preset.kind === presetKind);
               if (preset) onChange({ ...value, command: preset.command });
             }}
-          >
-            <NativeSelectOption value="">
-              {t(value.command ? "aiCommit.custom" : "aiCommit.choosePreset")}
-            </NativeSelectOption>
-            {available.map((preset) => (
-              <NativeSelectOption key={preset.kind} value={preset.kind}>
-                {preset.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            options={[
+              {
+                value: "",
+                label: t(value.command ? "aiCommit.custom" : "aiCommit.choosePreset"),
+              },
+              ...available.map((preset) => ({ value: preset.kind, label: preset.name })),
+            ]}
+          />
           <FieldDescription>{t("aiCommit.presetHint")}</FieldDescription>
         </Field>
         <Field>

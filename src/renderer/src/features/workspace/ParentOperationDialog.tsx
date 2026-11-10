@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ChoiceSelect } from "@/components/ui/choice-select";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type {
@@ -148,19 +148,17 @@ export function ParentOperationDialog({
         <FieldGroup>
           <Field>
             <FieldLabel htmlFor="parent-operation-repository">{t("workspaceUi.repository")}</FieldLabel>
-            <NativeSelect
+            <ChoiceSelect
               id="parent-operation-repository"
               className="w-full"
               value={repositoryId}
               disabled={busy && !preview}
-              onChange={(event) => setRepositoryId(event.target.value)}
-            >
-              {repositories.map((repository) => (
-                <NativeSelectOption key={repository.id} value={repository.id}>
-                  {repository.repository_name}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
+              onValueChange={(value) => setRepositoryId(value)}
+              options={repositories.map((repository) => ({
+                value: repository.id,
+                label: repository.repository_name,
+              }))}
+            />
           </Field>
 
           {canStart && (

@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "./select-options.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { startUiHarness } from "./ui-harness.ts";
 import { createUiSession, closeUiSession } from "./harness/session.ts";
@@ -259,7 +260,7 @@ test("settings Save sends only edited fields and supports resetting overrides", 
     await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
     const theme = page.getByTestId("settings-theme");
-    await theme.selectOption("dark");
+    await chooseSelectOption(page, theme, "Dark");
     const saved = page.waitForRequest(
       (request) =>
         request.method() === "PATCH" && request.url().endsWith("/api/settings"),
@@ -268,8 +269,8 @@ test("settings Save sends only edited fields and supports resetting overrides", 
     expect((await saved).postDataJSON()).toEqual({ theme: "dark" });
     await expect(page.getByTestId("settings-save")).toBeEnabled();
     const closeBehavior = page.getByRole("combobox", { name: "When closing the window" });
-    await expect(closeBehavior).toHaveValue("hide_to_tray");
-    await closeBehavior.selectOption("quit");
+    await expect(closeBehavior).toHaveText("Hide to tray");
+    await chooseSelectOption(page, closeBehavior, "Quit app");
     const savedCloseBehavior = page.waitForRequest(request =>
       request.method() === "PATCH" && request.url().endsWith("/api/settings"),
     );
@@ -279,7 +280,7 @@ test("settings Save sends only edited fields and supports resetting overrides", 
     await page.keyboard.press("Escape");
     await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
-    await expect(closeBehavior).toHaveValue("quit");
+    await expect(closeBehavior).toHaveText("Quit app");
     await page
       .getByRole("button", { name: "Reset settings", exact: true })
       .click();
@@ -287,7 +288,7 @@ test("settings Save sends only edited fields and supports resetting overrides", 
       name: "Reset settings?",
     });
     await expect(confirmation).toBeVisible();
-    await expect(theme).toHaveValue("dark");
+    await expect(theme).toHaveText("Dark");
     await page.screenshot({
       path: "/tmp/treefold-settings-reset-confirm.png",
       animations: "disabled",
@@ -317,8 +318,8 @@ test("settings Save sends only edited fields and supports resetting overrides", 
       ],
     });
     await expect(confirmation).toHaveCount(0);
-    await expect(theme).toHaveValue("system");
-    await expect(page.getByTestId("settings-close-behavior")).toHaveValue("hide_to_tray");
+    await expect(theme).toHaveText("Follow system");
+    await expect(page.getByTestId("settings-close-behavior")).toHaveText("Hide to tray");
     const afterReset = await (await page.request.get(`${harness.apiUrl}/api/settings`)).json();
     expect(afterReset.agents.codex.command).toContain("--model gpt-5.4");
     await page.screenshot({ path: "/tmp/treefold-preferences.png" });

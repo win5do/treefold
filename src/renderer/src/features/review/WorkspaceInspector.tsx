@@ -14,7 +14,7 @@ import { useInspectorRefresh, type InspectorTab } from "./useInspectorRefresh";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { ChoiceSelect } from "@/components/ui/choice-select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   ContextMenu,
@@ -93,9 +93,21 @@ export function WorkspaceInspector({ open, project, workspace, session, gitChang
 
   return <aside data-testid="right-sidebar" aria-hidden={!open} inert={!open} className={cn("absolute inset-y-0 right-0 z-20 flex w-[min(88vw,340px)] shrink-0 flex-col border-l border-border bg-background shadow-2xl transition-transform duration-200 ease-out lg:shadow-none", open ? "translate-x-0" : "translate-x-full pointer-events-none")}>
     <div className="shrink-0 border-b border-border p-2">
-      <NativeSelect aria-label={t("reviewUi.gitRepository")} data-testid="git-repository" value={activeHistoryRepositoryId} disabled={historyRepositories.length <= 1} onChange={(event) => setHistoryRepositoryId(event.target.value)}>
-        {historyRepositories.length === 0 ? <NativeSelectOption value="">{t("reviewUi.noGitRepositories")}</NativeSelectOption> : historyRepositories.map((repository) => <NativeSelectOption key={repository.id} value={repository.id}>{repository.name}</NativeSelectOption>)}
-      </NativeSelect>
+      <ChoiceSelect
+        aria-label={t("reviewUi.gitRepository")}
+        data-testid="git-repository"
+        value={activeHistoryRepositoryId}
+        disabled={historyRepositories.length <= 1}
+        onValueChange={(value) => setHistoryRepositoryId(value)}
+        options={
+          historyRepositories.length === 0
+            ? [{ value: "", label: t("reviewUi.noGitRepositories") }]
+            : historyRepositories.map((repository) => ({
+                value: repository.id,
+                label: repository.name,
+              }))
+        }
+      />
     </div>
     <div className="flex h-11 shrink-0 items-stretch border-b border-border">
       <div className="flex min-w-0 flex-1" role="tablist" aria-label={t("reviewUi.sidebarSections")}>
@@ -303,11 +315,17 @@ function GitHistoryPanel({ repositoryKind, repositories, repositoryId, history, 
       {pendingAction && <div className="rounded-lg bg-muted p-3"><p className="break-words font-medium">{pendingAction.commit.subject}</p><code className="mt-1 block text-[10px] text-muted-foreground">{pendingAction.commit.short_hash}</code></div>}
       {pendingAction?.kind === "reset" && <div className="flex flex-col gap-2">
         <label htmlFor="git-reset-mode" className="font-medium">{t("reviewUi.resetStrategy")}</label>
-        <NativeSelect id="git-reset-mode" value={resetMode} disabled={actionPending} onChange={(event) => setResetMode(event.target.value as "soft" | "mixed" | "hard")}>
-          <NativeSelectOption value="soft">{t("reviewUi.softKeepChangesStaged")}</NativeSelectOption>
-          <NativeSelectOption value="mixed">{t("reviewUi.mixedKeepChangesUnstaged")}</NativeSelectOption>
-          <NativeSelectOption value="hard">{t("reviewUi.hardDiscardTrackedChanges")}</NativeSelectOption>
-        </NativeSelect>
+        <ChoiceSelect
+          id="git-reset-mode"
+          value={resetMode}
+          disabled={actionPending}
+          onValueChange={(value) => setResetMode(value as "soft" | "mixed" | "hard")}
+          options={[
+            { value: "soft", label: t("reviewUi.softKeepChangesStaged") },
+            { value: "mixed", label: t("reviewUi.mixedKeepChangesUnstaged") },
+            { value: "hard", label: t("reviewUi.hardDiscardTrackedChanges") },
+          ]}
+        />
         {resetMode === "hard" && <p className="text-destructive">{t("reviewUi.hardResetWarning")}</p>}
       </div>}
       {actionError && <p role="alert" className="text-destructive">{actionError}</p>}

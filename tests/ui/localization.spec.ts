@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "./select-options.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { startUiHarness } from "./ui-harness.ts";
 import { createUiSession, closeUiSession } from "./harness/session.ts";
@@ -12,7 +13,7 @@ test("language changes persist and localized actions remain searchable and keybo
     await expect(page.getByTestId("application-menu-trigger")).toHaveAccessibleName("Application menu");
     await page.getByTestId("application-menu-trigger").click();
     await page.getByTestId("open-settings").click();
-    await page.getByTestId("settings-language").selectOption("zh-CN");
+    await chooseSelectOption(page, page.getByTestId("settings-language"), "简体中文");
     await page.getByTestId("settings-save").click();
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     await expect(page.getByRole("dialog", { name: "设置", exact: true })).toBeVisible();
@@ -41,7 +42,7 @@ test("language changes persist and localized actions remain searchable and keybo
     await page.getByPlaceholder("搜索命令或快捷键").fill("关闭 Session");
     await expect(page.getByTestId("keymap-session.close")).toBeVisible();
     await page.getByRole("button", { name: "偏好设置", exact: true }).click();
-    await page.getByTestId("settings-language").selectOption("en-US");
+    await chooseSelectOption(page, page.getByTestId("settings-language"), "English");
     await page.getByTestId("settings-save").click();
     await expect(page.getByRole("dialog", { name: "Settings", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");

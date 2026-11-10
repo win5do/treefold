@@ -17,7 +17,7 @@ import {
   FieldSet,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-select";
+import { ChoiceSelect } from "@/components/ui/choice-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
@@ -294,30 +294,26 @@ function WorkspaceCreationForm({
                       <FieldLabel htmlFor={`workspace-remote-${id}`}>
                         {t("workspaceUi.remote")}
                       </FieldLabel>
-                      <NativeSelect
+                      <ChoiceSelect
                         id={`workspace-remote-${id}`}
                         name={`remote:${id}`}
                         value={active.remote}
                         disabled={busy || loading[id]}
-                        onChange={(event) =>
+                        onValueChange={(value) =>
                           update({
-                            remote: event.target.value,
-                            remoteBranch: event.target.value
-                              ? active.branch
-                              : "",
+                            remote: value,
+                            remoteBranch: value ? active.branch : "",
                             customRemoteBranch: false,
                           })
                         }
-                      >
-                        <option value="">
-                          {t("workspaceUi.configureBeforePush")}
-                        </option>
-                        {branches.remotes.map((remote) => (
-                          <option key={remote.name} value={remote.name}>
-                            {remote.name}
-                          </option>
-                        ))}
-                      </NativeSelect>
+                        options={[
+                          { value: "", label: t("workspaceUi.configureBeforePush") },
+                          ...branches.remotes.map((remote) => ({
+                            value: remote.name,
+                            label: remote.name,
+                          })),
+                        ]}
+                      />
                     </Field>
                     {active.remote && (
                       <Field data-invalid={issue === "upstreamInvalid"}>

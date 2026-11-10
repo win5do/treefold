@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "./select-options.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { FIXTURE_IDS } from "./fixtures/sidebar-core.ts";
 import { startUiHarness } from "./ui-harness.ts";
@@ -51,7 +52,7 @@ test("Workspace upstream can be unset and restored with a same-name branch, gati
     const dialog = page.getByRole("dialog");
     const remote = dialog.getByRole("combobox", { name: "Remote", exact: true });
     await expect(remote).toBeEnabled();
-    await expect(remote).toHaveValue("origin");
+    await expect(remote).toHaveText("origin");
     await dialog.locator('input[name="remote_branch"]').fill("feature/updated-fixture");
     await dialog.getByRole("button", { name: "Save upstream", exact: true }).click();
     await expect(dialog).toHaveCount(0);
@@ -59,7 +60,7 @@ test("Workspace upstream can be unset and restored with a same-name branch, gati
     expect(harness.workspaceLocationUpdates.at(-1)).toEqual({ id, remote_name: "origin", remote_branch: "feature/updated-fixture" });
     await clickUiElement(page, page.getByTestId(`workspace-location-actions-${id}-trigger`));
     await page.getByTestId(`workspace-location-upstream-${id}`).click();
-    await remote.selectOption("");
+    await chooseSelectOption(page, remote, "Not set");
     await dialog.getByRole("button", { name: "Save upstream", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect.poll(() => harness.workspaceLocationUpdates.at(-1)).toEqual({ id, remote_name: undefined, remote_branch: undefined });
@@ -80,8 +81,8 @@ test("Workspace upstream can be unset and restored with a same-name branch, gati
 
     await clickUiElement(page, page.getByTestId(`workspace-location-actions-${id}-trigger`));
     await page.getByTestId(`workspace-location-upstream-${id}`).click();
-    await expect(remote).toHaveValue("");
-    await remote.selectOption("origin");
+    await expect(remote).toHaveText("Not set");
+    await chooseSelectOption(page, remote, "origin");
     await expect(dialog.locator('input[name="remote_branch"]')).toHaveValue(branch!);
     await dialog.getByRole("button", { name: "Save upstream", exact: true }).click();
     await expect(dialog).toHaveCount(0);
@@ -110,8 +111,9 @@ test("Workspace upstream with no remotes offers only Not set", async () => {
     const dialog = page.getByRole("dialog");
     const remote = dialog.getByRole("combobox", { name: "Remote", exact: true });
     await expect(remote).toBeEnabled();
-    await expect(remote.getByRole("option")).toHaveCount(1);
-    await expect(remote.getByRole("option", { name: "Not set", exact: true })).toHaveAttribute("value", "");
+    await remote.click();
+    await expect(page.getByRole("option")).toHaveCount(1);
+    await page.getByRole("option", { name: "Not set", exact: true }).click();
     await dialog.getByRole("button", { name: "Save upstream", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(harness.workspaceLocationUpdates.at(-1)).toEqual({ id, remote_name: undefined, remote_branch: undefined });
@@ -160,7 +162,7 @@ test("Repository settings persist setup commands and the selected delivery remot
     await page.getByTestId(`project-repository-edit-${id}`).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("textbox", { name: "Worktree setup command", exact: true }).fill("npm install && npm run prepare");
-    await dialog.locator('select[name="base_remote"]').selectOption("origin");
+    await chooseSelectOption(page, dialog.getByLabel("Remote", { exact: false }), "origin");
     await dialog.getByRole("button", { name: "Save repository", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(harness.repositoryUpdateRequests.at(-1)).toMatchObject({ id, setup_command: "npm install && npm run prepare", preferred_remote_name: "origin" });
@@ -168,7 +170,7 @@ test("Repository settings persist setup commands and the selected delivery remot
     await page.getByTestId(`project-location-actions-${id}-trigger`).click();
     await page.getByTestId(`project-repository-edit-${id}`).click();
     await expect(dialog.getByRole("textbox", { name: "Worktree setup command", exact: true })).toHaveValue("npm install && npm run prepare");
-    await expect(dialog.locator('select[name="base_remote"]')).toHaveValue("origin");
+    await expect(dialog.getByLabel("Remote", { exact: false })).toHaveText("origin");
     harness.assertNoUnexpectedRequests();
   } finally {
     try { await closeUiSession(page); } finally { await harness.close(); }

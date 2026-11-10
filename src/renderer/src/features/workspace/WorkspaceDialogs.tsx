@@ -15,7 +15,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { NativeSelect as Select } from "@/components/ui/native-select";
+import { ChoiceSelect } from "@/components/ui/choice-select";
 import type {
   GitBranches,
   WorkspaceRepository,
@@ -85,20 +85,24 @@ export function ConfigureWorkspaceRepositoryDialog({
             <FieldGroup className="grid grid-cols-2 gap-3">
               <Field>
                 <FieldLabel htmlFor="workspace-upstream-remote">{t("workspaceUi.remote")}</FieldLabel>
-                <Select
+                <ChoiceSelect
                   id="workspace-upstream-remote"
                   name="remote_name"
                   value={remoteName}
                   disabled={busy || loading}
-                  onChange={(event) => {
-                    const remote = event.target.value;
+                  onValueChange={(value) => {
+                    const remote = value;
                     setRemoteName(remote);
-                    setRemoteBranch(remote ? location.branch ?? "" : "");
+                    setRemoteBranch(remote ? (location.branch ?? "") : "");
                   }}
-                >
-                  <option value="">{t("workspaceUi.configureBeforePush")}</option>
-                  {remotes.map((remote) => <option key={remote.name} value={remote.name}>{remote.name}</option>)}
-                </Select>
+                  options={[
+                    { value: "", label: t("workspaceUi.configureBeforePush") },
+                    ...remotes.map((remote) => ({
+                      value: remote.name,
+                      label: remote.name,
+                    })),
+                  ]}
+                />
               </Field>
               {remoteName ? <Field>
                 <FieldLabel htmlFor="workspace-upstream-branch">{t("workspaceUi.remoteFeatureBranch")}</FieldLabel>

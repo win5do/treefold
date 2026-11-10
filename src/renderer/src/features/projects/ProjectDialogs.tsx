@@ -26,7 +26,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { NativeSelect as Select } from "@/components/ui/native-select";
+import { ChoiceSelect } from "@/components/ui/choice-select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import type {
@@ -330,36 +330,42 @@ export function EditRepositoryDialog({
                 <Field>
                   <FieldLabel htmlFor="repository-base-remote">{t("projectsUi.remote")}<span className="text-muted-foreground">{t("projectsUi.optional")}</span>
                   </FieldLabel>
-                  <Select
+                  <ChoiceSelect
                     id="repository-base-remote"
                     className="w-full"
                     name="base_remote"
                     value={baseRemote}
-                    onChange={(event) => setBaseRemote(event.target.value)}
+                    onValueChange={(value) => setBaseRemote(value)}
                     disabled={busy || !branches}
-                  >
-                    <option value="">{t("projectsUi.none")}</option>
-                    {!branches && repository.preferred_remote_name && (
-                      <option value={repository.preferred_remote_name}>{t("projectsUi.loading")}</option>
-                    )}
-                    {branches &&
+                    options={[
+                      { value: "", label: t("projectsUi.none") },
+                      ...(!branches && repository.preferred_remote_name
+                        ? [
+                            {
+                              value: repository.preferred_remote_name,
+                              label: t("projectsUi.loading"),
+                            },
+                          ]
+                        : []),
+                      ...(branches &&
                       repository.preferred_remote_name &&
                       !branches.remotes.some(
-                        (remote) =>
-                          remote.name === repository.preferred_remote_name,
-                      ) && (
-                        <option
-                          value={repository.preferred_remote_name}
-                          disabled
-                        >
-                          {repository.preferred_remote_name}{t("projectsUi.notFound")}</option>
-                      )}
-                    {branches?.remotes.map((remote) => (
-                      <option key={remote.name} value={remote.name}>
-                        {remote.name}
-                      </option>
-                    ))}
-                  </Select>
+                        (remote) => remote.name === repository.preferred_remote_name,
+                      )
+                        ? [
+                            {
+                              value: repository.preferred_remote_name,
+                              label: `${repository.preferred_remote_name}${t("projectsUi.notFound")}`,
+                              disabled: true,
+                            },
+                          ]
+                        : []),
+                      ...(branches?.remotes.map((remote) => ({
+                        value: remote.name,
+                        label: remote.name,
+                      })) ?? []),
+                    ]}
+                  />
                 </Field>
               </div>
               {branchesError && (

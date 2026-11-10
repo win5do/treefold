@@ -1,3 +1,4 @@
+import { chooseSelectOption } from "./select-options.ts";
 import { test, expect, type Page } from "@playwright/test";
 import { startUiHarness } from "./ui-harness.ts";
 import {
@@ -57,9 +58,8 @@ test("AI Commit presets fill the command; testing does not gate saving or automa
       exact: true,
     });
     await settings.getByRole("button", { name: "Agents", exact: true }).click();
-    await settings
-      .getByLabel("Command preset", { exact: true })
-      .selectOption("codex");
+    await chooseSelectOption(page, settings
+      .getByLabel("Command preset", { exact: true }), "Codex");
     const command = settings.getByRole("textbox", {
       name: "Generation command",
       exact: true,
@@ -75,7 +75,7 @@ test("AI Commit presets fill the command; testing does not gate saving or automa
     await command.fill("my-command --custom");
     await expect(
       settings.getByLabel("Command preset", { exact: true }),
-    ).toHaveValue("");
+    ).toHaveText("Custom");
     outcome = "failed";
     await settings
       .getByRole("button", { name: "Test generation", exact: true })
