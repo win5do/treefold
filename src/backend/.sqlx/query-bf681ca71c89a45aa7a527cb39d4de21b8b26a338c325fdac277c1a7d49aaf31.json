@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,creation_error,worktree_id,checkout_path,creation_branch,base_branch,start_commit,forked_from_commit,worktree_ownership,creation_branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 21
+    },
+    "nullable": []
+  },
+  "hash": "bf681ca71c89a45aa7a527cb39d4de21b8b26a338c325fdac277c1a7d49aaf31"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO workspace_branch_upstreams(workspace_repository_id,branch,remote_name,remote_branch) VALUES(?,?,?,?) ON CONFLICT(workspace_repository_id,branch) DO UPDATE SET remote_name=excluded.remote_name,remote_branch=excluded.remote_branch",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "097811ea50440e9750d101466c872861cd742dae8d56eec21b40a38766d24ef2"
+}

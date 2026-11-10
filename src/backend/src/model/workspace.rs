@@ -118,7 +118,7 @@ pub struct Workspace {
     pub closed_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WorkspaceRepository {
     pub id: String,
     pub workspace_id: String,

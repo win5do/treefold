@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use super::workspace_git::WorkspaceRepositoryRecord;
 use super::{Store, now};
 use crate::{
     error::{AppError, Result},
@@ -7,7 +8,7 @@ use crate::{
 use sqlx::{Sqlite, Transaction};
 use std::path::Path;
 const W: &str = "default_delivery,id,project_id,name,description,status,kind,parent_workspace_id,runtime_id,runtime_name,created_at,updated_at";
-const WR: &str = "id,workspace_id,project_repository_id,repository_name,source_root,'read_write' AS access_mode,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,worktree_ownership,branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
+const WR: &str = "id,workspace_id,project_repository_id,repository_name,source_root,'read_write' AS access_mode,git_status,creation_error,worktree_id,checkout_path,creation_branch,base_branch,start_commit,forked_from_commit,worktree_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at";
 const WD: &str = "wd.id,wd.workspace_id,wd.project_directory_id,wd.workspace_repository_id,wd.name,wd.description,wd.relative_path,wd.external_path,wd.access_mode,wd.status,wd.created_at,wd.updated_at,wr.checkout_path,wr.source_root,(SELECT kind FROM workspaces WHERE id=wd.workspace_id) AS workspace_kind";
 #[derive(sqlx::FromRow)]
 struct WorkspaceRow {
@@ -120,8 +121,9 @@ impl Store {
             w.checkout_mode = "in_place".into();
             w.branch_ownership = "user".into()
         }
-        let r:Option<WorkspaceRepository>=sqlx::query_as(static_sql!("SELECT {WR} FROM workspace_repositories WHERE workspace_id=? ORDER BY git_status='ready' DESC,project_repository_id=(SELECT d.repository_id FROM workspaces w JOIN projects p ON p.id=w.project_id LEFT JOIN project_directories d ON d.id=p.default_directory_id WHERE w.id=workspace_repositories.workspace_id) DESC LIMIT 1")).bind(&w.id).fetch_optional(&self.pool).await?;
+        let r:Option<WorkspaceRepositoryRecord>=sqlx::query_as(static_sql!("SELECT {WR} FROM workspace_repositories WHERE workspace_id=? ORDER BY git_status='ready' DESC,project_repository_id=(SELECT d.repository_id FROM workspaces w JOIN projects p ON p.id=w.project_id LEFT JOIN project_directories d ON d.id=p.default_directory_id WHERE w.id=workspace_repositories.workspace_id) DESC LIMIT 1")).bind(&w.id).fetch_optional(&self.pool).await?;
         if let Some(r) = r {
+            let r = self.observe_workspace_repository(r).await?;
             w.project_directory_id = sqlx::query_scalar::<_, Option<String>>(
                 "SELECT default_directory_id FROM projects WHERE id=?",
             )
@@ -225,13 +227,21 @@ impl Store {
             let Some(repo) = repo else { continue };
             let(name,root):(String,String)=sqlx::query_as("SELECT name,source_root FROM project_repositories WHERE id=? AND deleted_at IS NULL").bind(&repo).fetch_one(&mut **tx).await?;
             sqlx::query!(
-                "INSERT OR IGNORE INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,creation_error,worktree_id,checkout_path,branch,base_branch,start_commit,forked_from_commit,remote_name,remote_branch,worktree_ownership,branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,creation_error,worktree_id,checkout_path,creation_branch,base_branch,start_commit,forked_from_commit,worktree_ownership,creation_branch_ownership,delivery_status,close_outcome,integrated_commit,closed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 v.id, w.id, repo, name, root, v.git_status, v.creation_error,
                 v.worktree_id, v.checkout_path, v.branch, v.base_branch,
-                v.start_commit, v.forked_from_commit, v.remote_name, v.remote_branch,
+                v.start_commit, v.forked_from_commit,
                 v.worktree_ownership, v.branch_ownership, v.delivery_status,
                 v.close_outcome, v.integrated_commit, v.closed_at, v.created_at, v.updated_at,
             ).execute(&mut **tx).await?;
+            if let Some(branch) = v.branch.as_deref() {
+                if v.branch_ownership == "managed" {
+                    sqlx::query!("INSERT OR IGNORE INTO workspace_managed_branches(workspace_repository_id,branch) VALUES(?,?)", v.id, branch).execute(&mut **tx).await?;
+                }
+                if v.remote_name.is_some() {
+                    sqlx::query!("INSERT OR REPLACE INTO workspace_branch_upstreams(workspace_repository_id,branch,remote_name,remote_branch) VALUES(?,?,?,?)", v.id, branch, v.remote_name, v.remote_branch).execute(&mut **tx).await?;
+                }
+            }
         }
         Ok(())
     }
@@ -322,23 +332,25 @@ impl Store {
         Ok(())
     }
     pub async fn workspace_repositories(&self, id: &str) -> Result<Vec<WorkspaceRepository>> {
-        Ok(sqlx::query_as(static_sql!(
+        let rows = sqlx::query_as(static_sql!(
             "SELECT {WR} FROM workspace_repositories WHERE workspace_id=? ORDER BY repository_name"
         ))
         .bind(id)
         .fetch_all(&self.pool)
-        .await?)
+        .await?;
+        self.observe_workspace_repositories(rows).await
     }
     pub async fn workspace_directories(&self, id: &str) -> Result<Vec<WorkspaceDirectory>> {
         Ok(sqlx::query_as::<_,WorkspaceDirectoryRow>(static_sql!("SELECT {WD} FROM workspace_directories wd LEFT JOIN workspace_repositories wr ON wr.id=wd.workspace_repository_id WHERE wd.workspace_id=? ORDER BY wd.name,wd.id")).bind(id).fetch_all(&self.pool).await?.into_iter().map(Into::into).collect())
     }
     pub async fn workspace_repository(&self, id: &str) -> Result<WorkspaceRepository> {
-        Ok(sqlx::query_as(static_sql!(
+        let row = sqlx::query_as(static_sql!(
             "SELECT {WR} FROM workspace_repositories WHERE id=?"
         ))
         .bind(id)
         .fetch_one(&self.pool)
-        .await?)
+        .await?;
+        self.observe_workspace_repository(row).await
     }
     pub async fn set_workspace_repository_creation_result(
         &self,
@@ -391,10 +403,12 @@ impl Store {
         .await?
         .flatten();
         let repo = repo.unwrap_or_else(|| id.to_owned());
-        Ok(sqlx::query_as(static_sql!("SELECT {WR} FROM workspace_repositories WHERE project_repository_id=? AND workspace_id IN (SELECT id FROM workspaces WHERE status='active') ORDER BY created_at")).bind(repo).fetch_all(&self.pool).await?)
+        let rows = sqlx::query_as(static_sql!("SELECT {WR} FROM workspace_repositories WHERE project_repository_id=? AND workspace_id IN (SELECT id FROM workspaces WHERE status='active') ORDER BY created_at")).bind(repo).fetch_all(&self.pool).await?;
+        self.observe_workspace_repositories(rows).await
     }
     pub async fn default_workspace_repository(&self, id: &str) -> Result<WorkspaceRepository> {
-        Ok(sqlx::query_as(static_sql!("SELECT {WR} FROM workspace_repositories WHERE workspace_id=? ORDER BY git_status='ready' DESC,project_repository_id=(SELECT d.repository_id FROM workspaces w JOIN projects p ON p.id=w.project_id LEFT JOIN project_directories d ON d.id=p.default_directory_id WHERE w.id=workspace_repositories.workspace_id) DESC LIMIT 1")).bind(id).fetch_one(&self.pool).await?)
+        let row = sqlx::query_as(static_sql!("SELECT {WR} FROM workspace_repositories WHERE workspace_id=? ORDER BY git_status='ready' DESC,project_repository_id=(SELECT d.repository_id FROM workspaces w JOIN projects p ON p.id=w.project_id LEFT JOIN project_directories d ON d.id=p.default_directory_id WHERE w.id=workspace_repositories.workspace_id) DESC LIMIT 1")).bind(id).fetch_one(&self.pool).await?;
+        self.observe_workspace_repository(row).await
     }
     pub(super) async fn resolve_workspace_repository_id(&self, id: &str) -> Result<String> {
         if let Some(r) = sqlx::query_scalar("SELECT id FROM workspace_repositories WHERE id=?")

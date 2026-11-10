@@ -533,6 +533,10 @@ export function ProjectRepositoryTreeRow({
           </button>
           {!readOnly && (
             <div className="flex shrink-0 gap-1">
+              <Button variant="outline" size="sm" disabled={busy || repository.git_status !== "ready"}
+                onClick={onOpenBranches} data-testid={`project-switch-branch-${repository.id}`}>
+                <GitBranch data-icon="inline-start" />{t("branchSwitch.switch")}
+              </Button>
               <ActionMenu
                 label={t("projectsUi.actionsForRepository", { name: repository.name })}
                 testId={`project-location-actions-${repository.id}`}

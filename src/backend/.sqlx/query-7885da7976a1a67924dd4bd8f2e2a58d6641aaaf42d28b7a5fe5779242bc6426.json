@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR IGNORE INTO workspace_managed_branches(workspace_repository_id,branch) VALUES(?,?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7885da7976a1a67924dd4bd8f2e2a58d6641aaaf42d28b7a5fe5779242bc6426"
+}

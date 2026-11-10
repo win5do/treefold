@@ -4,6 +4,7 @@ use super::{GitCommit, WorkspaceRepository};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeliveryPreflight {
+    pub source_branch: String,
     pub id: String,
     pub workspace_repository_id: String,
     #[serde(skip)]

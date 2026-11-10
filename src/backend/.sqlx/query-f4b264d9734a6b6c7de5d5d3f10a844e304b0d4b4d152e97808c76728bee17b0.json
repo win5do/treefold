@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT branch FROM workspace_managed_branches WHERE workspace_repository_id=? AND branch=?",
+  "describe": {
+    "columns": [
+      {
+        "name": "branch",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "workspace_managed_branches",
+            "name": "branch"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f4b264d9734a6b6c7de5d5d3f10a844e304b0d4b4d152e97808c76728bee17b0"
+}

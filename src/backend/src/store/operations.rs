@@ -121,6 +121,7 @@ impl From<ParentOperationRow> for ParentOperation {
 }
 #[derive(sqlx::FromRow)]
 struct PreflightRow {
+    source_branch: String,
     id: String,
     workspace_repository_id: String,
     code_action: String,
@@ -143,6 +144,7 @@ impl TryFrom<PreflightRow> for DeliveryPreflight {
     type Error = AppError;
     fn try_from(r: PreflightRow) -> Result<Self> {
         Ok(Self {
+            source_branch: r.source_branch,
             id: r.id,
             workspace_id: r.workspace_repository_id.clone(),
             workspace_repository_id: r.workspace_repository_id,
@@ -184,10 +186,11 @@ impl Store {
         remote_branch: Option<&str>,
     ) -> Result<()> {
         let id = self.resolve_workspace_repository_id(id).await?;
-        let r=sqlx::query("UPDATE workspace_repositories SET remote_name=?,remote_branch=?,updated_at=? WHERE id=?").bind(remote_name).bind(remote_branch).bind(now()).bind(id).execute(&self.pool).await?;
-        if r.rows_affected() == 0 {
-            return Err(AppError::NotFound);
-        }
+        let location = self.workspace_repository(&id).await?;
+        let branch = location
+            .branch
+            .ok_or_else(|| AppError::BadRequest("Checkout must be on a branch".into()))?;
+        sqlx::query!("INSERT INTO workspace_branch_upstreams(workspace_repository_id,branch,remote_name,remote_branch) VALUES(?,?,?,?) ON CONFLICT(workspace_repository_id,branch) DO UPDATE SET remote_name=excluded.remote_name,remote_branch=excluded.remote_branch", id, branch, remote_name, remote_branch).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn delivery_operation(&self, id: &str) -> Result<Option<DeliveryOperation>> {
@@ -288,11 +291,11 @@ impl Store {
         Ok(())
     }
     pub async fn create_delivery_preflight(&self, p: &DeliveryPreflight) -> Result<()> {
-        sqlx::query("INSERT INTO delivery_preflights(id,workspace_repository_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&p.id).bind(&p.workspace_repository_id).bind(&p.code_action).bind(&p.source_head).bind(&p.target_head).bind(&p.target_branch).bind(&p.source_status).bind(p.source_dirty).bind(p.target_dirty).bind(p.ahead).bind(p.behind).bind(serde_json::to_string(&p.changed_files).map_err(anyhow::Error::from)?).bind(serde_json::to_string(&p.commits).map_err(anyhow::Error::from)?).bind(&p.diff_stat).bind(serde_json::to_string(&p.blockers).map_err(anyhow::Error::from)?).bind(serde_json::to_string(&p.warnings).map_err(anyhow::Error::from)?).bind(&p.created_at).execute(&self.pool).await?;
+        sqlx::query("INSERT INTO delivery_preflights(source_branch,id,workspace_repository_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(&p.source_branch).bind(&p.id).bind(&p.workspace_repository_id).bind(&p.code_action).bind(&p.source_head).bind(&p.target_head).bind(&p.target_branch).bind(&p.source_status).bind(p.source_dirty).bind(p.target_dirty).bind(p.ahead).bind(p.behind).bind(serde_json::to_string(&p.changed_files).map_err(anyhow::Error::from)?).bind(serde_json::to_string(&p.commits).map_err(anyhow::Error::from)?).bind(&p.diff_stat).bind(serde_json::to_string(&p.blockers).map_err(anyhow::Error::from)?).bind(serde_json::to_string(&p.warnings).map_err(anyhow::Error::from)?).bind(&p.created_at).execute(&self.pool).await?;
         Ok(())
     }
     pub async fn delivery_preflight(&self, id: &str) -> Result<DeliveryPreflight> {
-        let r:PreflightRow=sqlx::query_as("SELECT id,workspace_repository_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at FROM delivery_preflights WHERE id=?").bind(id).fetch_one(&self.pool).await?;
+        let r:PreflightRow=sqlx::query_as("SELECT source_branch,id,workspace_repository_id,code_action,source_head,target_head,target_branch,source_status,source_dirty,target_dirty,ahead,behind,changed_files,commits,diff_stat,blockers,warnings,created_at FROM delivery_preflights WHERE id=?").bind(id).fetch_one(&self.pool).await?;
         r.try_into()
     }
 }

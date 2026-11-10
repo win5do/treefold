@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT OR REPLACE INTO workspace_branch_upstreams(workspace_repository_id,branch,remote_name,remote_branch) VALUES(?,?,?,?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "22d7483bd71a6238e4963115ae021c9cae57fe1383fec03521e6818a748891dd"
+}

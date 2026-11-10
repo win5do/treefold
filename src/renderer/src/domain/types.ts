@@ -489,6 +489,7 @@ export type CreateWorkspaceInput = {
   repositories: RepositoryCheckout[];
 };
 export type GitBranches = {
+  head?: string | null;
   upstreams?: Record<string, BranchUpstream>;
   occupied?: Record<string, string>;
   current_remote?: string | null;

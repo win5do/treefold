@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id FROM parent_operations WHERE source_repository_id=? AND (source_path=? OR target_path=?) AND status IN ('active','conflicted','resolving','recovery_required') LIMIT 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "parent_operations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b7ee0bb924fedc6d806def52a48d3611d614e47fc80535f816d681e6e42a43ea"
+}

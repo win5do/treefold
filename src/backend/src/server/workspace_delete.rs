@@ -1,7 +1,7 @@
 use super::{
     AppError, AppState, AxumPath, Query, Result, State, StatusCode, WorkspaceRepository,
-    blocking_git_operation_for, command_output, ensure_checked_out_branch, ensure_clean_workspace,
-    git_is_ancestor, git_operation_in_progress, git_ref_names, git_worktrees, normalized_path,
+    blocking_git_operation_for, command_output, ensure_clean_workspace, git_is_ancestor,
+    git_operation_in_progress, git_ref_names, git_worktrees, normalized_path,
     remove_worktree_if_present,
 };
 use crate::model::{WorkspaceDeleteBranch, WorkspaceDeletePrecheck};
@@ -28,6 +28,7 @@ struct CheckoutCleanup {
     common_dir: String,
     managed_root: PathBuf,
     delete_branch: bool,
+    branch: Option<String>,
     merged_only: bool,
     parent_branch: Option<String>,
 }
@@ -103,17 +104,28 @@ async fn collect_cleanups(
                 } else {
                     None
                 };
-                cleanups.push(CheckoutCleanup {
-                    workspace_name: target.name.clone(),
-                    merged_only,
-                    parent_branch,
-                    delete_branch: options.delete_branches
-                        && location.branch_ownership == "managed",
-                    location,
-                    repository: repository.source_root,
-                    common_dir: repository.git_common_dir,
-                    managed_root: state.settings.treefold_home().join("git/w"),
-                });
+                let managed = state.store.managed_workspace_branches(&location.id).await?;
+                let branches: Vec<Option<String>> =
+                    if options.delete_branches && !managed.is_empty() {
+                        managed.into_iter().map(Some).collect()
+                    } else {
+                        vec![None]
+                    };
+                for branch in branches {
+                    let delete_branch = branch.is_some();
+                    let branch = branch.or_else(|| location.branch.clone());
+                    cleanups.push(CheckoutCleanup {
+                        workspace_name: target.name.clone(),
+                        merged_only,
+                        parent_branch: parent_branch.clone(),
+                        delete_branch,
+                        branch,
+                        location: location.clone(),
+                        repository: repository.source_root.clone(),
+                        common_dir: repository.git_common_dir.clone(),
+                        managed_root: state.settings.treefold_home().join("git/w"),
+                    });
+                }
             }
         }
     }
@@ -148,19 +160,24 @@ fn precheck_result(
     let mut undelivered_branches = Vec::new();
     let mut snapshot = Vec::new();
     for (cleanup, check) in cleanups.iter().zip(checked) {
-        snapshot.push((&cleanup.location.id, &check.head, check.undelivered_commits));
+        snapshot.push((
+            &cleanup.location.id,
+            &cleanup.branch,
+            &check.head,
+            check.undelivered_commits,
+        ));
         if check.undelivered_commits > 0 {
             undelivered_branches.push(WorkspaceDeleteBranch {
                 workspace_name: cleanup.workspace_name.clone(),
                 repository_name: cleanup.location.repository_name.clone(),
-                branch: cleanup.location.branch.clone().unwrap(),
+                branch: cleanup.branch.clone().unwrap(),
                 head: check.head.clone().unwrap(),
                 commit_count: check.undelivered_commits,
             });
         }
     }
     // Bind approval to the complete cascade, including currently delivered branches.
-    snapshot.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    snapshot.sort_unstable();
     let discard_token = (!undelivered_branches.is_empty()).then(|| {
         let bytes = serde_json::to_vec(&(id, snapshot)).expect("serializable deletion snapshot");
         format!("{:x}", Sha256::digest(bytes))
@@ -225,7 +242,7 @@ pub(super) async fn delete_workspace_locked(
             if cleanup.delete_branch
                 && let Some(head) = current.head
             {
-                let branch = cleanup.location.branch.as_deref().unwrap();
+                let branch = cleanup.branch.as_deref().unwrap();
                 // Git's expected-value check refuses a concurrent new commit.
                 command_output(
                     Path::new(&cleanup.repository),
@@ -279,11 +296,14 @@ async fn check_cleanup(state: &AppState, cleanup: &CheckoutCleanup) -> Result<Ch
             ));
         }
         ensure_clean_workspace(path, &location.repository_name)?;
-        ensure_checked_out_branch(
-            path,
-            location.branch.as_deref().unwrap_or(""),
-            "Workspace Repository",
-        )?;
+        // Branch cleanup uses recorded ownership, independently of the current checkout.
+        // Detached commits may have no surviving ref after worktree removal.
+        if command_output(Path::new(path), "git", &["symbolic-ref", "--quiet", "HEAD"]).is_err() {
+            return Err(AppError::BadRequest(
+                "Keep the working directory or attach its detached HEAD to a branch before cleanup"
+                    .into(),
+            ));
+        }
         if git_operation_in_progress(path)? {
             return Err(AppError::BadRequest(
                 "Finish or abort the in-progress Git operation before deleting its worktree".into(),
@@ -296,7 +316,7 @@ async fn check_cleanup(state: &AppState, cleanup: &CheckoutCleanup) -> Result<Ch
             undelivered_commits: 0,
         });
     }
-    let branch = location
+    let branch = cleanup
         .branch
         .as_deref()
         .ok_or_else(|| AppError::BadRequest("Repository has no recorded branch".into()))?;

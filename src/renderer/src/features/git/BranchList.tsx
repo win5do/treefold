@@ -64,6 +64,7 @@ export function BranchList({
   loading = false,
   error = "",
   busy = false,
+  compact = false,
   onRefresh,
   renderBranch,
 }: {
@@ -71,6 +72,7 @@ export function BranchList({
   loading?: boolean;
   error?: string;
   busy?: boolean;
+  compact?: boolean;
   onRefresh: () => void;
   renderBranch: (target: GitBranchRef, current: boolean) => ReactNode;
 }) {
@@ -139,7 +141,7 @@ export function BranchList({
       <div
         data-testid="repository-branches"
         aria-busy={loading}
-        className="h-[min(24rem,50dvh)] shrink-0 overflow-y-auto rounded-lg border border-border p-1 [scrollbar-gutter:stable]"
+        className={cn("shrink-0 overflow-y-auto rounded-lg border border-border p-1 [scrollbar-gutter:stable]", compact ? "h-[min(12rem,25dvh)]" : "h-[min(24rem,50dvh)]")}
       >
         {error && (
           <p role="alert" className="px-2 py-1 text-xs text-destructive">

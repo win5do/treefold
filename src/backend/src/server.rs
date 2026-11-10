@@ -435,6 +435,14 @@ fn app(state: AppState) -> Router {
             get(list_directory_branches).delete(delete_directory_branch),
         )
         .route(
+            "/api/workspace-repositories/{id}/branches",
+            get(branch_checkout::workspace_branches),
+        )
+        .route(
+            "/api/workspace-repositories/{id}/checkout",
+            post(branch_checkout::workspace_checkout),
+        )
+        .route(
             "/api/project-repositories/{id}/checkout",
             post(checkout_directory_branch),
         )
@@ -716,6 +724,7 @@ mod workspace_delete;
 mod workspace_lifecycle;
 use workspace_delete::delete_workspace;
 mod agent_review;
+mod branch_checkout;
 mod project_creation;
 mod project_open;
 mod project_status;

@@ -22,6 +22,7 @@ mod operations;
 mod projects;
 mod sessions;
 mod todos;
+mod workspace_git;
 mod workspaces;
 
 pub(crate) use operations::ParentOperationUpdate;
@@ -446,6 +447,44 @@ mod tests {
         assert_eq!(operation.commit_message, None);
         assert_eq!(operation.source_head, "source");
         assert_eq!(operation.status, "conflicted");
+        store.pool.close().await;
+    }
+
+    #[tokio::test]
+    async fn branch_resources_migration_preserves_ownership_and_delivery_settings() {
+        let data = tempfile::tempdir().unwrap();
+        let old_migrations = tempfile::tempdir().unwrap();
+        std::fs::copy(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations/g2/20261004013417_initial.sql"),
+            old_migrations.path().join("20261004013417_initial.sql"),
+        )
+        .unwrap();
+        let options = SqliteConnectOptions::new()
+            .filename(data.path().join(CURRENT_DATABASE_FILENAME))
+            .create_if_missing(true);
+        let mut connection = SqliteConnection::connect_with(&options).await.unwrap();
+        sqlx::migrate::Migrator::new(old_migrations.path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        sqlx::raw_sql("INSERT INTO projects(id,name,created_at,updated_at) VALUES('p','P','','');
+            INSERT INTO project_repositories(id,project_id,name,source_root,git_common_dir,created_at,updated_at) VALUES('r','p','R','/missing-repo','/missing-repo/.git','','');
+            INSERT INTO workspaces(id,project_id,name,status,created_at,updated_at) VALUES('w','p','W','active','','');
+            INSERT INTO workspace_repositories(id,workspace_id,project_repository_id,repository_name,source_root,git_status,branch,branch_ownership,remote_name,remote_branch,created_at,updated_at) VALUES('wr','w','r','R','/missing-repo','ready','original','managed','origin','publish','','');")
+            .execute(&mut connection).await.unwrap();
+        connection.close().await.unwrap();
+        let store = Store::open(data.path()).await.unwrap();
+        assert_eq!(
+            store.managed_workspace_branches("wr").await.unwrap(),
+            vec!["original"]
+        );
+        let upstream = sqlx::query!("SELECT remote_name,remote_branch FROM workspace_branch_upstreams WHERE workspace_repository_id='wr' AND branch='original'").fetch_one(&store.pool).await.unwrap();
+        assert_eq!(upstream.remote_name.as_deref(), Some("origin"));
+        assert_eq!(upstream.remote_branch.as_deref(), Some("publish"));
+        // Missing Git state must not pretend that the historical branch is current.
+        assert_eq!(store.workspace_repository("wr").await.unwrap().branch, None);
         store.pool.close().await;
     }
 

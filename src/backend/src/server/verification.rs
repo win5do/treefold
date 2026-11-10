@@ -46,6 +46,7 @@ pub(super) async fn create_workspace_repository_preflight_impl(
         // that will be retained (or explicitly cleaned up by the finish plan).
         let source_dirty = !source_status.is_empty();
         let preflight = DeliveryPreflight {
+            source_branch: source_branch.to_owned(),
             id: new_id(),
             workspace_repository_id: location.id,
             workspace_id: workspace.id,
@@ -196,6 +197,7 @@ pub(super) async fn create_workspace_repository_preflight_impl(
     let source_dirty = !source_status.is_empty();
     let target_dirty = !target_status.is_empty();
     let preflight = DeliveryPreflight {
+        source_branch: source_branch.to_owned(),
         id: new_id(),
         workspace_repository_id: location.id.clone(),
         workspace_id: workspace.id,
@@ -296,7 +298,8 @@ pub(super) async fn validate_preflight_snapshot(
             &["status", "--porcelain", "--untracked-files=all"],
         )
         .map_err(AppError::BadRequest)?;
-        if preflight.source_head != source_head
+        if preflight.source_branch != workspace.branch
+            || preflight.source_head != source_head
             || preflight.source_status != source_status
             || preflight.target_head != remote_head
         {
@@ -324,7 +327,8 @@ pub(super) async fn validate_preflight_snapshot(
         &["status", "--porcelain", "--untracked-files=all"],
     )
     .map_err(AppError::BadRequest)?;
-    if preflight.source_head != source_head
+    if preflight.source_branch != workspace.branch
+        || preflight.source_head != source_head
         || preflight.target_head != target_head
         || preflight.target_branch != target_branch
         || preflight.source_status != source_status

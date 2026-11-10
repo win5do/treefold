@@ -4,9 +4,8 @@ import { startUiHarness } from "./ui-harness.ts";
 import { closeUiSession, createUiSession } from "./harness/session.ts";
 
 async function openBranches(page: Page) {
-  await page.getByTestId(`project-location-actions-${FIXTURE_IDS.primaryRepository}-trigger`).click();
-  await page.getByTestId(`project-repository-branches-${FIXTURE_IDS.primaryRepository}`).click();
-  return page.getByRole("dialog", { name: "Branch", exact: true });
+  await page.getByTestId(`project-switch-branch-${FIXTURE_IDS.primaryRepository}`).click();
+  return page.getByRole("dialog", { name: "Switch branch", exact: true });
 }
 
 test("branch search filters local and remote refs, clears, and preserves checkout targets", async () => {
@@ -43,9 +42,8 @@ test("branch search filters local and remote refs, clears, and preserves checkou
     await expect(local).toHaveCount(0);
     await dialog.getByTestId("branch-remote-origin/feature/ui-fixture").click();
     const checkout = page.waitForRequest((request) => request.url().endsWith("/checkout") && request.method() === "POST");
-    await page.getByTestId("branch-actions-remote-origin/feature/ui-fixture")
-      .getByRole("button", { name: "Switch", exact: true }).click();
-    expect((await checkout).postDataJSON()).toEqual({ branch: "feature/ui-fixture", kind: "remote", remote: "origin" });
+    await dialog.getByRole("button", { name: "Switch branch", exact: true }).click();
+    expect((await checkout).postDataJSON()).toEqual({ branch: "feature/ui-fixture", kind: "remote", remote: "origin", local_branch: "feature/ui-fixture", expected_branch: "main" });
     await expect(dialog).toBeHidden();
     await openBranches(page);
     await expect(search).toHaveValue("");

@@ -36,12 +36,11 @@ test("checkout closes Branch on success and refreshes the open History with the 
     const commits = page.getByTestId("git-history-commit");
     await expect(commits).toHaveCount(FIXTURE_COMMITS.length);
     await commits.nth(0).click();
-    await page.getByTestId(`project-location-actions-${FIXTURE_IDS.primaryRepository}-trigger`).click();
-    await page.getByTestId(`project-repository-branches-${FIXTURE_IDS.primaryRepository}`).click();
-    const dialog = page.getByRole("dialog", { name: "Branch", exact: true });
+    await page.getByTestId(`project-switch-branch-${FIXTURE_IDS.primaryRepository}`).click();
+    const dialog = page.getByRole("dialog", { name: "Switch branch", exact: true });
     const switchBranch = async () => {
       await page!.getByTestId("branch-local-release/ui-fixture").click();
-      await page!.getByTestId("branch-actions-local-release/ui-fixture").getByRole("button", { name: "Switch", exact: true }).click();
+      await dialog.getByRole("button", { name: "Switch branch", exact: true }).click();
     };
     await switchBranch();
     await expect(page.getByText("Checkout blocked by local changes", { exact: false })).toBeVisible();

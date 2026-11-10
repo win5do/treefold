@@ -63,7 +63,10 @@ pub(super) async fn finish_workspace_repository_impl(
     )
     .map_err(AppError::BadRequest)?;
     let source_head = git_head(&source_path)?;
-    if source_head != preflight.source_head || source_status != preflight.source_status {
+    if branch != preflight.source_branch
+        || source_head != preflight.source_head
+        || source_status != preflight.source_status
+    {
         return Err(AppError::BadRequest(
             "delivery preflight is stale; source Git state changed".into(),
         ));
@@ -241,6 +244,11 @@ pub(super) fn ensure_worktree_cleanup_owned(
     delete_worktree: bool,
     delete_branch: bool,
 ) -> Result<()> {
+    if delete_branch && location.branch.is_some() && location.branch_ownership != "managed" {
+        return Err(AppError::BadRequest(
+            "This branch is not managed by Treefold; keep it when finishing".into(),
+        ));
+    }
     if location.worktree_ownership != "managed" && (delete_worktree || delete_branch) {
         return Err(AppError::BadRequest("This Workspace reuses an existing worktree; keep its working directory and branch when finishing".into()));
     }
@@ -257,6 +265,18 @@ pub(super) async fn cleanup_finished_repository(
     source_head: &str,
 ) -> Result<()> {
     ensure_worktree_cleanup_owned(location, input.delete_worktree, input.delete_branch)?;
+    if input.delete_branch
+        && !state
+            .store
+            .managed_workspace_branches(&location.id)
+            .await?
+            .iter()
+            .any(|owned| owned == branch)
+    {
+        return Err(AppError::BadRequest(
+            "The confirmed branch is not managed by Treefold; keep it when finishing".into(),
+        ));
+    }
     if input.delete_worktree {
         let project_repository = state
             .store

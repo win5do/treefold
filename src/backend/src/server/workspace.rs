@@ -1561,6 +1561,7 @@ pub(super) struct GitRemoteBranches {
 
 #[derive(Serialize)]
 pub(super) struct GitBranches {
+    pub(super) head: Option<String>,
     pub(super) upstreams: std::collections::HashMap<String, super::workspace_checkout::Upstream>,
     pub(super) occupied: std::collections::HashMap<String, String>,
     pub current_remote: Option<String>,
@@ -1647,12 +1648,7 @@ pub(super) async fn delete_directory_branch_impl(
     Ok(Json(directory_branches(&repository.source_root)?))
 }
 
-#[derive(Deserialize)]
-pub(super) struct CheckoutDirectoryBranch {
-    kind: String,
-    branch: String,
-    remote: Option<String>,
-}
+pub(super) use super::branch_checkout::CheckoutBranch as CheckoutDirectoryBranch;
 
 pub(super) async fn checkout_directory_branch(
     State(state): State<AppState>,
@@ -1675,53 +1671,8 @@ pub(super) async fn checkout_directory_branch_impl(
     let repository = state.store.repository(&id).await?;
     ensure_active_project(&state.store.project(&repository.project_id).await?)?;
     ensure_git_repository(&repository.source_root)?;
-    let branches = directory_branches(&repository.source_root)?;
-    match input.kind.as_str() {
-        "local" => {
-            if !branches.local.contains(&input.branch) {
-                return Err(AppError::BadRequest("local branch was not found".into()));
-            }
-            command_output(
-                Path::new(&repository.source_root),
-                "git",
-                &["switch", &input.branch],
-            )
-            .map_err(AppError::BadRequest)?;
-        }
-        "remote" => {
-            let remote = input
-                .remote
-                .as_deref()
-                .ok_or_else(|| AppError::BadRequest("remote is required".into()))?;
-            let remote_branches = branches
-                .remotes
-                .iter()
-                .find(|item| item.name == remote)
-                .ok_or_else(|| AppError::BadRequest("remote was not found".into()))?;
-            if !remote_branches.branches.contains(&input.branch) {
-                return Err(AppError::BadRequest("remote branch was not found".into()));
-            }
-            if branches.local.contains(&input.branch) {
-                command_output(
-                    Path::new(&repository.source_root),
-                    "git",
-                    &["switch", &input.branch],
-                )
-                .map_err(AppError::BadRequest)?;
-            } else {
-                let remote_ref = format!("{remote}/{}", input.branch);
-                command_output(
-                    Path::new(&repository.source_root),
-                    "git",
-                    &["switch", "--track", "-c", &input.branch, &remote_ref],
-                )
-                .map_err(AppError::BadRequest)?;
-            }
-        }
-        _ => {
-            return Err(AppError::BadRequest("kind must be local or remote".into()));
-        }
-    }
+    super::branch_checkout::ensure_idle(&state, &repository.id, &repository.source_root).await?;
+    super::branch_checkout::checkout(&repository.source_root, &input)?;
     let mut directory = Directory::from(repository);
     enrich_directory(&mut directory, None);
     Ok(Json(directory))

@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT remote_name,remote_branch FROM workspace_branch_upstreams WHERE workspace_repository_id=? AND branch=?",
+  "describe": {
+    "columns": [
+      {
+        "name": "remote_name",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "workspace_branch_upstreams",
+            "name": "remote_name"
+          }
+        }
+      },
+      {
+        "name": "remote_branch",
+        "ordinal": 1,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "workspace_branch_upstreams",
+            "name": "remote_branch"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "019615087e8880526c96c49daa89c9cc07752d88dab446b22168d2307b2b93d9"
+}

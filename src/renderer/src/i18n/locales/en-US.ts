@@ -1,4 +1,16 @@
 export const enUS = {
+  branchSwitch: {
+    title: "Switch branch",
+    switch: "Switch branch",
+    newBranch: "New branch",
+    localName: "Local branch name",
+    availableName: "Enter an unused local branch name.",
+    startPoint: "Starting branch",
+    currentHeadDefault: "Uses the current HEAD unless you choose a starting branch.",
+    preserveChanges: "Uncommitted changes are kept. Git will refuse the switch if it would overwrite them.",
+    workspaceHint: "Sessions keep their working directory; its files will change. Forks deliver to the parent Workspace’s current branch.",
+    deleteBranch: "Delete branch {{branch}}"
+  },
   aiCommit: {
     title: "AI Commit",
     settings: "Go to settings",

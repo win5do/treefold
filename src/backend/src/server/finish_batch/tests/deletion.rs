@@ -130,7 +130,7 @@ async fn deletion_preserves_user_branches_and_rejects_active_workspaces() {
         .await
         .is_err()
     );
-    sqlx::query("UPDATE workspace_repositories SET branch_ownership='user' WHERE workspace_id=?")
+    sqlx::query("DELETE FROM workspace_managed_branches WHERE workspace_repository_id IN (SELECT id FROM workspace_repositories WHERE workspace_id=?)")
         .bind(&f.workspace.id)
         .execute(&f.state.store.pool)
         .await
@@ -431,7 +431,7 @@ async fn deletion_discard_does_not_bypass_dirty_checkout_or_branch_ownership() {
     let last = Path::new(f.repositories[1].checkout_path.as_ref().unwrap());
     commit(first, "late.txt", "late");
     commit(last, "user.txt", "user-owned commit");
-    sqlx::query("UPDATE workspace_repositories SET branch_ownership='user' WHERE id=?")
+    sqlx::query("DELETE FROM workspace_managed_branches WHERE workspace_repository_id=?")
         .bind(&f.repositories[1].id)
         .execute(&f.state.store.pool)
         .await
@@ -590,7 +590,7 @@ async fn archived_cleanup_skips_pushed_but_unmerged_branches() {
             root,
             &["update-ref", "refs/remotes/origin/feature/batch", &head],
         );
-        sqlx::query("UPDATE workspace_repositories SET remote_name='origin',remote_branch='feature/batch' WHERE id=?")
+        sqlx::query("INSERT OR REPLACE INTO workspace_branch_upstreams(workspace_repository_id,branch,remote_name,remote_branch) SELECT id,creation_branch,'origin','feature/batch' FROM workspace_repositories WHERE id=?")
             .bind(&location.id).execute(&f.state.store.pool).await.unwrap();
     }
     f.state
@@ -806,7 +806,7 @@ async fn archived_cleanup_checks_user_branches_and_recognizes_merge_into_parent(
         "child.txt",
         "unmerged",
     );
-    sqlx::query("UPDATE workspace_repositories SET branch_ownership='user' WHERE id=?")
+    sqlx::query("DELETE FROM workspace_managed_branches WHERE workspace_repository_id=?")
         .bind(&repos[0].id)
         .execute(&f.state.store.pool)
         .await

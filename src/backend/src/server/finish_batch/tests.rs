@@ -1610,3 +1610,5 @@ async fn finish_processes_check_does_not_start_an_offline_daemon() {
 }
 
 mod reword;
+
+mod branch_switch;

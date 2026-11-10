@@ -66,8 +66,9 @@ Adding scopes later never changes existing Workspace snapshots.
 ## Workspace Repository and Directory snapshots
 
 Workspace creation snapshots each Repository exactly once into a
-`WorkspaceRepository`, with one full worktree, its own feature branch name,
-upstream, delivery, rebase/reset, and Finish state. Each selected Project scope
+`WorkspaceRepository`, with one full worktree, its creation branch,
+delivery, rebase/reset, and Finish state. Current branch and upstream information
+are resolved for the checkout when it is read. Each selected Project scope
 becomes a `WorkspaceDirectory`: Git paths map to
 `checkout_root/relative_path`, while Non-Git paths keep their external location
 and read-only access.
@@ -81,6 +82,30 @@ workdir; setup failure does not roll back the Workspace.
 Pull All and Push All execute each Repository once. Git mutations for one
 canonical Git common directory are serialized, while unrelated repositories may
 run concurrently.
+
+## Switching branches
+
+Project and active Workspace Repository cards expose a direct **Switch branch**
+action. Both use the same Local / Remote / New selector. Local selects an existing
+branch; Remote creates a local tracking branch with an editable name; New creates
+a branch from the current HEAD or a selected local/remote branch. Existing local
+names are never overwritten. Git refuses occupied branches or switches that would
+overwrite uncommitted changes; Treefold does not automatically stash or reset.
+Sessions retain their directories and history, but the files in those directories
+change. Forks do not expose this action.
+
+The current branch comes from Git, including changes made in a terminal. SQLite
+keeps creation intent separately from managed branch resources and explicit,
+branch-scoped delivery upstream overrides. Without an override, the current
+branch's Git tracking configuration supplies its upstream. Switching to an
+existing branch does not grant Treefold ownership of it. Cleanup checks all
+recorded managed branches independently of the currently checked-out branch.
+
+Fork delivery follows the parent Workspace's current branch for each Repository.
+Preview snapshots retain the source and target branches and commits; switching
+either branch invalidates confirmation even at the same commit. Active Git and
+delivery operations block switching. Completed intermediate delivery permits
+further switches and a fresh delivery preview.
 
 ## Fork
 

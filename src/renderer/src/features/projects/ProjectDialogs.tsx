@@ -1,16 +1,14 @@
-import { BranchList } from "@/features/git/BranchList";
+import { Badge } from "@/components/ui/badge";
+import { BranchSwitchDialog, type BranchCheckout } from "@/features/git/BranchSwitchDialog";
+import type { GitBranchRef } from "@/domain/types";
 import { compactPath } from "@/lib/compactPath";
 import { useTranslation } from "react-i18next";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import {
-  ChevronRight,
   FolderOpen,
-  GitBranch,
-  Trash2,
 } from "lucide-react";
 import { open as openDirectory } from "@/lib/desktop";
 import { projectsApi } from "@/api/projects";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,7 +25,6 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ChoiceSelect } from "@/components/ui/choice-select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   Directory,
@@ -384,167 +381,15 @@ export function EditRepositoryDialog({
   );
 }
 
-type RepositoryBranches = Awaited<
-  ReturnType<typeof projectsApi.repositoryBranches>
->;
-
-type RepositoryBranchTarget = {
-  branch: string;
-  kind: "local" | "remote";
-  remote?: string;
-};
-
-function BranchActionRow({
-  branch,
-  current,
-  busy,
-  target,
-  onSwitch,
-  onDelete,
-}: {
-  branch: string;
-  current: boolean;
-  busy: boolean;
-  target: RepositoryBranchTarget;
-  onSwitch: (target: RepositoryBranchTarget) => Promise<void>;
-  onDelete: (target: RepositoryBranchTarget) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const label = target.remote ? `${target.remote}/${branch}` : branch;
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <button
-            type="button"
-            data-testid={`branch-${target.kind}-${label}`}
-            className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            disabled={busy}
-          />
-        }
-      >
-        <GitBranch className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="min-w-0 flex-1 truncate font-mono" title={label}>
-          {branch}
-        </span>
-        {current && <Badge variant="secondary">{t("labels.current")}</Badge>}
-        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-      </PopoverTrigger>
-      <PopoverContent
-        data-testid={`branch-actions-${target.kind}-${label}`}
-        side="right"
-        align="start"
-        sideOffset={4}
-        className="w-36 gap-0 p-1"
-      >
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={busy || current}
-          onClick={async () => {
-            await onSwitch(target);
-            setOpen(false);
-          }}
-        >
-          <GitBranch className="size-3.5" />{t("projectsUi.switch")}</button>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={busy || current}
-          onClick={async () => {
-            const confirmation = target.kind === "remote"
-                    ? t("projectsUi.deleteRemoteBranch", { branch, remote: target.remote })
-                    : t("projectsUi.deleteLocalBranch", { branch });
-            if (!window.confirm(confirmation)) return;
-            await onDelete(target);
-            setOpen(false);
-          }}
-        >
-          <Trash2 className="size-3.5" />{t("projectsUi.delete")}</button>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-export function RepositoryBranchesDialog({
-  repository,
-  busy,
-  onOpenChange,
-  onSwitch,
-  onDelete,
-}: {
+export function RepositoryBranchesDialog({ repository, busy, onOpenChange, onSwitch, onDelete }: {
   repository: ProjectRepository | null;
   busy: boolean;
   onOpenChange: (open: boolean) => void;
-  onSwitch: (target: RepositoryBranchTarget) => Promise<void>;
-  onDelete: (target: RepositoryBranchTarget) => Promise<void>;
+  onSwitch: (target: BranchCheckout) => Promise<void>;
+  onDelete: (target: GitBranchRef) => Promise<void>;
 }) {
-  const { t } = useTranslation();
-  const [branches, setBranches] = useState<RepositoryBranches | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const branchRequest = useRef<AbortController | null>(null);
-  const loadBranches = async (repositoryId: string) => {
-    branchRequest.current?.abort();
-    const controller = new AbortController();
-    branchRequest.current = controller;
-    const { signal } = controller;
-    setLoading(true);
-    setError("");
-    try {
-      const result = await projectsApi.repositoryBranches(repositoryId, signal);
-      if (!signal.aborted) setBranches(result);
-    } catch (cause) {
-      if (signal.aborted) return;
-      setError(cause instanceof Error ? cause.message : t("projectsUi.couldNotLoadBranches"));
-    } finally {
-      if (!signal.aborted) setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    setBranches(null);
-    setError("");
-    setLoading(false);
-    if (!repository) {
-      return;
-    }
-    void loadBranches(repository.id);
-    return () => branchRequest.current?.abort();
-  }, [repository?.id]);
-
-  const runAndReload = async (
-    action: (target: RepositoryBranchTarget) => Promise<void>,
-    target: RepositoryBranchTarget,
-  ) => {
-    if (!repository) return;
-    const request = branchRequest.current;
-    await action(target);
-    if (request?.signal.aborted) return;
-    await loadBranches(repository.id);
-  };
-
-  return (
-    <Dialog open={Boolean(repository)} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <DialogTitle>{t("projectsUi.branch")}</DialogTitle>
-          <DialogDescription className="truncate">
-            {repository?.name}
-          </DialogDescription>
-        </DialogHeader>
-        <BranchList
-          key={repository?.id ?? "closed"}
-          branches={branches}
-          loading={loading}
-          error={error}
-          busy={busy}
-          onRefresh={() => repository && void loadBranches(repository.id)}
-          renderBranch={(target, current) => <BranchActionRow branch={target.branch} current={current} busy={busy || loading} target={target} onSwitch={onSwitch} onDelete={(target) => runAndReload(onDelete, target)} />}
-        />
-      </DialogContent>
-    </Dialog>
-  );
+  return <BranchSwitchDialog repository={repository} busy={busy} onOpenChange={onOpenChange}
+    loadBranches={projectsApi.repositoryBranches} onSwitch={onSwitch} onDelete={onDelete} />;
 }
+
+type RepositoryBranches = Awaited<ReturnType<typeof projectsApi.repositoryBranches>>;

@@ -1,6 +1,18 @@
 import type { LocaleMessages } from "./en-US";
 
 export const zhCN = {
+  branchSwitch: {
+    title: "切换分支",
+    switch: "切换分支",
+    newBranch: "新建分支",
+    localName: "本地分支名称",
+    availableName: "请输入尚未使用的本地分支名称。",
+    startPoint: "起始分支",
+    currentHeadDefault: "未选择起始分支时，从当前 HEAD 创建。",
+    preserveChanges: "未提交改动会保留。如果切换会覆盖改动，Git 将拒绝执行。",
+    workspaceHint: "Session 保留工作目录，但目录中的文件会变化。Fork 将交付到父 Workspace 当前所在的分支。",
+    deleteBranch: "删除分支 {{branch}}"
+  },
   aiCommit: {
     title: "AI Commit",
     settings: "前往设置",

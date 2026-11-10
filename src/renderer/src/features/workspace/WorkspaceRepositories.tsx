@@ -1,3 +1,4 @@
+import { WorkspaceBranchSwitch } from "./WorkspaceBranchSwitch";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
@@ -137,11 +138,14 @@ function WorkspaceRepositoryRow({
           <div className="mt-3 flex min-w-0 items-start gap-3">
             <GitBranch className="mt-1 size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1" data-testid={`workspace-worktree-${location.id}`}>
-              {(worktree || location.branch) && (
-                <p className="truncate text-sm font-semibold" title={worktree?.branch || location.branch}>
-                  {worktree ? worktree.branch || t("projectsUi.detachedHead") : location.branch}
-                </p>
-              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {(worktree || location.branch) && (
+                  <p className="truncate text-sm font-semibold" title={worktree?.branch || location.branch}>
+                    {worktree ? worktree.branch || t("projectsUi.detachedHead") : location.branch}
+                  </p>
+                )}
+                {actionsEnabled && writableGit && <WorkspaceBranchSwitch repository={location} disabled={busy} />}
+              </div>
               <div className="mt-1 flex min-w-0 items-center gap-2 text-[10px] text-muted-foreground">
                 {worktree?.head_commit && <><span className="shrink-0 font-mono">{worktree.head_commit.slice(0, 10)}</span><span>·</span></>}
                 <code className="min-w-0 truncate" title={location.checkout_path ?? location.source_root}>

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT creation_branch FROM workspace_repositories WHERE id=?",
+  "describe": {
+    "columns": [
+      {
+        "name": "creation_branch",
+        "ordinal": 0,
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "workspace_repositories",
+            "name": "creation_branch"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "3ce518b0a931fe71a9435d8ae8eab187762cb843137c99332b37261f92fe7bca"
+}

@@ -355,7 +355,8 @@ async fn verify_plan(state: &AppState, plan: &FinishPlanItem, retry: bool) -> Re
         },
     )
     .await?;
-    if old.source_head != fresh.source_head
+    if old.source_branch != fresh.source_branch
+        || old.source_head != fresh.source_head
         || old.source_status != fresh.source_status
         || (plan.code_action != "keep"
             && (old.target_branch != fresh.target_branch
@@ -504,7 +505,7 @@ pub(super) async fn run_batch(state: &AppState, mut batch: FinishBatch, retry: b
                             .checkout_path
                             .as_deref()
                             .ok_or_else(|| AppError::BadRequest("missing worktree path".into()))?,
-                        repository.branch.as_deref().unwrap_or(""),
+                        &snapshot.source_branch,
                         &snapshot.source_head,
                     )
                     .await?;

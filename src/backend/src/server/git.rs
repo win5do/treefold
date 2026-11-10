@@ -1530,6 +1530,7 @@ pub(super) fn directory_branches(repository: &str) -> Result<GitBranches> {
         .map(|worktree| (worktree.branch, worktree.path))
         .collect();
     Ok(GitBranches {
+        head: git_head(repository).ok(),
         upstreams,
         occupied,
         current_remote,
