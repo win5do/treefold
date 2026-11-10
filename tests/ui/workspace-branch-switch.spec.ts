@@ -5,6 +5,7 @@ import { closeUiSession, createUiSession } from "./harness/session.ts";
 
 test("Workspace shares Local, Remote and New switching while Fork has no switch action", async () => {
   let current = "feature/sidebar-polish";
+  let rejectCheckout = true;
   const requests: Record<string, unknown>[] = [];
   const harness = await startUiHarness();
   let page: Page | undefined;
@@ -16,6 +17,10 @@ test("Workspace shares Local, Remote and New switching while Fork has no switch 
       remotes: [{ name: "origin", branches: ["remote-topic"] }],
     } }));
     await page.route(`**/api/workspace-repositories/${id}/checkout`, async route => {
+      if (rejectCheckout) {
+        await route.fulfill({ status: 409, json: { error: { code: "GIT_STATE_STALE", message: "Checkout blocked by local changes" } } });
+        return;
+      }
       const input = route.request().postDataJSON(); requests.push(input);
       current = input.local_branch ?? input.branch;
       await route.fulfill({ json: { branch: current } });
@@ -26,6 +31,10 @@ test("Workspace shares Local, Remote and New switching while Fork has no switch 
     let dialog = page.getByRole("dialog", { name: "Switch branch", exact: true });
     await expect(dialog.getByTestId("branch-local-occupied")).toBeDisabled();
     await dialog.getByTestId("branch-local-available").click();
+    await dialog.getByRole("button", { name: "Switch branch", exact: true }).click();
+    await expect(page.locator('[data-slot="toast"]').filter({ hasText: "Checkout blocked by local changes" })).toBeVisible();
+    await expect(dialog).toBeVisible();
+    rejectCheckout = false;
     await dialog.getByRole("button", { name: "Switch branch", exact: true }).click();
     await expect(dialog).toBeHidden();
     expect(requests[0]).toMatchObject({ kind: "local", branch: "available" });

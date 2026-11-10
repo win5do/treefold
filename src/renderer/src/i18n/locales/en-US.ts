@@ -7,7 +7,6 @@ export const enUS = {
     availableName: "Enter an unused local branch name.",
     startPoint: "Starting branch",
     currentHeadDefault: "Uses the current HEAD unless you choose a starting branch.",
-    preserveChanges: "Uncommitted changes are kept. Git will refuse the switch if it would overwrite them.",
     workspaceHint: "Sessions keep their working directory; its files will change. Forks deliver to the parent Workspace’s current branch.",
     deleteBranch: "Delete branch {{branch}}"
   },

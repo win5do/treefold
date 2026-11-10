@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { toast } from "@/lib/toast";
 import type { GitBranches, GitBranchRef } from "@/domain/types";
 import { compactPath } from "@/lib/compactPath";
 import { BranchList } from "./BranchList";
@@ -64,7 +64,7 @@ export function BranchSwitchDialog({ repository, busy, hint, loadBranches, onSwi
       : { ...target, ...(target.kind === "remote" ? { local_branch: newName } : {}) };
     setPending(true); setError("");
     try { await onSwitch({ ...payload, expected_branch: branches.current, ...(branches.head ? { expected_head: branches.head } : {}) }); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { toast.errorFrom(cause); }
     finally { setPending(false); }
   };
   return <Dialog open={Boolean(repository)} onOpenChange={(open) => { if (!pending) onOpenChange(open); }}>
@@ -115,7 +115,6 @@ export function BranchSwitchDialog({ repository, busy, hint, loadBranches, onSwi
           value={base} branches={branches} loading={loading} disabled={disabled} onRefresh={() => setVersion((value) => value + 1)} onChange={setBase} />
         <FieldDescription>{t("branchSwitch.currentHeadDefault")}</FieldDescription>
       </Field>}
-      {target && <Alert><AlertDescription>{t("branchSwitch.preserveChanges")}</AlertDescription></Alert>}
       <div className="flex justify-end"><Button disabled={disabled || !target || nameInvalid || !branches} onClick={() => void submit()}>{t("branchSwitch.switch")}</Button></div>
     </DialogContent>
   </Dialog>;
