@@ -2,13 +2,14 @@ import type { LocaleMessages } from "./en-US";
 
 export const zhCN = {
   branchSwitch: {
+    nameExists: "已存在同名本地分支，请修改名称。",
+    branchName: "分支名称",
+    createAndSwitch: "创建并切换",
     title: "切换分支",
     switch: "切换分支",
     newBranch: "新建分支",
     localName: "本地分支名称",
-    availableName: "请输入尚未使用的本地分支名称。",
-    startPoint: "起始分支",
-    currentHeadDefault: "未选择起始分支时，从当前 HEAD 创建。",
+    availableName: "请输入尚未使用的分支名称。",
     workspaceHint: "Session 保留工作目录，但目录中的文件会变化。Fork 将交付到父 Workspace 当前所在的分支。",
     deleteBranch: "删除分支 {{branch}}"
   },

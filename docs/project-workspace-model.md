@@ -87,9 +87,10 @@ run concurrently.
 
 Project and active Workspace Repository cards expose a direct **Switch branch**
 action. Both use the same Local / Remote / New selector. Local selects an existing
-branch; Remote creates a local tracking branch with an editable name; New creates
-a branch from the current HEAD or a selected local/remote branch. Existing local
-names are never overwritten. Git refuses occupied branches or switches that would
+branch; Remote creates a local tracking branch with an editable name. New uses
+the selected branch as its starting point (the current branch if none is selected)
+and pre-fills the same name. Existing local names are marked invalid and creation
+is disabled until the user chooses an unused name. No second base selector is shown. Git refuses occupied branches or switches that would
 overwrite uncommitted changes; Treefold does not automatically stash or reset.
 Sessions retain their directories and history, but the files in those directories
 change. Forks do not expose this action.

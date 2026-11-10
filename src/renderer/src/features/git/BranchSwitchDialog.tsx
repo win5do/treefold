@@ -9,7 +9,7 @@ import { toast } from "@/lib/toast";
 import type { GitBranches, GitBranchRef } from "@/domain/types";
 import { compactPath } from "@/lib/compactPath";
 import { BranchList } from "./BranchList";
-import { BranchPicker, branchRefLabel } from "./BranchPicker";
+import { branchRefLabel } from "./BranchPicker";
 
 export type BranchCheckout = {
   kind: "local" | "remote" | "new";
@@ -55,10 +55,11 @@ export function BranchSwitchDialog({ repository, busy, hint, loadBranches, onSwi
     return () => controller.abort();
   }, [repository?.id, version, loadBranches]);
   const newName = name.trim();
+  const nameExists = Boolean(branches?.local.includes(newName));
   const nameInvalid = Boolean(target === "new" || target?.kind === "remote") &&
-    (!newName || newName.startsWith("-") || newName === "HEAD" || Boolean(branches?.local.includes(newName)));
+    (!newName || newName.startsWith("-") || newName === "HEAD" || nameExists);
   const submit = async () => {
-    if (!target || !branches || disabled) return;
+    if (!target || !branches || disabled || nameInvalid) return;
     const payload: BranchCheckout = target === "new"
       ? { kind: "new", branch: newName, ...(base ? { base } : {}) }
       : { ...target, ...(target.kind === "remote" ? { local_branch: newName } : {}) };
@@ -78,7 +79,8 @@ export function BranchSwitchDialog({ repository, busy, hint, loadBranches, onSwi
         onRefresh={() => setVersion((value) => value + 1)}
         renderBranch={(ref, current) => {
           const occupied = ref.kind === "local" && !current ? branches?.occupied?.[ref.branch] : undefined;
-          const selected = target && target !== "new" && branchRefLabel(target) === branchRefLabel(ref) && target.kind === ref.kind;
+          const selection = target === "new" ? base : target;
+          const selected = selection && branchRefLabel(selection) === branchRefLabel(ref) && selection.kind === ref.kind;
           return <div className="flex items-center gap-1">
             <Button type="button" variant={selected ? "secondary" : "ghost"}
               className="h-auto min-h-8 min-w-0 flex-1 justify-start py-2"
@@ -103,19 +105,19 @@ export function BranchSwitchDialog({ repository, busy, hint, loadBranches, onSwi
           </div>;
         }} />
       <Button type="button" variant={target === "new" ? "secondary" : "outline"} disabled={disabled || !branches}
-        onClick={() => { setTarget("new"); setName(""); }}><Plus data-icon="inline-start" />{t("branchSwitch.newBranch")}</Button>
+        onClick={() => {
+          if (target === "new") return;
+          const source = target ?? (branches?.current ? { kind: "local" as const, branch: branches.current } : null);
+          setBase(source);
+          setName(source?.branch ?? "");
+          setTarget("new");
+        }}><Plus data-icon="inline-start" />{t("branchSwitch.newBranch")}</Button>
       {(target === "new" || target?.kind === "remote") && <Field>
-        <FieldLabel htmlFor="switch-branch-name">{t("branchSwitch.localName")}</FieldLabel>
-        <Input id="switch-branch-name" value={name} onChange={(event) => setName(event.target.value)} disabled={disabled} aria-invalid={Boolean(newName) && nameInvalid} />
-        {nameInvalid && <FieldDescription>{t("branchSwitch.availableName")}</FieldDescription>}
+        <FieldLabel htmlFor="switch-branch-name">{t(target === "new" ? "branchSwitch.branchName" : "branchSwitch.localName")}</FieldLabel>
+        <Input key={target === "new" ? "new" : "remote"} autoFocus onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }} id="switch-branch-name" value={name} onChange={(event) => setName(event.target.value)} disabled={disabled} aria-invalid={Boolean(newName) && nameInvalid} />
+        {nameInvalid && <FieldDescription className="text-destructive">{t(nameExists ? "branchSwitch.nameExists" : "branchSwitch.availableName")}</FieldDescription>}
       </Field>}
-      {target === "new" && branches && <Field>
-        <FieldLabel htmlFor="switch-branch-base">{t("branchSwitch.startPoint")}</FieldLabel>
-        <BranchPicker id="switch-branch-base" label={t("branchSwitch.startPoint")} repositoryName={repository?.name ?? ""}
-          value={base} branches={branches} loading={loading} disabled={disabled} onRefresh={() => setVersion((value) => value + 1)} onChange={setBase} />
-        <FieldDescription>{t("branchSwitch.currentHeadDefault")}</FieldDescription>
-      </Field>}
-      <div className="flex justify-end"><Button disabled={disabled || !target || nameInvalid || !branches} onClick={() => void submit()}>{t("branchSwitch.switch")}</Button></div>
+      <div className="flex justify-end"><Button disabled={disabled || !target || nameInvalid || !branches} onClick={() => void submit()}>{t(target === "new" ? "branchSwitch.createAndSwitch" : "branchSwitch.switch")}</Button></div>
     </DialogContent>
   </Dialog>;
 }

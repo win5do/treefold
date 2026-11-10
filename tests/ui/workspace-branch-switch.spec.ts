@@ -49,14 +49,27 @@ test("Workspace shares Local, Remote and New switching while Fork has no switch 
     expect(requests[1]).toMatchObject({ kind: "remote", remote: "origin", branch: "remote-topic", local_branch: "tracking-topic" });
 
     await trigger.click();
+    await dialog.getByTestId("branch-local-available").click();
     await dialog.getByRole("button", { name: "New branch", exact: true }).click();
-    await dialog.getByRole("textbox", { name: "Local branch name" }).fill("new-topic");
-    await expect(dialog.getByRole("button", { name: "Switch branch", exact: true })).toBeEnabled();
-    // Inspect the expanded form for clipping of its confirmation action.
-    await page.screenshot({ path: "/tmp/treefold-workspace-branch-switch.png" });
-    await dialog.getByRole("button", { name: "Switch branch", exact: true }).click();
+    const name = dialog.getByRole("textbox", { name: "Branch name", exact: true });
+    await expect(name).toBeFocused();
+    await expect(name).toHaveValue("available");
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await expect(dialog.getByRole("button", { name: "Create and switch", exact: true })).toBeDisabled();
+    await name.fill("new-topic");
+    await expect(name).toHaveAttribute("aria-invalid", "false");
+    await expect(dialog.getByRole("button", { name: "Create and switch", exact: true })).toBeEnabled();
+    await name.press("Enter");
     await expect(dialog).toBeHidden();
-    expect(requests[2]).toMatchObject({ kind: "new", branch: "new-topic" });
+    expect(requests[2]).toEqual({ kind: "new", branch: "new-topic", base: { kind: "local", branch: "available" }, expected_branch: "tracking-topic" });
+    await trigger.click();
+    await dialog.getByRole("button", { name: "origin", exact: true }).click();
+    await dialog.getByTestId("branch-remote-origin/remote-topic").click();
+    await dialog.getByRole("button", { name: "New branch", exact: true }).click();
+    await expect(name).toHaveValue("remote-topic");
+    await dialog.getByRole("button", { name: "Create and switch", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    expect(requests[3]).toEqual({ kind: "new", branch: "remote-topic", base: { kind: "remote", remote: "origin", branch: "remote-topic" }, expected_branch: "new-topic" });
     await page.goto(`${harness.baseUrl}/#/workspaces/${FIXTURE_IDS.fork}`);
     await expect(page.getByTestId(`workspace-location-${FIXTURE_IDS.forkPrimaryLocation}`)).toBeVisible();
     await expect(page.getByRole("button", { name: "Switch branch", exact: true })).toHaveCount(0);

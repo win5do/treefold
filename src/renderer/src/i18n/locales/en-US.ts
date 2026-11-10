@@ -1,12 +1,13 @@
 export const enUS = {
   branchSwitch: {
+    nameExists: "A local branch with this name already exists. Choose another name.",
+    branchName: "Branch name",
+    createAndSwitch: "Create and switch",
     title: "Switch branch",
     switch: "Switch branch",
     newBranch: "New branch",
     localName: "Local branch name",
-    availableName: "Enter an unused local branch name.",
-    startPoint: "Starting branch",
-    currentHeadDefault: "Uses the current HEAD unless you choose a starting branch.",
+    availableName: "Enter an unused branch name.",
     workspaceHint: "Sessions keep their working directory; its files will change. Forks deliver to the parent Workspace’s current branch.",
     deleteBranch: "Delete branch {{branch}}"
   },
