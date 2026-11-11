@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "treefold-backend"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "amux-runtime",
  "anyhow",
