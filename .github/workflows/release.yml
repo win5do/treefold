@@ -9,9 +9,17 @@ on:
         description: Existing version tag to build (for example v0.1.0)
         required: true
         type: string
+      fast_path:
+        description: Reuse verified macOS artifacts and publish packages without Homebrew updates
+        type: boolean
+        default: false
+      macos_run_id:
+        description: Successful macOS artifact run for this exact tag (required for fast path)
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: release-${{ inputs.tag || github.ref_name }}
@@ -19,7 +27,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: ${{ inputs.fast_path && 'ubuntu-24.04' || 'macos-26' }}
     timeout-minutes: 60
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -32,6 +40,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        if: ${{ !inputs.fast_path }}
         with:
           node-version: '24'
           cache: npm
@@ -57,8 +66,10 @@ jobs:
             echo 'prerelease=false' >> "$GITHUB_OUTPUT"
           fi
       - name: Select pinned Rust toolchain
+        if: ${{ !inputs.fast_path }}
         run: rustup show
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+        if: ${{ !inputs.fast_path }}
         with:
           workspaces: |
             xtask
@@ -66,6 +77,7 @@ jobs:
             src/cli
           cache-on-failure: true
       - name: Install dependencies
+        if: ${{ !inputs.fast_path }}
         run: |
           npm ci
           node --input-type=module -e 'import { valid } from "semver"; if (valid(process.env.TREEFOLD_BUILD_VERSION) !== process.env.TREEFOLD_BUILD_VERSION) process.exit(1)'
@@ -73,8 +85,10 @@ jobs:
           brew install just
           cargo install sqlx-cli --version 0.9.0 --locked --no-default-features --features sqlite,rustls
       - name: Check types, database metadata, and Rust
+        if: ${{ !inputs.fast_path }}
         run: just check
       - name: Build ad-hoc signed packages
+        if: ${{ !inputs.fast_path }}
         run: |
           test "$(uname -m)" = arm64
           # Restored or pre-created Cargo output directories can lack the marker
@@ -83,14 +97,43 @@ jobs:
           printf 'Signature: 8a477f597d28d172789f06886806bc55\n' > src/backend/target/CACHEDIR.TAG
           just build
       - name: Verify package signature and version
+        if: ${{ !inputs.fast_path }}
         run: |
           codesign --verify --deep --strict release/mac-arm64/Treefold.app
           codesign -dv release/mac-arm64/Treefold.app 2>&1 | grep 'Signature=adhoc'
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' release/mac-arm64/Treefold.app/Contents/Info.plist)" = "$TREEFOLD_BUILD_VERSION"
       - name: Generate checksums
+        if: ${{ !inputs.fast_path }}
         working-directory: release
         run: |
           shasum -a 256 "Treefold-${TREEFOLD_BUILD_VERSION}-arm64.dmg" "Treefold-${TREEFOLD_BUILD_VERSION}-arm64.zip" > SHA256SUMS
+      - name: Validate reusable macOS build
+        if: ${{ inputs.fast_path }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MACOS_RUN_ID: ${{ inputs.macos_run_id }}
+          EXPECTED_COMMIT: ${{ steps.version.outputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$MACOS_RUN_ID" =~ ^[0-9]+$ ]]
+          actual=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MACOS_RUN_ID" --jq .head_sha)
+          test "$actual" = "$EXPECTED_COMMIT"
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        if: ${{ inputs.fast_path }}
+        with:
+          name: release-packages
+          run-id: ${{ inputs.macos_run_id }}
+          github-token: ${{ github.token }}
+          path: release
+      - name: Verify reused macOS artifacts
+        if: ${{ inputs.fast_path }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -f "release/Treefold-$VERSION-arm64.dmg"
+          test -f "release/Treefold-$VERSION-arm64.zip"
+          (cd release && sha256sum --check SHA256SUMS)
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-packages
@@ -216,6 +259,7 @@ jobs:
           gh release view "$RELEASE_TAG" --json url,assets,isDraft
 
   verify-brew:
+    if: ${{ !inputs.fast_path }}
     needs: [build, publish]
     runs-on: macos-26
     outputs:
