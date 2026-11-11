@@ -1,5 +1,9 @@
 export const enUS = {
   branchSwitch: {
+    checkout: "Checkout",
+    back: "Back",
+    from: "From: {{branch}}",
+
     nameExists: "A local branch with this name already exists. Choose another name.",
     branchName: "Branch name",
     createAndSwitch: "Create and switch",

@@ -2,6 +2,10 @@ import type { LocaleMessages } from "./en-US";
 
 export const zhCN = {
   branchSwitch: {
+    checkout: "切换",
+    back: "返回",
+    from: "起点：{{branch}}",
+
     nameExists: "已存在同名本地分支，请修改名称。",
     branchName: "分支名称",
     createAndSwitch: "创建并切换",

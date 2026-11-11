@@ -92,6 +92,11 @@ for (const scenario of ["mixed-local", "remote-checkout"] as const) {
         .fill("origin/release");
       await basePicker.getByTestId("branch-remote-origin/release").click();
       await expect(dialog).toBeVisible();
+      await first.getByRole("button", { name: "Use existing branch", exact: true }).click();
+      await expect(first.getByLabel("Branch to check out", { exact: true })).toHaveText("origin/release");
+      await first.getByRole("button", { name: "New branch", exact: true }).click();
+      await expect(first.getByLabel("Base branch", { exact: true })).toHaveText("origin/release");
+      await expect(first.getByLabel("New branch name", { exact: true })).toHaveValue("feature/custom");
       await second
         .getByRole("button", { name: "Use existing branch", exact: true })
         .click();

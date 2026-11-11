@@ -40,7 +40,7 @@ test("checkout closes Branch on success and refreshes the open History with the 
     const dialog = page.getByRole("dialog", { name: "Switch branch", exact: true });
     const switchBranch = async () => {
       await page!.getByTestId("branch-local-release/ui-fixture").click();
-      await dialog.getByRole("button", { name: "Switch branch", exact: true }).click();
+      await dialog.getByRole("button", { name: "Checkout", exact: true }).click();
     };
     await switchBranch();
     await expect(page.getByText("Checkout blocked by local changes", { exact: false })).toBeVisible();

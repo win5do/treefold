@@ -42,7 +42,8 @@ test("branch search filters local and remote refs, clears, and preserves checkou
     await expect(local).toHaveCount(0);
     await dialog.getByTestId("branch-remote-origin/feature/ui-fixture").click();
     const checkout = page.waitForRequest((request) => request.url().endsWith("/checkout") && request.method() === "POST");
-    await dialog.getByRole("button", { name: "Switch branch", exact: true }).click();
+    await dialog.getByRole("button", { name: "Checkout", exact: true }).click();
+    await dialog.getByRole("button", { name: "Checkout", exact: true }).click();
     expect((await checkout).postDataJSON()).toEqual({ branch: "feature/ui-fixture", kind: "remote", remote: "origin", local_branch: "feature/ui-fixture", expected_branch: "main" });
     await expect(dialog).toBeHidden();
     await openBranches(page);

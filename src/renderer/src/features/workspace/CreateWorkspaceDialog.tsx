@@ -30,6 +30,7 @@ import { generateBranchName } from "@/features/git/BranchNameField";
 import { BranchPicker } from "@/features/git/BranchPicker";
 import {
   checkoutIssue,
+  changeCheckoutMode,
   initialRepositoryDraft,
   repositoryPayload,
   selectExistingBranch,
@@ -207,7 +208,7 @@ function WorkspaceCreationForm({
                         if (mode === "new" || mode === "existing")
                           setDrafts((current) => ({
                             ...current,
-                            [id]: { ...current[id], mode },
+                            [id]: changeCheckoutMode(current[id], mode, branches, repo),
                           }));
                       }}
                     >

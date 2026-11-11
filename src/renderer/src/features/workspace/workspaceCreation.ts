@@ -130,3 +130,19 @@ export function repositoryPayload(
       : null,
   };
 }
+
+export function changeCheckoutMode(
+  draft: RepositoryDraft,
+  mode: RepositoryDraft["mode"],
+  options: GitBranches,
+  repository: ProjectRepository,
+): RepositoryDraft {
+  if (mode === draft.mode) return draft;
+  const source = draft[draft.mode].source;
+  if (!source) return { ...draft, mode };
+  if (mode === "new") return { ...draft, mode, new: { ...draft.new, source } };
+  const previous = draft.existing.source;
+  const same = previous?.kind === source.kind && previous.branch === source.branch &&
+    (source.kind !== "remote" || (previous.kind === "remote" && previous.remote === source.remote));
+  return { ...draft, mode, existing: same ? draft.existing : selectExistingBranch(source, options, repository) };
+}
